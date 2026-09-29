@@ -5,6 +5,7 @@
 #define STBI_NO_STDIO
 #include "stb_image.h"
 #include "road.hpp"
+#include "assets.hpp"
 #include <memory>
 #include <climits>
 #include <cstdio>
@@ -20,21 +21,11 @@ static constexpr int image_count=sizeof(screens)/sizeof(screens[0]);
 static const char* const courses[] = {"NAPA","CITY","HIWAY","CANYN","MEDLY"};
 static constexpr int screen_count=image_count+sizeof(courses)/sizeof(courses[0]);
 
-static std::vector<uint8_t> read_file(const std::string& path) {
-    size_t size = 0;
-    void* bytes = SDL_LoadFile(path.c_str(), &size);
-    if (!bytes) throw std::runtime_error(path+": "+SDL_GetError());
-    auto start = static_cast<const uint8_t*>(bytes);
-    std::vector<uint8_t> result(start, start+size);
-    SDL_free(bytes);
-    return result;
-}
-
-static SDL_Surface* load_image(const std::string& root, const Screen& screen) {
-    const std::string path=root+"/IMAGES/"+screen.path;
-    auto bytes = read_file(path);
+static SDL_Surface* load_image(const rr::Assets& assets, const Screen& screen) {
+    const std::string path=std::string("IMAGES/")+screen.path;
+    auto bytes = assets.read(path);
     if (screen.width) {
-        auto palette=read_file(root+"/DATA/PALETTE.RAW");
+        auto palette=assets.read("DATA/PALETTE.RAW");
         if (bytes.size()!=size_t(screen.width*screen.height) || palette.size()!=1024)
             throw std::runtime_error("Invalid indexed BOB image or palette size");
         // Original startup (0x00448f90) forces palette entry zero to black.
@@ -147,9 +138,10 @@ int main(int argc, char** argv) {
     SDL_Texture* texture = nullptr;
     int result = 0;
     try {
-        auto entries = rr::read_resources(read_file(root+"/DATA/BIKESPEC.RSC"));
+        const rr::Assets assets(root);
+        auto entries = rr::read_resources(assets.read("DATA/BIKESPEC.RSC"));
         std::printf("Original bike resource directory: %zu entries\n", entries.size());
-        const auto table=rr::read_depth_table(read_file(root+"/ROADRASH.EXE"));
+        const auto table=rr::read_depth_table(assets.read("ROADRASH.EXE"));
         std::unique_ptr<RoadView> road;
         if (!SDL_Init(SDL_INIT_VIDEO)) throw std::runtime_error(SDL_GetError());
         if (!SDL_CreateWindowAndRenderer("Road Rash native research viewer", 960, 760, SDL_WINDOW_RESIZABLE, &window, &renderer))
@@ -181,7 +173,7 @@ int main(int argc, char** argv) {
             if (screen!=loaded && screen>=image_count) {
                 const std::string name=courses[screen-image_count];
                 road=std::make_unique<RoadView>();
-                road->course=rr::read_course(read_file(root+"/DATA/COURSES/"+name+".CRS"));
+                road->course=rr::read_course(assets.read("DATA/COURSES/"+name+".CRS"));
                 road->route=rr::make_route(road->course,false);
                 road->position=SDL_min(initial_position,uint32_t(road->route.size()-1)<<8);
                 std::printf("Decoded %s.CRS: %zu route samples\n",name.c_str(),road->route.size());
@@ -189,7 +181,7 @@ int main(int argc, char** argv) {
             }
             if (screen!=loaded) {
                 road.reset();
-                SDL_Surface* surface=load_image(root,screens[screen]);
+                SDL_Surface* surface=load_image(assets,screens[screen]);
                 SDL_DestroyTexture(texture);
                 texture=SDL_CreateTextureFromSurface(renderer,surface);
                 std::printf("Decoded %s: %dx%d\n",screens[screen].path,surface->w,surface->h);
