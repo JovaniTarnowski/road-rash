@@ -1,0 +1,6 @@
+{
+  "build/rr-native": "8a1f54264046d92fb660b5325b4751651075a55c66d644e23b31e38cd88013c3",
+  "android/app/build/outputs/apk/debug/app-debug.apk": "4c1730f55db33fb910600c2ad11da1b3ecb1b61b7a31871913f353f042554278",
+  "android/app/libs/SDL3-3.4.8.aar": "3e853028f8ccbd54e5aabc071922ceb11c74f88249fc4cb112c5226d12b67f2e",
+  "android/gradle/wrapper/gradle-wrapper.jar": "2db75c40782f5e8ba1fc278a5574bab070adccb2d21ca5a6e5ed840888448046"
+}

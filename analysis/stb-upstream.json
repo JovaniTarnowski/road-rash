@@ -1,0 +1,106 @@
+{
+  "sha": "2c980bb59875b0d32144a71867fbdebb2f77cd20",
+  "node_id": "C_kwDOATOde9oAKDJjOTgwYmI1OTg3NWIwZDMyMTQ0YTcxODY3ZmJkZWJiMmY3N2NkMjA",
+  "commit": {
+    "author": {
+      "name": "Sean Barrett",
+      "email": "sean2@nothings.org",
+      "date": "2026-08-02T06:42:09Z"
+    },
+    "committer": {
+      "name": "GitHub",
+      "email": "noreply@github.com",
+      "date": "2026-08-02T06:42:09Z"
+    },
+    "message": "Merge pull request #1984 from ruby-R53/patch-1\n\nupdate LLM rejection link",
+    "tree": {
+      "sha": "fe92c50562f105d790eecf67128c3ae86a06202f",
+      "url": "https://api.github.com/repos/nothings/stb/git/trees/fe92c50562f105d790eecf67128c3ae86a06202f"
+    },
+    "url": "https://api.github.com/repos/nothings/stb/git/commits/2c980bb59875b0d32144a71867fbdebb2f77cd20",
+    "comment_count": 0,
+    "verification": {
+      "verified": true,
+      "reason": "valid",
+      "signature": "-----BEGIN PGP SIGNATURE-----\n\nwsFcBAABCAAQBQJqbubBCRC1aQ7uu5UhlAAAfHMQAGS7odGwAbt4M0Urb0eZCZ+Z\nV7gHhRTSCUU5+ke6IttTD6ZAZuYL8HnSMyGxD0q3M91oOPp6q7KK8DczeLGI9h7T\n3tTbSVJjAMkRtgTm+EJsF2qxSSi9TjBv/sfxtw0dlq1vwcIbkbLhfoQeKuOwFv9x\njc3DGr6Ho5YvetPhXnfy6Aq2ZQbdmfyDpFfHj/WqBXON1I5UmtYoWLJIcuDYIZRt\nlHJI0z4Uc/8RVXAYnkGj+GATuUR/mTEPCXiMoIqUN4hOCGkipK7wPv4sKPcHvFzl\n9Xt3ASLvBx+KSgx7kpHgZaW6i5crHqv+RcChHB7rl6IiFpaggIi9Lri/EOr2ArBp\nlZ3egL0JOC5UTDskDMLp7IhP3Dsb3rbuUn1EY0cpCug/4ip4k4NvSCuNnzFv1Ba+\nlBCMsYANyUm89NnzTyNKZohUdNC3X3kFMroC/WFNo+8ucG0hEmdeH/IEzDAOKfuu\nTGty5UVp712F08iRswl5zGxNDspw+1CLT16Us2CsHDpNxgcY7sgVOiDWuGZK4NXg\nPLHwnQ0wRg18bZMi57Fo3hWsFiHn9mRrKQpKT/vDrnJUNCFV6Dc1UI8xiy7IEDy8\nCIr4l2B322TnSvY84gVixkgBWYDSWNtmKz5WlK0D6jxFL3A0+1fhrIsJROuRlhc5\nTElGckIbt2F30/QOSdgQ\n=wkXt\n-----END PGP SIGNATURE-----\n",
+      "payload": "tree fe92c50562f105d790eecf67128c3ae86a06202f\nparent 31c1ad37456438565541f4919958214b6e762fb4\nparent 9766df8d1402ad9d25aeb02df7040b719b5368bf\nauthor Sean Barrett <sean2@nothings.org> 1785652929 -0700\ncommitter GitHub <noreply@github.com> 1785652929 -0700\n\nMerge pull request #1984 from ruby-R53/patch-1\n\nupdate LLM rejection link",
+      "verified_at": "2026-08-02T06:42:09Z"
+    }
+  },
+  "url": "https://api.github.com/repos/nothings/stb/commits/2c980bb59875b0d32144a71867fbdebb2f77cd20",
+  "html_url": "https://github.com/nothings/stb/commit/2c980bb59875b0d32144a71867fbdebb2f77cd20",
+  "comments_url": "https://api.github.com/repos/nothings/stb/commits/2c980bb59875b0d32144a71867fbdebb2f77cd20/comments",
+  "author": {
+    "login": "nothings",
+    "id": 7525026,
+    "node_id": "MDQ6VXNlcjc1MjUwMjY=",
+    "avatar_url": "https://avatars.githubusercontent.com/u/7525026?v=4",
+    "gravatar_id": "",
+    "url": "https://api.github.com/users/nothings",
+    "html_url": "https://github.com/nothings",
+    "followers_url": "https://api.github.com/users/nothings/followers",
+    "following_url": "https://api.github.com/users/nothings/following{/other_user}",
+    "gists_url": "https://api.github.com/users/nothings/gists{/gist_id}",
+    "starred_url": "https://api.github.com/users/nothings/starred{/owner}{/repo}",
+    "subscriptions_url": "https://api.github.com/users/nothings/subscriptions",
+    "organizations_url": "https://api.github.com/users/nothings/orgs",
+    "repos_url": "https://api.github.com/users/nothings/repos",
+    "events_url": "https://api.github.com/users/nothings/events{/privacy}",
+    "received_events_url": "https://api.github.com/users/nothings/received_events",
+    "type": "User",
+    "user_view_type": "public",
+    "site_admin": false
+  },
+  "committer": {
+    "login": "web-flow",
+    "id": 19864447,
+    "node_id": "MDQ6VXNlcjE5ODY0NDQ3",
+    "avatar_url": "https://avatars.githubusercontent.com/u/19864447?v=4",
+    "gravatar_id": "",
+    "url": "https://api.github.com/users/web-flow",
+    "html_url": "https://github.com/web-flow",
+    "followers_url": "https://api.github.com/users/web-flow/followers",
+    "following_url": "https://api.github.com/users/web-flow/following{/other_user}",
+    "gists_url": "https://api.github.com/users/web-flow/gists{/gist_id}",
+    "starred_url": "https://api.github.com/users/web-flow/starred{/owner}{/repo}",
+    "subscriptions_url": "https://api.github.com/users/web-flow/subscriptions",
+    "organizations_url": "https://api.github.com/users/web-flow/orgs",
+    "repos_url": "https://api.github.com/users/web-flow/repos",
+    "events_url": "https://api.github.com/users/web-flow/events{/privacy}",
+    "received_events_url": "https://api.github.com/users/web-flow/received_events",
+    "type": "User",
+    "user_view_type": "public",
+    "site_admin": false
+  },
+  "parents": [
+    {
+      "sha": "31c1ad37456438565541f4919958214b6e762fb4",
+      "url": "https://api.github.com/repos/nothings/stb/commits/31c1ad37456438565541f4919958214b6e762fb4",
+      "html_url": "https://github.com/nothings/stb/commit/31c1ad37456438565541f4919958214b6e762fb4"
+    },
+    {
+      "sha": "9766df8d1402ad9d25aeb02df7040b719b5368bf",
+      "url": "https://api.github.com/repos/nothings/stb/commits/9766df8d1402ad9d25aeb02df7040b719b5368bf",
+      "html_url": "https://github.com/nothings/stb/commit/9766df8d1402ad9d25aeb02df7040b719b5368bf"
+    }
+  ],
+  "stats": {
+    "total": 2,
+    "additions": 1,
+    "deletions": 1
+  },
+  "files": [
+    {
+      "sha": "37eb99f0eb23cd875bea933383c09945238eb137",
+      "filename": "CONTRIBUTING.md",
+      "status": "modified",
+      "additions": 1,
+      "deletions": 1,
+      "changes": 2,
+      "blob_url": "https://github.com/nothings/stb/blob/2c980bb59875b0d32144a71867fbdebb2f77cd20/CONTRIBUTING.md",
+      "raw_url": "https://github.com/nothings/stb/raw/2c980bb59875b0d32144a71867fbdebb2f77cd20/CONTRIBUTING.md",
+      "contents_url": "https://api.github.com/repos/nothings/stb/contents/CONTRIBUTING.md?ref=2c980bb59875b0d32144a71867fbdebb2f77cd20",
+      "patch": "@@ -11,7 +11,7 @@ pull requests.\n Additionally, don't use LLMs to create pull requests or issues.\n Write them yourself, in English, even if your English is bad.\n \n-[Here are some reasons to reject LLMs](https://codeberg.org/small-hack/open-slopware#why-not-llms)\n+[Here are some reasons to reject LLMs](https://codeberg.org/ethical-foss/open-slopware/src/branch/main/why_not_llms.md)\n \n \n Contributions Welcome"
+    }
+  ]
+}

@@ -1,0 +1,17 @@
+build*/
+analysis/ghidra-project/
+analysis/decompiled/
+analysis/*.log
+__pycache__/
+android/.gradle/
+android/local.properties
+android/app/src/main/assets/game/
+.tools/
+android/app/.cxx/
+android/app/build/
+android/build/
+analysis/oracle/
+analysis/*.bmp
+oracle/build/
+.DS_Store
+.superpowers/
