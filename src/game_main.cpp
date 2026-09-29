@@ -30,7 +30,7 @@ struct Game {
         countdown = countdown_ticks;
     }
     void tick(uint32_t controls) {
-        if (countdown > 0) { --countdown; race->step(controls & ~(rr::control_accelerate | rr::control_left | rr::control_right)); return; }
+        if (countdown > 0) { --countdown; return; }   // race clock starts after the countdown
         race->step(controls);
     }
 };

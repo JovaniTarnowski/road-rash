@@ -108,7 +108,7 @@ void Race::move() {
     b.i32(0x110) = 0;
     int32_t effective = b.i32(0x108), lateral = b.i32(0x104), forward;
     if (effective < 0) { lateral = -lateral; forward = effective * -4; } else forward = effective * 4;
-    int32_t yaw = wrap_angle(approx_atan2(forward, lateral) << 16);
+    int32_t yaw = wrap_angle(approx_atan2(forward, lateral) * 65536);
     const int32_t yaw_gain = (b.u8(0x278) & 4) ? b.i32(700) : b.i32(0x2b8);
     yaw = div256(yaw_gain) * yaw;
     if (b.u8(0x278) & 1) yaw = yaw < 1 ? -0x3f0000 : 0x3f0000;
@@ -125,7 +125,7 @@ void Race::move() {
         if (!(b.u8(0x278) & 4) || int8_t(b.u8(0x164)) < 0x33) push = bend * 400 / dt;
         else push = bend * 800 / dt;   // player skidding (0x004642d8 branch)
         b.i32(0x10c) += div256(push);
-        heading = approx_atan2(distance, div256(int64_t(bend) * 400)) << 16;
+        heading = approx_atan2(distance, div256(int64_t(bend) * 400)) * 65536;
     }
     if (heading > 0x7fffff) heading -= 0x1000000;
     b.i32(0x128) = heading;
@@ -137,7 +137,7 @@ void Race::walls() {
     const SliceEdges e = edges(sample_);
     const int32_t x = bike_.i32(0x28) >> 8;
     if (x > e.left_shoulder && x < e.right_shoulder) return;
-    bike_.i32(0x28) = (x >= e.right_shoulder ? e.right_shoulder - 1 : e.left_shoulder + 1) << 8;
+    bike_.i32(0x28) = (x >= e.right_shoulder ? e.right_shoulder - 1 : e.left_shoulder + 1) * 256;
     bike_.i32(0x10c) = 0; bike_.i32(0x104) = 0; bike_.i32(0xf0) = 0; bike_.i32(0x288) = 0;
     if (bike_.i32(0xec) > 4000) crash();
     else bike_.i32(0xec) = bike_.i32(0xec) * 3 / 4;
@@ -258,7 +258,7 @@ void Race::step(uint32_t controls) {
             int32_t x = b.i32(0x28) >> 8;
             if (x < e.left + 125) x = e.left + 125;
             if (x > e.right - 125) x = e.right - 125;
-            b.i32(0x28) = x << 8;
+            b.i32(0x28) = x * 256;
             b.i32(0x2f4) = 0; b.u8(0xc0) &= uint8_t(~0x10); b.i32(0x240) = 0; b.i32(0x23c) = 0;
             b.i32(0x104) = 0; b.i32(0x10c) = 0; b.u8(0x278) = 0;
         }

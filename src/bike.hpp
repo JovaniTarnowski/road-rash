@@ -30,7 +30,8 @@ PhysicsTables read_physics_tables(const std::vector<uint8_t>& exe);
 // are meaningful here.
 struct Bike {
     std::array<uint8_t,0x340> m{};
-    int32_t accel = 0;   // 0x004c3cec: last acceleration computed by 0x004390c0
+    int32_t accel = 0;        // 0x004c3cec: last acceleration computed by 0x004390c0
+    int32_t skid_ticks = 0;   // 0x0046dce0: player skid duration (a global in the original; one player)
     int32_t& i32(int offset) { return *reinterpret_cast<int32_t*>(m.data() + offset); }
     int32_t i32(int offset) const { int32_t v; std::memcpy(&v, m.data() + offset, 4); return v; }
     uint8_t& u8(int offset) { return m[size_t(offset)]; }

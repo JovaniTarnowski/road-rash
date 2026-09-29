@@ -53,11 +53,24 @@ int main() {
     check(rr::surface_class(e, 0) == 0, "on road");
     check(rr::surface_class(e, 600 << 8) == 1, "shoulder (type 0 terrain)");
     check(rr::surface_class(e, 800 << 8) == 3, "beyond shoulder");
-    check(rr::surface_class(e, -800 << 8) == 3, "beyond left shoulder");
+    check(rr::surface_class(e, -800 * 256) == 3, "beyond left shoulder");
 
     // 0x0044f5a0 angle approximation: 0x20 per 45 degrees, 256 per turn.
     check(rr::approx_atan2(100, 0) == 0 && rr::approx_atan2(100, 100) == 0x20 && rr::approx_atan2(0, 100) == 0x40, "atan quadrants");
     check(rr::approx_atan2(-100, 0) == 0x80, "atan backwards");
+
+    // Skid-crash counter (0x0046dce0) belongs to one rider: another bike's skidding must not affect it.
+    auto skidding = [&]() {
+        rr::Bike k; rr::apply_spec(k, spec, 150);
+        k.i32(0x18) = 1; k.i32(0x160) = 1; k.i32(0x148) = 0; k.i32(0x294) = 0; k.i32(0x290) = 64;
+        k.i32(0x288) = k.i32(0x29c); k.i32(0xec) = 5000;
+        return k;
+    };
+    rr::Bike other = skidding();
+    for (int i = 0; i < 20; ++i) rr::traction(other, rr::PhysicsTables::synthetic(), 0, true);
+    rr::Bike fresh = skidding();
+    for (int i = 0; i < 10; ++i) rr::traction(fresh, rr::PhysicsTables::synthetic(), 0, true);
+    check(fresh.i32(0x2f4) == 0, "skid counter is per bike (no crash after 10 ticks)");
 
     std::cout << failures << " failures\n";
     return failures ? 1 : 0;

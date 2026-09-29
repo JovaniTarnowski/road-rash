@@ -179,7 +179,7 @@ void steer(Bike& b, const PhysicsTables& t, int32_t s, int32_t lean) {
     if (speed <= 0) { b.i32(0x118) = 0; b.i32(0xf0) = 0; return; }
     if (s > 0x200000) s = 0x200000;
     if (s < -0x200000) s = -0x200000;
-    const int32_t sn = sine(t, uint32_t((s << 4) >> 16));
+    const int32_t sn = sine(t, uint32_t((s * 16) >> 16));
     int32_t target = int32_t(int64_t(div256(sn)) * speed / b.i32(0x2b0));
     int32_t limit = (lean != 0 ? div_pow2(b.i32(0x29c), 2) : 0) + b.i32(0x29c);
     if (limit < target) target = limit;
@@ -213,8 +213,8 @@ void steer_input(Bike& b, const PhysicsTables& t, int mode, int32_t lean) {
     int32_t s;
     if (mode == 1) s = -0x20;
     else if (mode == 2) s = 0x20;
-    else { s = 0; if (lean != 0) { s = lean << 5; lean = -lean; } }
-    steer(b, t, s << 16, lean);
+    else { s = 0; if (lean != 0) { s = lean * 32; lean = -lean; } }
+    steer(b, t, s * 65536, lean);
 }
 
 void apply_controls(Bike& b, const PhysicsTables& t, uint32_t c) {
@@ -302,7 +302,6 @@ int32_t approx_atan2(int32_t a, int32_t b) {
 }
 
 void traction(Bike& b, const PhysicsTables& t, int surface, bool player) {
-    static int32_t skid_ticks = 0;   // 0x0046dce0 (player only)
     const size_t s = size_t(surface & 3);
     int32_t grip = t.grip[s];
     if (b.i32(0x160) == 0 || b.i32(0x2f4) != 0) {
@@ -323,9 +322,9 @@ void traction(Bike& b, const PhysicsTables& t, int surface, bool player) {
         const int32_t steer_abs = std::abs(b.i32(0x288));
         if (g < b.i32(0x290) && b.i32(0x29c) <= steer_abs) {
             b.u8(0x278) = 1;
-            skid_ticks += b.i32(0x18);
-            if (skid_ticks > 0x19) b.i32(0x2f4) = 1;   // 0x00403d60 crash (simplified trigger)
-        } else { b.u8(0x278) = 0; skid_ticks = 0; }
+            b.skid_ticks += b.i32(0x18);
+            if (b.skid_ticks > 0x19) b.i32(0x2f4) = 1;   // 0x00403d60 crash (simplified trigger)
+        } else { b.u8(0x278) = 0; b.skid_ticks = 0; }
     } else b.u8(0x278) = 0;
     int32_t u = b.i32(0x114);
     if (b.i32(0x15c) < u) u -= b.i32(0x15c);
