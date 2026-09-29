@@ -57,3 +57,19 @@
   - CTest `road-projection` gained a shoulder-edge check; both tests pass.
   - Screenshots inspected: NAPA 300 and CITY 1500 (asymmetric shoulders; saved as `analysis/native-road-shoulders.png`).
   - APK rebuilt; no device connected.
+
+## Session 5: playable Napa
+
+- CTest: 7/7 pass (`resource-bounds`, `road-projection`, `framebuffer`, `assets`, `bike`, `race`, `input`).
+  - `bike`/`race` expectations are hand-computed from the ported routines.
+  - Red steps were observed as missing headers or symbols (for `bike`, after the fact, by removing the implementation).
+- Headless ride on the real Napa data (real physics tables and `SPEC`s) with a keep-to-centre bot finishes the full route:
+  - bike 1: 9.7 min, 0 crashes
+  - bike 8: 7.2 min, 1 crash
+  - bike 15: 10.0 min, 3 crashes
+  - top speeds 11,776 / 16,640 / 12,288
+- `rr-game --autopilot` screenshots at ticks 30, 1,800 and 9,000 were inspected: countdown, fifth gear at speed ~111 on a curve, a crest at 24%. Saved as `analysis/native-game-napa.png`.
+- A real-time 8-second run completed without errors.
+- A refactor check (road drawing moved out of the viewer): viewer screenshot byte-identical before and after.
+- Android: APK built (5.3 MB) with the game as `libmain.so`. **Not run: no device connected.**
+- **Not verified against the original game:** no oracle; handling, speeds and crash behaviour may differ from the 1996 game.

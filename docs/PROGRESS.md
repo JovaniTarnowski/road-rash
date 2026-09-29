@@ -1,6 +1,6 @@
 # Port progress
 
-Status of the native macOS ARM64 / Android ARM64 port of Road Rash (1996 Windows rerelease). The port is C++17 with SDL3 and uses no Wine or x86 emulation. It is a **research viewer, not a playable game**.
+Status of the native macOS ARM64 / Android ARM64 port of Road Rash (1996 Windows rerelease). The port is C++17 with SDL3 and uses no Wine or x86 emulation. It is a **playable single-course solo ride** (`rr-game`) with the original bike physics on original course geometry. Graphics are placeholders, and there are no opponents, traffic, police or combat yet.
 
 Detailed evidence is in [REVERSE_ENGINEERING.md](REVERSE_ENGINEERING.md) and test results in [VERIFICATION.md](VERIFICATION.md). Build and run instructions are in [../README.md](../README.md).
 
@@ -20,8 +20,11 @@ Detailed evidence is in [REVERSE_ENGINEERING.md](REVERSE_ENGINEERING.md) and tes
 | Terrain type per section (building / mountain / hill) | Type mapping traced; profiles not decoded | REVERSE_ENGINEERING.md |
 | Other section chunks (`BORR`, `MSRR`, terrain type, `DZHR`, `CESR`) | Mapped to iterators only | REVERSE_ENGINEERING.md |
 | Road colours/textures, horizon placement, scenery (`CEL `), sprites | Not started; viewer uses placeholder flat shading | — |
-| Bike specs (`BIKESPEC.RSC`) | Directory only | — |
-| Physics, AI, combat, race logic, audio, video, menus, saves | Not started | — |
+| Bike specs (`BIKESPEC.RSC`) | Decoded and applied (`0x00405ea0`) | `src/bike.cpp` |
+| Player bike physics | Ported from the executable: throttle, brake, steering, gears, drag, traction, curve drift, movement along the course, vertical motion/jumps; not oracle-verified | `src/bike.cpp`, `src/race.cpp` |
+| Walls, crashes, remount | Simplified stand-ins | `src/race.cpp` |
+| Playable race (`rr-game`) | Single course, solo, keyboard/gamepad/touch, countdown, HUD, finish/restart | `src/game_main.cpp` |
+| AI, traffic, police, combat, audio, video, menus, saves | Not started | — |
 | macOS build | Builds, tests pass, viewer runs | `run-macos.sh` |
 | Android build | APK builds; runs to `SDL_main` on the device; rendering never checked on hardware | `android/` |
 
@@ -60,18 +63,34 @@ All dates September 28, 2026.
 - Traced the terrain-type dispatch: building → type 0, mountain → type 1, hill → type 4. Only type 0 applies shoulder heights.
 - APK rebuilt (5.3 MB).
 
+### Session 5: playable Napa
+- Initialised git (`main` holds the baseline; work on `port/playable-napa`) and added `rr::Assets` and `rr::Framebuffer` (plan 01 Task 2).
+- Recovered 56 functions Ghidra had missed because they are only reached through behaviour tables (`tools/ghidra/ExportPointerTargets.java`), among them the bike think `0x00407a90` and the player rider think `0x00434660`.
+- Traced the rider objects:
+  - `0x00405990` builds a bike + rider pair from tables `0x00463ba8`/`0x00463c10`. Table words 3–6 become `+0xdc`/`+0xe0` (think)/`+0xe4` (move)/`+0xe8` (slice change).
+  - The player's control word is `0x004b7ed0`, from `0x0044f800` (keyboard + joystick).
+  - The simulation runs at 60 ticks/s (`0x004163d0`: counter frequency/`0x3c`), at most 20 steps per frame.
+- Ported the riding physics and the race movement (`src/bike.cpp`, `src/race.cpp`), with tests (`bike_test`, `race_test`). A headless keep-to-centre bot finishes Napa in 7.2–10.0 minutes depending on the bike.
+- Added `rr-game`, a playable race on any course, and switched the Android build to it.
+
 ## Assumptions and approximations in current code
 
 - **Rider commit:** after a split the preview assumes the rider has already committed to the selected branch, so the other road is dropped 82 samples in. In the game this depends on the bike's lateral position (`0x00439390`).
 - **Collapse onto half 1:** the next bend comes from the kept road; the original reads a stale ring sub-slice.
 - **Merge snapshot:** lane alignment uses the last sample's width instead of the terminal `NALR` record.
 - **Camera:** fixed at height 150 on the centre of the route's own road. The original follows the bike.
+- **Not oracle-verified:** the physics was ported from decompiled code and disassembly without an oracle comparison.
+- **Walls and crashes:** the wall collision (`0x0043a610`) and the crash/remount sequence (`0x00403d60`) are simplified stand-ins: the rider is clamped at the shoulder edge, crashes above speed 4000, and remounts one second after stopping.
+- **Terrain:** terrain type and flags are treated as 0 (building-style sides), because the terrain chunks are not decoded yet.
+- **Not ported yet:** nitro (`0x0040b110`), attacks, the joystick analog path, and the original key bindings (`0x0040e5f0`). The defaults are Up/Down/Left/Right = accelerate/brake/`0x4`/`0x200`.
+- **Race layout:** the player starts in grid slot 0 (`0x00464218`), and the race runs the whole route to the course end node.
+- **HUD:** the speed shown is the internal speed ÷ 100; its real unit is not established.
 - **Shading:** sky, verge, shoulder, road and lane-marking colours and the 4-sample stripe are placeholders. Painter's back-to-front drawing replaces the original's occlusion row (`0x4c10c8`).
 
 ## Not verified
 
 - **No comparison with the original's output.** No Wine capture at a matching position has been diffed against the viewer.
-- **Android rendering has never been observed on hardware.** Session 1's device was locked, and no device was connected in sessions 2–4.
+- **Android has never been observed running on hardware.** Session 1's device was locked, and no device was connected in sessions 2–5. The APK now contains the game.
 
 ## Next steps
 

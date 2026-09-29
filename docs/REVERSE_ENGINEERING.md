@@ -135,6 +135,37 @@ Validated on all five courses (`rr-course`): 11 split/merge pairs per route pair
 - Road types from the `+0x10` chunk (`0x00451910`), and the `BORR`, `MSRR`, `DZHR`, `CESR` chunks
 - Bike-driven camera x and height
 
+## Riders and bike physics recovered
+
+Native port: `src/bike.cpp`, `src/race.cpp`.
+
+- **Pair construction:** `0x00405600` creates the racers through `0x00405990`. Each is a **bike** object (table `0x00463ba8`, AI `0x00463ad8`) plus a **rider** object (`0x00463c10`, AI `0x00463b40`), linked through `bike+0x2fc` and `rider+0x1c4`.
+  - `0x00438930`/`0x004387a0` copy table words into the object: word 0 → `+0xc0`, 1 → `+0xc4` (type, 4 = bike), 3–6 → `+0xdc`/`+0xe0`/`+0xe4`/`+0xe8`, 7.. → `+0x148` grip, `+0x14c` skid grip, `+0x150` aero drag, `+0x154` rolling drag, `+0x160` ground contact, and so on.
+  - Bike: think `0x00407a90`, move `0x004060b0`, slice change `0x00406940`. Rider: think `0x00434660` (player) or `0x00407bd0` (AI), move `0x00406890`, slice change `0x00406b40`. `0x00405600` sets some riders' think to `0x00407d40`.
+- **`SPEC`** (`BIKESPEC.RSC`, 15 × 356 bytes), applied by `0x00405ea0`:
+  - byte 0 → `+0x1bc`; dwords 1–5 → `+0x168`, `+0x16c`, `+0x170`, `+0x1b4`, `+0x1b8`; dword 6 = mass; dwords 7–82 → `+0x1c4…+0x2f3`
+  - the gear table is at `+0x1d0 + 16·g` (drive factor, upshift speed, downshift speed), 7 gears
+  - derived values: maximum throttle `+0x260` and brake `+0x27c` scale with mass and the rider value; throttle/brake ramp rates `+0x264`/`+0x268`/`+0x280`/`+0x284`; steering limit `+0x29c = 0x2e00` and rates `+0x2a8`/`+0x2ac`
+- **Controls:** `0x0044f800` combines `0x0044fa80` (keyboard via the `0x004c5d90` key → action table) and the joystick into `0x004b7ed0`. Bits in `0x00476c00` order: `0x1` accelerate, `0x2` brake, `0x4`/`0x200` steer, `0x8`/`0x400` lean, `0x10` nitro, `0x20`/`0x40`/`0x80` attacks, `0x100` dismount. `0x00434660` applies them through:
+  - `0x0040acd0` (coast/throttle/brake), `0x0040adb0` throttle, `0x0040aea0` brake
+  - `0x0040ad30` → `0x0040af50` steering: target from `sin(input)·speed/+0x2b0`, clamped to ±`+0x29c`, ramped
+- **Integration, once per tick** (`0x0043a580`):
+  - `0x00438c70` traction: grip from the surface table `0x0046dce8`, skid when demand exceeds grip, steering damping `0x0046dd08`/gain `0x0046dcf8`, rough-surface curve factors `0x0046dd28`
+  - `0x004390c0` speed: `v += dt·(drive − drag − |lateral|/16)`, drag = aero·(v>>8)>>8 + surface drag `0x0046dce4` + rolling
+  - `0x004391d0` gear shift
+  - `0x004395e0` movement: distance `(2v − a·dt)·dt/2 >> 8`; curves push outward via the bend swept (`0x004394c0`, `×400/dt`); lateral `+0x28 += dt·+0x10c`
+  - `0x0043a610` wall/terrain collision (not ported)
+  - `0x0043a190` vertical motion over ground height `0x00439b10`: crests launch the bike when the ground drops faster than its vertical speed; landing rebound and wobble
+- **Surface class** (`0x0043a0c0`): 0 road, 1 shoulder (type 0 terrain), 2 rough, 3 beyond the shoulder.
+- **Units:**
+  - speed `+0xec`: upshift points 3,000–21,504, top ≈ 11,800–16,600 in our runs
+  - position `+0x1c`: Q8 samples
+  - lateral `+0x28`: world units × 256
+- **Timing:** 60 ticks/s from the performance counter (`0x004163d0`), capped at 20 steps per frame.
+- **Camera** (`0x00437c30`): centred on the road with the rider offset ¾, clamped to ±200; height = rider height + crash lift (to 300), minimum 150; position = rider − crash pull-back (to 900) − `0x100`.
+- **Grid** (`0x00464218`/`0x00464258`): 8 slots at samples 50/51 with lateral offsets 16384, −3616, −23616, −43616 (added to the road offset).
+- **Math helpers:** `0x0044f5a0` is a piecewise-linear atan2 (256 per turn); `0x0044f4a0` is a quarter-wave sine table at `0x00475768` (1,024 entries, Q15, 4,096 per turn).
+
 ## Original image loading recovered
 
 - `.RRI` files begin with JPEG/JFIF headers. Six menu files decode to 640×480.
@@ -166,7 +197,10 @@ Names here describe observed behavior; they are not recovered original symbols.
 | `0x00416310` | Select and load horizon, meter, dashboard | Asset selection traced |
 | `0x00441940` | Course resource load/fixup | Sections, lanes and node graph decoded |
 | `0x00405e30` | Load 15 bike specs | Directory reader only |
-| `0x00405ea0` | Apply bike spec to runtime bike fields | Not ported |
+| `0x00405ea0` | Apply bike spec to runtime bike fields | Ported (`apply_spec`) |
+| `0x0043a580` | Per-tick bike physics | Ported except wall collision `0x0043a610` |
+| `0x00437c30` | Chase camera | Ported (single road) |
+| `0x00434660` | Player rider think (controls) | Riding part ported |
 | `0x00414ca0` | Open resource container and load table | Native directory reader |
 | `0x00415360` | Iterate table and optionally preload | Layout recovered |
 | `0x004153a0` | Find/load/cache resource payload | Not ported |

@@ -2,7 +2,7 @@
 
 Progress summary, timeline and next steps: [docs/PROGRESS.md](docs/PROGRESS.md). Binary evidence: [docs/REVERSE_ENGINEERING.md](docs/REVERSE_ENGINEERING.md). Test log: [docs/VERIFICATION.md](docs/VERIFICATION.md). Plans to completion: [docs/plans/00-INDEX.md](docs/plans/00-INDEX.md).
 
-Native C++17 / SDL3 work targeting macOS ARM64 and Android ARM64. The current executable is an **asset research viewer, not a playable game**. It does not execute the Windows binary, use Wine, or emulate x86.
+Native C++17 / SDL3 work targeting macOS ARM64 and Android ARM64. `rr-game` is a **playable single-course solo ride** with the original bike physics; `rr-native` is the asset research viewer. It does not execute the Windows binary, use Wine, or emulate x86.
 
 ## Current implementation
 
@@ -17,7 +17,19 @@ Native C++17 / SDL3 work targeting macOS ARM64 and Android ARM64. The current ex
 
 No racing, bike physics, scenery, road textures, AI, combat, audio, video, save games, or original menu interactions have been ported. Decompiler output is research input: inferred signatures, types and library labels still need correction. A successful decompilation export does not imply semantic correctness or recompilable source.
 
-## Run on this Mac
+## Play (single course)
+
+```sh
+cd /Users/archit/Dev/rr/native-port
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug && cmake --build build --parallel
+build/rr-game --assets ../cdrom/ROADRASH            # Napa; --course 0-4, --bike 0-14
+```
+
+Arrows or WASD: Up accelerates, Down brakes, Left/Right steer. Gamepad: A or right trigger accelerates, B or left trigger brakes, D-pad or left stick steers. Touch: left/right thirds steer, bottom middle brakes, any other touch accelerates. Enter, A or a tap restarts after the finish. Esc quits.
+
+The race uses the original 60 Hz bike physics ported from the executable (throttle, brakes, 7-gear shifting, drag, traction, steering, curve drift, crests and jumps) on the original course geometry. The rider and all graphics are placeholders, and there are no opponents, traffic, police or combat yet. See `docs/PROGRESS.md` for what is simplified.
+
+## Run the research viewer on this Mac
 
 ```sh
 cd /Users/archit/Dev/rr/native-port
@@ -40,7 +52,7 @@ python3 tools/check_corpus.py ../cdrom/ROADRASH
 
 ## Android
 
-The Gradle project is `android/`; it builds the same `src/viewer.cpp` into `libmain.so` for `arm64-v8a`. SDL's Java activity supplies the Android lifecycle and input bridge. The APK is a debug research viewer and includes 17 assets copied from the local disc: the menu images, palette, bike specs, five courses and `ROADRASH.EXE` (read only for its projection table).
+The Gradle project is `android/`; it builds the game (`src/game_main.cpp`) into `libmain.so` for `arm64-v8a`. SDL's Java activity supplies the Android lifecycle and input bridge. The APK is a debug research viewer and includes 17 assets copied from the local disc: the menu images, palette, bike specs, five courses and `ROADRASH.EXE` (read only for its projection table).
 
 ```sh
 python3 tools/prepare_android_assets.py ../cdrom/ROADRASH
