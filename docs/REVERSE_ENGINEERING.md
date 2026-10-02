@@ -166,6 +166,37 @@ Native port: `src/bike.cpp`, `src/race.cpp`.
 - **Grid** (`0x00464218`/`0x00464258`): 8 slots at samples 50/51 with lateral offsets 16384, −3616, −23616, −43616 (added to the road offset).
 - **Math helpers:** `0x0044f5a0` is a piecewise-linear atan2 (256 per turn); `0x0044f4a0` is a quarter-wave sine table at `0x00475768` (1,024 entries, Q15, 4,096 per turn).
 
+## Rider sprites, AI and combat recovered
+
+- **Sprites:**
+  - `0x00410160` loads `Data/Bikers/Template` (MIP, not decoded).
+  - `0x00443610` loads, through `0x004436a0`, bob (326), cop (45), shadow (326) and shadow-C (45) frame sets from `Data/Bikers/Hi*` (falling back to `Lo*`). Frame layout: width byte, height byte, indices.
+  - `0x00443820` copies a frame into a 256-wide sprite page, remapping each pixel through `0x0046e158 + rider*256`. Ids `0xde`/`0xdf`/`0xe0` select shadow frames.
+  - Index 0 is transparent.
+- **Animation (not ported):**
+  - Each object has an anim struct at `+0x70`, with `+8` → a table of animations by code (`0x00474d78[type]`, filled at runtime by `0x00445a60` from `GLOBAL.RSC` `CANS` 1–2 and `ANIM` 1–4 through `0x0040b6a0`).
+  - Frame records are 20 bytes: duration at `+0xc`, loop flags at `+0xd`. `0x0040ac70` sets the animation; `0x0043ae90` advances it.
+- **AI personalities:** 10 records of `0x204` bytes at `0x00464558`, copied to `0x004c6b40`. Each holds per-level target speeds at `+0x1bc` (5 levels; e.g. rider 1: 99/115/130/150/185) and a lane preference at `+0x18c`. `0x004078f0` also makes 6 copies with ±6 random variation.
+- **AI driving:**
+  - Target point: `+0x194` lateral, `+0x198` = position + `0x3c0`, `+0x19c` speed.
+  - Speed compare: `(v>>12)+(v>>7)+(v>>9)` against the target.
+  - Curvature: `0x00449b40` averages sub-slice `+0xb4` (atan(bend) << 14).
+  - Re-plan `0x004082f0`: resets `+0x1a4` from the level speed, then adjusts it by the rubber band (when the player is the next rider in race order) or by fixed factors.
+- **Rider table** `0x00463c78` (`0x40` bytes per rider):
+  - word 3 = rider value × 2
+  - word 5 = bike/colour data
+  - words 6–10 = weapon per level
+  - words 12–15 = strength, base, maximum and current stamina
+- **Contact:** `0x004368f0` runs from the scheduler. Pairs overlap when within the half-lengths `+0x178`, the half-widths `+0x174` and the heights `+0x17c`, and on the same road-half bits. `0x00436a40` separates them along the axis that was clear on the previous tick, scaled by mass `+0x194`, and records impulses `+0x184`/`+0x188`/`+0x18c` and contact flags `+0x19c`; then each object's `+0x1a4` handler runs (bike: `0x004049c0`).
+- **Combat:**
+  - Control bits `0x20` strike, `0x40` kick, `0x80` backhand.
+  - Attack animation codes come from `0x004644f8`/`0x00464508`/`0x00464518`/`0x00464528` (weapon + variant × 4; left or right).
+  - The hit lands on frames flagged `0x600000`.
+  - Reach (`0x00409c10`): |dz| < `0x40`, |dx| < reach × `0x1000`, |dy| < `0x3000`.
+  - Damage: max(maximum/base × strength, strength/2) × weapon multiplier / 256.
+  - Stamina and bike condition: the maximum drops by damage×4 and the current by damage×64; kicks also wear the bike (`+0x2f0`) by damage/4 + 1. Either reaching zero knocks the rider off (`0x00403d60`).
+  - Hit cooldown: (5 − level) × 6 ticks.
+
 ## Original image loading recovered
 
 - `.RRI` files begin with JPEG/JFIF headers. Six menu files decode to 640×480.

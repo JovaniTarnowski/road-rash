@@ -73,3 +73,19 @@
 - A refactor check (road drawing moved out of the viewer): viewer screenshot byte-identical before and after.
 - Android: APK built (5.3 MB) with the game as `libmain.so`. **Not run: no device connected.**
 - **Not verified against the original game:** no oracle; handling, speeds and crash behaviour may differ from the 1996 game.
+
+## Session 6: opponents and combat
+
+- CTest: 8/8 pass, also under UBSan/ASan. New checks:
+  - bob decoding (synthetic, plus the corpus: `HIBOB` 326 frames with frame 3 at 56×128, `LOCOP` 45, remap row 0 entry 2 = 80)
+  - the opponent field from the executable
+  - AI holds its target speed and stays on the road
+  - riders never stay inside each other
+  - punches drain stamina and knock a rider off; out-of-reach punches do nothing
+- All five sprite files decode with every byte consumed. Frames were rendered through all 9 remaps and inspected.
+- Headless Napa, level 1, bot player plus 7 AI:
+  - without contact: AI finish times 599–703 s, no crashes
+  - with contact: 641–703 s, no crashes
+- Screenshots inspected: the start grid, AI racing ahead, side-by-side riders, and a punch landing (opponent stamina bar drops; saved as `analysis/native-game-combat.png`).
+- The input-mapping additions for attack bits were written together with their tests (red not observed separately).
+- **Not verified:** nothing is compared against the original game. Android was rebuilt but has not run on hardware.

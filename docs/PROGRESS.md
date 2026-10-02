@@ -1,6 +1,6 @@
 # Port progress
 
-Status of the native macOS ARM64 / Android ARM64 port of Road Rash (1996 Windows rerelease). The port is C++17 with SDL3 and uses no Wine or x86 emulation. It is a **playable single-course solo ride** (`rr-game`) with the original bike physics on original course geometry. Graphics are placeholders, and there are no opponents, traffic, police or combat yet.
+Status of the native macOS ARM64 / Android ARM64 port of Road Rash (1996 Windows rerelease). The port is C++17 with SDL3 and uses no Wine or x86 emulation. It is a **playable race** (`rr-game`): the player and seven AI opponents on an original course, with the original bike physics, AI driving, rider contact and combat, drawn with the original rider sprites. Road shading is a placeholder, and there is no traffic, police, audio or menus yet.
 
 Detailed evidence is in [REVERSE_ENGINEERING.md](REVERSE_ENGINEERING.md) and test results in [VERIFICATION.md](VERIFICATION.md). Build and run instructions are in [../README.md](../README.md).
 
@@ -24,7 +24,11 @@ Detailed evidence is in [REVERSE_ENGINEERING.md](REVERSE_ENGINEERING.md) and tes
 | Player bike physics | Ported from the executable: throttle, brake, steering, gears, drag, traction, curve drift, movement along the course, vertical motion/jumps; not oracle-verified | `src/bike.cpp`, `src/race.cpp` |
 | Walls, crashes, remount | Simplified stand-ins | `src/race.cpp` |
 | Playable race (`rr-game`) | Single course, solo, keyboard/gamepad/touch, countdown, HUD, finish/restart | `src/game_main.cpp` |
-| AI, traffic, police, combat, audio, video, menus, saves | Not started | — |
+| Rider sprites (`BIKERS/*.DAT`, colour remaps) | Decoded; drawn in the game; frame choice by inspection | `src/bob.cpp`, `src/game_main.cpp` |
+| AI opponents | Racing state ported (targets, curve speed, steering/speed control, re-plan, rubber band); overtaking and fight states not ported | `src/race.cpp` |
+| Rider contact | Detection and separation ported; contact response is the bike branch only | `src/race.cpp` |
+| Combat | Hit test, damage, stamina, bike condition, knock-offs, steering knocks, weapon grabs; attack timing and AI attack rule are stand-ins | `src/race.cpp` |
+| Traffic, police, audio, video, menus, saves | Not started | — |
 | macOS build | Builds, tests pass, viewer runs | `run-macos.sh` |
 | Android build | APK builds; runs to `SDL_main` on the device; rendering never checked on hardware | `android/` |
 
@@ -73,6 +77,18 @@ All dates September 28, 2026.
 - Ported the riding physics and the race movement (`src/bike.cpp`, `src/race.cpp`), with tests (`bike_test`, `race_test`). A headless keep-to-centre bot finishes Napa in 7.2–10.0 minutes depending on the bike.
 - Added `rr-game`, a playable race on any course, and switched the Android build to it.
 
+### Session 6: opponents and combat
+- Decoded the rider sprites. `0x004436a0` reads `Data/Bikers/{Hi|Lo}<name>.DAT`: per frame a width byte, a height byte, then indices. There are 326 bike frames and 45 cop frames; shadows use the same layout. Each rider's colours come from a 256-byte remap table at `0x0046e158` (one per rider), applied by `0x00443820`. The player now rides the original sprite with lean frames.
+- **Opponents:**
+  - Ported the AI racing state: `0x00407bd0` → `0x00409000` → `0x004090a0`/`0x004091f0` target choice, the `0x00409020` curve speed limit, `0x00409f70` steering/speed control, and the once-a-second `0x004082f0` re-plan with the `0x004659d4` rubber band.
+  - The field comes from personalities at `0x00464558`, bikes from `0x004641c8`, rider values and stats from `0x00463c78`, and the level throttle scale from `0x004642a0`.
+  - Headless: 7 opponents finish Napa at level 1 in 599–703 s.
+- **Rider contact:** detection from `0x004368f0` and separation/impulses from `0x00436a40`, with the bike-against-bike branch of the contact handler `0x004049c0`.
+- **Combat:**
+  - Ported the hit test (`0x00409c10`), damage (`0x00409ad0`/`0x004052c0`), stamina (`0x004050c0`) and bike condition (`0x004051e0`), plus knock-offs, steering knocks and the backhand shove (`0x004096f0`).
+  - Weapons: fists, club, chain and kick, with reach 5/7/8/5 × `0x1000` and damage multipliers 256/320/384/64.
+- The game now has a 7-rider field, placings, attack keys (Z/X/C, gamepad X/Y/RB, touch top third) and stamina bars.
+
 ## Assumptions and approximations in current code
 
 - **Rider commit:** after a split the preview assumes the rider has already committed to the selected branch, so the other road is dropped 82 samples in. In the game this depends on the bike's lateral position (`0x00439390`).
@@ -85,6 +101,12 @@ All dates September 28, 2026.
 - **Not ported yet:** nitro (`0x0040b110`), attacks, the joystick analog path, and the original key bindings (`0x0040e5f0`). The defaults are Up/Down/Left/Right = accelerate/brake/`0x4`/`0x200`.
 - **Race layout:** the player starts in grid slot 0 (`0x00464218`), and the race runs the whole route to the course end node.
 - **HUD:** the speed shown is the internal speed ÷ 100; its real unit is not established.
+- **Sprite frames** are chosen by inspection: lean frames 3–11 by steering; attack wind-up/strike frames per weapon (fists 44/45 and 51/52, kick 60/66, club 140–143, chain 101/102 and 105/106); crash frame 21. The original picks frames through the `RRAN`/`RRFD` animation system (`0x00445a60`, `0x0043ae90`), which is not ported.
+- **Sprite scale:** opponents scale by depth relative to depth 512, capped at the player's size and baseline. The original sprite scale law and raster are not ported.
+- **AI:** overtaking/avoidance (`0x00408e40`) and fight states 2–5 are not ported. AI riders attack the player when alongside, every 45 ticks (a stand-in rule).
+- **Attack timing:** an attack lasts 18 ticks and connects at tick 7 (a stand-in for animation-driven hit frames).
+- **Weapon grabs** use a simplified trigger: a fist hit on an armed rider succeeds 1 time in 4.
+- **Contact response:** only the bike-against-bike branch of `0x004049c0`; the knock-off decision `0x004052c0` is not applied on contact.
 - **Shading:** sky, verge, shoulder, road and lane-marking colours and the 4-sample stripe are placeholders. Painter's back-to-front drawing replaces the original's occlusion row (`0x4c10c8`).
 
 ## Not verified
