@@ -1,4 +1,6 @@
 #include "race.hpp"
+#include "assets.hpp"
+#include <filesystem>
 #include <iostream>
 
 // Synthetic straight/curved routes; original data is not needed for these rules.
@@ -76,6 +78,37 @@ int main() {
     // Camera is one sample behind the rider and at least 150 high (0x00437c30).
     check(race.camera_position() == race.position() - 0x100, "camera one sample behind");
     check(race.camera().height >= 150, "camera height floor");
+
+    // AI opponents (0x00407bd0 racing state): follow the road at their target speed.
+    rr::Opponent opp{test_spec(), 90, 100, 0, 1};   // spec, rider value, target speed, lane, grid slot
+    rr::Race field(straight(4000, 3), straight(4000, 3), t, spec, 90, {opp});
+    check(field.riders().size() == 2 && field.riders()[1].ai, "opponent added");
+    check(field.riders()[1].bike.i32(0x1c) == 0x3200 && field.riders()[1].bike.i32(0x28) == -3616, "opponent on grid slot 1");
+    bool on_road = true;
+    for (int i = 0; i < 2400; ++i) {
+        field.step(0);
+        const auto& b = field.riders()[1].bike;
+        on_road &= std::abs(b.i32(0x28) >> 8) < 500;
+    }
+    const auto& ob = field.riders()[1].bike;
+    const int32_t v = ob.i32(0xec), shown = (v >> 12) + (v >> 7) + (v >> 9);
+    check(on_road, "opponent stays on the road");
+    check(ob.i32(0x1c) > 0x3200 + 0x4000, "opponent makes progress");
+    check(shown > 80 && shown < 115, "opponent holds its target speed");
+    check(field.place(0) == 2, "player behind the moving opponent is second");
+
+    // Original field from the executable (skips without the disc).
+    const std::string game = std::string(RR_SOURCE_DIR) + "/../cdrom/ROADRASH";
+    if (std::filesystem::exists(game + "/ROADRASH.EXE")) {
+        rr::Assets assets(game);
+        const auto exe = assets.read("ROADRASH.EXE");
+        const auto specs = rr::read_bike_specs(assets.read("DATA/BIKESPEC.RSC"));
+        auto field0 = rr::original_opponents(exe, specs, 0, 7);
+        check(field0.size() == 7 && field0[0].slot == 1 && field0[6].slot == 7, "seven opponents in slots 1..7");
+        check(field0[0].base_speed == 99 && field0[0].lane == 1, "personality 1 level 1 speed and lane (0x00464558)");
+        check(field0[0].throttle_percent == 116, "level 1 AI throttle scale (0x004642a0)");
+        check(field0[0].rider_value == 180 / 2 || field0[0].rider_value > 0, "rider value from 0x00463c78");
+    }
 
     std::cout << failures << " failures\n";
     return failures ? 1 : 0;

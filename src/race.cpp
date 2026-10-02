@@ -1,4 +1,5 @@
 #include "race.hpp"
+#include <algorithm>
 #include <cstdlib>
 #include <stdexcept>
 
@@ -7,101 +8,155 @@ namespace {
 int32_t div_pow2(int64_t x, int n) { return int32_t(x / (int64_t(1) << n)); }
 int32_t div256(int64_t x) { return div_pow2(x, 8); }
 int32_t wrap_angle(int32_t a) { return a > 0x7fffff ? a - 0x1000000 : a; }
-constexpr int32_t grid_position = 0x3200, grid_lateral = 16384;   // 0x00464218 slot 0
-constexpr int32_t ground_wall = 999;                                // 0x00439b10 wall height
+constexpr int32_t ground_wall = 999;                                 // 0x00439b10 wall height
+// Grid (0x00464218): slots 0..3 at sample 0x32, 4..7 at 0x33, four lateral offsets.
+constexpr int32_t grid_lateral[4] = {16384, -3616, -23616, -43616};
+int32_t grid_position(int slot) { return slot < 4 ? 0x3200 : 0x3300; }
+int32_t ai_speed_units(int32_t v) { return (v >> 12) + (v >> 7) + (v >> 9); }   // 0x00409f70
+}
+
+std::vector<Opponent> original_opponents(const std::vector<uint8_t>& exe, const std::vector<BikeSpec>& specs,
+                                         int level, int count) {
+    if (level < 0 || level > 4 || count < 0 || count > 7) throw std::runtime_error("Invalid level or opponent count");
+    constexpr uint32_t data_va = 0x00463000, data_raw = 0x61600, data_size = 0x16400;
+    auto at = [&](uint32_t va) {
+        if (va < data_va || va + 4 > data_va + data_size || exe.size() < data_raw + (va - data_va) + 4)
+            throw std::runtime_error("Opponent table outside .data");
+        return data_raw + (va - data_va);
+    };
+    auto word = [&](uint32_t va) {
+        const size_t p = at(va);
+        return int32_t(uint32_t(exe[p]) | uint32_t(exe[p+1]) << 8 | uint32_t(exe[p+2]) << 16 | uint32_t(exe[p+3]) << 24);
+    };
+    auto byte = [&](uint32_t va) { return exe[at(va & ~3u) + (va & 3u)]; };
+    std::vector<Opponent> out;
+    for (int k = 1; k <= count; ++k) {
+        const uint32_t personality = 0x00464558 + 0x204u * uint32_t(k);
+        const size_t bike = byte(0x004641c8 + uint32_t(level + k * 5));
+        if (bike >= specs.size()) throw std::runtime_error("Opponent bike index out of range");
+        out.push_back({specs[bike], word(0x00463c78 + 0x40u * uint32_t(k) + 0xc) / 2,
+                       word(personality + 0x1bc + 4u * uint32_t(level)), int(byte(personality + 0x18c)), k,
+                       word(0x004642a0 + 4u * uint32_t(level))});
+    }
+    return out;
 }
 
 Race::Race(std::vector<RouteSample> a, std::vector<RouteSample> b, const PhysicsTables& t,
-           const BikeSpec& spec, int32_t rider_value)
-    : routes_{std::move(a), std::move(b)}, tables_(t) {
+           const BikeSpec& spec, int32_t rider_value, std::vector<Opponent> opponents, int level)
+    : routes_{std::move(a), std::move(b)}, tables_(t), level_(level) {
     if (routes_[0].size() < 64 || routes_[1].size() < 64) throw std::runtime_error("Route too short for a race");
-    init_bike_object(bike_, tables_);
-    apply_spec(bike_, spec, rider_value);
-    bike_.i32(0x18) = 1;                                          // updated every tick
-    sample_ = previous_sample_ = size_t(grid_position >> 8);
-    bike_.i32(0x1c) = grid_position;
-    bike_.i32(0x138) = grid_position;
-    // 0x00405990: lateral = sub-slice +0xcc (road offset) + grid offset.
-    bike_.i32(0x28) = routes_[0][sample_].offset + grid_lateral;
+    auto place_rider = [&](const BikeSpec& s, int32_t value, int slot) {
+        Rider r;
+        init_bike_object(r.bike, tables_);
+        apply_spec(r.bike, s, value);
+        r.bike.i32(0x18) = 1;                                   // updated every tick
+        const int32_t pos = grid_position(slot);
+        r.sample = r.previous_sample = size_t(pos >> 8);
+        r.bike.i32(0x1c) = pos;
+        r.bike.i32(0x138) = pos;
+        // 0x00405990: lateral = sub-slice +0xcc (road offset) + grid offset.
+        r.bike.i32(0x28) = routes_[0][r.sample].offset + grid_lateral[slot % 4];
+        return r;
+    };
+    riders_.push_back(place_rider(spec, rider_value, 0));
+    int colour = 1;
+    for (const auto& o : opponents) {
+        if (o.slot < 1 || o.slot > 7) throw std::runtime_error("Opponent grid slot must be 1..7");
+        Rider r = place_rider(o.spec, o.rider_value, o.slot);
+        r.ai = true;
+        r.colour = colour++ % 9;
+        // 0x00405990 for AI riders: level throttle scale and softer low gears.
+        r.bike.i32(0x260) = (o.throttle_percent * r.bike.i32(0x260)) / 100;
+        r.bike.i32(0x1d0) -= 0x19; r.bike.i32(0x1e0) -= 0xf; r.bike.i32(0x1f0) -= 8; r.bike.i32(0x200) -= 4;
+        r.brain.base_speed = r.brain.current_speed = o.base_speed;
+        r.brain.lane = o.lane;
+        riders_.push_back(r);
+    }
     update_camera();
 }
 
-SliceEdges Race::edges(size_t i) const {
-    const auto& s = route()[i];
+SliceEdges Race::edges(const Rider& r, size_t i) const {
+    const auto& s = route_of(r)[i];
     // Terrain chunks are not decoded yet: flags 0, type 0 (building-style sides).
     return {s.offset - s.path.left, s.offset + s.path.right,
             s.offset - s.path.left - s.path.shoulder_left, s.offset + s.path.right + s.path.shoulder_right, 0, 0};
 }
 
-void Race::accumulate(uint32_t from, uint32_t to, size_t from_sample, size_t to_sample) {
+void Race::accumulate(Rider& r, uint32_t from, uint32_t to, size_t from_sample, size_t to_sample) {
     // 0x004394c0: bend and rise swept over the move, weighted by the Q8 distance in each sample.
-    const auto& r = route();
-    const int32_t bend_now = r[to_sample].path.bend, rise_now = r[to_sample].path.rise;
+    const auto& route = route_of(r);
+    Bike& b = r.bike;
+    const int32_t bend_now = route[to_sample].path.bend, rise_now = route[to_sample].path.rise;
     if (((to ^ from) & 0xffffff00u) == 0) {
         const int32_t d = int32_t(to - from);
-        bike_.i32(0x130) = -(bend_now * d);
-        bike_.i32(0x12c) = rise_now * d;
+        b.i32(0x130) = -(bend_now * d);
+        b.i32(0x12c) = rise_now * d;
         return;
     }
     int32_t in_new = int32_t(to & 0xff), in_old;
     if (int32_t(to) < int32_t(from)) { in_old = -int32_t(from & 0xff); in_new -= 0x100; }
     else in_old = 0x100 - int32_t(from & 0xff);
-    const int32_t bend_old = r[from_sample].path.bend, rise_old = r[from_sample].path.rise;
-    bike_.i32(0x130) = -(bend_now * in_new + bend_old * in_old);
-    bike_.i32(0x12c) = rise_now * in_new + rise_old * in_old;
+    const int32_t bend_old = route[from_sample].path.bend, rise_old = route[from_sample].path.rise;
+    b.i32(0x130) = -(bend_now * in_new + bend_old * in_old);
+    b.i32(0x12c) = rise_now * in_new + rise_old * in_old;
 }
 
-void Race::cross_sample(int32_t delta) {
+void Race::cross_sample(Rider& r, int32_t delta) {
     // 0x00439390 + 0x004394c0 for one step of at most one sample.
-    const uint32_t from = uint32_t(bike_.i32(0x1c));
+    Bike& b = r.bike;
+    const uint32_t from = uint32_t(b.i32(0x1c));
     uint32_t to = from + uint32_t(delta);
-    const size_t last = route().size() - 2;
+    const size_t last = route_of(r).size() - 2;
     if (int32_t(to) < 0) to = 0;
-    if ((to >> 8) > last) { to = uint32_t(last << 8); finished_ = true; }
-    bike_.i32(0x134) = int32_t(from);
-    bike_.i32(0x1c) = int32_t(to);
-    bike_.i32(0x138) = int32_t(to);
-    const size_t from_sample = sample_;
+    if ((to >> 8) > last) {
+        to = uint32_t(last << 8);
+        if (!r.finished) { r.finished = true; r.finish_tick = ticks_; }
+    }
+    b.i32(0x134) = int32_t(from);
+    b.i32(0x1c) = int32_t(to);
+    b.i32(0x138) = int32_t(to);
+    const size_t from_sample = r.sample;
     if (((to ^ from) & 0xffffff00u) != 0) {
-        previous_sample_ = sample_;
-        sample_ = to >> 8;
+        r.previous_sample = r.sample;
+        r.sample = to >> 8;
         // Entering a split: the side of half 0's right edge decides the branch (0x00439390).
-        const auto& a = routes_[0][sample_];
-        if (current_ == 0 && int32_t(to) > int32_t(from) && a.event == RoadEvent::split) {
+        const auto& a = routes_[0][r.sample];
+        if (r.route == 0 && int32_t(to) > int32_t(from) && a.event == RoadEvent::split) {
             const int32_t half0_right = a.offset + a.path.right;
-            if ((bike_.i32(0x28) >> 8) >= half0_right) current_ = 1;
+            if ((b.i32(0x28) >> 8) >= half0_right) r.route = 1;
         }
     }
-    accumulate(from, to, from_sample, sample_);
+    accumulate(r, from, to, from_sample, r.sample);
 }
 
-void Race::move_along(int32_t distance) {
+void Race::move_along(Rider& r, int32_t distance) {
     // 0x00439270: split long moves into whole-sample steps and sum the swept bend/rise.
-    if (distance == 0) { bike_.i32(0x130) = 0; bike_.i32(0x12c) = 0; return; }
-    const int32_t pos = bike_.i32(0x1c);
+    Bike& b = r.bike;
+    if (distance == 0) { b.i32(0x130) = 0; b.i32(0x12c) = 0; return; }
+    const int32_t pos = b.i32(0x1c);
     int32_t steps = ((pos + distance) >> 8) - (pos >> 8);
     int32_t unit = 0x100;
     if (steps < 0) { steps = -steps; unit = -0x100; }
-    if (steps < 2) { cross_sample(distance); return; }
-    const size_t start_sample = sample_;
-    int32_t magnitude = std::abs(distance);
+    if (steps < 2) { cross_sample(r, distance); return; }
+    const size_t start_sample = r.sample;
+    const int32_t magnitude = std::abs(distance);
     int32_t first = magnitude & 0xff;
     if (unit < 0) first = -first;
-    cross_sample(first);
-    int32_t bend = bike_.i32(0x130), rise = bike_.i32(0x12c);
-    for (int32_t n = magnitude >> 8; n > 0 && !finished_; --n) {
-        cross_sample(unit);
-        bend += bike_.i32(0x130); rise += bike_.i32(0x12c);
+    cross_sample(r, first);
+    int32_t bend = b.i32(0x130), rise = b.i32(0x12c);
+    for (int32_t n = magnitude >> 8; n > 0 && !r.finished; --n) {
+        cross_sample(r, unit);
+        bend += b.i32(0x130); rise += b.i32(0x12c);
     }
-    bike_.i32(0x134) = pos;
-    previous_sample_ = start_sample;
-    bike_.i32(0x130) = bend;
-    bike_.i32(0x12c) = rise;
+    b.i32(0x134) = pos;
+    r.previous_sample = start_sample;
+    b.i32(0x130) = bend;
+    b.i32(0x12c) = rise;
 }
 
-void Race::move() {
+void Race::move(Rider& r, bool player) {
     // 0x004395e0 (single player, no network ghost branch).
-    Bike& b = bike_;
+    Bike& b = r.bike;
     if (b.i32(0x160) > 0) b.i32(0x104) = b.i32(0xf0);
     b.i32(0x108) = b.i32(0xec);
     b.i32(0x10c) = b.i32(0x104);
@@ -117,13 +172,14 @@ void Race::move() {
     const int32_t dt = b.i32(0x18);
     const int32_t distance = ((b.i32(0x108) * 2 - b.accel * dt) * dt) >> 1;
     for (int k = 0; k < 5; ++k) b.i32(0x30 + 4*k) = b.i32(0x1c + 4*k);   // previous position/height copy
-    move_along(div256(distance));
+    move_along(r, div256(distance));
     int32_t heading = 0;
     const int32_t bend = b.i32(0x130);
     if (bend != 0) {
         int32_t push;
         if (!(b.u8(0x278) & 4) || int8_t(b.u8(0x164)) < 0x33) push = bend * 400 / dt;
-        else push = bend * 800 / dt;   // player skidding (0x004642d8 branch)
+        else if (player) push = bend * 800 / dt;
+        else push = bend * 600 / dt;
         b.i32(0x10c) += div256(push);
         heading = approx_atan2(distance, div256(int64_t(bend) * 400)) * 65536;
     }
@@ -132,22 +188,23 @@ void Race::move() {
     if (b.i32(0xec) > 300) b.i32(0x28) += dt * b.i32(0x10c);
 }
 
-void Race::walls() {
+void Race::walls(Rider& r) {
     // Simplified stand-in for 0x0043a610: stop at the edge of the shoulder, crash when fast.
-    const SliceEdges e = edges(sample_);
-    const int32_t x = bike_.i32(0x28) >> 8;
+    Bike& b = r.bike;
+    const SliceEdges e = edges(r, r.sample);
+    const int32_t x = b.i32(0x28) >> 8;
     if (x > e.left_shoulder && x < e.right_shoulder) return;
-    bike_.i32(0x28) = (x >= e.right_shoulder ? e.right_shoulder - 1 : e.left_shoulder + 1) * 256;
-    bike_.i32(0x10c) = 0; bike_.i32(0x104) = 0; bike_.i32(0xf0) = 0; bike_.i32(0x288) = 0;
-    if (bike_.i32(0xec) > 4000) crash();
-    else bike_.i32(0xec) = bike_.i32(0xec) * 3 / 4;
+    b.i32(0x28) = (x >= e.right_shoulder ? e.right_shoulder - 1 : e.left_shoulder + 1) * 256;
+    b.i32(0x10c) = 0; b.i32(0x104) = 0; b.i32(0xf0) = 0; b.i32(0x288) = 0;
+    if (b.i32(0xec) > 4000) crash(r);
+    else b.i32(0xec) = b.i32(0xec) * 3 / 4;
 }
 
-void Race::vertical() {
+void Race::vertical(Rider& r) {
     // 0x0043a190 with ground height from 0x00439b10 case 0 (no terrain selectors decoded).
-    Bike& b = bike_;
-    const SliceEdges e = edges(sample_);
-    const auto& s = route()[sample_].path;
+    Bike& b = r.bike;
+    const SliceEdges e = edges(r, r.sample);
+    const auto& s = route_of(r)[r.sample].path;
     const int32_t x = b.i32(0x28) >> 8;
     int32_t ground = 0;
     if (x < e.left || x > e.right) {
@@ -163,7 +220,7 @@ void Race::vertical() {
     const int32_t above_before = b.i32(0x34);
     b.i32(0xf4) = vy;
     const int32_t threshold = (dt * 4 - 3) * b.i32(0x16c);
-    const int32_t rise_now = s.rise, rise_before = route()[previous_sample_].path.rise;
+    const int32_t rise_now = s.rise, rise_before = route_of(r)[r.previous_sample].path.rise;
     bool grounded = false;
     if (threshold < above) {
         b.u8(0x278) |= 0x20;
@@ -206,18 +263,146 @@ void Race::vertical() {
     b.i32(0x100) = pitch - height_above;
 }
 
-void Race::crash() {
+void Race::crash(Rider& r) {
     // Simplified stand-in for 0x00403d60: fall, slide to a stop, then remount on the road.
-    bike_.i32(0x2f4) = 1;
-    bike_.u8(0xc0) |= 0x10;
-    crash_timer_ = 0;
+    r.bike.i32(0x2f4) = 1;
+    r.bike.u8(0xc0) |= 0x10;
+    r.crash_timer = 0;
+}
+
+int32_t Race::curvature(const Rider& r, size_t sample, int samples) const {
+    // 0x00449b40: average of sub-slice +0xb4 (atan(bend) << 14, 0x00454240) over the next samples.
+    const auto& route = route_of(r);
+    int64_t sum = 0;
+    for (int k = 0; k < samples && sample + size_t(k) < route.size(); ++k)
+        sum += wrap_angle(atan_ratio(tables_, route[sample + size_t(k)].path.bend) * (1 << 14));
+    return int32_t(sum / samples);
+}
+
+int32_t Race::ai_speed_limit(const Rider& r) const {
+    // 0x00409020: slow for the curvature 8 samples ahead.
+    const int32_t c = std::abs(curvature(r, std::min(r.sample + 8, route_of(r).size() - 1), 4));
+    const int32_t base = r.brain.current_speed;
+    const int32_t q = base - div_pow2(base, 2);
+    if (c > 0x30000) {
+        const int32_t half = q / 2;
+        return (q - (int32_t(((int64_t(half) << 8) / 0x600) * (c >> 8)) >> 8)) + half;
+    }
+    return base;
+}
+
+void Race::ai_think(Rider& r) {
+    // 0x00407bd0 → racing state 0x00409000 (overtaking 0x00408e40 not ported) → 0x004090a0 /
+    // 0x004091f0 target choice, then 0x00409f70 steering and speed control.
+    Bike& b = r.bike;
+    AiState& ai = r.brain;
+    const auto& route = route_of(r);
+    const size_t next = std::min(r.sample + 1, route.size() - 1);
+    auto straight_target = [&]() {   // 0x004091f0
+        const int32_t lanes = route[next].path.right_q8 >> 8;
+        int32_t lane = 0;
+        if (ai.lane == 1) lane = (lanes - 1) / 2;
+        else if (ai.lane == 2) lane = std::abs(lanes - 1);
+        ai.target_position = b.i32(0x1c) + 0x3c0;
+        ai.target_x = div_pow2(curvature(r, next, 8), 3) + (route[next].offset + lane * 0xfa) * 0x100 + ai.bias;
+        ai.target_speed = ai_speed_limit(r);
+    };
+    const int32_t c8 = curvature(r, r.sample, 8);
+    int32_t magnitude = std::abs(c8);
+    const int32_t limit = ai_speed_limit(r);
+    if (magnitude < 0x30000 || ai_speed_units(b.i32(0xec)) < limit / 2) straight_target();
+    else {   // 0x004090a0: take the inside of the curve
+        const auto& s = route[r.sample];
+        const int32_t left_edge = s.offset - s.path.left;
+        const int32_t half = (s.path.right_q8 / 2) * 0x100;
+        if (magnitude > 0x60000) magnitude = 0x60000;
+        int32_t off = int32_t((int64_t((magnitude << 8) / 0x60000) * half) >> 8);
+        if (c8 < 0) off = -off;
+        ai.target_position = b.i32(0x1c) + 0x3c0;
+        ai.target_x = off + (left_edge + s.path.left_q8) * 0x100 + half;
+        ai.target_speed = limit;
+        const int32_t x = b.i32(0x28);
+        if (c8 < 1) { if (x < ai.target_x) ai.target_x = x; }
+        else if (ai.target_x < x) ai.target_x = x;
+    }
+    // 0x00409f70
+    const int8_t skid = int8_t(b.u8(0x164));
+    const int32_t k = skid < 41 ? 1 : 4;
+    const int32_t lead = (-1 - div_pow2(b.i32(0x18), 3)) * k * b.i32(0x288) * 4;
+    const int32_t error = (lead - b.i32(0x28)) + ai.target_x;
+    uint32_t angle = uint32_t(approx_atan2(ai.target_position - b.i32(0x1c), div256(error)) & 0xff) * 0x10000;
+    int32_t steer_angle = int32_t(angle);
+    if (steer_angle > 0x7fffff) steer_angle -= 0x1000000;
+    if (b.i32(0x160) != 0 || std::abs(b.i32(0x60)) > 0xd) steer(b, tables_, steer_angle * 8, 0);
+    const int32_t shown = ai_speed_units(b.i32(0xec)), want = ai.target_speed;
+    if (shown < want && (skid < 41 || shown < want / 2)) drive_mode(b, 1);
+    else if (shown <= want) drive_mode(b, 0);
+    else drive_mode(b, 2);
+    // 0x004082f0 every 60 ticks: reset to the level speed, rubber band against the player.
+    ai.replan_ticks += b.i32(0x18);
+    while (ai.replan_ticks > 0x3b) {
+        ai.replan_ticks -= 60;
+        ai.current_speed = ai.base_speed;
+        const Rider& player = riders_[0];
+        const size_t me = size_t(&r - riders_.data());
+        const bool player_adjacent = std::abs(place(me) - place(0)) == 1;   // neighbours +0x16c/+0x170
+        if (player_adjacent) {
+            int32_t d = (b.i32(0x1c) - player.bike.i32(0x1c)) >> 8;
+            if (d < -9) d = -9; else if (d > 9) d = 10;
+            ai.current_speed = ((tables_.rubber_band[size_t(d + 9)] + 100) * ai.current_speed) / 100;
+        } else if (b.i32(0x1c) > player.bike.i32(0x1c)) {
+            ai.current_speed = (((level_ - 6) / 2 + 100) * ai.current_speed) / 100;   // case 3, ahead
+        } else {
+            ai.current_speed += div_pow2(ai.current_speed, 5);                       // case 3, behind
+        }
+        if (player.bike.i32(0x2f4) != 0 && std::abs(b.i32(0x1c) - player.bike.i32(0x1c)) > 0xa00) {
+            if (level_ == 3) ai.current_speed = div_pow2(int64_t(ai.current_speed) * 3, 2);
+            else if (level_ != 4) ai.current_speed /= 2;   // player down and far away
+        }
+    }
+}
+
+void Race::step_rider(Rider& r, uint32_t controls, bool player) {
+    Bike& b = r.bike;
+    if (r.finished) {   // coast to a stop past the line
+        drive_mode(b, 0);
+        integrate_speed(b, tables_, 0);
+        return;
+    }
+    if (b.i32(0x2f4) == 0) {
+        if (r.ai) ai_think(r);
+        else apply_controls(b, tables_, controls);
+    } else {
+        // Crashed: slide to a stop, wait one second, remount at the nearest lane.
+        b.i32(0x114) = 0; b.i32(0xf0) = 0; b.i32(0x288) = 0;
+        const int32_t v = b.i32(0xec);
+        b.i32(0xec) = v > 0 ? std::max(0, v - v / 32 - 20) : 0;
+        if (b.i32(0xec) == 0 && ++r.crash_timer > ticks_per_second) {
+            const SliceEdges e = edges(r, r.sample);
+            int32_t x = b.i32(0x28) >> 8;
+            if (x < e.left + 125) x = e.left + 125;
+            if (x > e.right - 125) x = e.right - 125;
+            b.i32(0x28) = x * 256;
+            b.i32(0x2f4) = 0; b.u8(0xc0) &= uint8_t(~0x10); b.i32(0x240) = 0; b.i32(0x23c) = 0;
+            b.i32(0x104) = 0; b.i32(0x10c) = 0; b.u8(0x278) = 0;
+        }
+    }
+    const int surface = surface_class(edges(r, r.sample), b.i32(0x28));
+    traction(b, tables_, surface, player);
+    if (b.i32(0x2f4) != 0 && !(b.u8(0xc0) & 0x10)) crash(r);   // skid crash raised by traction
+    integrate_speed(b, tables_, surface);
+    shift_gears(b);
+    move(r, player);
+    walls(r);
+    vertical(r);
 }
 
 void Race::update_camera() {
     // 0x00437c30 (single road): trail the rider laterally, one sample behind.
-    const SliceEdges e = edges(sample_);
+    const Rider& p = riders_[0];
+    const SliceEdges e = edges(p, p.sample);
     const int32_t centre = (e.left + e.right) / 2;
-    const int32_t d = div256(bike_.i32(0x28)) - centre;
+    const int32_t d = div256(p.bike.i32(0x28)) - centre;
     int32_t off = d - div_pow2(d, 2);
     if (d - off >= 0xc9) off = d - 200;
     else if (d - off < -200) off = d + 200;
@@ -229,12 +414,12 @@ void Race::update_camera() {
         camera_back_ = camera_back_ > 2 ? camera_back_ - 3 : 0;
     }
     camera_x_ = centre + off;
-    camera_height_ = bike_.i32(0x24) + camera_lift_;
+    camera_height_ = p.bike.i32(0x24) + camera_lift_;
     if (camera_height_ < 0x97) camera_height_ = 0x96;
 }
 
 uint32_t Race::camera_position() const {
-    const int32_t p = bike_.i32(0x138) - camera_back_ - 0x100;
+    const int32_t p = bike().i32(0x138) - camera_back_ - 0x100;
     return uint32_t(p < 0 ? 0 : p);
 }
 
@@ -243,34 +428,25 @@ Camera Race::camera() const {
     return {camera_x_ - route()[s].offset, camera_height_};
 }
 
-void Race::step(uint32_t controls) {
-    if (finished_) return;
-    ++ticks_;
-    Bike& b = bike_;
-    if (b.i32(0x2f4) == 0) apply_controls(b, tables_, controls);
-    else {
-        // Crashed: slide to a stop, wait one second, remount at the nearest lane.
-        b.i32(0x114) = 0; b.i32(0xf0) = 0; b.i32(0x288) = 0;
-        const int32_t v = b.i32(0xec);
-        b.i32(0xec) = v > 0 ? std::max(0, v - v / 32 - 20) : 0;
-        if (b.i32(0xec) == 0 && ++crash_timer_ > ticks_per_second) {
-            const SliceEdges e = edges(sample_);
-            int32_t x = b.i32(0x28) >> 8;
-            if (x < e.left + 125) x = e.left + 125;
-            if (x > e.right - 125) x = e.right - 125;
-            b.i32(0x28) = x * 256;
-            b.i32(0x2f4) = 0; b.u8(0xc0) &= uint8_t(~0x10); b.i32(0x240) = 0; b.i32(0x23c) = 0;
-            b.i32(0x104) = 0; b.i32(0x10c) = 0; b.u8(0x278) = 0;
-        }
+int Race::place(size_t index) const {
+    const Rider& me = riders_.at(index);
+    int place = 1;
+    for (size_t i = 0; i < riders_.size(); ++i) {
+        if (i == index) continue;
+        const Rider& o = riders_[i];
+        bool ahead;
+        if (o.finished && me.finished) ahead = o.finish_tick < me.finish_tick;
+        else if (o.finished != me.finished) ahead = o.finished;
+        else ahead = o.bike.i32(0x1c) > me.bike.i32(0x1c);
+        place += ahead;
     }
-    const int surface = surface_class(edges(sample_), b.i32(0x28));
-    traction(b, tables_, surface, true);
-    if (b.i32(0x2f4) != 0 && !(b.u8(0xc0) & 0x10)) crash();   // skid crash raised by traction
-    integrate_speed(b, tables_, surface);
-    shift_gears(b);
-    move();
-    walls();
-    vertical();
+    return place;
+}
+
+void Race::step(uint32_t controls) {
+    if (riders_[0].finished && std::all_of(riders_.begin(), riders_.end(), [](const Rider& r) { return r.finished; })) return;
+    ++ticks_;
+    for (size_t i = 0; i < riders_.size(); ++i) step_rider(riders_[i], controls, i == 0);
     update_camera();
 }
 }

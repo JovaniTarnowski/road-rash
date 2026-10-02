@@ -39,6 +39,8 @@ PhysicsTables PhysicsTables::synthetic() {
     t.steer_damp = {6, 5, 1, 1};
     t.skid_loss = {12, 12, 0, 0};
     t.curve.fill(256);
+    for (int i = 0; i <= 256; ++i) t.atan[size_t(i)] = uint8_t(i / 2);   // linear stand-in
+    t.rubber_band = {15, 15, 15, 15, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 4, 2, 0, 0, -1, -1};
     for (int i = 0; i < 1024; ++i) t.sine[size_t(i)] = i * 32;   // linear stand-in
     return t;
 }
@@ -63,6 +65,8 @@ PhysicsTables read_physics_tables(const std::vector<uint8_t>& exe) {
     for (int i = 0; i < 32; ++i) t.curve[size_t(i)] = word(0x0046dd28 + 4u*i);
     for (int i = 0; i < 1024; ++i) t.sine[size_t(i)] = word(0x00475768 + 4u*i);
     for (int i = 0; i < 26; ++i) t.bike_object[size_t(i)] = word(0x00463ba8 + 4u*i);
+    for (int i = 0; i < 257; ++i) t.atan[size_t(i)] = uint8_t(byte(0x00476768 + uint32_t(i)));
+    for (int i = 0; i < 20; ++i) t.rubber_band[size_t(i)] = word(0x004659d4 + 4u*uint32_t(i - 9));
     // Corroborate: grip table and quarter-wave sine of the reference build.
     if (t.contact_base != 74 || t.grip[0] != 256 || t.sine[0] != 0 || t.sine[512] != 23170 || t.bike_object[1] != 4)
         throw std::runtime_error("Unrecognised physics tables");
@@ -162,6 +166,13 @@ void drive_mode(Bike& b, int mode) {
     if (mode == 1) { throttle(b, b.i32(0x260)); return; }
     if (mode == 2) { brake(b, b.i32(0x27c)); return; }
     if (b.i32(0x240) >= 0) throttle(b, 0); else brake(b, 0);
+}
+
+int32_t atan_ratio(const PhysicsTables& t, int32_t x) {
+    if (x < 0) return -atan_ratio(t, -x);
+    if (x < 0x101) return t.atan[size_t(x)];
+    if (x < 0x10000) return 0x100 - atan_ratio(t, 0x10000 / x);
+    return 0x100;
 }
 
 int32_t sine(const PhysicsTables& t, uint32_t a) {

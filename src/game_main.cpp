@@ -8,6 +8,7 @@
 #include "input.hpp"
 #include "race.hpp"
 #include "road_draw.hpp"
+#include <algorithm>
 #include <cstdio>
 #include <memory>
 #include <string>
@@ -28,10 +29,12 @@ struct Game {
     std::vector<rr::Image8> bobs;
     rr::RiderRemaps remaps;
     rr::Palette palette;
+    std::vector<rr::Opponent> opponents;
+    int level = 0;
 
     void restart() {
         race = std::make_unique<rr::Race>(rr::make_route(course, false), rr::make_route(course, true),
-                                          physics, specs.at(size_t(bike)), 90);
+                                          physics, specs.at(size_t(bike)), 90, opponents, level);
         countdown = countdown_ticks;
     }
     void tick(uint32_t controls) {
@@ -58,8 +61,8 @@ void quad(SDL_Renderer* r, float x0, float x1, float y0, float x2, float x3, flo
 // Riding frame from the steering state. Frames 4..11 of HIBOB.DAT are the lean sequence
 // (4 strongest right, 11 strongest left) and 3 is straight; the original picks frames through
 // its RRAN/RRFD animation system (0x00445a60, 0x0043ae90), which is not ported yet.
-int riding_frame(const rr::Race& race) {
-    const int32_t steer = race.bike().i32(0x288), limit = 0x2e00;
+int riding_frame(const rr::Bike& bike) {
+    const int32_t steer = bike.i32(0x288), limit = 0x2e00;
     const int level = std::abs(steer) * 8 / limit;   // 0..8
     if (level < 1) return 3;
     if (steer > 0) return level < 3 ? 6 : (level < 6 ? 5 : 4);
@@ -70,8 +73,8 @@ struct SpriteCache {
     std::vector<SDL_Texture*> textures;
     ~SpriteCache() { for (auto* t : textures) SDL_DestroyTexture(t); }
     SDL_Texture* get(SDL_Renderer* r, const Game& g, int frame, int rider) {
-        if (textures.empty()) textures.assign(g.bobs.size(), nullptr);
-        SDL_Texture*& t = textures.at(size_t(frame));
+        if (textures.empty()) textures.assign(g.bobs.size() * g.remaps.tables.size(), nullptr);
+        SDL_Texture*& t = textures.at(size_t(rider) * g.bobs.size() + size_t(frame));
         if (t) return t;
         const rr::Image8 img = rr::remap(g.bobs.at(size_t(frame)), g.remaps, rider);
         if (!img.width || !img.height) return nullptr;
@@ -99,7 +102,7 @@ void draw_bike(SDL_Renderer* r, const Game& g, SpriteCache& cache) {
     float x = float((rel * scale) >> 16) + 160.f;
     if (x < 20) x = 20;
     if (x > 300) x = 300;
-    const int frame = race.crashed() ? 21 : riding_frame(race);
+    const int frame = race.crashed() ? 21 : riding_frame(race.bike());
     SDL_Texture* t = cache.get(r, g, frame, 0);
     if (!t) return;
     float w, h;
@@ -108,14 +111,55 @@ void draw_bike(SDL_Renderer* r, const Game& g, SpriteCache& cache) {
     SDL_RenderTexture(r, t, nullptr, &dst);
 }
 
+// Opponents: positioned on the projected road at their sample (interpolated within it) and scaled
+// by depth relative to depth 512, capped at the player sprite's size and baseline so riders level
+// with the player match it. The original sprite scale law, raster and sort order are plan 03 work.
+void draw_opponents(SDL_Renderer* r, const Game& g, SpriteCache& cache, const std::vector<rr::RoadSlice>& slices) {
+    const rr::Race& race = *g.race;
+    struct Item { int32_t depth; float x, y, scale; int frame, colour; };
+    std::vector<Item> items;
+    for (size_t i = 1; i < race.riders().size(); ++i) {
+        const rr::Rider& rd = race.riders()[i];
+        const uint32_t pos = uint32_t(rd.bike.i32(0x1c));
+        if (pos >> 8 < slices.front().sample || pos >> 8 >= slices.back().sample) continue;
+        const size_t n = (pos >> 8) - slices.front().sample;
+        const auto& a = slices[n];
+        const auto& b = slices[n + 1];
+        const auto& sample = race.route_of(rd)[pos >> 8];
+        const int half = (a.count == 2 && b.count == 2) ? (rd.route == 1 ? 1 : 0) : 0;
+        const int32_t lateral = (rd.bike.i32(0x28) >> 8) - sample.offset;
+        const float f = float(pos & 0xff) / 256.f;
+        const float xa = float(a.screen_x(half, lateral)) / 65536.f, xb = float(b.screen_x(half, lateral)) / 65536.f;
+        const float ya = float(a.road[half].screen_y) / 65536.f, yb = float(b.road[half].screen_y) / 65536.f;
+        const float scale = (float(a.scale) + (float(b.scale) - float(a.scale)) * f) / 32768.f;
+        const int frame = rd.bike.i32(0x2f4) ? 21 : riding_frame(rd.bike);
+        items.push_back({a.depth, xa + (xb - xa) * f, ya + (yb - ya) * f, scale, frame, rd.colour});
+    }
+    std::sort(items.begin(), items.end(), [](const Item& p, const Item& q) { return p.depth > q.depth; });
+    const SDL_Rect clip{0, 0, 640, 480};
+    SDL_SetRenderClipRect(r, &clip);
+    for (const auto& it : items) {
+        SDL_Texture* t = cache.get(r, g, it.frame, it.colour);
+        if (!t) continue;
+        float w, h;
+        SDL_GetTextureSize(t, &w, &h);
+        // Capped at the player sprite's size and baseline (see the comment above draw_opponents).
+        const float s = std::min(it.scale, 1.f);
+        const float base = std::min(it.y * 2, 476.f);
+        const SDL_FRect dst{it.x * 2 - w * s / 2, base - h * s, w * s, h * s};
+        SDL_RenderTexture(r, t, nullptr, &dst);
+    }
+    SDL_SetRenderClipRect(r, nullptr);
+}
+
 void draw_hud(SDL_Renderer* r, const Game& g) {
     const rr::Race& race = *g.race;
     char line[160];
     const int seconds = race.ticks() / rr::ticks_per_second;
     const int progress = int(uint64_t(race.position() >> 8) * 100 / (race.route().size() - 1));
     SDL_SetRenderDrawColor(r, 255, 255, 255, 255);
-    SDL_snprintf(line, sizeof line, "%s  SPEED %3d  GEAR %d  TIME %d:%02d  %3d%%", g.course_name.c_str(),
-                 race.speed() / 100, race.gear() + 1, seconds / 60, seconds % 60, progress);
+    SDL_snprintf(line, sizeof line, "%s  PLACE %d/%zu  SPEED %3d  GEAR %d  TIME %d:%02d  %3d%%", g.course_name.c_str(),
+                 race.place(0), race.riders().size(), race.speed() / 100, race.gear() + 1, seconds / 60, seconds % 60, progress);
     SDL_RenderDebugText(r, 8, 8, line);
     if (g.countdown > 0) {
         SDL_snprintf(line, sizeof line, "GET READY  %d", g.countdown / rr::ticks_per_second + 1);
@@ -123,7 +167,8 @@ void draw_hud(SDL_Renderer* r, const Game& g) {
         SDL_RenderDebugText(r, 60, 60, line);
         SDL_SetRenderScale(r, 1, 1);
     } else if (race.finished()) {
-        SDL_snprintf(line, sizeof line, "FINISHED  %d:%02d", seconds / 60, seconds % 60);
+        const int finish = race.riders()[0].finish_tick / rr::ticks_per_second;
+        SDL_snprintf(line, sizeof line, "FINISHED %d%s  %d:%02d", race.place(0), race.place(0) == 1 ? "ST" : race.place(0) == 2 ? "ND" : race.place(0) == 3 ? "RD" : "TH", finish / 60, finish % 60);
         SDL_SetRenderScale(r, 3, 3);
         SDL_RenderDebugText(r, 50, 60, line);
         SDL_SetRenderScale(r, 1, 1);
@@ -134,13 +179,13 @@ void draw_hud(SDL_Renderer* r, const Game& g) {
         SDL_SetRenderScale(r, 1, 1);
     }
     SDL_RenderDebugText(r, 8, 483, "Arrows/WASD or gamepad: Up accelerate, Down brake, Left/Right steer");
-    SDL_RenderDebugText(r, 8, 497, "Original physics + road geometry; placeholder graphics. Esc quits");
+    SDL_RenderDebugText(r, 8, 497, "Original physics, AI and sprites; placeholder road shading. Esc quits");
 }
 }
 
 int main(int argc, char** argv) {
     std::string root = "game", screenshot;
-    int course = 0, bike = 0;
+    int course = 0, bike = 0, level = 0, opponents = 7;
     long run_ticks = -1;
     bool auto_drive = false;
     for (int i = 1; i < argc; ++i) {
@@ -151,9 +196,11 @@ int main(int argc, char** argv) {
         else if (a == "--ticks" && i + 1 < argc) run_ticks = std::atol(argv[++i]);
         else if (a == "--screenshot" && i + 1 < argc) screenshot = argv[++i];
         else if (a == "--autopilot") auto_drive = true;
-        else { std::fprintf(stderr, "Usage: rr-game [--assets DIR] [--course 0-4] [--bike 0-14] [--autopilot] [--ticks N --screenshot FILE.bmp]\n"); return 2; }
+        else if (a == "--level" && i + 1 < argc) level = std::atoi(argv[++i]) - 1;
+        else if (a == "--opponents" && i + 1 < argc) opponents = std::atoi(argv[++i]);
+        else { std::fprintf(stderr, "Usage: rr-game [--assets DIR] [--course 0-4] [--bike 0-14] [--level 1-5] [--opponents 0-7] [--autopilot] [--ticks N --screenshot FILE.bmp]\n"); return 2; }
     }
-    if (course < 0 || course > 4) return 2;
+    if (course < 0 || course > 4 || level < 0 || level > 4 || opponents < 0 || opponents > 7) return 2;
     SDL_Window* window = nullptr;
     SDL_Renderer* renderer = nullptr;
     int result = 0;
@@ -171,6 +218,8 @@ int main(int argc, char** argv) {
         g.bobs = rr::read_bobs(assets.read("DATA/BIKERS/HIBOB.DAT"), rr::bob_frames);
         g.remaps = rr::read_rider_remaps(exe, 9);
         g.palette = rr::Palette::from_raw(assets.read("DATA/PALETTE.RAW"));
+        g.level = level;
+        g.opponents = rr::original_opponents(exe, g.specs, level, opponents);
         g.restart();
 
         if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMEPAD)) throw std::runtime_error(SDL_GetError());
@@ -232,7 +281,9 @@ int main(int argc, char** argv) {
 
             SDL_SetRenderDrawColor(renderer, 15, 18, 22, 255);
             SDL_RenderClear(renderer);
-            rr::draw_road(renderer, rr::project_road(g.race->route(), g.race->camera_position(), g.race->camera(), g.depth));
+            const auto slices = rr::project_road(g.race->route(), g.race->camera_position(), g.race->camera(), g.depth);
+            rr::draw_road(renderer, slices);
+            draw_opponents(renderer, g, sprites, slices);
             draw_bike(renderer, g, sprites);
             draw_hud(renderer, g);
             if (!screenshot.empty()) {

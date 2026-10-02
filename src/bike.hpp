@@ -21,6 +21,8 @@ struct PhysicsTables {
     std::array<int32_t,32> curve{};           // 0x0046dd28: [surface + 4*((position>>8)&7)]
     std::array<int32_t,1024> sine{};          // 0x00475768: quarter wave, Q15
     std::array<int32_t,26> bike_object{};     // 0x00463ba8: bike behaviour/constant table
+    std::array<int32_t,20> rubber_band{};     // 0x004659d4 + d*4 for d = -9..10 (percent, 0x004082f0)
+    std::array<uint8_t,257> atan{};           // 0x00476768: atan(x/256) in 1/256 of 90 degrees (0x0044f720)
     static PhysicsTables synthetic();          // simple values for unit tests; not original data
 };
 PhysicsTables read_physics_tables(const std::vector<uint8_t>& exe);
@@ -55,6 +57,7 @@ struct SliceEdges { int32_t left, right, left_shoulder, right_shoulder; uint8_t 
 int surface_class(const SliceEdges&, int32_t x_q8);              // 0x0043a0c0
 int32_t approx_atan2(int32_t a, int32_t b);                      // 0x0044f5a0
 int32_t sine(const PhysicsTables&, uint32_t angle);              // 0x0044f4a0: 4096 per turn, Q16
+int32_t atan_ratio(const PhysicsTables&, int32_t x);             // 0x0044f720: x in Q8, result 256 = 90 degrees
 
 // Control bits (tables 0x00465fb9 / 0x00476c00 order).
 constexpr uint32_t control_accelerate = 0x1, control_brake = 0x2, control_left = 0x4,
