@@ -5,6 +5,7 @@ namespace rr {
 // Device-independent player intent; mapped onto the original control bits (bike.hpp).
 struct PlayerInput {
     bool accelerate = false, brake = false, left = false, right = false;
+    bool punch = false, kick = false, backhand = false;
     int steer_axis = 0;   // gamepad stick, -32768..32767
 };
 constexpr int steer_dead_zone = 12000;

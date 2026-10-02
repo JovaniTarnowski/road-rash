@@ -34,9 +34,13 @@ std::vector<Opponent> original_opponents(const std::vector<uint8_t>& exe, const 
         const uint32_t personality = 0x00464558 + 0x204u * uint32_t(k);
         const size_t bike = byte(0x004641c8 + uint32_t(level + k * 5));
         if (bike >= specs.size()) throw std::runtime_error("Opponent bike index out of range");
-        out.push_back({specs[bike], word(0x00463c78 + 0x40u * uint32_t(k) + 0xc) / 2,
-                       word(personality + 0x1bc + 4u * uint32_t(level)), int(byte(personality + 0x18c)), k,
-                       word(0x004642a0 + 4u * uint32_t(level))});
+        const uint32_t row = 0x00463c78 + 0x40u * uint32_t(k);
+        Opponent o{specs[bike], word(row + 0xc) / 2, word(personality + 0x1bc + 4u * uint32_t(level)),
+                   int(byte(personality + 0x18c)), k, word(0x004642a0 + 4u * uint32_t(level)),
+                   {word(row + 0x30), word(row + 0x34), word(row + 0x38), word(row + 0x3c)},
+                   word(row + 0x18 + 4u * uint32_t(level))};
+        if (o.weapon < 0 || o.weapon > 2) throw std::runtime_error("Unexpected opponent weapon");
+        out.push_back(o);
     }
     return out;
 }
@@ -56,6 +60,7 @@ Race::Race(std::vector<RouteSample> a, std::vector<RouteSample> b, const Physics
         r.bike.i32(0x138) = pos;
         // 0x00405990: lateral = sub-slice +0xcc (road offset) + grid offset.
         r.bike.i32(0x28) = routes_[0][r.sample].offset + grid_lateral[slot % 4];
+        r.bike.i32(0x2f0) = r.bike.i32(0x2ec);   // bike condition (0x00405c80)
         return r;
     };
     riders_.push_back(place_rider(spec, rider_value, 0));
@@ -70,6 +75,8 @@ Race::Race(std::vector<RouteSample> a, std::vector<RouteSample> b, const Physics
         r.bike.i32(0x1d0) -= 0x19; r.bike.i32(0x1e0) -= 0xf; r.bike.i32(0x1f0) -= 8; r.bike.i32(0x200) -= 4;
         r.brain.base_speed = r.brain.current_speed = o.base_speed;
         r.brain.lane = o.lane;
+        r.stamina = o.stats;
+        r.weapon = o.weapon;
         riders_.push_back(r);
     }
     update_camera();
@@ -466,6 +473,7 @@ void Race::step_rider(Rider& r, uint32_t controls, bool player) {
         integrate_speed(b, tables_, 0);
         return;
     }
+    fight(r, controls, size_t(&r - riders_.data()));
     if (b.i32(0x2f4) == 0) {
         if (r.ai) ai_think(r);
         else apply_controls(b, tables_, controls);
@@ -492,6 +500,93 @@ void Race::step_rider(Rider& r, uint32_t controls, bool player) {
     move(r, player);
     walls(r);
     vertical(r);
+}
+
+uint32_t Race::random() {
+    seed_ = seed_ * 0x343fdu + 0x269ec3u;
+    return (seed_ >> 16) & 0x7fff;
+}
+
+void Race::fight(Rider& r, uint32_t controls, size_t index) {
+    Bike& b = r.bike;
+    if (b.i32(0x2f4) != 0) { r.attack.timer = 0; return; }
+    if (r.stamina.current < r.stamina.max)
+        r.stamina.current = std::min(r.stamina.max, r.stamina.current + b.i32(0x18));
+    if (r.attack.timer == 0) {
+        bool start = false;
+        if (!r.ai) start = (controls & (control_punch | control_kick | control_backhand)) != 0;
+        else {
+            // AI attack rule (stand-in for AI states 2..5): strike the player when alongside.
+            const Rider& p = riders_[0];
+            const int reach = weapon_reach[r.weapon] * 0x1000;
+            start = p.bike.i32(0x2f4) == 0 && std::abs(p.bike.i32(0x1c) - b.i32(0x1c)) < 0x40 &&
+                    std::abs(p.bike.i32(0x28) - b.i32(0x28)) < reach && (ticks_ + int32_t(index) * 7) % 45 == 0;
+            controls = control_punch;
+        }
+        if (start) {
+            // 0x00434660: kick uses weapon 3, otherwise the carried weapon; side toward the nearest rider.
+            r.attack.weapon = (controls & control_kick) ? 3 : r.weapon;
+            r.attack.backhand = (controls & control_backhand) != 0;
+            const Rider* nearest = nullptr;
+            for (const auto& o : riders_)
+                if (&o != &r && std::abs(o.bike.i32(0x1c) - b.i32(0x1c)) < 0x100 &&
+                    (!nearest || std::abs(o.bike.i32(0x28) - b.i32(0x28)) < std::abs(nearest->bike.i32(0x28) - b.i32(0x28))))
+                    nearest = &o;
+            r.attack.right = nearest ? b.i32(0x28) < nearest->bike.i32(0x28) : b.i32(0x60) >= 0;
+            r.attack.timer = 1;
+        }
+        return;
+    }
+    if (++r.attack.timer == attack_hit_tick) resolve_hit(r, index);
+    if (r.attack.timer > attack_ticks) r.attack.timer = 0;
+}
+
+void Race::resolve_hit(Rider& r, size_t index) {
+    // 0x004096f0: find the rider on the attacked side, test reach (0x00409c10), apply damage
+    // (0x00409ad0 → 0x004052c0 → 0x004050c0 stamina / 0x004051e0 bike), knock steering, and
+    // with fists sometimes take the target's weapon.
+    Bike& b = r.bike;
+    Rider* target = nullptr;
+    for (auto& o : riders_) {
+        if (&o == &r || o.bike.i32(0x2f4) != 0) continue;
+        const bool on_right = b.i32(0x28) < o.bike.i32(0x28);
+        if (on_right != r.attack.right) continue;
+        if (std::abs(b.i32(0x1c) - o.bike.i32(0x1c)) >= 0x40) continue;
+        if (std::abs(b.i32(0x28) - o.bike.i32(0x28)) >= weapon_reach[r.attack.weapon] * 0x1000) continue;
+        if (std::abs(b.i32(0x20) - o.bike.i32(0x20)) >= 0x3000) continue;
+        if (!target || std::abs(o.bike.i32(0x28) - b.i32(0x28)) < std::abs(target->bike.i32(0x28) - b.i32(0x28))) target = &o;
+    }
+    if (!target || ticks_ <= target->invulnerable_until) return;
+    if (index == 0) last_target_ = int(target - riders_.data());
+    const int w = r.attack.weapon;
+    // Weapon grab with bare fists (simplified trigger of the 0x004096f0 steal branch).
+    if (w == 0 && (target->weapon == 1 || target->weapon == 2) && (random() & 3) == 3) {
+        r.weapon = target->weapon;
+        target->weapon = 0;
+        return;
+    }
+    const RiderStats& s = r.stamina;
+    int32_t damage = int32_t((int64_t((s.max << 8) / s.base) * s.strength) >> 8);
+    if (damage < s.strength / 2) damage = s.strength / 2;
+    damage = div256(int64_t(weapon_damage[w]) * damage);
+    const int32_t bike_damage = w == 3 ? div_pow2(damage, 2) + 1 : 0;
+    RiderStats& t = target->stamina;
+    t.max -= damage * 4;
+    if (t.max < t.base / 2) t.max = t.base / 2;
+    t.current = std::max(0, t.current - damage * 0x40);
+    Bike& tb = target->bike;
+    tb.i32(0x2f0) = std::max(0, tb.i32(0x2f0) - bike_damage);
+    if (t.current == 0 || tb.i32(0x2f0) == 0) crash(*target);   // knocked off (0x00403d60)
+    target->invulnerable_until = ticks_ + (5 - level_) * 6;
+    if (r.attack.backhand) { tb.i32(0xec) -= 300; b.i32(0xec) += 300; }   // 0x00409bd0 shove
+    auto clamp_steer = [](Bike& k) {
+        const int32_t lim = k.i32(0x29c);
+        k.i32(0x288) = std::max(-lim, std::min(lim, k.i32(0x288)));
+    };
+    tb.i32(0x288) += r.attack.right ? 3000 : -3000;
+    b.i32(0x288) += r.attack.right ? -1000 : 1000;
+    if (w == 3) tb.i32(0x288) += r.attack.right ? 8000 : -8000;
+    clamp_steer(tb); clamp_steer(b);
 }
 
 void Race::update_camera() {

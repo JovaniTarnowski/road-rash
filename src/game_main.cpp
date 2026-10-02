@@ -49,6 +49,7 @@ uint32_t autopilot(const rr::Race& race) {
     const int x = race.lateral() - s.offset;
     uint32_t c = rr::control_accelerate;
     if (x < -60) c |= rr::control_right; else if (x > 60) c |= rr::control_left;
+    if (race.ticks() % 40 == 0) c |= rr::control_punch;   // demo: swing at anyone alongside
     return c;
 }
 
@@ -61,6 +62,17 @@ void quad(SDL_Renderer* r, float x0, float x1, float y0, float x2, float x3, flo
 // Riding frame from the steering state. Frames 4..11 of HIBOB.DAT are the lean sequence
 // (4 strongest right, 11 strongest left) and 3 is straight; the original picks frames through
 // its RRAN/RRFD animation system (0x00445a60, 0x0043ae90), which is not ported yet.
+// Attack frames picked by inspection of HIBOB.DAT (wind-up, strike) per weapon and side.
+int attack_frame(const rr::Rider& r) {
+    const bool strike = r.attack.timer >= rr::attack_hit_tick;
+    switch (r.attack.weapon) {
+    case 1: return r.attack.right ? (strike ? 143 : 141) : (strike ? 142 : 140);   // club
+    case 2: return r.attack.right ? (strike ? 102 : 101) : (strike ? 106 : 105);   // chain
+    case 3: return r.attack.right ? 60 : 66;                                        // kick
+    default: return r.attack.right ? (strike ? 45 : 44) : (strike ? 52 : 51);      // fists
+    }
+}
+
 int riding_frame(const rr::Bike& bike) {
     const int32_t steer = bike.i32(0x288), limit = 0x2e00;
     const int level = std::abs(steer) * 8 / limit;   // 0..8
@@ -102,7 +114,8 @@ void draw_bike(SDL_Renderer* r, const Game& g, SpriteCache& cache) {
     float x = float((rel * scale) >> 16) + 160.f;
     if (x < 20) x = 20;
     if (x > 300) x = 300;
-    const int frame = race.crashed() ? 21 : riding_frame(race.bike());
+    const auto& me = race.riders()[0];
+    const int frame = race.crashed() ? 21 : me.attack.timer ? attack_frame(me) : riding_frame(race.bike());
     SDL_Texture* t = cache.get(r, g, frame, 0);
     if (!t) return;
     float w, h;
@@ -132,7 +145,7 @@ void draw_opponents(SDL_Renderer* r, const Game& g, SpriteCache& cache, const st
         const float xa = float(a.screen_x(half, lateral)) / 65536.f, xb = float(b.screen_x(half, lateral)) / 65536.f;
         const float ya = float(a.road[half].screen_y) / 65536.f, yb = float(b.road[half].screen_y) / 65536.f;
         const float scale = (float(a.scale) + (float(b.scale) - float(a.scale)) * f) / 32768.f;
-        const int frame = rd.bike.i32(0x2f4) ? 21 : riding_frame(rd.bike);
+        const int frame = rd.bike.i32(0x2f4) ? 21 : rd.attack.timer ? attack_frame(rd) : riding_frame(rd.bike);
         items.push_back({a.depth, xa + (xb - xa) * f, ya + (yb - ya) * f, scale, frame, rd.colour});
     }
     std::sort(items.begin(), items.end(), [](const Item& p, const Item& q) { return p.depth > q.depth; });
@@ -178,7 +191,18 @@ void draw_hud(SDL_Renderer* r, const Game& g) {
         SDL_RenderDebugText(r, 80, 60, "WIPEOUT!");
         SDL_SetRenderScale(r, 1, 1);
     }
-    SDL_RenderDebugText(r, 8, 483, "Arrows/WASD or gamepad: Up accelerate, Down brake, Left/Right steer");
+    // Stamina bars: player and the rider it last hit.
+    auto bar = [&](float y, const char* label, const rr::RiderStats& st) {
+        SDL_SetRenderDrawColor(r, 255, 255, 255, 255);
+        SDL_RenderDebugText(r, 8, y, label);
+        const SDL_FRect back{72, y - 1, 120, 9}, fill{72, y - 1, 120.f * float(st.current) / float(std::max(1, st.base)), 9};
+        SDL_SetRenderDrawColor(r, 40, 40, 40, 255); SDL_RenderFillRect(r, &back);
+        SDL_SetRenderDrawColor(r, 220, 60, 40, 255); SDL_RenderFillRect(r, &fill);
+    };
+    bar(24, "YOU", race.riders()[0].stamina);
+    if (race.last_target() > 0) bar(36, "THEM", race.riders()[size_t(race.last_target())].stamina);
+    SDL_SetRenderDrawColor(r, 255, 255, 255, 255);
+    SDL_RenderDebugText(r, 8, 483, "Up/Down throttle/brake, Left/Right steer, Z punch, X kick, C backhand");
     SDL_RenderDebugText(r, 8, 497, "Original physics, AI and sprites; placeholder road shading. Esc quits");
 }
 }
@@ -263,12 +287,18 @@ int main(int argc, char** argv) {
             in.brake |= keys[SDL_SCANCODE_DOWN] || keys[SDL_SCANCODE_S];
             in.left |= keys[SDL_SCANCODE_LEFT] || keys[SDL_SCANCODE_A];
             in.right |= keys[SDL_SCANCODE_RIGHT] || keys[SDL_SCANCODE_D];
+            in.punch |= keys[SDL_SCANCODE_Z] || keys[SDL_SCANCODE_LCTRL];
+            in.kick |= keys[SDL_SCANCODE_X] || keys[SDL_SCANCODE_LALT];
+            in.backhand |= keys[SDL_SCANCODE_C];
             if (pad) {
                 in.accelerate |= SDL_GetGamepadButton(pad, SDL_GAMEPAD_BUTTON_SOUTH) || SDL_GetGamepadAxis(pad, SDL_GAMEPAD_AXIS_RIGHT_TRIGGER) > 8000;
                 in.brake |= SDL_GetGamepadButton(pad, SDL_GAMEPAD_BUTTON_EAST) || SDL_GetGamepadAxis(pad, SDL_GAMEPAD_AXIS_LEFT_TRIGGER) > 8000;
                 in.left |= SDL_GetGamepadButton(pad, SDL_GAMEPAD_BUTTON_DPAD_LEFT);
                 in.right |= SDL_GetGamepadButton(pad, SDL_GAMEPAD_BUTTON_DPAD_RIGHT);
                 in.steer_axis = SDL_GetGamepadAxis(pad, SDL_GAMEPAD_AXIS_LEFTX);
+                in.punch |= SDL_GetGamepadButton(pad, SDL_GAMEPAD_BUTTON_WEST);
+                in.kick |= SDL_GetGamepadButton(pad, SDL_GAMEPAD_BUTTON_NORTH);
+                in.backhand |= SDL_GetGamepadButton(pad, SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER);
             }
             const uint32_t controls = auto_drive ? autopilot(*g.race) : rr::controls_from(in);
 

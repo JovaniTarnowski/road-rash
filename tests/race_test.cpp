@@ -114,6 +114,27 @@ int main() {
     }
     check(!overlapped_long, "riders never stay inside each other");
 
+    // Combat (0x004096f0 hit, 0x00409c10 reach, 0x00409ad0 damage, 0x004050c0 stamina):
+    // punching a rider alongside drains its stamina until it is knocked off.
+    // Grid slots 0 and 1 start side by side 78 world units apart (fist reach is 5*0x1000 Q8 = 80).
+    rr::Opponent target{test_spec(), 90, 0, 0, 1};   // target speed 0: it stays on the grid
+    rr::Race fight(straight(4000), straight(4000), t, spec, 90, {target});
+    const int32_t before = fight.riders()[1].stamina.current;
+    for (int i = 0; i < 18; ++i) fight.step(i == 0 ? rr::control_punch : 0);
+    check(fight.riders()[1].stamina.current < before, "punch in reach drains stamina");
+    bool knocked = false;
+    for (int n = 0; n < 60 && !knocked; ++n) {
+        for (int i = 0; i < 18; ++i) fight.step(i == 0 ? rr::control_punch : 0);
+        knocked = fight.riders()[1].bike.i32(0x2f4) != 0;
+    }
+    check(knocked, "repeated punches knock the rider off");
+    // Slot 3 is 234 units away: out of reach.
+    rr::Opponent distant{test_spec(), 90, 0, 0, 3};
+    rr::Race far(straight(4000), straight(4000), t, spec, 90, {distant});
+    const int32_t full = far.riders()[1].stamina.current;
+    for (int i = 0; i < 18; ++i) far.step(i == 0 ? rr::control_punch : 0);
+    check(far.riders()[1].stamina.current == full, "punch out of reach does nothing");
+
     // Original field from the executable (skips without the disc).
     const std::string game = std::string(RR_SOURCE_DIR) + "/../cdrom/ROADRASH";
     if (std::filesystem::exists(game + "/ROADRASH.EXE")) {

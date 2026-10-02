@@ -23,6 +23,9 @@ int main() {
     check(rr::touch_input(900, 500, 1000, 800).right, "touch right");
     auto b = rr::touch_input(500, 750, 1000, 800);
     check(b.brake && !b.accelerate, "touch brake");
+    rr::PlayerInput fight{}; fight.punch = true; fight.kick = true; fight.backhand = true;
+    check(rr::controls_from(fight) == (rr::control_punch | rr::control_kick | rr::control_backhand), "attack bits");
+    check(rr::touch_input(500, 100, 1000, 800).punch, "touch top third punches");
     std::cout << failures << " failures\n";
     return failures ? 1 : 0;
 }

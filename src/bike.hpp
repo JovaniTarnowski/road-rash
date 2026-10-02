@@ -61,5 +61,6 @@ int32_t atan_ratio(const PhysicsTables&, int32_t x);             // 0x0044f720: 
 
 // Control bits (tables 0x00465fb9 / 0x00476c00 order).
 constexpr uint32_t control_accelerate = 0x1, control_brake = 0x2, control_left = 0x4,
-                   control_lean_down = 0x8, control_nitro = 0x10, control_right = 0x200, control_lean_up = 0x400;
+                   control_lean_down = 0x8, control_nitro = 0x10, control_right = 0x200, control_lean_up = 0x400,
+                   control_punch = 0x20, control_kick = 0x40, control_backhand = 0x80;
 }
