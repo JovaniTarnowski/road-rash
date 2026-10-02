@@ -22,4 +22,25 @@ PlayerInput touch_input(float x, float y, float width, float height) {
     in.accelerate = !in.brake;
     return in;
 }
+
+void TouchInput::handle(const SDL_Event& e) {
+    const auto id = std::make_pair(e.tfinger.touchID, e.tfinger.fingerID);
+    if (e.type == SDL_EVENT_FINGER_UP || e.type == SDL_EVENT_FINGER_CANCELED)
+        fingers_.erase(id);
+    else if (e.type == SDL_EVENT_FINGER_DOWN || e.type == SDL_EVENT_FINGER_MOTION)
+        fingers_[id] = touch_input(e.tfinger.x, e.tfinger.y, 1.f, 1.f);
+}
+
+PlayerInput TouchInput::current() const {
+    PlayerInput in;
+    for (const auto& finger : fingers_) {
+        const auto& f = finger.second;
+        in.accelerate |= f.accelerate; in.brake |= f.brake;
+        in.left |= f.left; in.right |= f.right;
+        in.punch |= f.punch; in.kick |= f.kick; in.backhand |= f.backhand;
+    }
+    // A braking finger overrides auto-throttle from the steering/attack zones.
+    if (in.brake) in.accelerate = false;
+    return in;
+}
 }

@@ -8,6 +8,7 @@
 #include "input.hpp"
 #include "race.hpp"
 #include "road_draw.hpp"
+#include "session.hpp"
 #include <algorithm>
 #include <cstdio>
 #include <memory>
@@ -83,7 +84,11 @@ int riding_frame(const rr::Bike& bike) {
 
 struct SpriteCache {
     std::vector<SDL_Texture*> textures;
-    ~SpriteCache() { for (auto* t : textures) SDL_DestroyTexture(t); }
+    void clear() {
+        for (auto* t : textures) SDL_DestroyTexture(t);
+        textures.clear();
+    }
+    ~SpriteCache() { clear(); }
     SDL_Texture* get(SDL_Renderer* r, const Game& g, int frame, int rider) {
         if (textures.empty()) textures.assign(g.bobs.size() * g.remaps.tables.size(), nullptr);
         SDL_Texture*& t = textures.at(size_t(rider) * g.bobs.size() + size_t(frame));
@@ -203,7 +208,37 @@ void draw_hud(SDL_Renderer* r, const Game& g) {
     if (race.last_target() > 0) bar(36, "THEM", race.riders()[size_t(race.last_target())].stamina);
     SDL_SetRenderDrawColor(r, 255, 255, 255, 255);
     SDL_RenderDebugText(r, 8, 483, "Up/Down throttle/brake, Left/Right steer, Z punch, X kick, C backhand");
-    SDL_RenderDebugText(r, 8, 497, "Original physics, AI and sprites; placeholder road shading. Esc quits");
+    SDL_RenderDebugText(r, 8, 497, "P/Esc/Back/Start pauses. Enter/Start/tap resumes. Q quits");
+}
+
+bool lifecycle_event(Uint32 type) {
+    return type == SDL_EVENT_WILL_ENTER_BACKGROUND || type == SDL_EVENT_DID_ENTER_BACKGROUND ||
+           type == SDL_EVENT_WILL_ENTER_FOREGROUND || type == SDL_EVENT_DID_ENTER_FOREGROUND;
+}
+
+struct LifecycleWatch {
+    rr::SessionState state;
+    static bool SDLCALL watch(void* data, SDL_Event* event) {
+        if (lifecycle_event(event->type)) static_cast<LifecycleWatch*>(data)->state.handle(*event);
+        return true;
+    }
+    LifecycleWatch() {
+        if (!SDL_AddEventWatch(watch, this)) throw std::runtime_error(SDL_GetError());
+    }
+    ~LifecycleWatch() { SDL_RemoveEventWatch(watch, this); }
+};
+
+void draw_pause(SDL_Renderer* r) {
+    SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_BLEND);
+    SDL_SetRenderDrawColor(r, 0, 0, 0, 190);
+    SDL_RenderFillRect(r, nullptr);
+    SDL_SetRenderDrawColor(r, 255, 255, 255, 255);
+    SDL_SetRenderScale(r, 3, 3);
+    SDL_RenderDebugText(r, 80, 65, "PAUSED");
+    SDL_SetRenderScale(r, 1, 1);
+    SDL_RenderDebugText(r, 184, 260, "Enter / Start / tap to resume");
+    SDL_RenderDebugText(r, 232, 284, "Q to quit on desktop");
+    SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_NONE);
 }
 }
 
@@ -211,7 +246,7 @@ int main(int argc, char** argv) {
     std::string root = "game", screenshot;
     int course = 0, bike = 0, level = 0, opponents = 7;
     long run_ticks = -1;
-    bool auto_drive = false;
+    bool auto_drive = false, start_paused = false;
     for (int i = 1; i < argc; ++i) {
         const std::string a = argv[i];
         if (a == "--assets" && i + 1 < argc) root = argv[++i];
@@ -220,9 +255,10 @@ int main(int argc, char** argv) {
         else if (a == "--ticks" && i + 1 < argc) run_ticks = std::atol(argv[++i]);
         else if (a == "--screenshot" && i + 1 < argc) screenshot = argv[++i];
         else if (a == "--autopilot") auto_drive = true;
+        else if (a == "--paused") start_paused = true;
         else if (a == "--level" && i + 1 < argc) level = std::atoi(argv[++i]) - 1;
         else if (a == "--opponents" && i + 1 < argc) opponents = std::atoi(argv[++i]);
-        else { std::fprintf(stderr, "Usage: rr-game [--assets DIR] [--course 0-4] [--bike 0-14] [--level 1-5] [--opponents 0-7] [--autopilot] [--ticks N --screenshot FILE.bmp]\n"); return 2; }
+        else { std::fprintf(stderr, "Usage: rr-game [--assets DIR] [--course 0-4] [--bike 0-14] [--level 1-5] [--opponents 0-7] [--autopilot] [--paused] [--ticks N --screenshot FILE.bmp]\n"); return 2; }
     }
     if (course < 0 || course > 4 || level < 0 || level > 4 || opponents < 0 || opponents > 7) return 2;
     SDL_Window* window = nullptr;
@@ -256,32 +292,58 @@ int main(int argc, char** argv) {
             for (long t = 0; t < run_ticks && !g.race->finished(); ++t) g.tick(auto_drive ? autopilot(*g.race) : 0);
         }
         SpriteCache sprites;
+        LifecycleWatch lifecycle;
+        if (start_paused) lifecycle.state.pause();
+        rr::TouchInput touch;
+        rr::TickClock clock;
         SDL_Gamepad* pad = nullptr;
-        bool running = true, touching = false;
-        rr::PlayerInput touch;
-        uint64_t last = SDL_GetTicksNS(), accumulator = 0;
-        const uint64_t tick_ns = 1000000000ull / rr::ticks_per_second;
+        bool running = true;
+        uint64_t last = SDL_GetTicksNS();
         while (running) {
             SDL_Event e;
             bool restart = false;
             while (SDL_PollEvent(&e)) {
                 if (e.type == SDL_EVENT_QUIT) running = false;
-                if (e.type == SDL_EVENT_KEY_DOWN && e.key.key == SDLK_ESCAPE) running = false;
-                if (e.type == SDL_EVENT_KEY_DOWN && e.key.key == SDLK_AC_BACK) running = false;
-                if (e.type == SDL_EVENT_KEY_DOWN && e.key.key == SDLK_RETURN && g.race->finished()) restart = true;
-                if (e.type == SDL_EVENT_GAMEPAD_ADDED && !pad) pad = SDL_OpenGamepad(e.gdevice.which);
-                if (e.type == SDL_EVENT_GAMEPAD_REMOVED && pad && SDL_GetGamepadID(pad) == e.gdevice.which) { SDL_CloseGamepad(pad); pad = nullptr; }
-                if (e.type == SDL_EVENT_GAMEPAD_BUTTON_DOWN && e.gbutton.button == SDL_GAMEPAD_BUTTON_SOUTH && g.race->finished()) restart = true;
-                if (e.type == SDL_EVENT_FINGER_DOWN || e.type == SDL_EVENT_FINGER_MOTION) {
-                    touching = true;
-                    touch = rr::touch_input(e.tfinger.x, e.tfinger.y, 1.f, 1.f);
-                    if (e.type == SDL_EVENT_FINGER_DOWN && g.race->finished()) restart = true;
+                // Android lifecycle state is set immediately by the event watch;
+                // do not replay older queued lifecycle events here.
+                if (!lifecycle_event(e.type)) lifecycle.state.handle(e);
+                if (e.type == SDL_EVENT_KEY_DOWN && !e.key.repeat) {
+                    if (e.key.key == SDLK_Q) running = false;
+                    if (e.key.key == SDLK_AC_BACK) lifecycle.state.pause();
+                    if (e.key.key == SDLK_ESCAPE || e.key.key == SDLK_P) {
+                        if (lifecycle.state.paused()) lifecycle.state.resume(); else lifecycle.state.pause();
+                    }
+                    if (e.key.key == SDLK_RETURN) {
+                        if (lifecycle.state.paused()) lifecycle.state.resume();
+                        else if (g.race->finished()) restart = true;
+                    }
                 }
-                if (e.type == SDL_EVENT_FINGER_UP) touching = false;
-                if (e.type == SDL_EVENT_WILL_ENTER_BACKGROUND) accumulator = 0;
+                if (e.type == SDL_EVENT_GAMEPAD_ADDED && !pad) pad = SDL_OpenGamepad(e.gdevice.which);
+                if (e.type == SDL_EVENT_GAMEPAD_REMOVED && pad && SDL_GetGamepadID(pad) == e.gdevice.which) {
+                    SDL_CloseGamepad(pad); pad = nullptr;
+                    lifecycle.state.pause();
+                }
+                if (e.type == SDL_EVENT_GAMEPAD_BUTTON_DOWN && pad && SDL_GetGamepadID(pad) == e.gbutton.which) {
+                    if (e.gbutton.button == SDL_GAMEPAD_BUTTON_START) {
+                        if (lifecycle.state.paused()) lifecycle.state.resume(); else lifecycle.state.pause();
+                    } else if (e.gbutton.button == SDL_GAMEPAD_BUTTON_SOUTH && !lifecycle.state.paused() && g.race->finished()) restart = true;
+                }
+                if (e.type == SDL_EVENT_FINGER_DOWN || e.type == SDL_EVENT_FINGER_MOTION ||
+                    e.type == SDL_EVENT_FINGER_UP || e.type == SDL_EVENT_FINGER_CANCELED) {
+                    if (lifecycle.state.paused()) {
+                        if (e.type == SDL_EVENT_FINGER_DOWN) lifecycle.state.resume();
+                    } else if (e.type == SDL_EVENT_FINGER_DOWN && g.race->finished()) restart = true;
+                    else touch.handle(e);
+                }
+                if (e.type == SDL_EVENT_RENDER_DEVICE_RESET || e.type == SDL_EVENT_RENDER_TARGETS_RESET) sprites.clear();
+                if (e.type == SDL_EVENT_RENDER_DEVICE_LOST) throw std::runtime_error("Render device lost");
+                if (lifecycle.state.take_clock_reset()) {
+                    touch.clear(); clock.reset(); last = SDL_GetTicksNS();
+                }
             }
+            if (!running) break;
             if (restart) g.restart();
-            rr::PlayerInput in = touching ? touch : rr::PlayerInput{};
+            rr::PlayerInput in = touch.current();
             const bool* keys = SDL_GetKeyboardState(nullptr);
             in.accelerate |= keys[SDL_SCANCODE_UP] || keys[SDL_SCANCODE_W];
             in.brake |= keys[SDL_SCANCODE_DOWN] || keys[SDL_SCANCODE_S];
@@ -303,11 +365,11 @@ int main(int argc, char** argv) {
             const uint32_t controls = auto_drive ? autopilot(*g.race) : rr::controls_from(in);
 
             const uint64_t now = SDL_GetTicksNS();
-            accumulator += now - last;
+            if (lifecycle.state.take_clock_reset()) { touch.clear(); clock.reset(); last = now; }
+            const int steps = clock.advance(now - last, lifecycle.state.paused());
             last = now;
-            int steps = 0;
-            while (accumulator >= tick_ns && steps < rr::max_steps_per_frame) { g.tick(controls); accumulator -= tick_ns; ++steps; }
-            if (steps == rr::max_steps_per_frame) accumulator = 0;
+            for (int step = 0; step < steps && !lifecycle.state.paused(); ++step) g.tick(controls);
+            if (lifecycle.state.background()) { SDL_Delay(20); continue; }
 
             SDL_SetRenderDrawColor(renderer, 15, 18, 22, 255);
             SDL_RenderClear(renderer);
@@ -316,6 +378,7 @@ int main(int argc, char** argv) {
             draw_opponents(renderer, g, sprites, slices);
             draw_bike(renderer, g, sprites);
             draw_hud(renderer, g);
+            if (lifecycle.state.paused()) draw_pause(renderer);
             if (!screenshot.empty()) {
                 SDL_Surface* capture = SDL_RenderReadPixels(renderer, nullptr);
                 if (!capture || !SDL_SaveBMP(capture, screenshot.c_str())) throw std::runtime_error(SDL_GetError());

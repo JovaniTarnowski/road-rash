@@ -31,10 +31,12 @@ Detailed evidence is in [REVERSE_ENGINEERING.md](REVERSE_ENGINEERING.md) and tes
 | Traffic, police, audio, video, menus, saves | Not started | — |
 | macOS build | Builds, tests pass, viewer runs | `run-macos.sh` |
 | Android build | APK builds; runs to `SDL_main` on the device; rendering never checked on hardware | `android/` |
+| Platform lifecycle and timing | Pause on background/focus loss/controller removal, explicit resume, texture reset recovery, rational fixed-step clock | `src/session.cpp`, `src/game_main.cpp` |
+| Multi-touch | Independent finger tracking, cancellation and brake priority | `src/input.cpp`, `tests/input_test.cpp` |
 
 ## Timeline
 
-All dates September 28, 2026.
+Sessions 1–6: September 28, 2026. Later dates are listed per session.
 
 ### Session 1: foundations
 - Imported and analysed `ROADRASH.EXE` in Ghidra and exported address-keyed pseudocode, disassembly and a string index.
@@ -88,6 +90,17 @@ All dates September 28, 2026.
   - Ported the hit test (`0x00409c10`), damage (`0x00409ad0`/`0x004052c0`), stamina (`0x004050c0`) and bike condition (`0x004051e0`), plus knock-offs, steering knocks and the backhand shove (`0x004096f0`).
   - Weapons: fists, club, chain and kick, with reach 5/7/8/5 × `0x1000` and damage multipliers 256/320/384/64.
 - The game now has a 7-rider field, placings, attack keys (Z/X/C, gamepad X/Y/RB, touch top third) and stamina bars.
+
+### Session 7: Android lifecycle and multi-touch (October 1, 2026)
+
+- Added shared `SessionState` and `TickClock` for desktop and Android. SDL's lifecycle event watch updates atomic state immediately; renderer and race work stay on the game thread.
+- Background/focus loss pauses the race, discards accumulated time and clears touch controls. Foreground/focus gain leaves a visible pause prompt; Enter, Start or a tap resumes. Android Back opens pause. P/Esc/Start toggles pause; Q quits on desktop.
+- Active gamepad removal pauses. Render-device/target reset invalidates the sprite cache so sprites are recreated on demand. An unrecoverable render-device loss exits with an error.
+- Replaced the single touch point with per-device/per-finger tracking: simultaneous steering and punching, independent releases, finger cancellation, and braking priority over touch auto-throttle.
+- Replaced truncated nanosecond tick intervals with a rational 60 Hz accumulator and retained the 20-step stall cap. Tests cover ten seconds at 30/60/120/144 Hz, pauses and very large elapsed times.
+- Android manifest declares optional gamepad/touch hardware and a resizable landscape activity.
+- Native and sanitizer tests pass (9/9); Android ARM64 debug APK rebuilt. Pause screenshot inspected at `analysis/native-game-paused.png`.
+- No Android device connected. Physical input, lifecycle and graphics reset recovery still need hardware validation. Plan 08 remains partial: import, settings/rebinding, saves/audio lifecycle and release packaging are not implemented.
 
 ## Assumptions and approximations in current code
 

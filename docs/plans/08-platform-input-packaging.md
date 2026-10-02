@@ -178,6 +178,8 @@ Add a `verifyNoGameData` task that unzips the built APK listing and fails if any
 
 ### Task 4: Lifecycle, presentation and frame pacing
 
+Implementation note (October 1, 2026): `src/session.hpp/.cpp` now provides atomic lifecycle state and a rational fixed-step clock, integrated directly into `game_main.cpp`. Background/focus loss/controller removal pauses; foreground requires explicit resume. Back opens pause, touch state clears, and render resets invalidate the sprite cache. Synthetic lifecycle/timing tests pass at 30/60/120/144 Hz; the pause screen is visually checked. This task remains partial: no mixer/career exists to pause/save, there is no `App` abstraction, presentation remains the current 640×510 game/HUD letterbox, and Android hardware/resize checks are pending.
+
 **Files:**
 - Create: `src/app.hpp`, `src/app.cpp`, `tests/app_test.cpp`
 - Modify: `src/game_main.cpp` (use `App`)

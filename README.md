@@ -15,7 +15,7 @@ Native C++17 / SDL3 work targeting macOS ARM64 and Android ARM64. `rr-game` is a
 - Integer port of the original road projection: 33 perspective slices, curvature/height integration and the original depth table read from `ROADRASH.EXE`, including the second roadway at splits and merges. The viewer drives through each course with flat placeholder shading.
 - Shared desktop/Android viewer source with keyboard, mouse and touch navigation.
 
-No racing, bike physics, scenery, road textures, AI, combat, audio, video, save games, or original menu interactions have been ported. Decompiler output is research input: inferred signatures, types and library labels still need correction. A successful decompilation export does not imply semantic correctness or recompilable source.
+Racing, bike physics, AI riders, sprites and combat are implemented with the approximations recorded in `docs/PROGRESS.md`. Scenery, original road textures, audio, video, save games and original menu interactions remain open. Decompiler output is research input: inferred signatures, types and library labels still need correction.
 
 ## Play (single course)
 
@@ -25,7 +25,9 @@ cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug && cmake --build build --parallel
 build/rr-game --assets ../cdrom/ROADRASH            # Napa; --course 0-4, --bike 0-14
 ```
 
-Arrows or WASD: Up accelerates, Down brakes, Left/Right steer; Z punches, X kicks, C backhands. Gamepad: A or right trigger accelerates, B or left trigger brakes, D-pad or left stick steers. Touch: left/right thirds steer, bottom middle brakes, any other touch accelerates. Enter, A or a tap restarts after the finish. Esc quits.
+Arrows or WASD: Up accelerates, Down brakes, Left/Right steer; Z punches, X kicks, C backhands. Gamepad: A or right trigger accelerates, B or left trigger brakes, D-pad or left stick steers; X punches, Y kicks, RB backhands. Touch: top third punches, left/right thirds below it steer, bottom middle brakes; other zones accelerate. Multiple fingers can steer and punch together; a braking finger overrides touch auto-throttle. Enter, A or a tap restarts after the finish.
+
+P/Esc or gamepad Start toggles pause. Android Back opens pause. Enter, Start or a tap resumes. Q or closing the desktop window quits. Backgrounding, losing window focus or disconnecting the active gamepad pauses the race and clears touch input. Returning to the app requires an explicit resume. `--paused` starts the presentation paused (after any `--ticks` verification run).
 
 The race uses the original 60 Hz bike physics ported from the executable (throttle, brakes, 7-gear shifting, drag, traction, steering, curve drift, crests and jumps) on the original course geometry. You race seven original AI opponents with punches, kicks and weapons, drawn with the original rider sprites. Road shading is a placeholder; traffic, police, audio and menus are not done yet. See `docs/PROGRESS.md` for what is simplified.
 
@@ -52,7 +54,7 @@ python3 tools/check_corpus.py ../cdrom/ROADRASH
 
 ## Android
 
-The Gradle project is `android/`; it builds the game (`src/game_main.cpp`) into `libmain.so` for `arm64-v8a`. SDL's Java activity supplies the Android lifecycle and input bridge. The APK is a debug research viewer and includes 17 assets copied from the local disc: the menu images, palette, bike specs, five courses and `ROADRASH.EXE` (read only for its projection table).
+The Gradle project is `android/`; it builds the game (`src/game_main.cpp`) into `libmain.so` for `arm64-v8a`. SDL's Java activity supplies the Android lifecycle and input bridge. The APK is a debug research game and includes 18 assets copied from the local disc: menu images, palette, dashboard/horizons, bike specs, rider sprites, five courses and `ROADRASH.EXE` (read for static tables).
 
 ```sh
 python3 tools/prepare_android_assets.py ../cdrom/ROADRASH
