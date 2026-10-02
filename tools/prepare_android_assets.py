@@ -13,6 +13,7 @@ files = ['DATA/BIKESPEC.RSC'] + ['IMAGES/'+name+'.RRI' for name in
     ['SPLASH', 'MAIN', 'OLLEYS', 'PANZER', 'STREET', 'CREDITS']]
 files += ['DATA/PALETTE.RAW', 'IMAGES/BIGMETER.BOB', 'IMAGES/HORIZONS/NAPA.BOB', 'IMAGES/HORIZONS/CITY.BOB']
 # Course geometry, plus the executable for its static projection table (0x0046f098).
+files += ['DATA/BIKERS/HIBOB.DAT']
 files += ['ROADRASH.EXE'] + ['DATA/COURSES/'+name+'.CRS' for name in ['NAPA', 'CITY', 'HIWAY', 'CANYN', 'MEDLY']]
 for relative in files:
     out = target/relative

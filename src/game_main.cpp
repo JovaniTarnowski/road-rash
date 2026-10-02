@@ -3,6 +3,8 @@
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_main.h>
 #include "assets.hpp"
+#include "bob.hpp"
+#include "framebuffer.hpp"
 #include "input.hpp"
 #include "race.hpp"
 #include "road_draw.hpp"
@@ -23,6 +25,9 @@ struct Game {
     int bike = 0;
     std::unique_ptr<rr::Race> race;
     int countdown = countdown_ticks;
+    std::vector<rr::Image8> bobs;
+    rr::RiderRemaps remaps;
+    rr::Palette palette;
 
     void restart() {
         race = std::make_unique<rr::Race>(rr::make_route(course, false), rr::make_route(course, true),
@@ -50,8 +55,41 @@ void quad(SDL_Renderer* r, float x0, float x1, float y0, float x2, float x3, flo
     SDL_RenderGeometry(r, nullptr, v, 4, index, 6);
 }
 
-// Placeholder rider marker: projected lateral position at the bike's depth, pinned near the bottom.
-void draw_bike(SDL_Renderer* r, const Game& g) {
+// Riding frame from the steering state. Frames 4..11 of HIBOB.DAT are the lean sequence
+// (4 strongest right, 11 strongest left) and 3 is straight; the original picks frames through
+// its RRAN/RRFD animation system (0x00445a60, 0x0043ae90), which is not ported yet.
+int riding_frame(const rr::Race& race) {
+    const int32_t steer = race.bike().i32(0x288), limit = 0x2e00;
+    const int level = std::abs(steer) * 8 / limit;   // 0..8
+    if (level < 1) return 3;
+    if (steer > 0) return level < 3 ? 6 : (level < 6 ? 5 : 4);
+    return level < 3 ? 8 : (level < 5 ? 9 : (level < 7 ? 10 : 11));
+}
+
+struct SpriteCache {
+    std::vector<SDL_Texture*> textures;
+    ~SpriteCache() { for (auto* t : textures) SDL_DestroyTexture(t); }
+    SDL_Texture* get(SDL_Renderer* r, const Game& g, int frame, int rider) {
+        if (textures.empty()) textures.assign(g.bobs.size(), nullptr);
+        SDL_Texture*& t = textures.at(size_t(frame));
+        if (t) return t;
+        const rr::Image8 img = rr::remap(g.bobs.at(size_t(frame)), g.remaps, rider);
+        if (!img.width || !img.height) return nullptr;
+        std::vector<uint8_t> rgba(size_t(img.width) * img.height * 4);
+        for (size_t i = 0; i < img.pixels.size(); ++i) {
+            const uint8_t* c = &g.palette.rgbx[4 * img.pixels[i]];
+            rgba[4*i] = c[0]; rgba[4*i+1] = c[1]; rgba[4*i+2] = c[2]; rgba[4*i+3] = img.pixels[i] ? 255 : 0;  // index 0 transparent
+        }
+        SDL_Surface* s = SDL_CreateSurfaceFrom(img.width, img.height, SDL_PIXELFORMAT_RGBA32, rgba.data(), img.width * 4);
+        t = s ? SDL_CreateTextureFromSurface(r, s) : nullptr;
+        SDL_DestroySurface(s);
+        if (t) SDL_SetTextureScaleMode(t, SDL_SCALEMODE_NEAREST);
+        return t;
+    }
+};
+
+// Player bike: original sprite, horizontal position projected at the bike's depth, bottom of the view.
+void draw_bike(SDL_Renderer* r, const Game& g, SpriteCache& cache) {
     const rr::Race& race = *g.race;
     const int32_t depth = int32_t(race.position() - race.camera_position());
     const size_t index = size_t(depth & ~1) / 2;
@@ -59,12 +97,15 @@ void draw_bike(SDL_Renderer* r, const Game& g) {
     const auto& road = race.route()[race.camera_position() >> 8];
     const int64_t rel = int64_t(race.lateral() - road.offset - race.camera().x);
     float x = float((rel * scale) >> 16) + 160.f;
-    if (x < 20) x = 20; if (x > 300) x = 300;
-    const float s = 2.f, bx = x * s, by = 478.f;
-    const float lean = race.crashed() ? 40.f : float(race.bike().i32(0x288)) / 400.f;
-    quad(r, bx - 18 + lean, bx + 18 + lean, by - 90, bx - 26, bx + 26, by - 20, {.10f, .10f, .12f, 1});   // rider
-    quad(r, bx - 8 + lean, bx + 8 + lean, by - 110, bx - 8 + lean, bx + 8 + lean, by - 90, {.75f, .15f, .12f, 1});  // helmet
-    quad(r, bx - 10, bx + 10, by - 26, bx - 12, bx + 12, by, {.05f, .05f, .05f, 1});                     // wheel
+    if (x < 20) x = 20;
+    if (x > 300) x = 300;
+    const int frame = race.crashed() ? 21 : riding_frame(race);
+    SDL_Texture* t = cache.get(r, g, frame, 0);
+    if (!t) return;
+    float w, h;
+    SDL_GetTextureSize(t, &w, &h);
+    const SDL_FRect dst{x * 2 - w / 2, 476 - h, w, h};
+    SDL_RenderTexture(r, t, nullptr, &dst);
 }
 
 void draw_hud(SDL_Renderer* r, const Game& g) {
@@ -127,6 +168,9 @@ int main(int argc, char** argv) {
         g.course = rr::read_course(assets.read("DATA/COURSES/" + g.course_name + ".CRS"));
         if (bike < 0 || size_t(bike) >= g.specs.size()) throw std::runtime_error("Bike index out of range");
         g.bike = bike;
+        g.bobs = rr::read_bobs(assets.read("DATA/BIKERS/HIBOB.DAT"), rr::bob_frames);
+        g.remaps = rr::read_rider_remaps(exe, 9);
+        g.palette = rr::Palette::from_raw(assets.read("DATA/PALETTE.RAW"));
         g.restart();
 
         if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMEPAD)) throw std::runtime_error(SDL_GetError());
@@ -138,6 +182,7 @@ int main(int argc, char** argv) {
         if (run_ticks >= 0) {   // headless-style verification run
             for (long t = 0; t < run_ticks && !g.race->finished(); ++t) g.tick(auto_drive ? autopilot(*g.race) : 0);
         }
+        SpriteCache sprites;
         SDL_Gamepad* pad = nullptr;
         bool running = true, touching = false;
         rr::PlayerInput touch;
@@ -188,7 +233,7 @@ int main(int argc, char** argv) {
             SDL_SetRenderDrawColor(renderer, 15, 18, 22, 255);
             SDL_RenderClear(renderer);
             rr::draw_road(renderer, rr::project_road(g.race->route(), g.race->camera_position(), g.race->camera(), g.depth));
-            draw_bike(renderer, g);
+            draw_bike(renderer, g, sprites);
             draw_hud(renderer, g);
             if (!screenshot.empty()) {
                 SDL_Surface* capture = SDL_RenderReadPixels(renderer, nullptr);
