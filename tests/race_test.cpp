@@ -97,6 +97,23 @@ int main() {
     check(shown > 80 && shown < 115, "opponent holds its target speed");
     check(field.place(0) == 2, "player behind the moving opponent is second");
 
+    // Rider contact (0x004368f0 detection, 0x00436a40 separation): a rider driving straight into
+    // a slower one does not pass through it, and the two end up apart.
+    rr::Opponent slow{test_spec(), 90, 40, 0, 1};
+    rr::Race bump(straight(4000), straight(4000), t, spec, 90, {slow});
+    bool overlapped_long = false; int overlap_ticks = 0;
+    for (int i = 0; i < 1800; ++i) {
+        // Player aims at the opponent's lateral position and accelerates.
+        const auto& o = bump.riders()[1].bike;
+        const int32_t dx = (o.i32(0x28) - bump.bike().i32(0x28)) >> 8;
+        bump.step(rr::control_accelerate | (dx > 20 ? rr::control_right : dx < -20 ? rr::control_left : 0));
+        const int32_t dz = std::abs(o.i32(0x1c) - bump.bike().i32(0x1c));
+        const int32_t lx = std::abs(o.i32(0x28) - bump.bike().i32(0x28));
+        if (dz < 0x40 && lx < 0x1e00) ++overlap_ticks; else overlap_ticks = 0;
+        overlapped_long |= overlap_ticks > 3;
+    }
+    check(!overlapped_long, "riders never stay inside each other");
+
     // Original field from the executable (skips without the disc).
     const std::string game = std::string(RR_SOURCE_DIR) + "/../cdrom/ROADRASH";
     if (std::filesystem::exists(game + "/ROADRASH.EXE")) {

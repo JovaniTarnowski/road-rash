@@ -74,7 +74,7 @@ public:
     int place(size_t rider) const;      // 1-based race order (finished riders by finish tick)
 private:
     SliceEdges edges(const Rider&, size_t sample) const;
-    void move_along(Rider&, int32_t distance);
+    void move_along(Rider&, int32_t distance, bool accumulate_sweep = true);
     void cross_sample(Rider&, int32_t delta);
     void accumulate(Rider&, uint32_t from, uint32_t to, size_t from_sample, size_t to_sample);
     void move(Rider&, bool player);
@@ -85,6 +85,8 @@ private:
     void ai_think(Rider&);
     int32_t curvature(const Rider&, size_t sample, int samples) const;
     int32_t ai_speed_limit(const Rider&) const;
+    void collide(Rider&, Rider&);
+    void contact(Rider& self, Rider& other);
     void update_camera();
 
     std::vector<RouteSample> routes_[2];

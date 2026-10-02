@@ -129,15 +129,21 @@ void Race::cross_sample(Rider& r, int32_t delta) {
     accumulate(r, from, to, from_sample, r.sample);
 }
 
-void Race::move_along(Rider& r, int32_t distance) {
+void Race::move_along(Rider& r, int32_t distance, bool sweep) {
     // 0x00439270: split long moves into whole-sample steps and sum the swept bend/rise.
+    // sweep=false is the third-argument-0 form used by collisions: position only.
     Bike& b = r.bike;
-    if (distance == 0) { b.i32(0x130) = 0; b.i32(0x12c) = 0; return; }
+    if (distance == 0) { if (sweep) { b.i32(0x130) = 0; b.i32(0x12c) = 0; } return; }
+    const int32_t saved_bend = b.i32(0x130), saved_rise = b.i32(0x12c);
     const int32_t pos = b.i32(0x1c);
     int32_t steps = ((pos + distance) >> 8) - (pos >> 8);
     int32_t unit = 0x100;
     if (steps < 0) { steps = -steps; unit = -0x100; }
-    if (steps < 2) { cross_sample(r, distance); return; }
+    if (steps < 2) {
+        cross_sample(r, distance);
+        if (!sweep) { b.i32(0x130) = saved_bend; b.i32(0x12c) = saved_rise; }
+        return;
+    }
     const size_t start_sample = r.sample;
     const int32_t magnitude = std::abs(distance);
     int32_t first = magnitude & 0xff;
@@ -150,8 +156,99 @@ void Race::move_along(Rider& r, int32_t distance) {
     }
     b.i32(0x134) = pos;
     r.previous_sample = start_sample;
-    b.i32(0x130) = bend;
-    b.i32(0x12c) = rise;
+    b.i32(0x130) = sweep ? bend : saved_bend;
+    b.i32(0x12c) = sweep ? rise : saved_rise;
+}
+
+void Race::collide(Rider& ra, Rider& rb) {
+    // 0x00436a40 for two bikes (+0xc4 == 4): separate along whichever axis was clear on the
+    // previous tick (+0x30 position, +0x3c lateral, +0x34 height) in inverse proportion to
+    // mass (+0x194), and record impulses +0x184 forward, +0x188 lateral, +0x18c vertical.
+    Bike& a = ra.bike; Bike& b = rb.bike;
+    const int32_t ma = a.i32(0x194), mb = b.i32(0x194), m = ma + mb;
+    b.i32(400) = ma; a.i32(400) = mb;
+    int32_t rel = a.i32(0x108) - b.i32(0x108);
+    rel = std::abs((rel >> 9) + (rel >> 12) + (rel >> 7));
+    a.u8(0x19c) = 0; b.u8(0x19c) = 0;
+    const int32_t len = a.i32(0x178) + b.i32(0x178), wid = a.i32(0x174) + b.i32(0x174);
+    auto impulse = [&](int off) { return ((b.i32(off) - a.i32(off)) * mb * 2) / m; };
+    // Forward overlap new this tick.
+    if (len < std::abs(a.i32(0x30) - b.i32(0x30))) {
+        const int32_t depth = (len - std::abs(a.i32(0x1c) - b.i32(0x1c))) + 8;
+        if (b.i32(0x30) < a.i32(0x30)) {
+            a.u8(0x19c) |= 1; b.u8(0x19c) |= 2;
+            move_along(ra, (depth * mb) / m + 3, false);
+            if (rel < 0x14) move_along(rb, -((depth * ma) / m) - 3, false);
+        } else {
+            a.u8(0x19c) |= 2; b.u8(0x19c) |= 1;
+            if (rel < 0x14) move_along(ra, -((depth * mb) / m) - 3, false);
+            move_along(rb, (depth * ma) / m + 3, false);
+        }
+        a.i32(0x184) = impulse(0x108); b.i32(0x184) = -a.i32(0x184);
+    } else { a.i32(0x184) = 0; b.i32(0x184) = 0; }
+    // Lateral overlap new this tick.
+    if (wid < std::abs(a.i32(0x3c) - b.i32(0x3c))) {
+        const int32_t depth = (wid - std::abs(a.i32(0x28) - b.i32(0x28))) + 0x800;
+        if (b.i32(0x3c) < a.i32(0x3c)) {
+            a.u8(0x19c) |= 4; b.u8(0x19c) |= 8;
+            a.i32(0x28) += (depth * mb) / m + 3; b.i32(0x28) -= (depth * ma) / m + 3;
+        } else {
+            a.u8(0x19c) |= 8; b.u8(0x19c) |= 4;
+            a.i32(0x28) -= (depth * mb) / m + 3; b.i32(0x28) += (depth * ma) / m + 3;
+        }
+        a.i32(0x188) = impulse(0x10c); b.i32(0x188) = -a.i32(0x188);
+    } else { a.i32(0x188) = 0; b.i32(0x188) = 0; }
+    a.i32(0x18c) = 0; b.i32(0x18c) = 0;   // riders never stack on each other at ground level
+    if (a.u8(0x19c) == 0) {
+        // Overlapping on both axes already: resolve by the larger impulse (end of 0x00436a40).
+        a.i32(0x184) = impulse(0x108); b.i32(0x184) = -a.i32(0x184);
+        a.i32(0x188) = impulse(0x10c); b.i32(0x188) = -a.i32(0x188);
+        if (std::abs(div_pow2(a.i32(0x184), 2)) < std::abs(a.i32(0x188)) || a.i32(0x10c) <= a.i32(0x108)) {
+            const int32_t depth = (wid - std::abs(a.i32(0x28) - b.i32(0x28))) + 0x800;
+            if (a.i32(0x188) < 0) { a.u8(0x19c) |= 8; a.i32(0x28) -= (depth * mb) / m + 3; }
+            else { a.u8(0x19c) |= 4; a.i32(0x28) += (depth * mb) / m + 3; }
+            if (-a.i32(0x188) < 1) { b.u8(0x19c) |= 8; b.i32(0x28) -= (depth * ma) / m + 3; }
+            else { b.u8(0x19c) |= 4; b.i32(0x28) += (depth * ma) / m + 3; }
+        } else {
+            const int32_t depth = (len - std::abs(a.i32(0x1c) - b.i32(0x1c))) + 8;
+            if (a.i32(0x184) < 0) { a.u8(0x19c) |= 2; if (rel < 0x14) move_along(ra, -((depth * mb) / m) - 3, false); }
+            else { a.u8(0x19c) |= 1; move_along(ra, (depth * mb) / m + 3, false); }
+            if (-a.i32(0x184) < 1) { b.u8(0x19c) |= 2; if (rel < 0x14) move_along(rb, -((depth * ma) / m) - 3, false); }
+            else { b.u8(0x19c) |= 1; move_along(rb, (depth * ma) / m + 3, false); }
+        }
+    }
+    for (int k = 0; k < 5; ++k) { a.i32(0x30 + 4*k) = a.i32(0x1c + 4*k); b.i32(0x30 + 4*k) = b.i32(0x1c + 4*k); }
+    contact(ra, rb);
+    contact(rb, ra);
+}
+
+void Race::contact(Rider& self, Rider& other) {
+    // Bike-against-bike branch of the contact handler 0x004049c0 (the knock-off decision
+    // 0x004052c0 and sounds are not ported). Bikes are 0x2300 tall (>= 0x2000), so the hit is
+    // class 1/2 when the other bike's width contains ours (+0x19c bit 0x40), otherwise 3.
+    Bike& s = self.bike; const Bike& o = other.bike;
+    if (s.i32(0x2f4) != 0) return;
+    const int32_t elasticity = s.i32(0x180);
+    s.i32(0x188) = div256(int64_t(s.i32(0x188)) * elasticity);
+    s.i32(0x184) = div256(int64_t(s.i32(0x184)) * elasticity);
+    const int32_t hit = std::abs(s.i32(0x184));
+    const bool contained = (o.i32(0x28) - o.i32(0x174) < s.i32(0x28) - s.i32(0x174) / 2) &&
+                           (s.i32(0x28) + s.i32(0x174) / 2 < o.i32(0x28) + o.i32(0x174));
+    if (contained) {
+        if (s.i32(0xec) - o.i32(0x108) < 0x1771) s.i32(0xec) += s.i32(0x184);
+        else crash(self);
+    } else if (o.i32(0x28) < s.i32(0x28)) {
+        if (s.i32(0xf0) < 0) s.i32(0xf0) = 0;
+        s.i32(0xf0) += hit / 2;
+        s.i32(0xec) = std::max(0, s.i32(0xec) - div_pow2(hit, 2));
+    } else {
+        if (s.i32(0xf0) > 0) s.i32(0xf0) = 0;
+        s.i32(0xf0) -= hit / 2;
+        s.i32(0xec) = std::max(0, s.i32(0xec) - div_pow2(hit, 2));
+    }
+    // Nudge apart sideways (0x00404f4d).
+    const int32_t push = div_pow2(s.i32(0x174) + o.i32(0x174), 4) * s.i32(0x18);
+    s.i32(0x28) += o.i32(0x28) < s.i32(0x28) ? push : -push;
 }
 
 void Race::move(Rider& r, bool player) {
@@ -447,6 +544,19 @@ void Race::step(uint32_t controls) {
     if (riders_[0].finished && std::all_of(riders_.begin(), riders_.end(), [](const Rider& r) { return r.finished; })) return;
     ++ticks_;
     for (size_t i = 0; i < riders_.size(); ++i) step_rider(riders_[i], controls, i == 0);
+    // 0x004368f0: overlapping pairs (position within the half-lengths +0x178, lateral within the
+    // half-widths +0x174, same road half) separate and exchange impulses.
+    for (size_t i = 0; i < riders_.size(); ++i)
+        for (size_t j = i + 1; j < riders_.size(); ++j) {
+            Rider& a = riders_[i]; Rider& b = riders_[j];
+            if (a.finished || b.finished) continue;
+            if (std::abs(a.bike.i32(0x1c) - b.bike.i32(0x1c)) > a.bike.i32(0x178) + b.bike.i32(0x178)) continue;
+            if (std::abs(a.bike.i32(0x28) - b.bike.i32(0x28)) > a.bike.i32(0x174) + b.bike.i32(0x174)) continue;
+            const auto& sa = route_of(a)[a.sample];
+            if (sa.dual && a.route != b.route) continue;
+            if (std::abs(a.bike.i32(0x20) - b.bike.i32(0x20)) > a.bike.i32(0x17c) + b.bike.i32(0x17c)) continue;
+            collide(a, b);
+        }
     update_camera();
 }
 }
