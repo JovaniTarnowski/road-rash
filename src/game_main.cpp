@@ -6,6 +6,8 @@
 #include "bob.hpp"
 #include "framebuffer.hpp"
 #include "input.hpp"
+#include "importer.hpp"
+#include "import_ui.hpp"
 #include "race.hpp"
 #include "road_draw.hpp"
 #include "session.hpp"
@@ -243,10 +245,10 @@ void draw_pause(SDL_Renderer* r) {
 }
 
 int main(int argc, char** argv) {
-    std::string root = "game", screenshot;
+    std::string root, screenshot;
     int course = 0, bike = 0, level = 0, opponents = 7;
     long run_ticks = -1;
-    bool auto_drive = false, start_paused = false;
+    bool auto_drive = false, start_paused = false, first_run_smoke = false;
     for (int i = 1; i < argc; ++i) {
         const std::string a = argv[i];
         if (a == "--assets" && i + 1 < argc) root = argv[++i];
@@ -256,6 +258,7 @@ int main(int argc, char** argv) {
         else if (a == "--screenshot" && i + 1 < argc) screenshot = argv[++i];
         else if (a == "--autopilot") auto_drive = true;
         else if (a == "--paused") start_paused = true;
+        else if (a == "--first-run-smoke") first_run_smoke = true;
         else if (a == "--level" && i + 1 < argc) level = std::atoi(argv[++i]) - 1;
         else if (a == "--opponents" && i + 1 < argc) opponents = std::atoi(argv[++i]);
         else { std::fprintf(stderr, "Usage: rr-game [--assets DIR] [--course 0-4] [--bike 0-14] [--level 1-5] [--opponents 0-7] [--autopilot] [--paused] [--ticks N --screenshot FILE.bmp]\n"); return 2; }
@@ -265,6 +268,23 @@ int main(int argc, char** argv) {
     SDL_Renderer* renderer = nullptr;
     int result = 0;
     try {
+        if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMEPAD)) throw std::runtime_error(SDL_GetError());
+        if (!SDL_CreateWindowAndRenderer("Road Rash Native", 960, 760, SDL_WINDOW_RESIZABLE, &window, &renderer))
+            throw std::runtime_error(SDL_GetError());
+        SDL_SetRenderLogicalPresentation(renderer, 640, 510, SDL_LOGICAL_PRESENTATION_LETTERBOX);
+        SDL_SetRenderVSync(renderer, 1);
+        if (root.empty()) {
+            root = rr::data_root();
+#ifdef RR_DEV_ASSETS
+            if (!rr::Assets(root).exists("ROADRASH.EXE")) root = "game";
+#endif
+        }
+        if (!rr::Assets(root).exists("ROADRASH.EXE")) {
+            if (!rr::run_import_screen(window, renderer, root, screenshot, first_run_smoke)) {
+                SDL_DestroyRenderer(renderer); SDL_DestroyWindow(window); SDL_Quit();
+                return 0;
+            }
+        }
         const rr::Assets assets(root);
         Game g;
         const auto exe = assets.read("ROADRASH.EXE");
@@ -281,12 +301,6 @@ int main(int argc, char** argv) {
         g.level = level;
         g.opponents = rr::original_opponents(exe, g.specs, level, opponents);
         g.restart();
-
-        if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMEPAD)) throw std::runtime_error(SDL_GetError());
-        if (!SDL_CreateWindowAndRenderer("Road Rash Native", 960, 760, SDL_WINDOW_RESIZABLE, &window, &renderer))
-            throw std::runtime_error(SDL_GetError());
-        SDL_SetRenderLogicalPresentation(renderer, 640, 510, SDL_LOGICAL_PRESENTATION_LETTERBOX);
-        SDL_SetRenderVSync(renderer, 1);
 
         if (run_ticks >= 0) {   // headless-style verification run
             for (long t = 0; t < run_ticks && !g.race->finished(); ++t) g.tick(auto_drive ? autopilot(*g.race) : 0);

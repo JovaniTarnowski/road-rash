@@ -31,6 +31,19 @@ P/Esc or gamepad Start toggles pause. Android Back opens pause. Enter, Start or 
 
 The race uses the original 60 Hz bike physics ported from the executable (throttle, brakes, 7-gear shifting, drag, traction, steering, curve drift, crests and jumps) on the original course geometry. You race seven original AI opponents with punches, kicks and weapons, drawn with the original rider sprites. Road shading is a placeholder; traffic, police, audio and menus are not done yet. See `docs/PROGRESS.md` for what is simplified.
 
+## Import your disc
+
+Launching `rr-game` without `--assets` uses its imported data directory and shows the first-run picker when absent. On desktop, choose either an ISO or the extracted folder. The importer leaves no half-imported destination on missing files, hash mismatch or cancellation. Existing nonempty destinations are preserved.
+
+A command-line import is also available:
+
+```sh
+build/rr-import "/path/to/Road Rash.iso" "/path/to/imported/ROADRASH"
+build/rr-game --assets "/path/to/imported/ROADRASH"
+```
+
+The default destination is `SDL_GetPrefPath("RoadRashNative", "RoadRash")/game/ROADRASH`. `RR_PREF_OVERRIDE` redirects the pref root for development tests. `--first-run-smoke` renders the missing-data screen once and exits; `--screenshot` can capture it. All imported commercial assets stay outside the source and APK.
+
 ## Run the research viewer on this Mac
 
 ```sh
@@ -54,17 +67,16 @@ python3 tools/check_corpus.py ../cdrom/ROADRASH
 
 ## Android
 
-The Gradle project is `android/`; it builds the game (`src/game_main.cpp`) into `libmain.so` for `arm64-v8a`. SDL's Java activity supplies the Android lifecycle and input bridge. The APK is a debug research game and includes 18 assets copied from the local disc: menu images, palette, dashboard/horizons, bike specs, rider sprites, five courses and `ROADRASH.EXE` (read for static tables).
+The Gradle project is `android/`; it builds the game into `libmain.so` for `arm64-v8a`. Normal APKs contain no original game data. On first launch choose your own rerelease ISO; all 341 files are SHA-256 verified before the imported directory is committed. SDL supplies the Android content-URI picker and lifecycle/input bridge. Nonseekable document streams are temporarily cached during import.
 
 ```sh
-python3 tools/prepare_android_assets.py ../cdrom/ROADRASH
 export JAVA_HOME=/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home
 android/gradlew -p android assembleDebug
 ```
 
 SDK location is configured in the local, ignored `android/local.properties`. This workspace has its SDK in `.tools/android-sdk`. Required packages: `platforms;android-35`, `build-tools;35.0.0`, `ndk;28.2.13676358`, `cmake;3.22.1`, and `platform-tools`. Gradle 8.11.1 and Android Gradle Plugin 8.9.2 are pinned. The bundled SDL3 3.4.8 AAR comes from the official Android development archive, with its SHA-256 verified before extraction.
 
-Output: `android/app/build/outputs/apk/debug/app-debug.apk`.
+Output: `android/app/build/outputs/apk/debug/app-debug.apk`. Assembly verifies that the APK has no `assets/game/` entries. For local developer research only, stage with `tools/prepare_android_assets.py` and build with `-PdevAssets=true`; that exemption never applies to release APKs.
 
 The APK was built and installed on the connected MANGMI AIR X. Its native library starts, but rendering and touch checks remain pending because the device was locked. See `docs/VERIFICATION.md` for exact test coverage.
 

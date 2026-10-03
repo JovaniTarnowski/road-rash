@@ -1,4 +1,5 @@
 plugins { id 'com.android.application' }
+def devAssets = providers.gradleProperty('devAssets').map { it.toBoolean() }.getOrElse(false)
 
 android {
     namespace 'org.roadrash.nativeport'
@@ -11,9 +12,12 @@ android {
         versionCode 1
         versionName '0.1-research'
         ndk { abiFilters 'arm64-v8a' }
-        externalNativeBuild { cmake { arguments '-DANDROID_STL=c++_shared' } }
+        externalNativeBuild { cmake { arguments '-DANDROID_STL=c++_shared', "-DRR_DEV_ASSETS=${devAssets ? 'ON' : 'OFF'}" } }
     }
     buildFeatures { prefab true }
+    // Original disc data stays local and is imported at runtime. Only explicitly
+    // requested developer debug builds can see the old research asset folder.
+    sourceSets { main { assets.srcDirs = devAssets ? ['src/main/assets'] : ['src/main/empty-assets'] } }
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_17
         targetCompatibility JavaVersion.VERSION_17
@@ -23,3 +27,31 @@ android {
     }
 }
 dependencies { implementation files('libs/SDL3-3.4.8.aar') }
+
+def verifyAll = tasks.register('verifyNoGameData') {
+    group = 'verification'
+    description = 'Check both APK variants for embedded original game data.'
+}
+android.applicationVariants.all { variant ->
+    def capitalName = variant.name.capitalize()
+    def verifier = tasks.register("verify${capitalName}NoGameData") {
+        dependsOn variant.packageApplicationProvider
+        doLast {
+            if (devAssets && variant.buildType.name == 'debug') {
+                logger.lifecycle('Developer assets enabled for debug; this APK is for local research only.')
+                return
+            }
+            variant.outputs.each { output ->
+                def apk = new File(variant.packageApplicationProvider.get().outputDirectory.get().asFile, output.outputFileName)
+                if (!apk.isFile()) throw new GradleException("APK missing: ${apk}")
+                def archive = new java.util.zip.ZipFile(apk)
+                try {
+                    if (archive.entries().find { it.name.startsWith('assets/game/') })
+                        throw new GradleException("Original game data found in ${apk.name}; runtime import is required.")
+                } finally { archive.close() }
+            }
+        }
+    }
+    tasks.named("assemble${capitalName}").configure { dependsOn verifier }
+    verifyAll.configure { dependsOn verifier }
+}

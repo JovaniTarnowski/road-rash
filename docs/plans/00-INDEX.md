@@ -7,8 +7,8 @@ Read this file first. It defines the conventions, the verification method and th
 ## Where things stand
 
 See [../PROGRESS.md](../PROGRESS.md) for the status table and [../REVERSE_ENGINEERING.md](../REVERSE_ENGINEERING.md) for all recovered formats and function addresses. In short:
-- **Done:** resource directories, course graph, lanes, shoulders, the full road projection including split/merge roads, menu/dashboard/horizon image decoding, macOS and Android builds of a viewer.
-- **Not started:** sprites, scenery, simulation, AI, combat, HUD, menus, audio, video, saves, final packaging.
+- **Implemented:** resource/course readers and road projection; bike physics, rider sprites, seven AI riders and combat; lifecycle and multi-touch; ISO/folder import; asset-free Android debug APK. The original numeric road oracle matches 600 CITY frames in a limited stretch.
+- **Still open:** deterministic/original pixel and gameplay verification; terrain/scenery/original raster; full traffic/police/crash behavior; menus, career/shop/saves; audio/video/MIDI; standalone macOS/release Android packaging and hardware validation. See PROGRESS.md for approximations.
 
 ## Plans and order
 

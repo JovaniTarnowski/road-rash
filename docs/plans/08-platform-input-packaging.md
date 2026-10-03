@@ -54,6 +54,8 @@ Both get keyboard, gamepad (including the MANGMI AIR X built-in controls) and to
 
 ### Task 1: ISO 9660 reader and importer
 
+Implemented October 2: native reader/hash/import modules, generated 341-file reference metadata, transactional folder/ISO import, nonseekable-stream cache and cancellation cleanup. Real ISO import and viewer smoke passed; synthetic parser/import tests and sanitizers pass. See VERIFICATION.md.
+
 **Files:**
 - Create: `src/iso9660.hpp`, `src/iso9660.cpp`, `src/importer.hpp`, `src/importer.cpp`, `tools/gen_reference_hashes.py`, `src/reference_hashes.inc`
 - Create: `tests/iso9660_test.cpp`, `tests/importer_test.cpp`
@@ -103,6 +105,8 @@ Assert:
 ---
 
 ### Task 2: First-run import flow on both platforms
+
+Implemented October 2: shared first-run UI, async SDL file/folder selection, worker progress/errors, default pref-path data root, empty-pref CTest smoke and asset-free Android assembly with APK verification. Desktop screenshot inspected. Physical Android SAF remains open.
 
 **Files:**
 - Modify: `src/game_main.cpp`, `src/frontend.cpp` (an import screen before the splash when no data is present)

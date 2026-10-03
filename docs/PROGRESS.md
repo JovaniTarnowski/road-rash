@@ -33,6 +33,9 @@ Detailed evidence is in [REVERSE_ENGINEERING.md](REVERSE_ENGINEERING.md) and tes
 | Android build | APK builds; runs to `SDL_main` on the device; rendering never checked on hardware | `android/` |
 | Platform lifecycle and timing | Pause on background/focus loss/controller removal, explicit resume, texture reset recovery, rational fixed-step clock | `src/session.cpp`, `src/game_main.cpp` |
 | Multi-touch | Independent finger tracking, cancellation and brake priority | `src/input.cpp`, `tests/input_test.cpp` |
+| Original road oracle | 600 original CITY frames match compared projection fields; other courses/splits unverified | `oracle/`, `tests/oracle_road_test.cpp` |
+| Disc import | ISO/folder reader, SHA-256 verification of 341 files, first-run picker/progress UI | `src/importer.cpp`, `src/import_ui.cpp` |
+| Android data packaging | Normal APK excludes game data; guarded developer assets are opt-in | `android/app/build.gradle` |
 
 ## Timeline
 
@@ -102,6 +105,17 @@ Sessions 1–6: September 28, 2026. Later dates are listed per session.
 - Native and sanitizer tests pass (9/9); Android ARM64 debug APK rebuilt. Pause screenshot inspected at `analysis/native-game-paused.png`.
 - No Android device connected. Physical input, lifecycle and graphics reset recovery still need hardware validation. Plan 08 remains partial: import, settings/rebinding, saves/audio lifecycle and release packaging are not implemented.
 
+### Session 8: original oracle and verified data import (October 2, 2026)
+
+- Completed AWEMAN32 forwarding and in-memory frame hooks at four verified original call sites. The reference EXE stays unchanged in a separate oracle install. All sites are preflighted before any write; projected pointers are checked before logging.
+- Captured 600 original frames. The scenario is named `napa-attract`, but selector 0 is **CITY** in the original (`0x0046df58`), unlike native CLI ordering. The initial apparent shoulder mismatch was a comparison-course mapping error; no road-code change was needed.
+- `oracle-road` compares slice kind/sample, depth, scale, centre, surface row, road edges and outer shoulder edges. All 600 frames match exactly. Camera Q8 position spans 12,544–19,159 (samples 49–74). This does not verify other courses, splits, terrain, AI, physics or pixels.
+- Added bounds-checked ISO 9660 parsing, SHA-256 and a transactionally staged importer. Path/hash metadata comes from the existing inventory; original file bytes are never embedded. Missing/mismatching files prevent commit; existing nonempty destinations are preserved.
+- Imported all 341 files from the real ISO into `.tools/imported-game`; viewer smoke passed using that copy.
+- Added first-run ISO/folder selection and asynchronous progress/error display. Android uses SDL's content-URI picker; physical SAF operation remains unverified. Screenshot/`--first-run-smoke` verifies the empty-data screen without opening a picker.
+- Default APKs exclude research assets. Assembly checks actual APK entries. `-PdevAssets=true` permits local debug research only; release checks always forbid game data.
+- 16/16 native tests pass. Android ARM64 debug builds and passes the no-game-data check. No device connected. Plans 01–08 remain active.
+
 ## Assumptions and approximations in current code
 
 - **Rider commit:** after a split the preview assumes the rider has already committed to the selected branch, so the other road is dropped 82 samples in. In the game this depends on the bike's lateral position (`0x00439390`).
@@ -124,7 +138,7 @@ Sessions 1–6: September 28, 2026. Later dates are listed per session.
 
 ## Not verified
 
-- **No comparison with the original's output.** No Wine capture at a matching position has been diffed against the viewer.
+- **No pixel comparison with the original's output.** Numeric road fields match the recorded starting stretch of CITY; frame pixels and other systems remain unverified.
 - **Android has never been observed running on hardware.** Session 1's device was locked, and no device was connected in sessions 2–5. The APK now contains the game.
 
 ## Next steps
@@ -150,3 +164,5 @@ The complete agent-executable plans to finish the port are in [plans/00-INDEX.md
 | `build/rr-inspect FILE.RSC` | Dump a resource directory |
 | `python3 tools/check_corpus.py ../cdrom/ROADRASH` | Validate all resource containers |
 | `python3 tools/prepare_android_assets.py ../cdrom/ROADRASH` then `android/gradlew -p android assembleDebug` | Build the APK (needs `JAVA_HOME` set to JDK 21) |
+
+Import follow-up (October 2): nonseekable ISO input now caches inside the owned staging directory and the cached ISO is removed before commit. A synthetic FIFO import and cancellation/cleanup tests pass. First-run UI is now a CTest smoke check. Hardware SAF remains unverified.

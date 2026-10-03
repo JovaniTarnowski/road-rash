@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Copy only original files needed by the current research viewer into the APK."""
+"""Stage developer-only local assets; requires an explicit -PdevAssets=true build."""
 import argparse
 import shutil
 from pathlib import Path
@@ -19,4 +19,4 @@ for relative in files:
     out = target/relative
     out.parent.mkdir(parents=True, exist_ok=True)
     shutil.copyfile(args.game/relative, out)
-print(f'Copied {len(files)} original assets for local Android build')
+print(f'Staged {len(files)} local assets. Enable only with -PdevAssets=true; normal APKs import the disc at runtime.')
