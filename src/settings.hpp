@@ -18,7 +18,10 @@ struct Settings {
     bool mini_dash = false;          // "MiniDash" 0x00467a98
     bool opponent_list = false;      // "OpponentList" 0x004753a8
     int music_group = 0, music_track = 0;   // "Group"/"Track" (jukebox)
-    int master_volume = 100, music_volume = 80, effects_volume = 100;   // "Mixer" block (native percent)
+    // "Mixer" block (0x00463030): master 100, other channels 80 by default.
+    int master_volume = 100, music_volume = 80, effects_volume = 80, engine_volume = 80, others_volume = 80,
+        siren_volume = 80, interface_volume = 80;
+    bool mute = false, swap_speakers = false;
     std::string alias;               // player name (0x004b8a1c)
 };
 Settings default_settings();                         // language and units from the system locale

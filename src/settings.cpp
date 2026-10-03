@@ -57,6 +57,12 @@ Settings parse_settings(const std::string& text) {
         else if (k == "master_volume") { if (parse_int(v, 0, 100, x)) s.master_volume = x; }
         else if (k == "music_volume") { if (parse_int(v, 0, 100, x)) s.music_volume = x; }
         else if (k == "effects_volume") { if (parse_int(v, 0, 100, x)) s.effects_volume = x; }
+        else if (k == "engine_volume") { if (parse_int(v, 0, 100, x)) s.engine_volume = x; }
+        else if (k == "others_volume") { if (parse_int(v, 0, 100, x)) s.others_volume = x; }
+        else if (k == "siren_volume") { if (parse_int(v, 0, 100, x)) s.siren_volume = x; }
+        else if (k == "interface_volume") { if (parse_int(v, 0, 100, x)) s.interface_volume = x; }
+        else if (k == "mute") flag(s.mute);
+        else if (k == "swap_speakers") flag(s.swap_speakers);
         else if (k == "alias") { if (v.size() < 20) s.alias = v; }
     }
     return s;
@@ -68,7 +74,9 @@ std::string format_settings(const Settings& s) {
       << "\nhires_bikers=" << s.high_res_bikers << "\nvideo_mode=" << s.video_mode << "\nalternate_artwork=" << s.alternate_artwork
       << "\nmini_dash=" << s.mini_dash << "\nopponent_list=" << s.opponent_list << "\nmusic_group=" << s.music_group
       << "\nmusic_track=" << s.music_track << "\nmaster_volume=" << s.master_volume << "\nmusic_volume=" << s.music_volume
-      << "\neffects_volume=" << s.effects_volume << "\nalias=" << s.alias << "\n";
+      << "\neffects_volume=" << s.effects_volume << "\nengine_volume=" << s.engine_volume << "\nothers_volume=" << s.others_volume
+      << "\nsiren_volume=" << s.siren_volume << "\ninterface_volume=" << s.interface_volume << "\nmute=" << s.mute
+      << "\nswap_speakers=" << s.swap_speakers << "\nalias=" << s.alias << "\n";
     return o.str();
 }
 

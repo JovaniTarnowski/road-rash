@@ -38,6 +38,13 @@ bool Mixer::cursor(int id,uint64_t& frame) const {
     }
     return false;
 }
+bool Mixer::active(int id) const {
+    if (id<0) return false;
+    if (id>consumed_id_.load(std::memory_order_acquire)) return id<next_id_;
+    for (size_t i=0;i<voices_.size();++i)
+        if (cursors_[i].id.load(std::memory_order_acquire)==id) return cursors_[i].active.load(std::memory_order_acquire);
+    return false;
+}
 int Mixer::queued_frames() const {
     if (!stream_) return 0;
     return std::max(0,SDL_GetAudioStreamQueued(stream_))/4;
@@ -45,7 +52,7 @@ int Mixer::queued_frames() const {
 void Mixer::retire(const PcmSound* sound) noexcept {
     if (stream_ && !SDL_LockAudioStream(stream_)) close_device();
     consume();
-    for (auto& voice:voices_) if (voice.sound==sound) voice.sound=nullptr;
+    for (size_t i=0;i<voices_.size();++i) if (voices_[i].sound==sound) { voices_[i].sound=nullptr; cursors_[i].active.store(false,std::memory_order_release); }
     if (stream_) SDL_UnlockAudioStream(stream_);
 }
 void Mixer::consume() {
@@ -59,11 +66,13 @@ void Mixer::consume() {
             cursor.id.store(-1,std::memory_order_release);
             cursor.frame.store(0,std::memory_order_release);
             *slot={command.sound,0,command.id,command.volume,command.pan,command.pitch,command.loop};
+            cursor.active.store(true,std::memory_order_release);
             cursor.id.store(command.id,std::memory_order_release);
+            consumed_id_.store(command.id,std::memory_order_release);
         } else {
             const auto slot=std::find_if(voices_.begin(),voices_.end(),[&](const Voice& v) { return v.id==command.id; });
             if (slot!=voices_.end()) {
-                if (command.kind==3) slot->sound=nullptr;
+                if (command.kind==3) { slot->sound=nullptr; cursors_[size_t(slot-voices_.begin())].active.store(false,std::memory_order_release); }
                 else { slot->volume=command.volume;slot->pan=command.pan;slot->pitch=command.pitch; }
             }
         }
@@ -108,7 +117,10 @@ void Mixer::render(int16_t* out,int frames) {
         out[2*frame]=int16_t(std::clamp<int64_t>(mixed[0],-32768,32767));
         out[2*frame+1]=int16_t(std::clamp<int64_t>(mixed[1],-32768,32767));
     }
-    for (size_t i=0;i<voices_.size();++i) cursors_[i].frame.store(voices_[i].position>>32,std::memory_order_release);
+    for (size_t i=0;i<voices_.size();++i) {
+        cursors_[i].frame.store(voices_[i].position>>32,std::memory_order_release);
+        if (!voices_[i].sound) cursors_[i].active.store(false,std::memory_order_release);
+    }
 }
 void SDLCALL Mixer::callback(void* data,SDL_AudioStream* stream,int additional,int) {
     auto& mixer=*static_cast<Mixer*>(data);

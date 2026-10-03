@@ -1,6 +1,8 @@
 #pragma once
 #include "bike.hpp"
 #include "road.hpp"
+#include "sound_event.hpp"
+#include <vector>
 
 namespace rr {
 // Original timing: 0x004163d0 steps the simulation at QueryPerformanceFrequency/0x3c,
@@ -92,11 +94,14 @@ public:
     bool crashed() const { return bike().i32(0x2f4) != 0; }
     int32_t ticks() const { return ticks_; }
     uint32_t camera_position() const;
+    int32_t camera_x() const { return camera_x_; }   // 0x004b7ee8: camera lateral, world units
     Camera camera() const;              // relative to the route's own road at camera_position()
     int32_t speed() const { return bike().i32(0xec); }
     int gear() const { return bike().i32(0x23c); }
     int place(size_t rider) const;      // 1-based race order (finished riders by finish tick)
     int last_target() const { return last_target_; }   // rider most recently hit by the player
+    // Sound events queued this tick (0x00436830 call sites that involve the player).
+    std::vector<SoundEventRecord> take_sound_events() { auto e = std::move(sound_events_); sound_events_.clear(); return e; }
     bool wrecked() const { return bike().i32(0x2f0) == 0; }   // bike condition used up
 private:
     SliceEdges edges(const Rider&, size_t sample) const;
@@ -125,6 +130,8 @@ private:
     int level_ = 0;
     int last_target_ = -1;
     uint32_t seed_ = 1;   // MSVC rand() state (0x00455eb0)
+    std::vector<SoundEventRecord> sound_events_;
+    void sound(SoundEvent, const Bike&);
     int32_t camera_x_ = 0, camera_height_ = 150, camera_lift_ = 0, camera_back_ = 0;
 };
 }

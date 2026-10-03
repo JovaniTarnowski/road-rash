@@ -18,6 +18,8 @@ public:
     bool set(int voice,int volume,int pan,int pitch_q8);
     bool stop(int voice);
     bool cursor(int voice,uint64_t& source_frame) const;
+    // True while a started voice is queued or still sounding (DirectSound GetStatus PLAYING).
+    bool active(int voice) const;
     int queued_frames() const;
     // Game-thread lifetime boundary: drain commands under SDL's stream lock
     // before releasing a sound. The callback never takes a user mutex.
@@ -35,7 +37,8 @@ private:
     std::atomic<unsigned> head_{0},tail_{0};
     std::atomic<bool> paused_{false};
     std::vector<Voice> voices_;
-    struct PlaybackCursor { std::atomic<int> id{-1}; std::atomic<uint64_t> frame{0}; };
+    struct PlaybackCursor { std::atomic<int> id{-1}; std::atomic<uint64_t> frame{0}; std::atomic<bool> active{false}; };
+    std::atomic<int> consumed_id_{-1};
     std::array<PlaybackCursor,256> cursors_{};
     int next_id_=0;
     SDL_AudioStream* stream_=nullptr;

@@ -17,6 +17,7 @@
 #include "frontend.hpp"
 #include "pe_strings.hpp"
 #include "settings.hpp"
+#include "sound.hpp"
 #include "text.hpp"
 #include <filesystem>
 #include <algorithm>
@@ -46,6 +47,8 @@ struct Game {
     bool career = false;        // race ends after the finish delay instead of restarting
     std::string quit_prompt;    // string 316, shown after Escape in a career race
     bool quitting = false;
+    rr::SoundSystem* sound = nullptr;   // race effects and engines (0x00434980)
+    rr::Mixer* mixer = nullptr;
 
     void restart() {
         race = std::make_unique<rr::Race>(rr::make_route(course, false), rr::make_route(course, true),
@@ -53,8 +56,12 @@ struct Game {
         countdown = countdown_ticks;
     }
     void tick(uint32_t controls) {
-        if (countdown > 0) { --countdown; return; }   // race clock starts after the countdown
-        race->step(controls);
+        if (countdown > 0) --countdown;   // race clock starts after the countdown
+        else race->step(controls);
+        if (sound) {
+            for (const auto& e : race->take_sound_events()) sound->post(e);
+            sound->update(*race);
+        }
     }
 };
 
@@ -337,7 +344,7 @@ struct RaceOptions {
 RaceEnd run_race(Game& g, SDL_Renderer* renderer, const RaceOptions& opt) {
     RaceEnd result;
     SpriteCache sprites;
-    LifecycleWatch lifecycle;
+    LifecycleWatch lifecycle(g.mixer);
     if (opt.start_paused) lifecycle.state.pause();
     rr::TouchInput touch;
     rr::TickClock clock;
@@ -359,6 +366,7 @@ RaceEnd run_race(Game& g, SDL_Renderer* renderer, const RaceOptions& opt) {
         while (SDL_PollEvent(&e)) {
             if (e.type == SDL_EVENT_QUIT) { running = false; result.quit_app = true; }
             if (!lifecycle_event(e.type)) lifecycle.state.handle(e);
+            if (g.mixer && !g.mixer->handle(e)) SDL_Log("Audio reopen failed: %s", SDL_GetError());
             if (e.type == SDL_EVENT_KEY_DOWN && !e.key.repeat) {
                 if (g.quitting) {
                     // 0x004227d0: a second Escape quits the race (outcome 5), any other key continues.
@@ -436,6 +444,7 @@ RaceEnd run_race(Game& g, SDL_Renderer* renderer, const RaceOptions& opt) {
         const uint64_t now = SDL_GetTicksNS();
         if (lifecycle.state.take_clock_reset()) { touch.clear(); clock.reset(); last = now; }
         const bool frozen = lifecycle.state.paused() || g.quitting;
+        if (g.mixer) g.mixer->pause(frozen || lifecycle.state.background());
         const int steps = clock.advance(now - last, frozen);
         last = now;
         for (int step = 0; step < steps && !frozen; ++step) {
@@ -486,6 +495,7 @@ RaceEnd run_race(Game& g, SDL_Renderer* renderer, const RaceOptions& opt) {
         SDL_RenderPresent(renderer);
     }
     if (pad) SDL_CloseGamepad(pad);
+    if (g.mixer) g.mixer->pause(false);
     return result;
 }
 
@@ -517,6 +527,27 @@ int run_game(const rr::Assets& assets, SDL_Window* window, SDL_Renderer* rendere
         const uint32_t slot = p >= 0 && p < 9 ? uint32_t(name_table[size_t(p) * 4]) | uint32_t(name_table[size_t(p) * 4 + 1]) << 8 : 0;
         return slot ? fe.string_slot(int(slot)) : std::string();
     };
+    // Audio: one mixer for the soundtrack (0x00403040) and race sounds (0x00435da0).
+    rr::Mixer mixer(48);
+    if (menu_frames < 0 && (!SDL_InitSubSystem(SDL_INIT_AUDIO) || !mixer.open_device()))
+        SDL_Log("Audio unavailable: %s", SDL_GetError());
+    std::unique_ptr<rr::SoundSystem> sound;
+    try {
+        sound = std::make_unique<rr::SoundSystem>(assets, mixer, rr::read_volume_curve(exe), int(rr::read_exe_data(exe, 0x0046dce5, 1)[0]));
+    } catch (const std::exception& e) { SDL_Log("Race sounds unavailable: %s", e.what()); }
+    rr::MusicPlayer music(assets, mixer);
+    auto apply_levels = [&] {
+        rr::SoundLevels l;
+        l.master = settings.master_volume; l.effects = settings.effects_volume; l.engine = settings.engine_volume;
+        l.others = settings.others_volume; l.siren = settings.siren_volume; l.music = settings.music_volume;
+        l.interface = settings.interface_volume; l.mute = settings.mute; l.swap_speakers = settings.swap_speakers;
+        if (sound) sound->set_levels(l);
+        music.set_volume(settings.mute ? 0 : 127 * settings.music_volume / 100 * settings.master_volume / 100);
+    };
+    apply_levels();
+    if (menu_frames < 0) music.play(settings.music_track);
+    g.mixer = &mixer;
+    LifecycleWatch audio_lifecycle(&mixer);
     SDL_Texture* texture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_XRGB8888, SDL_TEXTUREACCESS_STREAMING, 640, 480);
     if (!texture) throw std::runtime_error(SDL_GetError());
     SDL_SetTextureScaleMode(texture, SDL_SCALEMODE_NEAREST);
@@ -531,7 +562,15 @@ int run_game(const rr::Assets& assets, SDL_Window* window, SDL_Renderer* rendere
         while (running && fe.poll(ev)) {
             if (ev.kind == rr::FrontendEvent::Kind::quit) running = false;
             else if (ev.kind == rr::FrontendEvent::Kind::play_video) {
-                if (menu_frames < 0) play_video(assets, ev.video, renderer, {}, -1);
+                if (menu_frames < 0) {
+                    // 0x004023e0: showroom clips (flag 1) only quieten the soundtrack; other videos stop it.
+                    const bool showroom = ev.video.find("/RAT/") != std::string::npos || ev.video.find("/SPORT/") != std::string::npos ||
+                                          ev.video.find("/SUPER/") != std::string::npos;
+                    if (showroom) music.set_volume(0); else music.stop();
+                    play_video(assets, ev.video, renderer, {}, -1);
+                    apply_levels();
+                    if (!showroom && !music.active()) music.play(music.track());
+                }
             } else if (ev.kind == rr::FrontendEvent::Kind::start_race) {
                 // Race set-up from the career: course, level, bike, rider weight, opponents (plan 05).
                 g.course_name = original_course_files[ev.course - 1];
@@ -545,7 +584,14 @@ int run_game(const rr::Assets& assets, SDL_Window* window, SDL_Renderer* rendere
                 g.quit_prompt = fe.string_slot(316);
                 g.restart();
                 if (menu_frames >= 0) { running = false; break; }   // smoke run: stop at the first race
+                music.stop();                                         // 0x004160c0 -> 0x00402f50
+                g.sound = sound.get();
+                if (sound) sound->start_race(career.state.bike, career.state.character);
                 const RaceEnd end = run_race(g, renderer, {});
+                if (sound) sound->stop_race();
+                g.sound = nullptr;
+                settings.music_track = music.track();
+                music.play(music.track());
                 SDL_SetRenderLogicalPresentation(renderer, 640, 480, SDL_LOGICAL_PRESENTATION_LETTERBOX);
                 if (end.quit_app) { running = false; break; }
                 // Finishing order: riders who finished, by finish tick (0x00420e30 rows).
@@ -570,6 +616,7 @@ int run_game(const rr::Assets& assets, SDL_Window* window, SDL_Renderer* rendere
         while (SDL_PollEvent(&e)) {
             if (e.type == SDL_EVENT_QUIT) running = false;
             if (!lifecycle_event(e.type)) lifecycle.state.handle(e);
+            if (!mixer.handle(e)) SDL_Log("Audio reopen failed: %s", SDL_GetError());
             if (e.type == SDL_EVENT_KEY_DOWN) {
                 switch (e.key.key) {
                 case SDLK_LEFT: in.left = true; break;
@@ -642,6 +689,8 @@ int run_game(const rr::Assets& assets, SDL_Window* window, SDL_Renderer* rendere
         if (!running) break;
         if (lifecycle.state.paused() && (in.select || in.pointer_click)) { lifecycle.state.resume(); in = {}; }
         if (!lifecycle.state.paused()) fe.update(in, SDL_GetTicks());
+        music.update();
+        mixer.pause(lifecycle.state.paused() || audio_lifecycle.state.paused());
         if (lifecycle.state.background()) { SDL_Delay(20); continue; }
         fe.draw(frame);
         SDL_SetRenderLogicalPresentation(renderer, 640, 480, SDL_LOGICAL_PRESENTATION_LETTERBOX);
@@ -660,7 +709,9 @@ int run_game(const rr::Assets& assets, SDL_Window* window, SDL_Renderer* rendere
         }
         SDL_RenderPresent(renderer);
     }
+    settings.music_track = music.track();
     rr::save_settings(settings_path, settings);
+    music.stop();
     if (text_input) SDL_StopTextInput(window);
     if (pad) SDL_CloseGamepad(pad);
     SDL_DestroyTexture(texture);

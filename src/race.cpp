@@ -239,6 +239,18 @@ void Race::contact(Rider& self, Rider& other) {
     s.i32(0x188) = div256(int64_t(s.i32(0x188)) * elasticity);
     s.i32(0x184) = div256(int64_t(s.i32(0x184)) * elasticity);
     const int32_t hit = std::abs(s.i32(0x184));
+    if (&self == &riders_[0]) {
+        // 0x004049c0: the player grunts and the contact makes a crash sound by its strength.
+        if (hit < 0x1771) {
+            if (hit >= 0x7d1 || std::abs(s.i32(0x188)) >= 0x3e9) {
+                if (s.i32(0x2f4) == 0) sound(SoundEvent((random() & 1) + 3), s);
+                sound(SoundEvent(random() & 1), s);
+            }
+        } else {
+            if (s.i32(0x2f4) == 0) sound(SoundEvent((random() & 1) + 4), s);
+            sound(SoundEvent((random() & 1) + 1), s);
+        }
+    }
     const bool contained = (o.i32(0x28) - o.i32(0x174) < s.i32(0x28) - s.i32(0x174) / 2) &&
                            (s.i32(0x28) + s.i32(0x174) / 2 < o.i32(0x28) + o.i32(0x174));
     if (contained) {
@@ -300,8 +312,10 @@ void Race::walls(Rider& r) {
     if (x > e.left_shoulder && x < e.right_shoulder) return;
     b.i32(0x28) = (x >= e.right_shoulder ? e.right_shoulder - 1 : e.left_shoulder + 1) * 256;
     b.i32(0x10c) = 0; b.i32(0x104) = 0; b.i32(0xf0) = 0; b.i32(0x288) = 0;
-    if (b.i32(0xec) > 4000) crash(r);
-    else b.i32(0xec) = b.i32(0xec) * 3 / 4;
+    if (b.i32(0xec) > 4000) {
+        if (&r == &riders_[0]) sound(SoundEvent::grunt_c, b);   // 0x0043a610
+        crash(r);
+    } else b.i32(0xec) = b.i32(0xec) * 3 / 4;
 }
 
 void Race::vertical(Rider& r) {
@@ -347,6 +361,7 @@ void Race::vertical(Rider& r) {
         b.i32(0xfc) = -0x1000;
         b.i32(0x160) = tables_.contact_base;
         height_above = 0;
+        if (&r == &riders_[0]) sound(SoundEvent::bounce, b);   // 0x0043a190
     } else {
         grounded = true;
     }
@@ -502,6 +517,10 @@ void Race::step_rider(Rider& r, uint32_t controls, bool player) {
     vertical(r);
 }
 
+void Race::sound(SoundEvent e, const Bike& b) {
+    if (sound_events_.size() < 16) sound_events_.push_back({e, b.i32(0x28), b.i32(0x20), b.i32(0x1c), b.i32(0xec), 0});
+}
+
 uint32_t Race::random() {
     seed_ = seed_ * 0x343fdu + 0x269ec3u;
     return (seed_ >> 16) & 0x7fff;
@@ -556,14 +575,25 @@ void Race::resolve_hit(Rider& r, size_t index) {
         if (std::abs(b.i32(0x20) - o.bike.i32(0x20)) >= 0x3000) continue;
         if (!target || std::abs(o.bike.i32(0x28) - b.i32(0x28)) < std::abs(target->bike.i32(0x28) - b.i32(0x28))) target = &o;
     }
+    const int w = r.attack.weapon;
+    const bool involves_player = index == 0 || target == &riders_[0];
+    // 0x004096f0: weapon swish when the player swings or is swung at.
+    if (involves_player) {
+        if (w == 1) sound(SoundEvent::swish_club, b);
+        else if (w == 2) sound(SoundEvent::swish_chain, b);
+    }
     if (!target || ticks_ <= target->invulnerable_until) return;
     if (index == 0) last_target_ = int(target - riders_.data());
-    const int w = r.attack.weapon;
     // Weapon grab with bare fists (simplified trigger of the 0x004096f0 steal branch).
     if (w == 0 && (target->weapon == 1 || target->weapon == 2) && (random() & 3) == 3) {
         r.weapon = target->weapon;
         target->weapon = 0;
         return;
+    }
+    // 0x00409ad0: impact sound by weapon (kick alternates kick/punch on the tick parity).
+    if (involves_player) {
+        static constexpr SoundEvent impact[3] = {SoundEvent::impact_punch, SoundEvent::impact_club, SoundEvent::impact_chain};
+        sound(w == 3 ? SoundEvent(10 + (ticks_ & 1)) : impact[w], b);
     }
     const RiderStats& s = r.stamina;
     int32_t damage = int32_t((int64_t((s.max << 8) / s.base) * s.strength) >> 8);

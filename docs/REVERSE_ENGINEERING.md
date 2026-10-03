@@ -503,3 +503,43 @@ The course screens share one item array; the sixth item is copied from `0x004691
 - The first timer tick re-arms for 1.5 s, then the roll scrolls `0x00468f50` (1) pixels every 15 ms. '+'/'-' double or halve the speed. When the table ends, the screen's item (handler `0x004241e0`) leads to `0x0041f6d0`. Escape skips.
 
 **Race end** (`0x00416010`): finishing (`0x00434660`, code `0x7f`), wrecking (`0x0040a600`/`0x0043a190`, code 5) and being busted (`0x00407f30`, code 4) set the outcome once. The race then keeps running for 0xb4 ticks (`0x00442e10`). Confirming the in-race Escape prompt (string 316) while still racing sets outcome 5, so quitting counts as wrecked (`0x00423408`).
+
+## Sound effects, engines and soundtrack (October 2, 2026, session 20)
+
+**Effect slots** (`0x00435e60`): 0x45 slots, one DirectSound buffer each, loaded from `Audio/Effects/<name>.WAV`.
+- Slot 0 is the player's engine, chosen by bike id: ids 0–4 EngRat, 5–9 EngSport, 10–14 EngSuper.
+- Slots 1–6 are EngNitro, EngTunne, EngOther, Engcar11, EngOther, Engcar11.
+- Slots 7/8 are M_YEAH/F_YEAH; 9/10 CHAINIMP/CLUBIMPA; 11 BOUNCE; 12–14 CRASHHAR/MED/LIT.
+- Slots 15–20 are GRUNTM1–3 and GRUNTF1–3; 21 KICK_MW4; 22 PUNCHHEA; 23/24 SWISHCHA/SWISHGEN; 25/26 SKIDONNR/SKIDOFFR; 27 FOOTSTEP; 28 RIDERSLI; 29 BMWLONG; 30/31 SIREN/SIRENFST.
+- Slots 32–68 are rider and pedestrian voices.
+- A retrigger restarts only that slot's buffer, so there is no voice stealing.
+
+**Event queue** (`0x00436830` → `0x004367f0`): 10 records of {code, lateral, height, position, speed}. Codes and their call sites:
+- 0/1/2 crash light/medium/hard, and 3/4 grunts, from contact `0x004049c0` (player only). Below 0x1771 impulse it is a grunt (rand&1)+3 plus crash rand&1; above, grunt +4 and crash +1, and nothing when below 0x7d1 with a small +0x188.
+- 5 wall grunt (`0x0043a610`).
+- 6/7 chain/club swish (`0x004096f0`).
+- 8/9/10/11 impacts chain/club/kick/punch; kick alternates 10/11 on the tick parity (`0x00409ad0`).
+- 12 footstep, 13/17 skid on/off road (`0x00434bd0`, +0x164 > 0x32 and surface class ≤ byte `0x0046dce5`), 16 slide (`0x00434a80`).
+- 14/21 nitro on/off (`0x0040b110`/`0x0040b170`), 18 car horn (`0x0044efa0`), 19 siren (`0x00435ae0`), 20 landing bounce (`0x0043a190`), 22 speech.
+
+**Event consumer** (`0x004351f0`): most effects play once at volume `(rand%0x1001+0x3fff)/100 × effects` and frequency `rand%0xbb9 + 0x214d` Hz. Footsteps, skids, slides and speech use their own constants. The finish yell (M_YEAH or F_YEAH) plays once when the player's bike gets flag 0x10. Grunts use the female set (+3) for characters 3, 5 and 6 (`0x00435da0`).
+
+**DirectSound mapping** (`0x004141c0`/`0x004142c0`):
+- Volume in hundredths of dB is `(v×10000 >> 14) − 10000`, clamped to −10000..0; a looping buffer stops below −9000.
+- Pan is ±10000 hundredths of dB, negated when speakers are swapped.
+- Frequency is clamped to 100..100000 Hz.
+
+**Engines** (`0x00434ce0`, `0x00434db0`, `0x004349c0`):
+- The listener is the camera (`0x00437c30`: position Q8, lateral, position change × 256).
+- Distance is `|dp| − min(|dp|,|dl|)/2 + |dl|` within 0x1e00; volume is `((0x1e00−d)×8/256)²/256`.
+- Doppler is `0x13b0000/(0x13b00 − relative speed)`; pan is the `0x0044f5a0` octant angle × 0x62.
+- RPM is `gear_ratio[+0x23c]×speed/256 + 0x2000`, moving at most ±0x2000 per update, +0x1000 while airborne, −0x1000 after a crash.
+- Engine frequency is `doppler × rpm / 512` Hz; volume is `(+0xcc × 0x9ffe / 0xef10) × level`.
+- The two vehicles nearest the camera (`0x004350e0`) use slots 3/5 (bikes) or 4/6 (cars).
+
+**Levels** (`0x004362e0`): each channel uses `curve[level × master / 100]` from a 101-entry table built in code. The native reader decodes that code's stores from the user's executable. The Mixer block (`0x00463030`) holds master 100 and interface/player engine/effects/music/other engines/siren at 80, plus mute and swap.
+
+**Music:**
+- The soundtrack thread `0x00403040` streams `Audio/Music/<track>.RRA` from the saved track index and advances 0..13 when a track ends (HB_Trip, HB_Pass, MM_Dino, P_Pansy, P_Jessie, P_Bridge, SG_Rusty, SG_Outsh, SG_Kicks, SG_Super, SD_Train, SD_Duel, T_Teeth, T_Auto).
+- Race start (`0x004160c0` → `0x00402f50`) stops it. Races play MIDI `Grunge1..5` by course (`SbkGrng` with AWE32 SBKs; Klown when the alias is "krusty" or "bozo"), via `0x00433bb0`.
+- Showroom clips (`0x004023e0` flag 1) only signal the soundtrack thread; other videos stop it.
