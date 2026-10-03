@@ -366,3 +366,46 @@ All 343 panels emitted by 128 original calls match coordinates/material/PRE0/fli
 - `0x0042f5d0` builds the global string table at `0x00475378`. String 0 is `"%d %d"` (buffer bytes, count). Strings `count..1` are then loaded in descending order with `LoadStringA` into one shared buffer. When a loaded string's last ANSI byte is `0xff`, the byte before it is a signed index: string `3000 + index` overwrites those two bytes, and this repeats. Slot 0 is null. `LoadStringA` truncates to the remaining buffer.
 - All five DLLs yield 985 non-empty slots (1,360–1,379 raw `RT_STRING` entries, including the 3000+ continuation pool). Strings are Windows-1252, as the game saw them.
 - `TEXT/BADLOC.DLL`, `FUTB.DLL`, `FUTD.DLL` and `FUTR.DLL` are TrueType fonts, not PEs: Badloc and Futura Bold/Demi/Regular. `0x0042f720` installs them with `AddFontResourceA`. `0x00442990` creates Badloc at heights 0x12/0x48 (low resolution) or 0x20/0x80 (high resolution), plus Wingdings, and Arial/Small Fonts/New Courier for debug overlays. `0x00448790` draws captions in bold Arial Narrow with a 2-pixel black drop shadow. Arial Narrow, Arial and Wingdings are Windows system fonts, not game data.
+
+## Career rules and save files (October 2, 2026, session 20)
+
+**Game state block `0x004b8a10`** (32 bytes, initialised from `0x004754b0`, saved verbatim):
+
+| Offset | Meaning | Evidence |
+| --- | --- | --- |
+| +0 | network player slot; cleared at race start outside mano-a-mano | `0x004160c0` |
+| +1 | character 1..8 (Axle, Bose, Cydney, Jon, Pearl, Rhonda, Jim, Mike), 0 = none | `0x0041f5a0`, `0x0041c060` |
+| +2 | level 0..4 | `0x0041f6d0`, `0x004453f0` |
+| +3 | qualified-course bits (bit n−1 for course n; `0x1f` = level complete) | `0x00449150` |
+| +4 | bike id 0..14 | `0x0041f630`, `0x004215e0` |
+| +5 | course 1..5 of the race started (1 City, 2 Sierra Nevada, 3 Peninsula, 4 Napa, 5 Pacific Highway) | `0x004160c0`, menu items 16..20 |
+| +6 | 0-based finishing place (`0x004c5d78`) | `0x00416120`, `0x00437860` |
+| +7 | unknown; initial value 1 | `0x004754b0` |
+| +8 | cash (u32) | `0x00421290`, `0x004214e0` |
+| +0xc | alias (NUL-terminated) | `0x0041c060` |
+
+**Game mode** `0x004753b0`: 0 attract, 1 Thrash, 2 Big Game, 3 mano-a-mano. `0x00445090` resets level, qualifications and character when the mode changes.
+
+**Characters:** `0x00415fc0` maps character 1..8 to personality 8, 7, 2, 5, 4, 6, 3, 1. Starting cash comes from u16 table `0x00469000` by character. The default bike is `0x004641c8[level + personality*5]` (`0x0041f630`). Choosing a character in Big Game restarts the career (level 0, no qualifications, starting cash).
+
+**Race outcome** `0x004c5d7c` (`0x00416010`): code `0x7f` (finished) becomes 2 (won) when the 0-based place is < 3 in single player, else 3 (lost). 4 is busted, 5 wrecked. `0x00416120` maps 2/3/4/other to results screens `0x1e`/`0x1f`/`0x1d`/`0x1c`, or to the main menu in attract mode.
+
+**Results** (`0x00449150`, `0x00421290`, `0x004214e0`, `0x0041f6d0`):
+- A win ORs the course bit into the qualifications (except in mano-a-mano).
+- Big Game pays every finisher (won or lost) `prize[place] × (level+1)`. `prize` is the static first dword of the 0x4c-byte standings rows at `0x0046ab48`: 1000, 750, 500, 400, 300, 250, 200, 160, 130, 100, 70, 50, 30, 20, 10.
+- Big Game busted: the fine is `(level*5+5)*0x50` = 400 × (level+1). Wrecked: repairs cost `bike_price/10` (u32 table `0x00468fc0`). If cash ≥ cost it is paid (messages 197/194). Otherwise message 198 ("outta money") is shown and `0x0041f630` restarts the career.
+- In Thrash, wrecked/busted clears the qualifications (messages 193/196). There is no money.
+- After the results, all five qualified sets the save-pending flag and clears the qualifications. Then either the level increments (screen `0x20`) or, at level 4, the finale (`0x23`). Otherwise the next screen is Thrash course select (`0x0a`), The Street (`0x0f`) or character select (`0x0e`).
+- Videos: `Wreck`/`Busted`/`Win`/`Level` + random 1..6, `Lose` + 1..10, `FinalWin`.
+
+**Bike shop** `0x004215e0`: showroom slots `0x80..0x8e` map to bike ids via `0x0041ff00`. Owning the bike already gives "WAKE UP!" (187/188). If `price[current]/2 + cash < price[new]` (unsigned), the result is "IN YOUR DREAMS!" (185/186). Otherwise cash += `price[current]/2 − price[new]` and the bike changes.
+
+**Save file** (`0x0042f000` writer, `0x0042f110` reader), 0xa0 bytes:
+- +0: checksum `0x0042efc0` over the following 0x9c bytes. Over bytes b with countdown n, `sum += b`, `weighted += n*b`, `alt += (n odd ? b : −b)`; the checksum is `(alt<<16 | sum&0xffff) ^ weighted`.
+- +4: magic `0xcafedead`.
+- +8: the 32-byte game state.
+- +0x28: 10 × 3 dwords. Each is the triple at `+personality*12` in each runtime personality copy (`0x004c6b40`, 0x204 bytes each; defaults are the first 0x78 bytes of `0x00464558` records). These are the relationship values Schmooze reads (`0x00420bb0`).
+- The reader checks magic (error string slot 369), then checksum (slot 370). It then restores the personalities, copies the state and relations, and forces Big Game mode.
+- The native reader additionally rejects out-of-range state bytes; the original performs no range checks.
+
+**String slots used:** 192/195/199/200 are the results captions; 201+place is "%s finished in …"; 197/194 are the fine/repair formats; 193/196 the Thrash penalty texts; 198 game over.

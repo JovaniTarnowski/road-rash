@@ -223,3 +223,6 @@ Session 19 final validation: native CTest 35/35; ASAN+UBSAN CTest 35/35; standal
 
 - `pe_strings-test`: synthetic PE string block (UTF-16 to UTF-8, Windows-1252 conversion), rejection of every truncated length and a bad PE signature, the `0x0042f5d0` continuation splice, buffer truncation and malformed continuation. Passes.
 - `pe-strings-corpus` (skips without the disc): all five language DLLs decode to 985 populated slots each. Passes.
+- `career-test` (synthetic): prize for 1st at level 1 and loser pay at level 3; a fine larger than cash (game over restarts the career) and a fine exactly equal to cash; repair cost; buying with exactly enough cash, owning already, unaffordable; level-up on the fifth qualification and the finale at level 5; Thrash wreck; results video names; save round trip with byte identity; rejection of every truncation, 2,000 garbage buffers (half with a valid magic) and a single flipped bit; the checksum definition on a two-byte input. Passes.
+- `career-corpus`: starting cash, prize, bike price, default bike and relation tables read from the user's EXE; Cydney starts with $1000. Passes.
+- **Not verified:** round trip of a save written by the original game. No original save has been captured yet.
