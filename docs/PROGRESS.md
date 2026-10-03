@@ -1,6 +1,6 @@
 # Port progress
 
-Status of the native macOS ARM64 / Android ARM64 port of Road Rash (1996 Windows rerelease). The port is C++17 with SDL3 and uses no Wine or x86 emulation. It is a **playable race** (`rr-game`): the player and seven AI opponents on an original course, with the original bike physics, AI driving, rider contact and combat, drawn with the original rider sprites. Road shading is a placeholder, and there is no traffic, police or gameplay menus yet. Audio/video codecs and an explicit video playback path are implemented; race sound triggers and music selection remain open.
+Status of the native macOS ARM64 / Android ARM64 port of Road Rash (1996 Windows rerelease). The port is C++17 with SDL3 and uses no Wine or x86 emulation. It is a **playable game** (`rr-game`). The original front end (menus, Thrash and Big Game, characters, bike shop, Schmooze, restroom options, results, saves and credits) leads into races against seven AI opponents on the original courses. Races use the original bike physics, AI driving, rider contact and combat, drawn with the original rider sprites. Road shading is a placeholder, and there is no traffic or police yet. Audio/video codecs and an explicit video playback path are implemented; race sound triggers and music selection remain open.
 
 Detailed evidence is in [REVERSE_ENGINEERING.md](REVERSE_ENGINEERING.md) and test results in [VERIFICATION.md](VERIFICATION.md). Build and run instructions are in [../README.md](../README.md).
 
@@ -29,7 +29,12 @@ Detailed evidence is in [REVERSE_ENGINEERING.md](REVERSE_ENGINEERING.md) and tes
 | AI opponents | Racing state ported (targets, curve speed, steering/speed control, re-plan, rubber band); overtaking and fight states not ported | `src/race.cpp` |
 | Rider contact | Detection and separation ported; contact response is the bike branch only | `src/race.cpp` |
 | Combat | Hit test, damage, stamina, bike condition, knock-offs, steering knocks, weapon grabs; attack timing and AI attack rule are stand-ins | `src/race.cpp` |
-| Traffic, police, gameplay menus, saves | Not started | — |
+| Language strings (`TEXT/*.DLL`) | All five languages, original table assembly and continuations | `src/pe_strings.cpp` |
+| Menu text | Disc TrueType fonts (Badloc, Futura); GDI hinting not reproduced | `src/text.cpp` |
+| Front end (menus, Thrash/Big Game flow, shop, Schmooze, restroom, results, credits) | Ported from the EXE screen tables and handlers; mano-a-mano, jukebox, sound mix and controls screens not ported; not pixel-compared | `src/frontend.cpp` |
+| Career rules and save files | Prize, fines, repairs, shop, level-up and the original 0xa0-byte save format; no original save round-tripped yet | `src/career.cpp` |
+| Settings | Registry values as a preference file | `src/settings.cpp` |
+| Traffic, police | Not started | — |
 | macOS build | Standalone ARM64 `.app`/ZIP with static pinned SDL, system-only dependencies, ad-hoc signature; 35 release tests pass | `tools/build_macos_app.sh` |
 | Android build | Debug and optimized development release APKs build/sign; runtime rendering/import/controls still unverified on hardware | `android/` |
 | Platform lifecycle and timing | Pause on background/focus loss/controller removal, explicit resume, texture reset recovery, rational fixed-step clock | `src/session.cpp`, `src/game_main.cpp` |
@@ -120,6 +125,32 @@ Sessions 1–6: September 28, 2026. Later dates are listed per session.
 - Default APKs exclude research assets. Assembly checks actual APK entries. `-PdevAssets=true` permits local debug research only; release checks always forbid game data.
 - 16/16 native tests pass. Android ARM64 debug builds and passes the no-game-data check. No device connected. Plans 01–08 remain active.
 
+### Session 20: front end, career and saves (October 2, 2026)
+
+- Language DLL string tables: native PE resource reader and the `0x0042f5d0` table assembly (descending load, `0xff` continuations). All five languages give 985 slots. Language follows the original rule (`0x0042f340`), mapped from the SDL locale.
+- The `TEXT/BADLOC|FUTB|FUTD|FUTR.DLL` files are TrueType fonts. Menu text now uses them through stb_truetype (pinned, unmodified, MIT/public domain).
+- Career rules ported:
+  - game state block `0x004b8a10`, mode `0x004753b0`, characters and starting cash;
+  - default bikes; prize money for every finisher by place × (level+1);
+  - fines (400 × (level+1)), repairs (price/10), game over when unpaid;
+  - qualification bits and level-up/finale; bike trade-in at half price.
+- Original save files ported: 0xa0 bytes with the `0x0042efc0` checksum and the relationship triples.
+- Front end, driven by the EXE's own screen/item/popup tables:
+  - navigation bytes, handlers, focus pictures, title/description/price boxes, darkened surfaces, button colours;
+  - restroom Y/N enabling and popups (mode, level, name, resolution, biker detail, videos);
+  - character bios with original units, Olley's showroom with bike videos, Schmooze lines from the relationship values;
+  - results, penalties, standings rows, level-up, finale, and the scrolling credit rolls with colour codes and tab stops.
+- `rr-game` now runs menus → videos (Intro, Start, results, bikes) → career races → results. The race ends 0xb4 ticks after it is decided (`0x00416010`). Quitting a race counts as wrecked, and opponents are named from `0x00464188`.
+- Tests: 42/42 pass, including `career`, `frontend` (full scripted menu flow, rendered frames), `text`, `settings`. Android ARM64 debug APK builds without game data.
+- Not done or not verified:
+  - no pixel comparison with the original menus;
+  - no original save round trip;
+  - mano-a-mano disabled;
+  - jukebox/sound mix/controls screens inert;
+  - no attract demo;
+  - native file list instead of Windows file dialogs;
+  - interactive play-through on hardware not performed.
+
 ## Assumptions and approximations in current code
 
 - **Rider commit:** after a split the preview assumes the rider has already committed to the selected branch, so the other road is dropped 82 samples in. In the game this depends on the bike's lateral position (`0x00439390`).
@@ -131,7 +162,8 @@ Sessions 1–6: September 28, 2026. Later dates are listed per session.
 - **Terrain:** terrain type and flags are treated as 0 (building-style sides), because the terrain chunks are not decoded yet.
 - **Not ported yet:** nitro (`0x0040b110`), attacks, the joystick analog path, and the original key bindings (`0x0040e5f0`). The defaults are Up/Down/Left/Right = accelerate/brake/`0x4`/`0x200`.
 - **Race layout:** the player starts in grid slot 0 (`0x00464218`), and the race runs the whole route to the course end node.
-- **HUD:** the speed shown is the internal speed ÷ 100; its real unit is not established.
+- **HUD:** the speed shown is the internal speed ÷ 100; its real unit is not established. The original dashboard is not drawn yet.
+- **Race field:** seven opponents (personalities 1..7) regardless of the player's character; the original standings hold 15 rows (`0x004642d4` = 16) and the field composition is plan 05 work.
 - **Sprite frames** are chosen by inspection: lean frames 3–11 by steering; attack wind-up/strike frames per weapon (fists 44/45 and 51/52, kick 60/66, club 140–143, chain 101/102 and 105/106); crash frame 21. The original picks frames through the `RRAN`/`RRFD` animation system (`0x00445a60`, `0x0043ae90`), which is not ported.
 - **Sprite scale:** opponents scale by depth relative to depth 512, capped at the player's size and baseline. The original sprite scale law and raster are not ported.
 - **AI:** overtaking/avoidance (`0x00408e40`) and fight states 2–5 are not ported. AI riders attack the player when alongside, every 45 ticks (a stand-in rule).
