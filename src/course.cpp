@@ -98,6 +98,12 @@ Course read_course(const std::vector<uint8_t>& bytes) {
                 sample.height_left=int32_t(q16[2]>>16); sample.height_right=int32_t(q16[3]>>16);
                 sample.side_flags[0]=uint8_t(segments.byte(record+16)); sample.side_flags[1]=uint8_t(segments.byte(record+17));
             });
+        const size_t terrain=segments.u32(row+0x10);
+        if(terrain) {
+            const size_t extent=segments.u32(terrain+4);segments.range(terrain,extent);
+            section.terrain=read_terrain(std::vector<uint8_t>(bytes.begin()+segments.base+terrain,
+                bytes.begin()+segments.base+terrain+extent),count);
+        }
         course.sections.push_back(std::move(section));
     }
     // 0x00447b80 links +8/+12 for kind 0; +8/+12/+16 for kinds 1/2.

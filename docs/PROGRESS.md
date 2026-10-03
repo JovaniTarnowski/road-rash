@@ -211,3 +211,12 @@ Import follow-up (October 2): nonseekable ISO input now caches inside the owned 
 - The isolated oracle calls the original conversion helper for twelve signed/boundary coordinates in each mode. All 24 mappings match. This is helper evidence; low-resolution race pixels remain unmeasured.
 - Expanded raster input bounds to the complete converted high-mode range −65,536..65,535. A new extreme rectangle remains exact against the original; all 64 raster fixtures still match.
 - Native and address/undefined sanitizer suites pass 26/26. Android ARM64 debug builds and asset exclusion pass. Scene integration remains open; the whole-port goal continues.
+
+### Session 13: stateful terrain decoding (October 2, 2026)
+
+- Added bounded `DLBR`, `NTMR` / `DWDR`, and `LIHR` payload decoding. All 109 sections in five real courses decode and traverse in both directions. `CourseSection` owns immutable terrain definitions rather than precomputing random samples.
+- Ported original terrain initializer/step/export behavior: building selector pairs, two mountain wall profiles with three jitter values each, eight hill control points with interval slope generation, and six exported points/shading indices. Randomness is supplied by the caller, preserving state across steps.
+- Added 864 original-function component comparisons: three terrain types, three fixed random values, forward and backward traversal over 48 samples. All exported selectors, wall values, hill points and gradients match without tolerance.
+- Disc records require preserving physical order. CITY contains negative hill boundaries and an inverted initial 0..−6 interval; HIWAY/MEDLY contain out-of-order wall boundaries. The original advances only one boundary per call. Sorting or rejecting those records would alter the course.
+- Structural tests reject truncated payloads, invalid extents/counts/tags, mismatched path samples and invalid hill parameter bounds. Native CTest passes 27/27; Android ARM64 debug build and asset exclusion pass. Sanitizer follow-up is recorded in VERIFICATION.md.
+- Terrain is decoded and independently validated, but original traversal/cache random-stream integration, split road transforms, scene projection/texturing and full race pixel equality remain open. No complete terrain-renderer claim is made.

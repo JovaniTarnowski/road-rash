@@ -153,3 +153,13 @@ Final Session 9 follow-up: address/undefined sanitizer CTest remains **23/23 pas
 - Raster remains **64 fixtures, zero mismatches**, now including the full high-view coordinate extremes.
 - Debug and address/undefined sanitizer CTest: **26/26 pass**. Android debug build and game-data exclusion pass. Logs: ignored `analysis/view-tests.log`, `analysis/view-sanitizer-tests.log`, `analysis/android-view-build.log`.
 - Low and inset dimensions come from disassembly; component mapping equality does not establish full low/inset rendered-frame equality or hardware presentation.
+
+## Session 13: terrain decoding (October 2, 2026)
+
+- Loader-only original oracle now adds 864 synthetic terrain slices: building/wall/hill × random 0/123/32767 × forward/backward × 48 samples. `terrain-test` compares every selector, wall triple, hill coordinate and shade exactly: **zero mismatches**.
+- All five disc courses: **109 terrain sections** decode and traverse forward and backward with a deterministic CRT-style random callback. This is native bounds/traversal coverage, not an original corpus comparison.
+- All truncated lengths of three synthetic payloads and malformed size/count/tag/sample/point bounds reject. Debug CTest **27/27 pass**. Android debug build and game-data exclusion pass.
+- Component fixtures run the original init/step/export functions while temporarily selecting its fixed-random wrapper mode. Mode/random globals are restored. Golden data stays ignored; original EXE on disk is unchanged.
+- Shared race randomness/cache state, fractional stepping, full scene and split transforms require further comparison.
+
+Session 13 sanitizer follow-up: **27/27 pass** under address/undefined sanitizers; log `analysis/terrain-sanitizer-tests.log`.

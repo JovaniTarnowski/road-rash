@@ -191,6 +191,60 @@ static void capture_view(void) {
     }
 }
 
+static void terrain_word(unsigned char* b,int p,uint32_t v) { memcpy(b+p,&v,4); }
+static void capture_terrain(void) {
+    const int prior_mode=RD32(0x004753b0),prior_random=RD32(0x0049bce8);
+    RD32(0x004753b0)=3; // original rand wrapper returns supplied nonnegative value
+    const int values[3]={0,123,32767};
+    char key[128];
+    for(int kind=0;kind<3;++kind) for(int random=0;random<3;++random) for(int reverse=0;reverse<2;++reverse) {
+        unsigned char b[248]={0};int iterator[80]={0},output[100]={0};
+        const int size=kind==0?144:248;
+        memcpy(b,kind==0?"DLBR":kind==1?"NTMR":"LIHR",4);
+        terrain_word(b,4,size);terrain_word(b,8,kind==2?3:64);
+        int selectors=16;
+        if(kind==1) {
+            terrain_word(b,12,3);terrain_word(b,16,3);selectors=120;
+            for(int side=0;side<2;++side) for(int j=0;j<3;++j) {
+                const int p=24+(side*3+j)*16;
+                const unsigned char params[8]={0,(unsigned char)(3+j),(unsigned char)(20+side*5),4,30,6,5,40};
+                terrain_word(b,p,j==2?64:j*20);memcpy(b+p+4,params,8);terrain_word(b,p+12,side?-40:70);
+            }
+        } else if(kind==2) {
+            for(int j=0;j<3;++j) {
+                const int p=20+76*j;terrain_word(b,p,j*20);terrain_word(b,p+4,(j+1)*20);
+                b[p+8]=10+j;b[p+9]=20+j;
+                for(int point=0;point<8;++point) {
+                    const unsigned char params[8]={(unsigned char)(10+point*12),(unsigned char)(20+point*12),3,(unsigned char)(-10+point),(unsigned char)(12+point),4,1,5};
+                    memcpy(b+p+12+8*point,params,8);
+                }
+            }
+        }
+        if(kind!=2) for(int j=0;j<64;++j) {b[selectors+2*j]=j;b[selectors+2*j+1]=63-j;}
+        RD32(0x0049bce8)=values[random];
+        ((void (__fastcall*)(int*,void*,int))0x004510c0)(iterator,b,reverse?48*256:0);
+        for(int tick=0;tick<48;++tick) {
+            memset(output,0,sizeof output);output[0xe8/4]=-500;output[0xec/4]=500;
+            ((void (__fastcall*)(int*,int*))0x00451910)(iterator,output);
+            snprintf(key,sizeof key,"terrain.%d.%d.%d.%d.type",kind,random,reverse,tick);rr_log(key,((unsigned char*)output)[0x3c]);
+            for(int side=0;side<2;++side) {
+                snprintf(key,sizeof key,"terrain.%d.%d.%d.%d.selector.%d",kind,random,reverse,tick,side);rr_log(key,((unsigned char*)output)[0x148+side]);
+            }
+            if(kind==1) for(int j=0;j<6;++j) {
+                snprintf(key,sizeof key,"terrain.%d.%d.%d.%d.wall.%d",kind,random,reverse,tick,j);rr_log(key,output[0x14c/4+j]);
+            }
+            if(kind==2) for(int j=0;j<12;++j) {
+                snprintf(key,sizeof key,"terrain.%d.%d.%d.%d.point.%d",kind,random,reverse,tick,j);rr_log(key,output[0xf0/4+j]);
+            }
+            if(kind==2) for(int j=0;j<6;++j) {
+                snprintf(key,sizeof key,"terrain.%d.%d.%d.%d.shade.%d",kind,random,reverse,tick,j);rr_log(key,output[0x120/4+j]);
+            }
+            ((void (__fastcall*)(int*,int))0x004516e0)(iterator,reverse?-256:256);
+        }
+    }
+    RD32(0x004753b0)=prior_mode;RD32(0x0049bce8)=prior_random;
+}
+
 static void dump_frame(uint32_t site) {
     char key[96];
     fprintf(g_out, "frame\t%u\n", g_frame);
@@ -331,7 +385,7 @@ BOOL WINAPI DllMain(HINSTANCE inst, DWORD reason, LPVOID reserved) {
                 RD32(0x004b7ec0)=(int)(uintptr_t)pixels;RD32(0x004b7ec4)=width;
                 capture_raster((uintptr_t)pixels,width,height,width);
                 RD32(0x004b7ec0)=base;RD32(0x004b7ec4)=pitch;free(pixels);
-                fputs("frame\t0\n",g_out);dump_raster();capture_view();fputs("end\n",g_out);
+                fputs("frame\t0\n",g_out);dump_raster();capture_view();capture_terrain();fputs("end\n",g_out);
                 fclose(g_out);g_out=NULL;
             }
         }

@@ -1,5 +1,6 @@
 #pragma once
 #include "resource.hpp"
+#include "terrain.hpp"
 #include <array>
 #include <map>
 
@@ -14,7 +15,7 @@ struct PathSample {
     int32_t shoulder_left=0, shoulder_right=0, height_left=0, height_right=0;
     uint8_t side_flags[2]={0,0};
 };
-struct CourseSection { std::vector<PathSample> samples; };
+struct CourseSection { std::vector<PathSample> samples; TerrainDefinition terrain; };
 struct CourseNode {
     uint32_t offset, kind, next=0, previous=0, link=0, length=0;
 };

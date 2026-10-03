@@ -185,51 +185,13 @@ The terrain chunk at section row `+0x10` is tagged on disk `DLBR` (`RBLD`, build
 - step `0x004516e0` → `0x00451220` (`RMTN`/`RDWD`) or `0x004515a0` (`RHIL`)
 - per-slice export `0x00451910` → `0x00451710` (type 1), `0x004517b0` (type 0), `0x004517e0` (type 4)
 
-**Files:**
-- Create: `src/terrain.hpp`, `src/terrain.cpp`, `tests/terrain_test.cpp`
-- Modify: `src/course.hpp` (`PathSample` gains terrain fields), `src/course.cpp` (walk the chunk per sample)
+**Current implementation (October 2):**
+- `src/terrain.hpp/.cpp`: bounded immutable `TerrainDefinition`, stateful `TerrainIterator` with caller-owned random callback, and `TerrainSlice` exported selectors/walls/points/shades.
+- `CourseSection::terrain` stores the definition. Random profiles are not cached in `PathSample`: original state and random-call order matter.
+- Original init/step/export component comparison: 864 slices, zero mismatches. All 109 disc sections decode and traverse in both directions. Malformed/truncated payload checks pass.
+- Signed negative/inverted hill endpoints and unsorted wall boundaries in the disc are preserved, following original one-boundary-per-call behavior.
 
-**Interfaces:**
-- Consumes: `rr::Reader`-style bounds-checked access already in `course.cpp`
-- Produces:
-  ```cpp
-  namespace rr {
-  enum class TerrainType : uint8_t { building = 0, wall = 1, split = 3, hill = 4 };
-  struct TerrainSample {
-      TerrainType type;
-      uint8_t selector[2];                // sub-slice +0x148/+0x149
-      int32_t wall[6];                    // type 1: sub-slice +0x14c..+0x160, world units
-      int32_t hill_points[12];            // type 4: +0xf0..+0x11c (3 control points x 2 sides x {x,y})
-      uint8_t hill_shade[6];              // type 4: 0..31 gradients computed in 0x004517e0
-  };
-  }
-  ```
-  and `PathSample::terrain` (a `TerrainSample`).
-
-- [ ] **Step 1: Write the golden-driven failing test**
-
-`tests/terrain_test.cpp` loads `canyon-walls.tsv`, `city-building.tsv` and `hiway-hills.tsv`. For every frame and slice it compares `slice.N.road.R.type` and the relevant `sub.<off>` keys against `rr::read_course(...)` samples at `slice.N.sample`. Branch selection is as in plan 01 Task 6: try both routes. It skips with 77 when the goldens are missing. The comparison code follows the `expect(key, native)` pattern of `tests/oracle_road_test.cpp`.
-
-- [ ] **Step 2: Run to verify it fails**
-
-Run: `ctest --test-dir build -R terrain --output-on-failure`
-Expected: FAIL (fields not decoded) or SKIP if goldens are absent. SKIP is not acceptable for completing this task.
-
-- [ ] **Step 3: Port**
-
-Port the iterator init/step/export functions listed above, keeping per-sample state the way `walk_intervals` does. Hill control-point arithmetic in `0x004517e0` uses signed divides and the clamp to 0..31; keep it exactly.
-
-- [ ] **Step 4: Run to pass, update docs, commit**
-
-Run: `ctest --test-dir build --output-on-failure`
-Expected: all PASS.
-
-Then:
-```bash
-git add -A && git commit -m "course: decode terrain chunks (building, wall, hill)
-
-Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
-```
+**Still open:** natural course-cache/shared random-stream initialization, fractional step original comparisons, `0x00454240` split transformations and full race scenario comparisons (`city-building`, `canyon-walls`, `hiway-hills`). Component equality does not complete scene integration.
 
 ---
 
@@ -243,7 +205,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 - Test: extend `tests/oracle_road_test.cpp` to compare `height_left_row`, `height_right_row`, `lane_left`, `lane_right`, `visible`, and the type-specific projected fields added in Task 1
 
 **Interfaces:**
-- Consumes: `rr::TerrainSample` (Task 4), `rr::project_road`
+- Consumes: `rr::TerrainSlice` (Task 4), `rr::project_road`
 - Produces:
   ```cpp
   namespace rr {
