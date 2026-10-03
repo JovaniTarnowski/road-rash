@@ -17,9 +17,9 @@ Detailed evidence is in [REVERSE_ENGINEERING.md](REVERSE_ENGINEERING.md) and tes
 | Road projection (33 slices, original depth table) | Done; integer port | `src/road.cpp`, `tests/road_test.cpp` |
 | Split/merge second roadway | Done, with a documented rider-commit assumption | `make_route`, `project_road` |
 | Road sides/shoulders (`DLSR`) | Decoded; shoulder widths rendered, heights carried but not drawn | `src/course.cpp`, `src/road.cpp` |
-| Terrain type per section (building / mountain / hill) | Type mapping traced; profiles not decoded | REVERSE_ENGINEERING.md |
+| Terrain profiles (building / mountain / hill) | All 109 sections decoded; stateful iterator matches 864 original slices; live cache/random integration open | `src/terrain.cpp` |
 | Other section chunks (`BORR`, `MSRR`, terrain type, `DZHR`, `CESR`) | Mapped to iterators only | REVERSE_ENGINEERING.md |
-| Road colours/textures, horizon placement, scenery (`CEL `), sprites | Not started; viewer uses placeholder flat shading | — |
+| World rendering, colours, horizon and scenery (`CEL `) | Indexed flat/texture primitives verified; original scene/resource integration open; viewer still uses placeholder shading | `src/raster.cpp`, `src/texture.cpp` |
 | Bike specs (`BIKESPEC.RSC`) | Decoded and applied (`0x00405ea0`) | `src/bike.cpp` |
 | Player bike physics | Ported from the executable: throttle, brake, steering, gears, drag, traction, curve drift, movement along the course, vertical motion/jumps; not oracle-verified | `src/bike.cpp`, `src/race.cpp` |
 | Walls, crashes, remount | Simplified stand-ins | `src/race.cpp` |
@@ -36,11 +36,9 @@ Detailed evidence is in [REVERSE_ENGINEERING.md](REVERSE_ENGINEERING.md) and tes
 | Original road oracle | 660 original CITY frames match compared projection fields; indexed frame/palette capture works; other courses/splits unverified | `oracle/`, `tests/oracle_road_test.cpp` |
 | Disc import | ISO/folder reader, SHA-256 verification of 341 files, first-run picker/progress UI | `src/importer.cpp`, `src/import_ui.cpp` |
 | Android data packaging | Normal APK excludes game data; guarded developer assets are opt-in | `android/app/build.gradle` |
-
 | Audio decoding/mixing | All 72 effects and 14 RRA tracks decode; queued stereo mixer, resampling, pause and device reopening; original triggers/priority/music streaming open | `src/wav.cpp`, `src/mixer.cpp` |
 | Video | AVI scan, Cinepak and IMA: all 59 videos match FFmpeg RGB/audio; native playback via `--video`; frontend selection and hardware A/V sync open | `src/avi.cpp`, `src/cinepak.cpp`, `src/video_player.cpp` |
-
-| Flat polygon raster | Normalized integer quad edge/span stage matches 64 original-function fixtures exactly; normalization, textures and scene integration open | `src/raster.cpp`, `tests/oracle_raster_test.cpp` |
+| Flat polygon raster | Normalization matches 2,048 original calls; full flat path matches 64 indexed fixtures; textures and world integration open | `src/raster.cpp`, `src/polygon.cpp` |
 
 ## Timeline
 
@@ -220,3 +218,27 @@ Import follow-up (October 2): nonseekable ISO input now caches inside the owned 
 - Disc records require preserving physical order. CITY contains negative hill boundaries and an inverted initial 0..−6 interval; HIWAY/MEDLY contain out-of-order wall boundaries. The original advances only one boundary per call. Sorting or rejecting those records would alter the course.
 - Structural tests reject truncated payloads, invalid extents/counts/tags, mismatched path samples and invalid hill parameter bounds. Native CTest passes 27/27; Android ARM64 debug build and asset exclusion pass. Sanitizer follow-up is recorded in VERIFICATION.md.
 - Terrain is decoded and independently validated, but original traversal/cache random-stream integration, split road transforms, scene projection/texturing and full race pixel equality remain open. No complete terrain-renderer claim is made.
+
+### Session 14: original hill projection (October 2, 2026)
+
+- Added `project_hills` from `0x0041d6d0`: six Q16 vertices and maximum projected row, using explicit signed 32-bit wrap. At scale ≥65,536 the original applies ±0x40000000 x sentinels when wrapped signs indicate overflow; lower scales use direct wrapped projection.
+- Added 96 original-helper fixtures covering six scales (including the branch boundary and synthetic signed extremes), signed world/camera offsets, odd/even view widths and six varied points per case. Every coordinate and maximum row matches exactly.
+- Synthetic tests cover ordinary projection and the near overflow sentinels. This pure module is the start of scene projection, not an integrated world renderer. Original terrain state, occlusion, split transforms and texturing still require integration.
+
+### Session 15: polygon normalization and full flat path (October 2, 2026)
+
+- Ported `0x0044cd70` signed/wrapped cross classification, degenerate-edge propagation, and `0x0044ce60` vertex repairs, orientation, rotation, axis sorting and texture-flip mode. The original adjacency lookup is implemented as cyclic-edge logic rather than embedded table bytes.
+- All 2,048 original normalization fixtures match vertices, acceptance byte and flip state. Coverage includes arbitrary quads, duplicates, collinear points, large wrapped cross products and flag modes 0/8/4.
+- Added `draw_flat_quad` that normalizes before the verified filler (horizontal spans bypass normalization as in the original). All 64 raw fixture images match from both original input vertices and already normalized vertices.
+- Hill projection milestone passes 28/28 native/sanitizer tests and Android build. Combined normalization verification is recorded in VERIFICATION.md. Textured spans, pathological rejected polygons and world/display-list integration remain open.
+
+### Session 16: original indexed texture scan conversion (October 2, 2026)
+
+- Ported opaque and index-zero-transparent spans for texture strides 1..256. All 1,008 original fixtures match, including all four output alignments, short/unrolled lengths, fixed/moving row coordinates and signed fractional increments.
+- Ported `0x004184a0` edge interpolation and `0x00418760` scan conversion: reciprocal truncation, wrapped Q16 products, inclusive edge rows, negative/top/bottom/right clipping, endpoint replacement, per-row UV interpolation and transparency. Added the original two-axis minimum mip selection.
+- All 64 original textured quad images match exactly, covering sloped edges, offscreen clipping, transparency and three distinct mip levels. This compares 19,660,800 indexed pixels. Mip data/UV selection is caller-owned; original resource/display-list integration remains open.
+- Direct disassembly resolved a decompiler argument-order ambiguity: spans consume V as row and U as column. No golden expectation was changed to hide this mismatch.
+- Golden reader now rejects integer overflow, duplicate fields/headers and noncontiguous frame IDs, with malformed-input checks.
+- Polygon milestone passed 29/29 native/sanitizer tests and Android asset-free build. Combined texture checks are recorded in VERIFICATION.md. The full world renderer, original scene/resource preparation and sprite integration remain open.
+
+Session 16 final validation: 30/30 native and sanitizer tests pass, Android builds asset-free, and viewer/resource smoke plus five-course sweep pass. The whole-port goal remains active.

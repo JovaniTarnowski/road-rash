@@ -164,8 +164,8 @@ Corrected by disassembly and original frame capture (October 2): polygon fill is
 - `oracle-raster` compares every byte of every resulting image: **64 fixtures, zero mismatches**, including fractional trapezoids, rotations/degeneracies and ±16,384 pixel coordinates.
 
 **Still open:**
-- Port `0x0044ce60` normalization for arbitrary scene nodes; the current native entry point takes normalized polygons.
-- Hook this primitive into original scene construction and recover textured/sprite drawing.
+- Normalization is now ported: `normalize_quad` matches 2,048 original calls in flags 0/8/4, and `draw_flat_quad` matches all 64 indexed fixture images from pre-normalization inputs. Pathological rejected-polygon raster behavior remains open.
+- Indexed texture spans, edge interpolation, normalized quad scan conversion and mip selection are now implemented in `src/texture.cpp`: 1,008 original spans and 64 textured images match. Hook both primitives into original scene/resource construction; sprite/display-list integration remains open.
 - Full-frame original comparison, both view modes, terrain/occlusion and actual Android output remain open.
 
 - [ ] **Step 6: Commit**

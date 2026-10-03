@@ -163,3 +163,29 @@ Final Session 9 follow-up: address/undefined sanitizer CTest remains **23/23 pas
 - Shared race randomness/cache state, fractional stepping, full scene and split transforms require further comparison.
 
 Session 13 sanitizer follow-up: **27/27 pass** under address/undefined sanitizers; log `analysis/terrain-sanitizer-tests.log`.
+
+## Session 14: hill projection (October 2, 2026)
+
+- Recaptured loader-only component golden: 96 calls to original `0x0041d6d0`, six scale groups including 65,535/65,536 boundary and synthetic signed extremes, varied world/camera offsets and odd/even view width. All 1,152 coordinates and 96 maximum rows match exactly in `scene-test`.
+- Camera x/height and view-width globals are saved/restored around capture. No original assets or golden outputs are bundled. Source fixtures are synthetic.
+- Scene integration/full frame visibility and physical Android output remain open.
+
+Session 14 final checks: **28/28 native and address/undefined sanitizer tests pass**; Android ARM64 debug build and asset exclusion pass. Logs: `analysis/hill-tests.log`, `analysis/hill-sanitizer-tests.log`, `analysis/android-hill-build.log`.
+
+## Session 15: polygon normalization (October 2, 2026)
+
+- Loader-only oracle calls original `0x0044ce60` on 2,048 synthetic quads with flags 0/8/4; records all input/output coordinates, acceptance low byte and texture-flip byte. Native compares **zero mismatches**. The temporary current-node pointer is restored.
+- Raster capture now records pre-normalization points. `oracle-raster-test` checks both `fill_quad` on normalized points and `draw_flat_quad` on original points against every reference pixel: **64 fixtures, zero mismatches**.
+- These are pure original-function comparisons. Full race/display-list/textured pixels and pathological rejected-polygon raster behavior remain open.
+
+Session 15 final checks: **29/29 native and address/undefined sanitizer tests pass**; Android ARM64 debug build and asset exclusion pass.
+
+## Session 16: indexed texture raster (October 2, 2026)
+
+- Original span corpus: 1,008 calls = opaque/transparent × nine strides × four alignments × seven lengths × stationary/moving row. Every output byte and surrounding sentinel byte compares exactly.
+- Original `0x004180b0` quad corpus: 64 raw 640×480 images, synthetic 32×32 / 16×16 / 8×8 mip data. Native mip level and every one of 19,660,800 palette indices match exactly, including transparency, sloped edges and clipping.
+- Oracle saves/restores both edge tables, UV globals, current-node pointer, buffer/clip/bbox globals and span dispatch/pointers. `run.sh` cleans and copies texture raw outputs alongside existing captures. Original EXE on disk remains unchanged.
+- Native structural tests cover invalid stride and out-of-storage UVs. Golden parser tests additionally reject int64 overflow, repeated fields/headers and skipped frame IDs.
+- Original texture resource/mip decoding, scene/display-list wiring, full race frames and Android hardware output are still unverified.
+
+Session 16 final checks: **30/30 native and address/undefined sanitizer tests pass**. Android ARM64 debug build and game-data exclusion pass. Viewer/resource smoke and all-course projection sweep pass. Logs: `analysis/texture-tests.log`, `analysis/texture-sanitizer-tests.log`, `analysis/android-texture-build.log`. The final capture includes visible opaque and transparent level-2 mip quads; native fixture rerun remains exact.

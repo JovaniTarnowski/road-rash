@@ -1,6 +1,7 @@
 #pragma once
 // Reader for oracle golden files (docs/plans/01-foundation-and-oracle.md, Task 3).
 #include <cstdint>
+#include <cerrno>
 #include <cstdlib>
 #include <fstream>
 #include <map>
@@ -30,14 +31,18 @@ inline File parse(const std::string& text) {
         const auto tab = line.find('\t');
         if (tab == std::string::npos) throw std::runtime_error("Golden file: missing tab: " + line);
         const std::string key = line.substr(0, tab), value = line.substr(tab + 1);
-        if (key == "exe") { f.exe = value; continue; }
-        if (key == "scenario") { f.scenario = value; continue; }
-        if (key == "frame") { f.frames.emplace_back(); continue; }
+        if (key == "exe") { if(!f.exe.empty() || value.empty() || !f.frames.empty()) throw std::runtime_error("Golden file: invalid exe header"); f.exe = value; continue; }
+        if (key == "scenario") { if(!f.scenario.empty() || value.empty() || !f.frames.empty()) throw std::runtime_error("Golden file: invalid scenario header"); f.scenario = value; continue; }
+        if (key == "frame") {
+            if(f.exe.empty() || f.scenario.empty() || value!=std::to_string(f.frames.size())) throw std::runtime_error("Golden file: invalid frame sequence/header");
+            f.frames.emplace_back(); continue;
+        }
         if (f.frames.empty()) throw std::runtime_error("Golden file: key before frame: " + key);
         char* end = nullptr;
+        errno=0;
         const long long v = std::strtoll(value.c_str(), &end, 10);
-        if (value.empty() || *end) throw std::runtime_error("Golden file: not an integer: " + line);
-        f.frames.back()[key] = v;
+        if (value.empty() || *end || errno==ERANGE) throw std::runtime_error("Golden file: not an integer: " + line);
+        if(key.empty() || !f.frames.back().emplace(key,v).second) throw std::runtime_error("Golden file: empty or duplicate field");
     }
     if (!ended) throw std::runtime_error("Golden file: truncated (no end marker)");
     return f;

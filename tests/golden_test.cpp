@@ -15,6 +15,9 @@ int main() {
             "# rr-oracle 1\nexe\tabc\nscenario\ts\nframe\t0\na\tx\nend\n" }) { // non-integer
         try { rr::golden::parse(bad); check(false, bad); } catch (const std::runtime_error&) {}
     }
+    for(const std::string& suffix:{"a\t9223372036854775808\n","a\t-9223372036854775809\n","a\t1\na\t2\n","frame\t3\n","exe\tabc\n"}) {
+        try {rr::golden::parse("# rr-oracle 1\nexe\tabc\nscenario\ts\nframe\t0\n"+suffix+"end\n");check(false,"invalid duplicate/range/sequence accepted");}catch(const std::runtime_error&){}
+    }
     std::cout << failures << " failures\n";
     return failures ? 1 : 0;
 }

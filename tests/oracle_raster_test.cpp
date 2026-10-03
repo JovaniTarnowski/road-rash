@@ -34,8 +34,14 @@ int main(int argc,char** argv) {
             const std::vector<uint8_t> expected{std::istreambuf_iterator<char>(input),std::istreambuf_iterator<char>()};
             if (expected.size()!=size_t(width)*height) throw std::runtime_error("Invalid raster image extent");
             rr::Framebuffer fb(width,height);fb.clear(0);rr::fill_quad(fb,quad,clip);
+            rr::Framebuffer complete(width,height);complete.clear(0);
+            for(size_t v=0;v<4;++v) {
+                quad.points[v].x=value(prefix+"input."+std::to_string(v*2),-65536,65535);
+                quad.points[v].y=value(prefix+"input."+std::to_string(v*2+1),-65536,65535);
+            }
+            rr::draw_flat_quad(complete,quad,clip);
             size_t pixels=0;
-            for (int y=0;y<height;++y) for (int x=0;x<width;++x) if (fb.row(y)[x]!=expected[size_t(y)*width+x]) {
+            for (int y=0;y<height;++y) for (int x=0;x<width;++x) if (fb.row(y)[x]!=expected[size_t(y)*width+x] || complete.row(y)[x]!=expected[size_t(y)*width+x]) {
                 if (!pixels) std::cerr<<"case "<<c<<" first mismatch ("<<x<<","<<y<<"): "<<int(fb.row(y)[x])<<" vs "<<int(expected[size_t(y)*width+x])<<'\n';
                 ++pixels;
             }
