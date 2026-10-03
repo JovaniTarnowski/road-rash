@@ -25,7 +25,7 @@
 | `AUDIO/MUSIC/*.RRA` | 14 | RIFF WAVE PCM, stereo, 22,050 Hz, 8-bit unsigned (renamed WAV) |
 | `AUDIO/MUSIC/*.MID` | 11 | Standard MIDI; `GRUNGE1..5`, `SBKGRNG1..5`, `KLOWN` |
 | `AUDIO/MUSIC/*.SBK` | 6 | SoundFont 1.0 (`ifil` 1.0, `isng` `EMU8000`, `irom` `1MGM`); `GRUNGE1..5.SBK`, `RRDRUMS.SBK` |
-| `VIDEO/*.AVI` + `VIDEO/{RAT,SPORT,SUPER}/*.AVI` | 44 + 15 | Cinepak (`cvid`) 320×192 video, IMA ADPCM (`0x11`) stereo 22,050 Hz audio |
+| `VIDEO/*.AVI` + `VIDEO/{RAT,SPORT,SUPER}/*.AVI` | 44 + 15 | Cinepak (`cvid`): 44 cutscenes at 320×192 with IMA ADPCM (`0x11`) stereo 22,050 Hz audio; 15 silent bike showcases at 320×172 |
 
 Relevant imports: `DSOUND!DirectSoundCreate`; `WINMM` midiStream*, mmio* (WAV parsing), `mciSendCommandA` (AVI playback via MCI, "AVI Window" strings at `0x004023e0`/`0x00402a80`, `avivideo` at `0x00402730`/`0x004029f0`); `MSACM32!acmMetrics`; `AWEMAN32` ordinal 2 (SBK loading).
 
@@ -274,3 +274,5 @@ Record the decision in `PROGRESS.md` under deviations.
 - [ ] **Step 4: Implement, pass, commit**
 
 Commit: `audio: optional MIDI music from SBK banks`.
+
+Implementation update (October 2): PCM WAV/RRA and WAV IMA decoding, queued mixer, AVI physical scanning and RGB Cinepak decoding are implemented. Every audio sample and RGB frame in all 59 AVIs matches FFmpeg in the corpus comparison. The scanner intentionally trusts physical complete packets instead of idx1, so missing or corrupt indexes do not prevent sequential playback. A truncated INTRO retains complete packets. Runtime video playback is being integrated; original presentation rectangle, cutscene selection, streamed soundtrack, original sound triggers/voice priorities and optional MIDI remain open.

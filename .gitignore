@@ -15,3 +15,5 @@ analysis/*.bmp
 oracle/build/
 .DS_Store
 .superpowers/
+
+analysis/native-video.png

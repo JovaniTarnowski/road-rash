@@ -11,6 +11,7 @@
 #include "race.hpp"
 #include "road_draw.hpp"
 #include "session.hpp"
+#include "video_player.hpp"
 #include <algorithm>
 #include <cstdio>
 #include <memory>
@@ -220,11 +221,16 @@ bool lifecycle_event(Uint32 type) {
 
 struct LifecycleWatch {
     rr::SessionState state;
+    rr::Mixer* mixer = nullptr;
     static bool SDLCALL watch(void* data, SDL_Event* event) {
-        if (lifecycle_event(event->type)) static_cast<LifecycleWatch*>(data)->state.handle(*event);
+        if (lifecycle_event(event->type)) {
+            auto& self=*static_cast<LifecycleWatch*>(data);
+            self.state.handle(*event);
+            if (self.mixer) self.mixer->pause(self.state.paused());
+        }
         return true;
     }
-    LifecycleWatch() {
+    explicit LifecycleWatch(rr::Mixer* audio=nullptr):mixer(audio) {
         if (!SDL_AddEventWatch(watch, this)) throw std::runtime_error(SDL_GetError());
     }
     ~LifecycleWatch() { SDL_RemoveEventWatch(watch, this); }
@@ -242,16 +248,62 @@ void draw_pause(SDL_Renderer* r) {
     SDL_RenderDebugText(r, 232, 284, "Q to quit on desktop");
     SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_NONE);
 }
+
+void play_video(const rr::Assets& assets,const std::string& path,SDL_Renderer* renderer,
+                const std::string& screenshot,long ticks) {
+    rr::Mixer mixer(32);
+    if (ticks<0 && SDL_InitSubSystem(SDL_INIT_AUDIO) && !mixer.open_device()) SDL_Log("Audio unavailable: %s",SDL_GetError());
+    rr::VideoPlayer player(assets,path,mixer);
+    LifecycleWatch lifecycle(&mixer);
+    bool running=true;
+    player.update(ticks>=0 ? 0 : SDL_GetTicksNS());
+    if (ticks>=0) player.update(uint64_t(ticks)*1000000000ull/rr::ticks_per_second);
+    while (running) {
+        SDL_Event e;
+        while (SDL_PollEvent(&e)) {
+            if (!lifecycle_event(e.type)) lifecycle.state.handle(e);
+            if (!mixer.handle(e)) SDL_Log("Audio reopen failed: %s",SDL_GetError());
+            if (e.type==SDL_EVENT_QUIT) running=false;
+            if (e.type==SDL_EVENT_KEY_DOWN && !e.key.repeat) {
+                if (e.key.key==SDLK_P || e.key.key==SDLK_ESCAPE) {
+                    if (lifecycle.state.paused()) lifecycle.state.resume();else lifecycle.state.pause();
+                } else if (e.key.key==SDLK_AC_BACK) lifecycle.state.pause();
+                else if (lifecycle.state.paused()) lifecycle.state.resume();else player.skip();
+            }
+            if (e.type==SDL_EVENT_FINGER_DOWN || e.type==SDL_EVENT_MOUSE_BUTTON_DOWN || e.type==SDL_EVENT_GAMEPAD_BUTTON_DOWN) {
+                if (lifecycle.state.paused()) lifecycle.state.resume();else player.skip();
+            }
+            if (e.type==SDL_EVENT_RENDER_DEVICE_RESET || e.type==SDL_EVENT_RENDER_TARGETS_RESET) {
+                // Recreate the video texture through a separate explicit reset.
+                player.reset_texture();
+            }
+            if (e.type==SDL_EVENT_RENDER_DEVICE_LOST) throw std::runtime_error("Render device lost");
+        }
+        player.pause(lifecycle.state.paused());
+        if (ticks<0 && !player.update(SDL_GetTicksNS())) running=false;
+        if (lifecycle.state.background()) { SDL_Delay(20);continue; }
+        SDL_SetRenderDrawColor(renderer,0,0,0,255);SDL_RenderClear(renderer);player.draw(renderer);
+        if (lifecycle.state.paused()) draw_pause(renderer);
+        if (!screenshot.empty()) {
+            SDL_Surface* capture=SDL_RenderReadPixels(renderer,nullptr);
+            if (!capture || !SDL_SaveBMP(capture,screenshot.c_str())) throw std::runtime_error(SDL_GetError());
+            SDL_DestroySurface(capture);running=false;
+        }
+        SDL_RenderPresent(renderer);
+        if (ticks>=0) running=false;
+    }
+}
 }
 
 int main(int argc, char** argv) {
-    std::string root, screenshot;
+    std::string root, screenshot, video;
     int course = 0, bike = 0, level = 0, opponents = 7;
     long run_ticks = -1;
     bool auto_drive = false, start_paused = false, first_run_smoke = false;
     for (int i = 1; i < argc; ++i) {
         const std::string a = argv[i];
         if (a == "--assets" && i + 1 < argc) root = argv[++i];
+        else if (a == "--video" && i + 1 < argc) video = argv[++i];
         else if (a == "--course" && i + 1 < argc) course = std::atoi(argv[++i]);
         else if (a == "--bike" && i + 1 < argc) bike = std::atoi(argv[++i]);
         else if (a == "--ticks" && i + 1 < argc) run_ticks = std::atol(argv[++i]);
@@ -286,6 +338,10 @@ int main(int argc, char** argv) {
             }
         }
         const rr::Assets assets(root);
+        if (!video.empty()) {
+            play_video(assets,video,renderer,screenshot,run_ticks);
+            SDL_DestroyRenderer(renderer);SDL_DestroyWindow(window);SDL_Quit();return 0;
+        }
         Game g;
         const auto exe = assets.read("ROADRASH.EXE");
         g.depth = rr::read_depth_table(exe);

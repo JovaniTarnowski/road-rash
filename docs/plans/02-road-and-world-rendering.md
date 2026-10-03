@@ -142,7 +142,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 
 ### Task 3: Rasteriser port
 
-The fill routines are `0x0044b630` (833 bytes), `0x0044ba40` (767), `0x0044bd40` (914) and `0x0044c0e0` (783). All read the depth table and the screen width `0x0046667c`. The per-node dispatch is `0x0040ffc0` and the final pass `0x0044d300` (167 lines).
+Corrected by disassembly and original frame capture (October 2): polygon fill is `0x0044d620`, with spans at `0x0044db30`. `0x0044d300` traverses the display list and dispatches draws. `0x0040ffc0` converts Q16 coordinates using the active coordinate shift; it does not dispatch node types. The previously listed `0x0044b630`/`0x0044ba40`/`0x0044bd40`/`0x0044c0e0` prepare projected scenery/sprites.
 
 **Files:**
 - Create: `src/raster.hpp`, `src/raster.cpp`, `tests/raster_test.cpp`
@@ -163,7 +163,7 @@ The fill routines are `0x0044b630` (833 bytes), `0x0044ba40` (767), `0x0044bd40`
 
 - [ ] **Step 1: Identify primitive and edge-stepping rules**
 
-Read the four fillers and `0x0040ffc0`. Document in `REVERSE_ENGINEERING.md`:
+Read `0x0044d620`, `0x0044db30`, `0x0044d300` and the coordinate conversion in `0x0040ffc0`. Document in `REVERSE_ENGINEERING.md`:
 - The primitive type
 - How edges step (Q16 per row)
 - Rounding at top and bottom rows (inclusive or exclusive)

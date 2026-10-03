@@ -1,6 +1,6 @@
 # Port progress
 
-Status of the native macOS ARM64 / Android ARM64 port of Road Rash (1996 Windows rerelease). The port is C++17 with SDL3 and uses no Wine or x86 emulation. It is a **playable race** (`rr-game`): the player and seven AI opponents on an original course, with the original bike physics, AI driving, rider contact and combat, drawn with the original rider sprites. Road shading is a placeholder, and there is no traffic, police, audio or menus yet.
+Status of the native macOS ARM64 / Android ARM64 port of Road Rash (1996 Windows rerelease). The port is C++17 with SDL3 and uses no Wine or x86 emulation. It is a **playable race** (`rr-game`): the player and seven AI opponents on an original course, with the original bike physics, AI driving, rider contact and combat, drawn with the original rider sprites. Road shading is a placeholder, and there is no traffic, police or gameplay menus yet. Audio/video codecs and an explicit video playback path are implemented; race sound triggers and music selection remain open.
 
 Detailed evidence is in [REVERSE_ENGINEERING.md](REVERSE_ENGINEERING.md) and test results in [VERIFICATION.md](VERIFICATION.md). Build and run instructions are in [../README.md](../README.md).
 
@@ -28,14 +28,17 @@ Detailed evidence is in [REVERSE_ENGINEERING.md](REVERSE_ENGINEERING.md) and tes
 | AI opponents | Racing state ported (targets, curve speed, steering/speed control, re-plan, rubber band); overtaking and fight states not ported | `src/race.cpp` |
 | Rider contact | Detection and separation ported; contact response is the bike branch only | `src/race.cpp` |
 | Combat | Hit test, damage, stamina, bike condition, knock-offs, steering knocks, weapon grabs; attack timing and AI attack rule are stand-ins | `src/race.cpp` |
-| Traffic, police, audio, video, menus, saves | Not started | — |
+| Traffic, police, gameplay menus, saves | Not started | — |
 | macOS build | Builds, tests pass, viewer runs | `run-macos.sh` |
 | Android build | APK builds; runs to `SDL_main` on the device; rendering never checked on hardware | `android/` |
 | Platform lifecycle and timing | Pause on background/focus loss/controller removal, explicit resume, texture reset recovery, rational fixed-step clock | `src/session.cpp`, `src/game_main.cpp` |
 | Multi-touch | Independent finger tracking, cancellation and brake priority | `src/input.cpp`, `tests/input_test.cpp` |
-| Original road oracle | 600 original CITY frames match compared projection fields; other courses/splits unverified | `oracle/`, `tests/oracle_road_test.cpp` |
+| Original road oracle | 660 original CITY frames match compared projection fields; indexed frame/palette capture works; other courses/splits unverified | `oracle/`, `tests/oracle_road_test.cpp` |
 | Disc import | ISO/folder reader, SHA-256 verification of 341 files, first-run picker/progress UI | `src/importer.cpp`, `src/import_ui.cpp` |
 | Android data packaging | Normal APK excludes game data; guarded developer assets are opt-in | `android/app/build.gradle` |
+
+| Audio decoding/mixing | All 72 effects and 14 RRA tracks decode; queued stereo mixer, resampling, pause and device reopening; original triggers/priority/music streaming open | `src/wav.cpp`, `src/mixer.cpp` |
+| Video | AVI scan, Cinepak and IMA: all 59 videos match FFmpeg RGB/audio; native playback via `--video`; frontend selection and hardware A/V sync open | `src/avi.cpp`, `src/cinepak.cpp`, `src/video_player.cpp` |
 
 ## Timeline
 
@@ -139,7 +142,7 @@ Sessions 1–6: September 28, 2026. Later dates are listed per session.
 ## Not verified
 
 - **No pixel comparison with the original's output.** Numeric road fields match the recorded starting stretch of CITY; frame pixels and other systems remain unverified.
-- **Android has never been observed running on hardware.** Session 1's device was locked, and no device was connected in sessions 2–5. The APK now contains the game.
+- **Android has never been observed running on hardware.** Session 1's device was locked, and no device was connected in sessions 2–5. The APK contains native code; default builds import disc assets at runtime.
 
 ## Next steps
 
@@ -166,3 +169,16 @@ The complete agent-executable plans to finish the port are in [plans/00-INDEX.md
 | `python3 tools/prepare_android_assets.py ../cdrom/ROADRASH` then `android/gradlew -p android assembleDebug` | Build the APK (needs `JAVA_HOME` set to JDK 21) |
 
 Import follow-up (October 2): nonseekable ISO input now caches inside the owned staging directory and the cached ISO is removed before commit. A synthetic FIFO import and cancellation/cleanup tests pass. First-run UI is now a CTest smoke check. Hardware SAF remains unverified.
+
+### Session 9: original pixels and native audio/video (October 2, 2026)
+
+- Extended the isolated original oracle with a verified hook at `0x004439f5` → `0x00450420`. Capture occurs while the 8-bit surface is locked, before presentation/dashboard. It writes raw view pixels, the active palette, coordinate shift and sub-slice fields. Original EXE bytes remain unchanged.
+- `city-pixels` captures 60 frames plus raw frames 0 and 30. Both are 640×480 with pitch 640 and coordinate shift 15. Frame 30 was converted and visually inspected. All 60 compared road projections match exactly; this establishes capture, not native pixel equality.
+- Corrected renderer tasks: `0x0044b630` and related functions prepare scenery; polygon fill is `0x0044d620`, spans `0x0044db30`, traversal/dispatch `0x0044d300`. `0x0040ffc0` converts coordinates rather than dispatching node types.
+- Added strict PCM8/PCM16 and WAV IMA readers, including chunk padding, fact trimming, block/group validation and malformed/truncated input tests. All 72 effects and 14 RRA files decode.
+- Added an SPSC queued stereo mixer with Q32 linear rate conversion, pan/volume/pitch, saturating sums, pause-preserved cursors, safe sound retirement and SDL audio stream/device reopening. Oldest-voice stealing remains provisional until original priorities are traced.
+- Added AVI physical packet scanning, bounded RGB Cinepak codebooks/V1/V4/intra/inter decoding and WAV IMA audio. Missing or corrupt indexes do not affect sequential scanning. A truncated INTRO retains its complete packets. The 15 bike showcases are silent 320×172, unlike the 44 cutscenes at 320×192 with audio.
+- Full disc codec comparison against FFmpeg passed for every RGB frame in all 59 videos and all 67,840,002 int16 samples in 44 audio streams. FFmpeg is a test oracle only and is never linked.
+- Added native video playback via `rr-game --video VIDEO/INTRO.AVI`, SDL RGB texture output, skip, pause, lifecycle muting, audio cursor timing and silent-video wall-clock fallback. Native intro screenshot at ten seconds was visually inspected. Playback buffers are released only after their mixer references are retired.
+- Original MCI presentation `0x00402820`: normal native-size mode uses x=160, y=240-height/2; doubled mode uses x=0, y=240-height, or y=20 when flag bit 0 is set. The current explicit player uses native-size mode. Frontend mode/clip selection and hardware A/V latency remain unverified.
+- This milestone does not implement game sound triggers, original voice stealing priorities, streamed RRA selection/fades, MIDI, frontend cutscene selection, scenery/terrain raster, full AI/traffic/police or career/save behavior. The whole-port goal remains active.

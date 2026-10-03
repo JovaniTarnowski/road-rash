@@ -6,6 +6,7 @@
 set -eu
 ROOT=/Users/archit/Dev/rr
 NAME="$1"; SECS="${2:-60}"
+case "$NAME" in ''|*[!A-Za-z0-9_-]*) echo 'Scenario names must use letters, digits, hyphens or underscores' >&2; exit 2;; esac
 WINE="$HOME/Applications/Wine Staging.app/Contents/Resources/wine/bin/wine"
 export WINEPREFIX="$ROOT/prefix" WINEDEBUG="${WINEDEBUG:--all}" WINEDLLOVERRIDES="ddraw=n,b;aweman32=n"
 export RR_ORACLE_OUT="C:\\oracle-$NAME.tsv" RR_ORACLE_SCENARIO="$NAME"
@@ -27,4 +28,8 @@ else
 fi
 mkdir -p "$ROOT/native-port/analysis/oracle"
 cp "$WINEPREFIX/drive_c/oracle-$NAME.tsv" "$ROOT/native-port/analysis/oracle/$NAME.tsv"
+for frame in "$WINEPREFIX/drive_c/$NAME"-f*.raw; do
+    [ -f "$frame" ] || continue
+    cp "$frame" "$ROOT/native-port/analysis/oracle/"
+done
 echo "wrote analysis/oracle/$NAME.tsv"

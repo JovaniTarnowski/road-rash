@@ -261,3 +261,19 @@ No playable-game completion date is established. Asset viewing is the first vali
 ## ISO data import (October 2, 2026)
 
 The actual rerelease ISO uses 2048-byte blocks. Its primary volume descriptor at sector 16 reports 252,822 blocks; root directory is sector 24 and ROADRASH is sector 26. Both-endian extents/lengths, sector-contained directory records, `;1` version suffixes and directory flags decode natively. Files are checked against the existing 341-entry SHA-256 inventory before a staging directory is renamed into use. Synthetic tests cover invalid extents, truncated volumes, inconsistent endian fields and directory cycles. All 341 real files import and the viewer decodes successfully from the imported copy. SDL's Android picker supplies content URIs; random access through SDL_IOFromFile is built but not physically validated.
+
+## Audio/video and pixel capture follow-up (October 2, 2026)
+
+Original high-resolution capture: draw call `0x004439f5` invokes `0x00450420`. Locked state `0x00475620`, base `0x004b7ec0`, pitch `0x004b7ec4`, logical dimensions `0x0047539c`/`0x004753a0`, palette `0x0049e138`. Captured active shift `0x00481fa8` is 15, converting Q16 320×240 projection coordinates to a 640×480 surface. Low mode remains unmeasured. Capture is before dashboard drawing.
+
+`0x0040ff40` builds transformed linked nodes (next at +0x68); `0x0040ffc0` converts coordinates; `0x0044d300` locks and traverses the display list; polygon fill/span routines are `0x0044d620`/`0x0044db30`. Earlier plan filler addresses were incorrect and have been corrected.
+
+`0x004349c0` computes engine frequency from speed times the active gear ratio (+0x1cc+gear*0x10), divided by 256, plus 0x2000. Its smoothing limits changes to ±0x2000 on the ground, increases by 0x1000 airborne (cap 0xffff), and drops 0x1000 when crashed with prior frequency >0x2000. `0x00434ce0` multiplies this by Doppler (+0xc8), divided by 512, and chooses normal/nitro/tunnel buffers. This rule is traced, not yet connected or oracle-validated.
+
+`0x004141c0` converts effect volume to DirectSound attenuation `clamp(volume*10000/16384-10000,-10000,0)`, clips pan to ±10000 (optionally reversed), frequency to 100..100000, and stops looping playback below -8999 attenuation. Audible gain must use the DirectSound logarithmic scale; the generic linear mixer alone does not reproduce this wrapper.
+
+AVI corpus: 59 Cinepak files, 44 stereo WAV IMA audio streams and 15 silent bike showcases. Sequential RIFF LIST/movi scanning supplies complete packets without relying on idx1. IMA predictors/indexes restart per block; stereo payload alternates four bytes per channel, low nibbles first. Standard shift/add IMA rounding matches every original audio sample. Cinepak state retains separate 256-entry V1/V4 codebooks per strip and the previous RGB frame, with shared/independent strip books, partial update masks and skip/vector flags.
+
+Codec comparison algorithm reference: [FFmpeg Cinepak decoder](https://github.com/FFmpeg/FFmpeg/blob/master/libavcodec/cinepak.c) and [FFmpeg ADPCM decoder](https://github.com/FFmpeg/FFmpeg/blob/master/libavcodec/adpcm.c). Native implementation is independently structured C++; FFmpeg CLI is used only for byte comparisons. No FFmpeg runtime dependency or original assets are embedded.
+
+Original MCI destination setup `0x00402820`: native-size x=160 and y=240-height/2 when flag 1 is absent and screen mode is not 2; doubled width/height at x=0, y=240-height otherwise; explicit flag 1 changes y to 20. Native CLI playback currently uses the normal rectangle. Frontend call-site flags still require mapping.

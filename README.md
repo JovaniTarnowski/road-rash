@@ -15,7 +15,7 @@ Native C++17 / SDL3 work targeting macOS ARM64 and Android ARM64. `rr-game` is a
 - Integer port of the original road projection: 33 perspective slices, curvature/height integration and the original depth table read from `ROADRASH.EXE`, including the second roadway at splits and merges. The viewer drives through each course with flat placeholder shading.
 - Shared desktop/Android viewer source with keyboard, mouse and touch navigation.
 
-Racing, bike physics, AI riders, sprites and combat are implemented with the approximations recorded in `docs/PROGRESS.md`. Scenery, original road textures, audio, video, save games and original menu interactions remain open. Decompiler output is research input: inferred signatures, types and library labels still need correction.
+Racing, bike physics, AI riders, sprites and combat are implemented with the approximations recorded in `docs/PROGRESS.md`. Scenery, original road textures, game sound triggers/music selection, save games and original menu interactions remain open. Native audio/video codecs are implemented and video playback is available via `--video`. Decompiler output is research input: inferred signatures, types and library labels still need correction.
 
 ## Play (single course)
 
@@ -29,7 +29,7 @@ Arrows or WASD: Up accelerates, Down brakes, Left/Right steer; Z punches, X kick
 
 P/Esc or gamepad Start toggles pause. Android Back opens pause. Enter, Start or a tap resumes. Q or closing the desktop window quits. Backgrounding, losing window focus or disconnecting the active gamepad pauses the race and clears touch input. Returning to the app requires an explicit resume. `--paused` starts the presentation paused (after any `--ticks` verification run).
 
-The race uses the original 60 Hz bike physics ported from the executable (throttle, brakes, 7-gear shifting, drag, traction, steering, curve drift, crests and jumps) on the original course geometry. You race seven original AI opponents with punches, kicks and weapons, drawn with the original rider sprites. Road shading is a placeholder; traffic, police, audio and menus are not done yet. See `docs/PROGRESS.md` for what is simplified.
+The race uses the original 60 Hz bike physics ported from the executable (throttle, brakes, 7-gear shifting, drag, traction, steering, curve drift, crests and jumps) on the original course geometry. You race seven original AI opponents with punches, kicks and weapons, drawn with the original rider sprites. Road shading is a placeholder; traffic, police, race audio and gameplay menus are not done yet. See `docs/PROGRESS.md` for what is simplified.
 
 ## Import your disc
 
@@ -100,3 +100,11 @@ The script defaults to Homebrew Ghidra 12.1.4 and JDK 21; `GHIDRA_HOME` and `JAV
 Original commercial assets and reverse-engineered output remain local. No redistribution license for the game is implied. Third-party library license texts are in `third_party/` and inside the SDL AAR.
 
 References: [SDL Android integration](https://wiki.libsdl.org/SDL3/README-android), [Ghidra headless documentation](https://github.com/NationalSecurityAgency/ghidra/blob/master/Ghidra/RuntimeScripts/support/analyzeHeadlessREADME.md), [Android Gradle Plugin 8.9 compatibility](https://developer.android.com/build/releases/agp-8-9-0-release-notes).
+
+Native cutscene playback (the presentation and clip-selection frontend is still in progress):
+```sh
+build/rr-game --assets ../cdrom/ROADRASH --video VIDEO/INTRO.AVI
+build/rr-game --assets ../cdrom/ROADRASH --video VIDEO/RAT/BANZAI.AVI
+python3 tools/verify_video_audio.py ../cdrom/ROADRASH/VIDEO --video-decoder build/cinepak-test
+```
+P/Esc pauses, a key/click/tap skips, and input while paused resumes. Codec verification uses FFmpeg as a test oracle only; playback uses the native decoders and SDL3. For a deterministic silent screenshot use `--ticks 600 --screenshot analysis/native-video.bmp` (ten seconds).

@@ -62,7 +62,7 @@
 
 - [ ] **Step 1: Identify node fields**
 
-Read `0x0040ffc0` (16 lines; dispatches on node type) and its callees. Write the node layout into `REVERSE_ENGINEERING.md`: type byte/word, depth key, screen position, scale, sprite reference, animation frame, flip/clip flags.
+Read `0x0044d300` (display-list traversal and draw dispatch), `0x0040ff40` (transformed linked nodes), and `0x0040ffc0` (coordinate conversion). Write the node layout into `REVERSE_ENGINEERING.md`: type byte/word, depth key, screen position, scale, sprite reference, animation frame, flip/clip flags.
 
 - [ ] **Step 2: Dump nodes**
 
@@ -268,7 +268,7 @@ Commit: `course: decode roadside scenery placement`.
 
 - [ ] **Step 1: Trace**
 
-Find the sprite blit among the `0x0040ffc0` dispatch targets (sprite node types from Task 1). Document:
+Find the sprite blit among the `0x0044d300` dispatch targets (sprite node types from Task 1). Document:
 - The anchor point (bottom-centre?)
 - The scale stepping (Q16 source step per destination pixel)
 - Transparency

@@ -1,0 +1,75 @@
+#include "mixer.hpp"
+#include <algorithm>
+#include <iostream>
+int main(int argc,char**) {
+    if (argc>1) {
+        if (!SDL_Init(SDL_INIT_AUDIO)) { std::cerr << SDL_GetError() << '\n';return 1; }
+        int result=0;
+        {
+            rr::PcmSound sound{22050,1,{1000,1000}};
+            rr::Mixer mixer(4);
+            mixer.pause(true);
+            const int voice=mixer.play(&sound,127,0,256,true);
+            if (!mixer.open_device()) { std::cerr << SDL_GetError() << '\n';result=1; }
+            uint64_t position=999;
+            for (int i=0;i<100 && !mixer.cursor(voice,position);++i) SDL_Delay(1);
+            if (!mixer.cursor(voice,position) || position!=0) result=1;
+            SDL_Event removed{};removed.type=SDL_EVENT_AUDIO_DEVICE_REMOVED;removed.adevice.recording=false;
+            mixer.pause(true);
+            if (!mixer.handle(removed) || !mixer.device_open()) result=1;
+            if (!mixer.cursor(voice,position) || position!=0) result=1;
+            mixer.retire(&sound);
+        }
+        SDL_Quit();return result;
+    }
+    int failures=0;
+    auto check=[&](bool yes,const char* what) { if (!yes) { ++failures;std::cerr << "FAIL " << what << '\n'; } };
+    rr::PcmSound constant{22050,1,{1000,1000,1000,1000}};
+    rr::Mixer mixer(2);
+    const int id=mixer.play(&constant,127,0,256,true);
+    int16_t out[200];
+    mixer.render(out,100);
+    check(id>=0 && std::all_of(std::begin(out),std::end(out),[](int16_t s) { return s==1000; }),"mono loop at unity gain in both channels");
+    mixer.set(id,127,-64,256);mixer.render(out,1);
+    check(out[0]==1000 && out[1]==0,"left pan endpoint");
+    mixer.set(id,127,63,256);mixer.render(out,1);
+    check(out[0]==0 && out[1]==1000,"right pan endpoint");
+    mixer.stop(id);mixer.render(out,1);
+    check(out[0]==0 && out[1]==0,"stopped voice silent");
+    rr::PcmSound ramp{22050,1,{100,200,300,400}};
+    mixer.play(&ramp,127,0,512,false);mixer.render(out,3);
+    check(out[0]==100 && out[2]==300 && out[4]==0,"double pitch consumes every second sample then ends");
+    rr::PcmSound low_rate{11025,1,{0,1000,2000}};
+    mixer.play(&low_rate,127,0,256,false);mixer.render(out,5);
+    check(out[0]==0 && out[2]==500 && out[4]==1000 && out[6]==1500 && out[8]==2000,"linear rate conversion");
+    mixer.render(out,10);
+    const int paused_voice=mixer.play(&ramp,127,0,256,false);
+    mixer.pause(true);mixer.render(out,20);
+    check(std::all_of(out,out+40,[](int16_t s) { return s==0; }),"paused output silent");
+    mixer.pause(false);mixer.render(out,1);
+    check(out[0]==100,"resume preserves voice position");
+    uint64_t cursor=999;
+    check(mixer.cursor(paused_voice,cursor) && cursor==1,"published playback cursor");
+    mixer.pause(true);mixer.render(out,20);
+    check(mixer.cursor(paused_voice,cursor) && cursor==1,"paused cursor stays fixed");
+    mixer.pause(false);mixer.retire(&ramp);mixer.render(out,1);
+    check(out[0]==0 && out[1]==0,"retired sound no longer read");
+    mixer.stop(paused_voice);mixer.render(out,0);
+    rr::PcmSound loud{22050,1,{32767}};
+    mixer.play(&loud,127,0,256,true);mixer.play(&loud,127,0,256,true);mixer.render(out,1);
+    check(out[0]==32767 && out[1]==32767,"saturating mix prevents overflow");
+    rr::Mixer steal(1);
+    const int stale=steal.play(&loud,127,0,256,true);
+    const int active=steal.play(&constant,127,0,256,true);
+    steal.stop(stale);steal.render(out,1);
+    check(active!=stale && out[0]==1000,"oldest voice stolen; stale handle cannot stop replacement");
+    rr::PcmSound stereo{22050,2,{100,-200,300,-400}};
+    rr::Mixer channels(1);channels.play(&stereo,127,0,256,false);channels.render(out,2);
+    check(out[0]==100 && out[1]==-200 && out[2]==300 && out[3]==-400,"stereo channels preserved");
+    rr::Mixer queue(1);int accepted=0;
+    while (queue.play(&constant,127,0,256,true)>=0) ++accepted;
+    check(accepted==255,"full command queue reports failure");
+    queue.render(out,1);check(queue.play(&constant,127,0,256,true)>=0,"queue recovers after consuming");
+    check(mixer.play(nullptr,127,0,256,false)==-1,"invalid sound rejected");
+    std::cout << failures << " failures\n";return failures ? 1 : 0;
+}

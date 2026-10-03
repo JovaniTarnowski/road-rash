@@ -8,7 +8,7 @@ Read this file first. It defines the conventions, the verification method and th
 
 See [../PROGRESS.md](../PROGRESS.md) for the status table and [../REVERSE_ENGINEERING.md](../REVERSE_ENGINEERING.md) for all recovered formats and function addresses. In short:
 - **Implemented:** resource/course readers and road projection; bike physics, rider sprites, seven AI riders and combat; lifecycle and multi-touch; ISO/folder import; asset-free Android debug APK. The original numeric road oracle matches 600 CITY frames in a limited stretch.
-- **Still open:** deterministic/original pixel and gameplay verification; terrain/scenery/original raster; full traffic/police/crash behavior; menus, career/shop/saves; audio/video/MIDI; standalone macOS/release Android packaging and hardware validation. See PROGRESS.md for approximations.
+- **Still open:** deterministic/original pixel and gameplay verification; terrain/scenery/original raster; full traffic/police/crash behavior; menus, career/shop/saves; original audio triggers/music/MIDI and frontend cutscene hooks; standalone macOS/release Android packaging and hardware validation. See PROGRESS.md for approximations.
 
 ## Plans and order
 
@@ -43,7 +43,7 @@ Wherever interfaces and infrastructure are known, the plans give complete code.
 
 ### Environment
 - **Repo:** `/Users/archit/Dev/rr/native-port`. After plan 01 task 1 it is a git repository; before that it is not.
-- **Shell:** fish. Use `bash -c '...'` for bash syntax such as `for`/`set --` loops, `$(...)`, `&&`-heavy scripts.
+- **Shell:** zsh in the current workspace (older sessions used fish).
 - **Original game data:** `../cdrom/ROADRASH` (mounted ISO). Mount it if missing: `hdiutil attach -readonly -nobrowse -mountpoint /Users/archit/Dev/rr/cdrom "/Users/archit/Dev/rr/Road Rash (USA) (En,Fr,De,Es,It) (Rerelease) (19970930).iso"`.
 - **Reference executable:** `../cdrom/ROADRASH/ROADRASH.EXE`, SHA-256 `73d7f9744b5b1a9482b3909950cdf3fe34119fe13d023b031e9c6739a60f18a2`. Never use the patched copy in `/Users/archit/Dev/rr/android/Download` (different hash).
 - **Wine:** `$HOME/Applications/Wine Staging.app/Contents/Resources/wine/bin/wine` (wine-11.18 Staging). Prefix: `/Users/archit/Dev/rr/prefix`; the game is installed at `prefix/drive_c/ElectronicArts/RoadRash` (hash verified identical).
@@ -94,6 +94,8 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
 4. Audio (effects, both music systems) and all cutscene videos play.
 5. Controls work with keyboard, gamepad (including the MANGMI AIR X built-in controls) and touch.
 6. Docs describe every recovered format and every known deviation from the original.
+
+Codec milestone (October 2): all 59 AVI files (24,900 RGB frames and 67,840,002 audio samples) match FFmpeg exactly. Native playback and pause timing are implemented; this does not close plan 07’s original triggers, selection, music streaming or MIDI work.
 
 ## Global risks
 
