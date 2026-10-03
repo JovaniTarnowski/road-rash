@@ -364,6 +364,57 @@ static void capture_texture_quads(void) {
     free(edges);free(texture);free(pixels);
 }
 
+static uint32_t cel_word(const unsigned char* b,size_t p){uint32_t v;memcpy(&v,b+p,4);return v;}
+static int cel_dimension(uint32_t value){return value&0x80000000u?(int)(1u<<(value&31)):value&511;}
+static void capture_cels(void) {
+    const char* files[6]={"GLOBAL.RSC","COURSES\\CANYN.CRS","COURSES\\CITY.CRS","COURSES\\HIWAY.CRS","COURSES\\MEDLY.CRS","COURSES\\NAPA.CRS"};
+    unsigned char dimension_table[4096];memcpy(dimension_table,(void*)0x4b6e70,sizeof dimension_table);
+    ((void (__cdecl*)(void))0x44fb10)();
+    char key[128];int count=0;
+    for(int file=0;file<6;++file) {
+        char source_path[256];snprintf(source_path,sizeof source_path,"D:\\ROADRASH\\DATA\\%s",files[file]);
+        FILE* in=fopen(source_path,"rb");if(!in)continue;
+        fseek(in,0,SEEK_END);long size=ftell(in);rewind(in);
+        if(size<24 || size>10000000){fclose(in);continue;}
+        unsigned char* bytes=malloc(size);if(!bytes){fclose(in);continue;}
+        if(fread(bytes,1,size,in)!=(size_t)size){free(bytes);fclose(in);continue;}fclose(in);
+        const uint32_t table=cel_word(bytes,16);
+        if(table>(uint32_t)size || 16>(uint32_t)size-table){free(bytes);continue;}
+        const uint32_t entries=cel_word(bytes,table+8);
+        if(entries>((uint32_t)size-table-16)/32){free(bytes);continue;}
+        for(uint32_t i=0;i<entries;++i) {
+            const size_t row=table+16+i*32;
+            if(cel_word(bytes,row)!=0x43454c20)continue;
+            const uint32_t id=cel_word(bytes,row+4),offset=cel_word(bytes,row+8),extent=cel_word(bytes,row+12);
+            if(offset>(uint32_t)size || extent>(uint32_t)size-offset || extent<12)continue;
+            int* ccb=((int* (__fastcall*)(void*,void*))0x40b800)(bytes+offset,NULL);
+            if(!ccb)continue;
+            ++count;
+            const uint32_t data=(uint32_t)ccb[2];
+#define CEL_LOG(label,value) do {snprintf(key,sizeof key,"cel.%d.%u.%s",file,id,label);rr_log(key,value);}while(0)
+            CEL_LOG("width",cel_dimension(ccb[15]));CEL_LOG("height",cel_dimension(ccb[16]));CEL_LOG("flags",(uint32_t)ccb[0]);
+            const uint32_t magic=readable(data,4)?cel_word((void*)(uintptr_t)data,0):0;
+            CEL_LOG("magic",magic);
+            if(magic==0xbc614e && readable(data,56)) {
+                const unsigned char* body=(void*)(uintptr_t)data;
+                const uint32_t width=cel_word(body,32),height=cel_word(body,36),levels=cel_word(body,40);
+                CEL_LOG("texture_flags",cel_word(body,12));CEL_LOG("levels",levels);
+                if(width && width<=256 && height && height<=512 && levels<=9) for(uint32_t level=0;level<levels;++level) {
+                    const uint32_t pointer=cel_word(body,56+12*level);
+                    const size_t pixels=(width>>level)*((height>>level)?height>>level:1);
+                    if(!readable(pointer,pixels))continue;
+                    char output_path[1024];const char* slash=strrchr(g_output,'\\');const size_t prefix=slash?(size_t)(slash-g_output)+1:0;
+                    memcpy(output_path,g_output,prefix);snprintf(output_path+prefix,sizeof output_path-prefix,"%s-cel%d-%u-mip%u.raw",g_scenario,file,id,level);
+                    FILE* out=fopen(output_path,"wb");if(out){fwrite((void*)(uintptr_t)pointer,1,pixels,out);fclose(out);}
+                }
+            }
+#undef CEL_LOG
+        }
+        free(bytes);
+    }
+    rr_log("cel.count",count);memcpy((void*)0x4b6e70,dimension_table,sizeof dimension_table);
+}
+
 static void dump_frame(uint32_t site) {
     char key[96];
     fprintf(g_out, "frame\t%u\n", g_frame);
@@ -504,7 +555,7 @@ BOOL WINAPI DllMain(HINSTANCE inst, DWORD reason, LPVOID reserved) {
                 RD32(0x004b7ec0)=(int)(uintptr_t)pixels;RD32(0x004b7ec4)=width;
                 capture_raster((uintptr_t)pixels,width,height,width);
                 RD32(0x004b7ec0)=base;RD32(0x004b7ec4)=pitch;free(pixels);
-                fputs("frame\t0\n",g_out);dump_raster();capture_view();capture_terrain();capture_hill_projection();capture_polygon();capture_texture_spans();capture_texture_quads();fputs("end\n",g_out);
+                fputs("frame\t0\n",g_out);dump_raster();capture_view();capture_terrain();capture_hill_projection();capture_polygon();capture_texture_spans();capture_texture_quads();capture_cels();fputs("end\n",g_out);
                 fclose(g_out);g_out=NULL;
             }
         }

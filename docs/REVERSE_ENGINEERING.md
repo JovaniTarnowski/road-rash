@@ -331,3 +331,13 @@ Native `normalize_quad` matches 2,048 original calls across modes 0/8/4, includi
 Mip selection compares inclusive projected bbox dimensions with inclusive source rectangle dimensions, reduces each axis while destination < source/2 and another level exists, then selects the smaller axis level. Original UV shorts shift right by that level and resource mip entries are twelve bytes apart from +0x38. `texture_mip_level` and UV shift match the original in three-level synthetic quad captures. Resource header/atlas/display-list preparation is still pending.
 
 All 1,008 span fixtures and 64 full textured quad images compare exactly. These are synthetic original-function fixtures; they do not establish a full race or sprite render match.
+
+## CEL wrapper and PC indexed PDAT (October 2, 2026)
+
+Original `0x0040b800` walks size-delimited chunks until pixel data: optional `OFST`, `CCB `, `PLUT`, `XTRA`, optional `HSPT`, then `PDAT` (code also supports `RPDT`/`RRPD`). On-disk tags are reversed little-endian bytes. CCB is 80 bytes with its body at chunk+12: flags there, width/height encodings at chunk+72/+76. `0x0044fb60` interprets sign-bit dimensions as powers of two and other dimensions by low nine bits, then replaces them with its lookup encoding. The native reader preserves numeric dimensions/flags rather than 32-bit runtime pointers. PLUT has count +8 and little-endian 16-bit entries from +12; its use for nonindexed legacy drawing is still pending.
+
+PC pixel bodies start at PDAT+8 with magic `0x00bc614e`. Header: flags +12, name +16 (16 bytes), width +32, height +36, mip count +40, flat palette index +44. Per-level pointer word at +56+12×level is relative to pixel-body+28. `0x0040b7b0` relocates these words in place. Native bounds-checks them and copies only indexed mip storage, retaining caller ownership. Width is a power-of-two stride ≤256; reduced height bottoms at one storage row. Mip data contains direct PC palette indices, requiring no PLUT-to-RGB conversion.
+
+Seventeen GLOBAL textures contain 117 indexed mip blocks. Twenty-five other GLOBAL/course CEL resources contain only four legacy pixel bytes; the reader retains those words and does not pretend they are decoded images. Course selectors additionally reference external/local CEL tables (`0x0044ac00` / `0x0044aca0`), whose preparation is not yet ported.
+
+The oracle calls original `0x0044fb10` to initialize a saved dimension table, runs `0x0040b800` on copied disc resource payloads, captures numeric fields and writes each original-relocated mip byte range, then restores the table. All 42 dimensions/flags and all 117 byte ranges match native decoding. This establishes resource interpretation, not original scene selection or full sprite drawing.

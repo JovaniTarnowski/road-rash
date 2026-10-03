@@ -189,3 +189,14 @@ Session 15 final checks: **29/29 native and address/undefined sanitizer tests pa
 - Original texture resource/mip decoding, scene/display-list wiring, full race frames and Android hardware output are still unverified.
 
 Session 16 final checks: **30/30 native and address/undefined sanitizer tests pass**. Android ARM64 debug build and game-data exclusion pass. Viewer/resource smoke and all-course projection sweep pass. Logs: `analysis/texture-tests.log`, `analysis/texture-sanitizer-tests.log`, `analysis/android-texture-build.log`. The final capture includes visible opaque and transparent level-2 mip quads; native fixture rerun remains exact.
+
+## Session 17: CEL and PC mip resource decoding (October 2, 2026)
+
+- Synthetic CCB+PLUT+indexed PDAT: exact dimensions, palette endian and pixels; every shorter length rejects, as do invalid relative mip offsets and invalid stride.
+- Real corpus: 42 CEL resources in GLOBAL and five courses; 17 textures with 117 mip blocks and 25 retained legacy words. Original `0x0040b800` loader comparison checks all dimensions, flags, texture metadata, legacy words and every relocated mip byte. **Zero mismatches**.
+- Golden pixel blocks are ignored `analysis/oracle/*-cel*-mip*.raw`; oracle copies the source resources before relocating pointers and restores the temporary dimension table. Runtime original disc files stay unchanged.
+- Legacy drawing, CEL table/selector resolution, CCB transforms and world integration remain open.
+
+The 117 original-loader mip blocks contain **189,266 palette indices**, all compared byte for byte.
+
+Session 17 final checks: **31/31 native and address/undefined sanitizer tests pass**. Android ARM64 debug build and game-data exclusion pass. Logs: `analysis/cel-tests.log`, `analysis/cel-sanitizer-tests.log`, `analysis/android-cel-build.log`.

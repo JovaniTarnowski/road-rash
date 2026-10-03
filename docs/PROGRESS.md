@@ -18,7 +18,8 @@ Detailed evidence is in [REVERSE_ENGINEERING.md](REVERSE_ENGINEERING.md) and tes
 | Split/merge second roadway | Done, with a documented rider-commit assumption | `make_route`, `project_road` |
 | Road sides/shoulders (`DLSR`) | Decoded; shoulder widths rendered, heights carried but not drawn | `src/course.cpp`, `src/road.cpp` |
 | Terrain profiles (building / mountain / hill) | All 109 sections decoded; stateful iterator matches 864 original slices; live cache/random integration open | `src/terrain.cpp` |
-| Other section chunks (`BORR`, `MSRR`, terrain type, `DZHR`, `CESR`) | Mapped to iterators only | REVERSE_ENGINEERING.md |
+| Other section chunks (`BORR`, `MSRR`, `DZHR`, `CESR`) | Mapped to iterators only | REVERSE_ENGINEERING.md |
+| CEL / PLUT and PC mip textures | 42 CEL wrappers, 117 indexed mip blocks match original loader; legacy packet drawing/table selection open | `src/cel.cpp` |
 | World rendering, colours, horizon and scenery (`CEL `) | Indexed flat/texture primitives verified; original scene/resource integration open; viewer still uses placeholder shading | `src/raster.cpp`, `src/texture.cpp` |
 | Bike specs (`BIKESPEC.RSC`) | Decoded and applied (`0x00405ea0`) | `src/bike.cpp` |
 | Player bike physics | Ported from the executable: throttle, brake, steering, gears, drag, traction, curve drift, movement along the course, vertical motion/jumps; not oracle-verified | `src/bike.cpp`, `src/race.cpp` |
@@ -148,7 +149,7 @@ Sessions 1–6: September 28, 2026. Later dates are listed per session.
 
 The complete agent-executable plans to finish the port are in [plans/00-INDEX.md](plans/00-INDEX.md) (plans 01–09, with order and dependencies). The immediate items below are the start of plan 02.
 
-1. Decode the terrain-type payloads (`RBLD` per-sample byte pairs, `RMTN`/`RDWD` wall profiles `0x00451710`, `RHIL` control points `0x004517e0`) and the matching projection cases in `0x00444630`. Then draw shoulder heights for type 0.
+1. Integrate the verified terrain iterators and flat/textured primitives with original per-type projection, cache/random state, visibility and scene construction. Hill projection is verified; shoulder heights, wall transforms and split stitching remain open.
 2. Work out the `DLSR` `+16`/`+17` flag bytes and the per-sample `+0x148`/`+0x149` bytes, which are likely colour or texture selectors.
 3. Find the original road/verge colours (renderers `0x0040b8e0`, `0x0040ccb0`, `0x0040ccf0`) and horizon placement.
 4. Capture the original under Wine (`../play-roadrash.sh`) at known positions and diff against `rr-native --screenshot`.
@@ -242,3 +243,13 @@ Import follow-up (October 2): nonseekable ISO input now caches inside the owned 
 - Polygon milestone passed 29/29 native/sanitizer tests and Android asset-free build. Combined texture checks are recorded in VERIFICATION.md. The full world renderer, original scene/resource preparation and sprite integration remain open.
 
 Session 16 final validation: 30/30 native and sanitizer tests pass, Android builds asset-free, and viewer/resource smoke plus five-course sweep pass. The whole-port goal remains active.
+
+### Session 17: CEL wrappers and indexed mip resources (October 2, 2026)
+
+- Added bounded CCB/PLUT/chunk readers and the PC indexed `PDAT` / `RPDT` / `RRPD` resource layout. Dimension flags are interpreted using original `0x0044fb60`; mip pointers use the +28 relative base from `0x0040b7b0`.
+- All 42 CEL resources decode: 17 indexed textures, 117 mip blocks, 25 retained legacy four-byte pixel words. Pixels in the PC texture blocks are already palette indices; a hypothetical 3DO packed-pixel conversion would be incorrect for these blocks.
+- The original loader `0x0040b800` now runs on copied owned-disc resources in the isolated oracle. All CCB dimensions/flags, texture flags/levels and every pixel in all 117 relocated mip blocks match native output. Small legacy words match exactly but their final drawing semantics remain open.
+- Tests reject every truncated length of a synthetic CEL plus invalid mip offsets and non-power-of-two stride. The loader oracle restores the original dimension table; it never patches disc bytes.
+- Original course CEL selector tables, legacy packet interpretation, CCB transform semantics, palette use outside indexed mip blocks, animation and scene/resource integration are still pending. The whole-port goal remains active.
+
+Session 17 final validation: 31/31 native and sanitizer tests pass; Android builds asset-free. Whole-port completion is not yet achieved.

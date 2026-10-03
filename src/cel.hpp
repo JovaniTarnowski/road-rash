@@ -1,0 +1,20 @@
+#pragma once
+#include <cstdint>
+#include <optional>
+#include <string>
+#include <vector>
+namespace rr {
+struct Plut {std::vector<uint16_t> entries;};
+struct CelMip {int width=0,height=0;unsigned stride_shift=0;std::vector<uint8_t> pixels;};
+struct CelTexture {uint32_t flags=0;uint8_t flat_index=0;std::string name;std::vector<CelMip> mips;};
+struct Cel {
+    uint32_t flags=0;
+    int width=0,height=0;
+    Plut palette;
+    std::optional<CelTexture> texture;
+    // Small legacy PDAT words are retained; their draw behavior is not decoded.
+    std::optional<uint32_t> legacy_pixel_word;
+};
+Plut read_plut(const std::vector<uint8_t>& chunk);
+Cel read_cel(const std::vector<uint8_t>& payload);
+}

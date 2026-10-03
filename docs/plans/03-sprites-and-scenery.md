@@ -80,6 +80,8 @@ Capture `napa-traffic` (a 60 s race with opponents and traffic in view) and `cit
 
 ### Task 2: 3DO cel and PLUT decoder
 
+**Recovered implementation (October 2):** `src/cel.hpp/.cpp` reads CCB/PLUT and PC indexed pixel blocks. The actual disc has 42 CELs: 17 direct indexed textures (117 mips) and 25 legacy four-byte PDAT words. Original-loader comparisons match all fields/mip bytes. Generic 3DO packed-pixel decoding is not needed for the indexed PC blocks; legacy word rendering remains unresolved. `rr::Cel` retains palette/flags/dimensions, optional mip texture, and optional legacy word. It does not return a fabricated image for legacy records. See REVERSE_ENGINEERING.md and VERIFICATION.md; selector tables, transforms and sprite dump tooling remain open.
+
 **Files:**
 - Create: `src/cel.hpp`, `src/cel.cpp`, `tests/cel_test.cpp`, `tools/sprite_dump.cpp`
 - Modify: `CMakeLists.txt`
