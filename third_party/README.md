@@ -1,5 +1,5 @@
-stb_image.h and LICENSE from https://github.com/nothings/stb/tree/2c980bb59875b0d32144a71867fbdebb2f77cd20
-Unmodified upstream image decoder. Used for the original JPEG-encoded RRI assets.
+stb_image.h, stb_truetype.h (v1.26, SHA-256 ecd30b05e0dd4fea3a13c26810dd9e1992dc379049482c393d5a19e6b5090aab) and LICENSE from https://github.com/nothings/stb/tree/2c980bb59875b0d32144a71867fbdebb2f77cd20
+Unmodified upstream image decoder and TrueType rasteriser. Used for the original JPEG-encoded RRI assets and for the TrueType fonts on the disc (TEXT/*.DLL).
 
 SDL Android runtime: https://github.com/libsdl-org/SDL/releases/tag/release-3.4.8
 The official `SDL3-devel-3.4.8-android.zip` archive has SHA-256
