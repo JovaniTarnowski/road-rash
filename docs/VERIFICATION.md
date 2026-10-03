@@ -129,3 +129,12 @@ Final import milestone checks: 16/16 tests also pass under address/undefined san
 - `adb devices`: no devices. Physical playback, audio focus/device latency, frame times and full original gameplay acceptance are still open. Codec equality does not establish original simulation, effect triggers, cutscene selection or frontend fidelity.
 
 Final Session 9 follow-up: address/undefined sanitizer CTest remains **23/23 passing**, including playback clock and mixer cursor/retirement tests. The latest Android ARM64 debug build includes `video_player.cpp` and again passes APK game-data exclusion.
+
+## Session 10: standalone and Android release packaging (October 2, 2026)
+
+- Downloaded official SDL source tarball; `shasum -a 256` matches the GitHub release asset digest. `RR_BUNDLE_SDL=ON` builds static SDL without shared SDL/Homebrew runtime dependency.
+- `tools/build_macos_app.sh`: successful configure/build, **23/23 release tests pass**, strict bundle verification and ZIP creation. Application is 3 MB, ARM64 with 22 system library/framework dependencies; plist validates, bundled SDL/stb licences present, no original assets. Ad-hoc signature passes `codesign --verify --deep --strict`.
+- `RR_PREF_OVERRIDE=<isolated pref> <bundle executable> --first-run-smoke --screenshot analysis/bundle-import.bmp`: succeeds. Converted screen visually inspected; both picker controls and instructions fit. A run with the bundle executable from `/tmp` also succeeds. Finder launch/Gatekeeper/notarization behavior is not established by this CLI smoke.
+- `assembleDebug assembleRelease -PreleaseDebugSigning=true`: successful. Both variant asset verifiers pass. Release `apksigner verify --verbose` passes v1/v2 with one local debug signer. Standard Gradle metadata unsigned-entry warnings remain. APK asset listing contains only `assets/licenses/LICENSE` and `assets/licenses/SDL-LICENSE.txt`.
+- `tools/ci.sh`: native configure/build/tests, image/resource smoke, all-course sweep, Android debug build and APK check finish with **CI OK**.
+- Owner-key signing configuration and tag-based naming are implemented; an owner production key was not supplied/tested. Device remains absent. Installation, SAF import, input/audio lifecycle, hardware rendering/frame times and career persistence are not validated.

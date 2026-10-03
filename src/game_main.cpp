@@ -255,6 +255,7 @@ void play_video(const rr::Assets& assets,const std::string& path,SDL_Renderer* r
     if (ticks<0 && SDL_InitSubSystem(SDL_INIT_AUDIO) && !mixer.open_device()) SDL_Log("Audio unavailable: %s",SDL_GetError());
     rr::VideoPlayer player(assets,path,mixer);
     LifecycleWatch lifecycle(&mixer);
+    std::unique_ptr<SDL_Gamepad,decltype(&SDL_CloseGamepad)> pad(nullptr,SDL_CloseGamepad);
     bool running=true;
     player.update(ticks>=0 ? 0 : SDL_GetTicksNS());
     if (ticks>=0) player.update(uint64_t(ticks)*1000000000ull/rr::ticks_per_second);
@@ -264,13 +265,23 @@ void play_video(const rr::Assets& assets,const std::string& path,SDL_Renderer* r
             if (!lifecycle_event(e.type)) lifecycle.state.handle(e);
             if (!mixer.handle(e)) SDL_Log("Audio reopen failed: %s",SDL_GetError());
             if (e.type==SDL_EVENT_QUIT) running=false;
+            if (e.type==SDL_EVENT_GAMEPAD_ADDED && !pad) pad.reset(SDL_OpenGamepad(e.gdevice.which));
+            if (e.type==SDL_EVENT_GAMEPAD_REMOVED && pad && SDL_GetGamepadID(pad.get())==e.gdevice.which) {
+                pad.reset();lifecycle.state.pause();
+            }
             if (e.type==SDL_EVENT_KEY_DOWN && !e.key.repeat) {
-                if (e.key.key==SDLK_P || e.key.key==SDLK_ESCAPE) {
+                if (e.key.key==SDLK_Q) running=false;
+                else if (e.key.key==SDLK_P || e.key.key==SDLK_ESCAPE) {
                     if (lifecycle.state.paused()) lifecycle.state.resume();else lifecycle.state.pause();
                 } else if (e.key.key==SDLK_AC_BACK) lifecycle.state.pause();
                 else if (lifecycle.state.paused()) lifecycle.state.resume();else player.skip();
             }
-            if (e.type==SDL_EVENT_FINGER_DOWN || e.type==SDL_EVENT_MOUSE_BUTTON_DOWN || e.type==SDL_EVENT_GAMEPAD_BUTTON_DOWN) {
+            if (e.type==SDL_EVENT_GAMEPAD_BUTTON_DOWN && pad && SDL_GetGamepadID(pad.get())==e.gbutton.which) {
+                if (e.gbutton.button==SDL_GAMEPAD_BUTTON_START) {
+                    if (lifecycle.state.paused()) lifecycle.state.resume();else lifecycle.state.pause();
+                } else if (lifecycle.state.paused()) lifecycle.state.resume();else player.skip();
+            }
+            if (e.type==SDL_EVENT_FINGER_DOWN || e.type==SDL_EVENT_MOUSE_BUTTON_DOWN) {
                 if (lifecycle.state.paused()) lifecycle.state.resume();else player.skip();
             }
             if (e.type==SDL_EVENT_RENDER_DEVICE_RESET || e.type==SDL_EVENT_RENDER_TARGETS_RESET) {

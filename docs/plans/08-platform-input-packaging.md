@@ -249,7 +249,7 @@ Post-build: `codesign --force --deep --sign - "Road Rash Native.app"`.
 ```sh
 cmake -S . -B build-release -DCMAKE_BUILD_TYPE=Release -DRR_BUNDLE_SDL=ON
 cmake --build build-release --parallel
-otool -L "build-release/Road Rash Native.app/Contents/MacOS/rr-game" | grep -c homebrew   # expect 0
+otool -L "build-release/Road Rash Native.app/Contents/MacOS/Road Rash Native" | grep -c homebrew   # expect 0
 codesign --verify --deep --strict "build-release/Road Rash Native.app" && echo SIGNED
 open "build-release/Road Rash Native.app"
 ```
@@ -343,3 +343,5 @@ echo CI OK
 Go through each item of the definition of done in `00-INDEX.md`, recording evidence (command output, device notes, golden test names) in `VERIFICATION.md`. Any item not met stays open in `PROGRESS.md` with its reason.
 
 - [ ] **Step 3:** Commit: `docs: user guide and final acceptance record`.
+
+October 2 packaging status: Task 5 software checks pass (static pinned SDL, signed ARM64 app/ZIP, system-only dependencies, first-run CLI smoke and 23 release tests). The internal executable is named `Road Rash Native`. Signing is ad-hoc, not Developer ID/notarized. Task 6 release configuration and local development-key APK/signature checks pass; owner-key signing and all hardware checklist items remain open. Task 7 local CI passes. Task 8 guide exists for the current incomplete development build; final acceptance is open.

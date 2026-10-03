@@ -5,3 +5,8 @@ SDL Android runtime: https://github.com/libsdl-org/SDL/releases/tag/release-3.4.
 The official `SDL3-devel-3.4.8-android.zip` archive has SHA-256
 `c4c23cec585cb99ea626625dc06b421933dd78733b3841628d86be1c13ab16c6`.
 Its unmodified `SDL3-3.4.8.aar` is in `android/app/libs/` and the license is `SDL-LICENSE.txt`.
+
+Standalone macOS builds fetch the official SDL3-3.4.8.tar.gz source archive,
+SHA-256 `e9fff7467fb60f037e6708da18b25560649e4c63edc2a69bb871b960d9cbfbba`.
+`cmake/sdl3_static.cmake` verifies that digest and builds SDL statically.
+The existing SDL and stb licences are copied into the application's Resources.

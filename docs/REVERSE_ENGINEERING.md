@@ -277,3 +277,7 @@ AVI corpus: 59 Cinepak files, 44 stereo WAV IMA audio streams and 15 silent bike
 Codec comparison algorithm reference: [FFmpeg Cinepak decoder](https://github.com/FFmpeg/FFmpeg/blob/master/libavcodec/cinepak.c) and [FFmpeg ADPCM decoder](https://github.com/FFmpeg/FFmpeg/blob/master/libavcodec/adpcm.c). Native implementation is independently structured C++; FFmpeg CLI is used only for byte comparisons. No FFmpeg runtime dependency or original assets are embedded.
 
 Original MCI destination setup `0x00402820`: native-size x=160 and y=240-height/2 when flag 1 is absent and screen mode is not 2; doubled width/height at x=0, y=240-height otherwise; explicit flag 1 changes y to 20. Native CLI playback currently uses the normal rectangle. Frontend call-site flags still require mapping.
+
+## Packaging evidence (October 2, 2026)
+
+No additional original-game behavior is inferred by packaging. The standalone macOS build uses the [official SDL 3.4.8 release](https://github.com/libsdl-org/SDL/releases/tag/release-3.4.8), verifies the published source archive digest, links it statically, and is ARM64/macOS 13 with Apple system dependencies only. Android still uses the existing verified SDL AAR. Both packages contain licence notices and exclude original disc assets. Hardware and full game fidelity remain separate acceptance items.

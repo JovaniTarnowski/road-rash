@@ -1,9 +1,21 @@
 cmake_minimum_required(VERSION 3.22)
+option(RR_BUNDLE_SDL "Build a standalone macOS ARM64 app with pinned static SDL" OFF)
+if(RR_BUNDLE_SDL AND NOT ANDROID)
+    set(CMAKE_OSX_ARCHITECTURES arm64 CACHE STRING "Standalone application architecture" FORCE)
+    set(CMAKE_OSX_DEPLOYMENT_TARGET 13.0 CACHE STRING "Minimum macOS version" FORCE)
+endif()
 project(RoadRashNative LANGUAGES C CXX)
 option(RR_DEV_ASSETS "Allow developer-only packaged Android game assets" OFF)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
-find_package(SDL3 3.2 REQUIRED CONFIG)
+if(RR_BUNDLE_SDL)
+    if(NOT APPLE OR ANDROID)
+        message(FATAL_ERROR "RR_BUNDLE_SDL is the standalone macOS build option")
+    endif()
+    include(cmake/sdl3_static.cmake)
+else()
+    find_package(SDL3 3.2 REQUIRED CONFIG)
+endif()
 add_library(rr-resource STATIC src/resource.cpp src/course.cpp src/road.cpp src/assets.cpp src/framebuffer.cpp src/bike.cpp src/race.cpp src/input.cpp src/bob.cpp src/session.cpp src/iso9660.cpp src/sha256.cpp src/importer.cpp src/wav.cpp src/mixer.cpp src/ima_adpcm.cpp src/avi.cpp src/cinepak.cpp src/video_player.cpp)
 target_link_libraries(rr-resource PUBLIC SDL3::SDL3)
 set_target_properties(rr-resource PROPERTIES POSITION_INDEPENDENT_CODE ON)
@@ -15,8 +27,25 @@ if(ANDROID)
 else()
     add_executable(rr-import src/import_main.cpp)
     target_link_libraries(rr-import PRIVATE rr-resource)
-    add_executable(rr-game src/game_main.cpp src/road_draw.cpp src/import_ui.cpp)
+    if(RR_BUNDLE_SDL)
+        set(RR_GAME_BUNDLE MACOSX_BUNDLE)
+    endif()
+    add_executable(rr-game ${RR_GAME_BUNDLE} src/game_main.cpp src/road_draw.cpp src/import_ui.cpp)
     target_link_libraries(rr-game PRIVATE rr-resource SDL3::SDL3)
+    if(RR_BUNDLE_SDL)
+        set_target_properties(rr-game PROPERTIES
+            OUTPUT_NAME "Road Rash Native"
+            MACOSX_BUNDLE_INFO_PLIST "${CMAKE_SOURCE_DIR}/macos/Info.plist.in")
+        add_custom_command(TARGET rr-game POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_BUNDLE_DIR:rr-game>/Contents/Resources"
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                "${CMAKE_SOURCE_DIR}/third_party/SDL-LICENSE.txt"
+                "${CMAKE_SOURCE_DIR}/third_party/LICENSE"
+                "${CMAKE_SOURCE_DIR}/macos/README.txt"
+                "$<TARGET_BUNDLE_DIR:rr-game>/Contents/Resources"
+            COMMAND /usr/bin/codesign --force --sign - "$<TARGET_BUNDLE_DIR:rr-game>"
+            VERBATIM)
+    endif()
     add_executable(rr-native src/viewer.cpp src/road_draw.cpp)
     set(RR_VIEWER rr-native)
     add_executable(rr-inspect src/inspect.cpp)

@@ -8,7 +8,7 @@ Read this file first. It defines the conventions, the verification method and th
 
 See [../PROGRESS.md](../PROGRESS.md) for the status table and [../REVERSE_ENGINEERING.md](../REVERSE_ENGINEERING.md) for all recovered formats and function addresses. In short:
 - **Implemented:** resource/course readers and road projection; bike physics, rider sprites, seven AI riders and combat; lifecycle and multi-touch; ISO/folder import; asset-free Android debug APK. The original numeric road oracle matches 600 CITY frames in a limited stretch.
-- **Still open:** deterministic/original pixel and gameplay verification; terrain/scenery/original raster; full traffic/police/crash behavior; menus, career/shop/saves; original audio triggers/music/MIDI and frontend cutscene hooks; standalone macOS/release Android packaging and hardware validation. See PROGRESS.md for approximations.
+- **Still open:** deterministic/original pixel and gameplay verification; terrain/scenery/original raster; full traffic/police/crash behavior; menus, career/shop/saves; original audio triggers/music/MIDI and frontend cutscene hooks; owner-key/production distribution and hardware validation. Standalone macOS and local development release APK packaging are software-verified. See PROGRESS.md for approximations.
 
 ## Plans and order
 

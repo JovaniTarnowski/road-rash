@@ -108,3 +108,12 @@ build/rr-game --assets ../cdrom/ROADRASH --video VIDEO/RAT/BANZAI.AVI
 python3 tools/verify_video_audio.py ../cdrom/ROADRASH/VIDEO --video-decoder build/cinepak-test
 ```
 P/Esc pauses, a key/click/tap skips, and input while paused resumes. Codec verification uses FFmpeg as a test oracle only; playback uses the native decoders and SDL3. For a deterministic silent screenshot use `--ticks 600 --screenshot analysis/native-video.bmp` (ten seconds).
+
+Standalone macOS packaging: `tools/build_macos_app.sh` creates
+`build-release/Road Rash Native.app` and `.zip`, with pinned static SDL,
+ARM64/macOS 13 support, included licences and an ad-hoc signature. No Homebrew
+runtime libraries or original game data are included. This packages the
+current incomplete port. Android optimized local APK: `android/gradlew -p
+android assembleRelease -PreleaseDebugSigning=true` (requires JDK 21).
+Owner signing and current controls/import instructions are in
+[docs/USER_GUIDE.md](docs/USER_GUIDE.md). `tools/ci.sh` runs local verification.

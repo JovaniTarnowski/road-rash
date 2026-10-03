@@ -29,8 +29,8 @@ Detailed evidence is in [REVERSE_ENGINEERING.md](REVERSE_ENGINEERING.md) and tes
 | Rider contact | Detection and separation ported; contact response is the bike branch only | `src/race.cpp` |
 | Combat | Hit test, damage, stamina, bike condition, knock-offs, steering knocks, weapon grabs; attack timing and AI attack rule are stand-ins | `src/race.cpp` |
 | Traffic, police, gameplay menus, saves | Not started | — |
-| macOS build | Builds, tests pass, viewer runs | `run-macos.sh` |
-| Android build | APK builds; runs to `SDL_main` on the device; rendering never checked on hardware | `android/` |
+| macOS build | Standalone ARM64 `.app`/ZIP with static pinned SDL, system-only dependencies, ad-hoc signature; 23 release tests pass | `tools/build_macos_app.sh` |
+| Android build | Debug and optimized development release APKs build/sign; runtime rendering/import/controls still unverified on hardware | `android/` |
 | Platform lifecycle and timing | Pause on background/focus loss/controller removal, explicit resume, texture reset recovery, rational fixed-step clock | `src/session.cpp`, `src/game_main.cpp` |
 | Multi-touch | Independent finger tracking, cancellation and brake priority | `src/input.cpp`, `tests/input_test.cpp` |
 | Original road oracle | 660 original CITY frames match compared projection fields; indexed frame/palette capture works; other courses/splits unverified | `oracle/`, `tests/oracle_road_test.cpp` |
@@ -182,3 +182,13 @@ Import follow-up (October 2): nonseekable ISO input now caches inside the owned 
 - Added native video playback via `rr-game --video VIDEO/INTRO.AVI`, SDL RGB texture output, skip, pause, lifecycle muting, audio cursor timing and silent-video wall-clock fallback. Native intro screenshot at ten seconds was visually inspected. Playback buffers are released only after their mixer references are retired.
 - Original MCI presentation `0x00402820`: normal native-size mode uses x=160, y=240-height/2; doubled mode uses x=0, y=240-height, or y=20 when flag bit 0 is set. The current explicit player uses native-size mode. Frontend mode/clip selection and hardware A/V latency remain unverified.
 - This milestone does not implement game sound triggers, original voice stealing priorities, streamed RRA selection/fades, MIDI, frontend cutscene selection, scenery/terrain raster, full AI/traffic/police or career/save behavior. The whole-port goal remains active.
+
+### Session 10: standalone and release packaging (October 2, 2026)
+
+- Added opt-in `RR_BUNDLE_SDL`: official SDL 3.4.8 source tarball pinned to SHA-256 `e9fff7467fb60f037e6708da18b25560649e4c63edc2a69bb871b960d9cbfbba`, static SDL, ARM64/macOS 13 deployment target and application plist.
+- Built `build-release/Road Rash Native.app` (3 MB) and ZIP. Post-build copies licences/notices and ad-hoc signs the app. Verifier confirms ARM64, 22 Apple system libraries/frameworks only, strict signature validity and no game data. All 23 release tests pass. Bundle first-run screen was captured and inspected; executable also runs from `/tmp`.
+- Added Android release signing configuration from owner-supplied properties/environment, tag-derived version name with research fallback, explicit `-PreleaseDebugSigning=true` for local optimized development APKs, and always-packaged SDL/stb licence notices. Default owner release remains unsigned without key configuration.
+- Debug and optimized release builds pass APK game-data exclusion. Local development release signature verifies (v1/v2); only two licence assets are present. No production signing key was created or claimed, and no device is connected.
+- Added `tools/ci.sh`, standalone build/ZIP script, bundle verifier and current-development `docs/USER_GUIDE.md`. Local CI reports `CI OK`.
+- Video gamepad Start now pauses/resumes; active controller disconnect pauses, and desktop Q quits. Physical gamepad behavior remains unverified.
+- Packaging is software-verified. Hardware testing, Developer ID/notarization, full original frontend/gameplay/audio behavior and final whole-port acceptance remain open.
