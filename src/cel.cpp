@@ -20,6 +20,33 @@ Plut read_plut(const std::vector<uint8_t>& b) {
     const auto n=r.word(8);if(!n || n>256)throw std::runtime_error("Invalid PLUT count");r.range(12,size_t(n)*2);
     Plut p;for(uint32_t i=0;i<n;++i)p.entries.push_back(uint16_t(b[12+2*i]|uint16_t(b[13+2*i])<<8));return p;
 }
+CelTexture read_indexed_texture(const uint8_t* data,size_t size) {
+    const std::vector<uint8_t> b(data,data+size);
+    Reader r{b};const size_t body=0;
+    if(size<4 || r.word(0)!=0x00bc614e)throw std::runtime_error("Not an indexed texture");
+    if(size<56)throw std::runtime_error("Truncated indexed texture header");
+    const auto width=r.word(body+32),height=r.word(body+36),levels=r.word(body+40);
+    if(!width || width>256 || (width&(width-1)) || !height || height>512 || !levels || levels>9)throw std::runtime_error("Invalid indexed texture dimensions");
+    unsigned shift=0;while((1u<<shift)<width)++shift;
+    if(levels>shift+1)throw std::runtime_error("Too many texture mip levels");
+    CelTexture texture;
+    for(size_t i=0;i<4;++i){const uint16_t bits=uint16_t(b[body+4+2*i]|uint16_t(b[body+5+2*i])<<8);int16_t value;std::memcpy(&value,&bits,2);texture.bounds[i]=value;}
+    texture.flags=r.word(body+12);texture.flat_index=uint8_t(r.word(body+44));
+    for(size_t i=0;i<16 && b[body+16+i];++i)texture.name.push_back(char(b[body+16+i]));
+    for(uint32_t level=0;level<levels;++level) {
+        const size_t entry=56+12*level;
+        if(entry>size || 4>size-entry)throw std::runtime_error("Truncated mip pointer table");
+        const uint64_t start=uint64_t(r.word(body+entry))+28;
+        const int w=int(width>>level),h=int(std::max(1u,height>>level));
+        const size_t bytes=size_t(w)*h;
+        const size_t header_end=56+12*(levels-1)+4;
+        if(start<header_end || start>size || bytes>size-start)throw std::runtime_error("Mip pixels outside cel chunk");
+        CelMip mip;mip.width=w;mip.height=h;mip.stride_shift=shift-level;
+        mip.pixels.assign(b.begin()+body+size_t(start),b.begin()+body+size_t(start)+bytes);
+        texture.mips.push_back(std::move(mip));
+    }
+    return texture;
+}
 Cel read_cel(const std::vector<uint8_t>& b) {
     Reader r{b};Cel cel;bool ccb=false,pdat=false,plut=false;
     for(size_t p=0;p<b.size();) {
@@ -38,28 +65,7 @@ Cel read_cel(const std::vector<uint8_t>& b) {
                 if(size!=4)throw std::runtime_error("Unsupported nonindexed cel pixel data");
                 cel.legacy_pixel_word=r.word(body);
             } else {
-                if(size<56)throw std::runtime_error("Truncated indexed texture header");
-                const auto width=r.word(body+32),height=r.word(body+36),levels=r.word(body+40);
-                if(!width || width>256 || (width&(width-1)) || !height || height>512 || !levels || levels>9)throw std::runtime_error("Invalid indexed texture dimensions");
-                unsigned shift=0;while((1u<<shift)<width)++shift;
-                if(levels>shift+1)throw std::runtime_error("Too many texture mip levels");
-                CelTexture texture;
-                for(size_t i=0;i<4;++i){const uint16_t bits=uint16_t(b[body+4+2*i]|uint16_t(b[body+5+2*i])<<8);int16_t value;std::memcpy(&value,&bits,2);texture.bounds[i]=value;}
-                texture.flags=r.word(body+12);texture.flat_index=uint8_t(r.word(body+44));
-                for(size_t i=0;i<16 && b[body+16+i];++i)texture.name.push_back(char(b[body+16+i]));
-                for(uint32_t level=0;level<levels;++level) {
-                    const size_t entry=56+12*level;
-                    if(entry>size || 4>size-entry)throw std::runtime_error("Truncated mip pointer table");
-                    const uint64_t start=uint64_t(r.word(body+entry))+28;
-                    const int w=int(width>>level),h=int(std::max(1u,height>>level));
-                    const size_t bytes=size_t(w)*h;
-                    const size_t header_end=56+12*(levels-1)+4;
-                    if(start<header_end || start>size || bytes>size-start)throw std::runtime_error("Mip pixels outside cel chunk");
-                    CelMip mip;mip.width=w;mip.height=h;mip.stride_shift=shift-level;
-                    mip.pixels.assign(b.begin()+body+size_t(start),b.begin()+body+size_t(start)+bytes);
-                    texture.mips.push_back(std::move(mip));
-                }
-                cel.texture=std::move(texture);
+                cel.texture=read_indexed_texture(b.data()+body,size);
             }
         }
         p+=extent;

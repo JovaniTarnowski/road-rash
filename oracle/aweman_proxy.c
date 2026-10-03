@@ -126,9 +126,48 @@ static void capture_raster(uintptr_t base,int width,int height,int pitch) {
     for (int i=0;i<8;++i) RD32(globals[i])=saved[i];
 }
 
+
+// Natural-frame scene dump (before 0x00450420 flushes the display list): the ring of 128 course
+// slices (0x0049f250, 0x2f8 bytes), the 33 projected entries (0x004bc800, 0x224), the per-slice
+// scratch blocks (0x004ba190/0x004bb4b0), and every pending display node (0xa8 bytes) with its
+// resource header and an FNV-1a hash of mip 0 so a native decoder can identify the resource.
+static int g_scene_written;static uint32_t g_scene_nodes;
+static uint32_t fnv(const unsigned char* p,size_t n){uint32_t h=2166136261u;for(size_t i=0;i<n;++i){h^=p[i];h*=16777619u;}return h;}
+static void dump_scene(void) {
+    char path[1024];const char* slash=strrchr(g_output,'\\');const size_t prefix=slash?(size_t)(slash-g_output)+1:0;
+    if (prefix>sizeof path-64) return;
+    memcpy(path,g_output,prefix);snprintf(path+prefix,sizeof path-prefix,"%s-scene%u.raw",g_scenario,g_frame);
+    FILE* out=fopen(path,"wb");if(!out)return;
+    const uint32_t base=(uint32_t)RD32(0x0049e66c),end=(uint32_t)RD32(0x0049e660);
+    uint32_t count=end>=base?(end-base)/0xa8:0;
+    if (!readable(base,(size_t)count*0xa8)) count=0;
+    const uint32_t header[8]={0x52524e53u,1,g_frame,count,base,(uint32_t)RD32(0x0049e664),0x0049f250,0x004bc800};
+    fwrite(header,4,8,out);
+    fwrite((void*)0x0049f250,1,128*0x2f8,out);
+    fwrite((void*)0x004bc800,1,33*0x224,out);
+    fwrite((void*)0x004ba190,1,0x1320,out);
+    fwrite((void*)0x004bb4b0,1,33*0x240,out);
+    for (uint32_t i=0;i<count;++i) {
+        const unsigned char* n=(const unsigned char*)(uintptr_t)(base+i*0xa8);
+        fwrite(n,1,0xa8,out);
+        uint32_t res=0;memcpy(&res,n+8,4);
+        unsigned char rh[0x60];uint32_t hash=0,size=0;
+        memset(rh,0,sizeof rh);
+        if (readable(res,0x60)) {
+            memcpy(rh,(void*)(uintptr_t)res,0x60);
+            uint32_t magic,w,h,mip;memcpy(&magic,rh,4);memcpy(&w,rh+0x20,4);memcpy(&h,rh+0x24,4);memcpy(&mip,rh+0x38,4);
+            if (magic==0xbc614e && w>0 && w<=1024 && h>0 && h<=1024 && readable(mip,(size_t)w*h)) { size=w*h;hash=fnv((const unsigned char*)(uintptr_t)mip,size); }
+        }
+        fwrite(rh,1,0x60,out);fwrite(&hash,4,1,out);fwrite(&size,4,1,out);
+    }
+    fclose(out);
+    g_scene_written=1;g_scene_nodes=count;
+}
+
 // 0x0044d300 locks the surface while drawing and stores its view-origin pixel
 // pointer/pitch at 0x004b7ec0/0x004b7ec4. Capture before 0x0044c780 unlocks it.
 static void __cdecl hook_draw(void) {
+    if (g_out && g_pixels && !(g_frame % (uint32_t)g_pixel_every) && RD8(0x00475620)) dump_scene();
     ((rr_frame_fn)0x00450420)();
     g_pixel_written=0;
     if (!g_out || !RD8(0x00475620)) return;
@@ -534,6 +573,8 @@ static void dump_frame(uint32_t site) {
     rr_log("view.coordinate_shift", RD32(0x00481fa8));
     rr_log("view.coordinate_mask", (uint32_t)RD32(0x00481ff4));
     if (g_frame==0) dump_raster();
+    rr_log("view.quality_mask", RD32(0x00475648));
+    if (g_scene_written) { rr_log("scene.file",g_frame);rr_log("scene.nodes",g_scene_nodes);g_scene_written=0; }
     if (g_pixel_written) {
         rr_log("pixels.file",g_frame);
         rr_log("pixels.width",g_pixel_width); rr_log("pixels.height",g_pixel_height);

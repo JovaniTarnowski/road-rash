@@ -249,3 +249,15 @@ Session 19 final validation: native CTest 35/35; ASAN+UBSAN CTest 35/35; standal
   
   Passes. A full-app run with the dummy audio driver starts the intro without errors. 43/43 tests pass.
 - **Not verified:** sound timing or levels against the original. The DirectSound oracle hook was not built. Race MIDI is not implemented: no General MIDI bank is on the disc, and the AWE32 ROM samples are absent. Races are silent apart from effects and engines.
+- **Natural-frame renderer equality.** The oracle gained `dump_scene`, run before `0x00450420` on captured frames. It writes the ring slices, projected entries, scratch blocks and every pending display node, with its resource header and an FNV-1a hash of mip 0. `RR_ORACLE_FRAMES=61 RR_ORACLE_PIXELS=1 RR_ORACLE_SHOT_EVERY=10 oracle/run.sh city-scene` captured 7 CITY attract frames.
+- `oracle-scene` (skips without the capture) works as follows:
+  - It decodes every texture natively: GLOBAL and course CELs, families exploded and walked including cel groups, and pixel resources in animation/CAR payloads.
+  - It identifies each node's resource by hash and specialises rider nodes from HIBOB/remaps.
+  - It renders the original node list with the native renderer over the original frame.
+  
+  Result: **all 98 nodes in each of 7 frames are rendered and 0 of 307,200 pixels differ** (2,150,400 compared). Road, buildings, sky panels, trees, pedestrians and riders are included. With the low-resolution bike sheet 5,233 pixels differ, which is consistent with the attract race using high-resolution bikers.
+- Limits:
+  - This proves the drawing stage on natural frames. The display list itself still comes from the original; native scene construction from course data is not yet ported or compared.
+  - Frames 10–60 of this capture are identical (the attract race had not started moving).
+  - The horizon/sky backdrop drawn before the nodes was already present in the original frame used as the background.
+- `unpack_resource`: all 163 packed FAM records explode with matching size and CRC-32.

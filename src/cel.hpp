@@ -18,4 +18,7 @@ struct Cel {
 };
 Plut read_plut(const std::vector<uint8_t>& chunk);
 Cel read_cel(const std::vector<uint8_t>& payload);
+// Indexed pixel resource (magic 0xbc614e; mip offsets +28-relative, 0x0040b7b0) as found in PDAT
+// bodies and cel groups (CLGP, 0x0044a660/0x0044a760).
+CelTexture read_indexed_texture(const uint8_t* data,size_t size);
 }

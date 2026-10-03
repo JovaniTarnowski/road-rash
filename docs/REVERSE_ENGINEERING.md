@@ -543,3 +543,26 @@ The course screens share one item array; the sixth item is copied from `0x004691
 - The soundtrack thread `0x00403040` streams `Audio/Music/<track>.RRA` from the saved track index and advances 0..13 when a track ends (HB_Trip, HB_Pass, MM_Dino, P_Pansy, P_Jessie, P_Bridge, SG_Rusty, SG_Outsh, SG_Kicks, SG_Super, SD_Train, SD_Duel, T_Teeth, T_Auto).
 - Race start (`0x004160c0` → `0x00402f50`) stops it. Races play MIDI `Grunge1..5` by course (`SbkGrng` with AWE32 SBKs; Klown when the alias is "krusty" or "bozo"), via `0x00433bb0`.
 - Showroom clips (`0x004023e0` flag 1) only signal the soundtrack thread; other videos stop it.
+
+## Resource packing, cel groups and dynamic rider textures (October 2, 2026, session 20)
+
+**Packing** (`0x004157b0`): a resource payload read through the resource stream starts with 16 bytes {unpacked size, stored size, CRC, packed flag}.
+- Packed data uses the PKWARE Data Compression Library "implode" format, exploded by `0x004555e0` (`0x0040e4d0` / `0x0040e530`, "Error in compressed data").
+- `0x0040e440` keeps a reflected CRC-32 (0xedb88320) of the output, which must equal header word 2.
+- All 163 non-empty `FAM ` records in FAMILIES.RSC are packed this way. The native `unpack_resource` explodes them and checks size and CRC; all pass.
+
+**Family containers** (`0x0044aa80`): a dword count followed by that many offsets, relative to the container, to nested chunks.
+- Leaf chunks are `CCB `, `PLUT`, `RRAN` (animation), `CANS`, `OFSS`/`OFST` (offset tables), `FORM`, and `CLGP` (cel groups).
+- `CLGP` (`0x0044a840`):
+  - +8 (relative to +0xc) is the shared CCB body; +0xc (relative to +0xc) is the PLUT.
+  - Byte +0x14 is the mode (bits 0–1) plus a power-of-two flag (0x40). Byte +0x15 is the dword index of the block table; bytes +0x18/+0x19 are counts; +0x1a/+0x1b are shifts.
+  - Mode 0 (`0x0044a660`): table entry j points (relative to the chunk) at a list of +0x18+1 pixel-block offsets, each relative to +8.
+  - Mode 1 (`0x0044a760`): the table holds the pixel-block offsets directly, with sizes in byte pairs at index +0x16.
+- Every pixel block is an indexed texture with magic `0xbc614e` and mip offsets relative to +28 (`0x0040b7b0`), the same body as a CEL `PDAT`.
+
+**Dynamic rider textures** (`0x00410080`, `0x00443820`):
+- A display node whose resource is the "Bob" marker (`0x00466684`, stored at `0x00466688`) carries a frame at source +0x34 and a colour at +0x38.
+- Colours 0..14 select bike frames remapped through `0x0046e158[colour]`. 0xde selects cop frames, 0xdf cop shadows, 0xe0 bike shadows (sheets loaded by `0x00443610` from `Data/Bikers/<Hi|Lo>{Bob,Cop,Shadow,ShadoC}.DAT`).
+- Out-of-range pairs are dropped. At draw time the frame is copied into a 256-stride page with bounds (0,0,w,h).
+
+**Display list** (`0x00450370`/`0x00450420`): nodes are 0xa8 bytes, bump-allocated from `0x0049e66c` up to a capacity of 0xfa (250) and flushed through `0x0040ff40` → `0x0044d300` at the end of the frame (or when full). A natural CITY frame holds 90–99 nodes.
