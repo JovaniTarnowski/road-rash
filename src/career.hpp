@@ -46,22 +46,22 @@ int showroom_bike(int slot);
 struct Career {
     GameMode mode = GameMode::thrash;
     GameState state{};
-    // Saved per-personality records: 3 dwords at +rider*12 inside each of the 10 runtime
-    // personality copies at 0x004c6b40 (0x204 bytes each), for the player's rider.
-    std::array<std::array<int32_t, 3>, 10> relations{};
+    // Runtime personality copies at 0x004c6b40 (0x204 bytes each) start with 10 relation
+    // triples: relations[personality][other][k]. Saves store relations[p][player's personality].
+    std::array<std::array<std::array<int32_t, 3>, 10>, 10> relations{};
     bool unsaved = false;   // 0x004753ac
 };
 
 // Next front-end screen ids (0x00421df0 screen table indices).
 namespace screen_id {
-constexpr int race_loading = 8, main_menu = 9, thrash_courses = 10, mano = 11, big_game_courses = 12,
+constexpr int race_loading = 8, main_menu = 9, thrash_courses = 10, mano = 11, mano_courses = 12, big_game_courses = 27,
               characters = 14, street = 15, restroom = 16, wrecked = 0x1c, busted = 0x1d, won = 0x1e,
               lost = 0x1f, level_up = 0x20, penalty = 0x21, standings = 0x22, finale = 0x23;
 }
 
 // 0x00445090: switching mode resets level, qualifications and character.
 void select_mode(Career&, const CareerTables&, GameMode);
-// 0x004078f0: restore the player's relation triples from the personality defaults.
+// 0x004078f0: restore the relation triples from the personality defaults.
 void reset_relations(Career&, const CareerTables&);
 // 0x0041f5a0 + 0x0041f630: choose a character; Big Game restarts the career with that rider's cash.
 void choose_character(Career&, const CareerTables&, int character);
@@ -97,5 +97,5 @@ std::string results_video(const Career&, int screen, uint32_t random);
 // checksum(0x0042efc0 over the next 0x9c bytes), 0xcafedead, GameState, 10 x 3 relation dwords.
 uint32_t save_checksum(const uint8_t* bytes, size_t count);
 std::vector<uint8_t> write_save(const Career&);
-Career read_save(const std::vector<uint8_t>&);   // throws std::runtime_error
+Career read_save(const std::vector<uint8_t>&, const CareerTables&);   // throws std::runtime_error
 }

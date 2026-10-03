@@ -43,8 +43,7 @@ int showroom_bike(int slot) {
 }
 
 void reset_relations(Career& c, const CareerTables& t) {
-    const size_t rider = size_t(character_rider(c.state.character));
-    for (size_t p = 0; p < 10; ++p) c.relations[p] = t.default_relations[p][rider];
+    c.relations = t.default_relations;
 }
 
 void select_mode(Career& c, const CareerTables& t, GameMode mode) {
@@ -189,13 +188,14 @@ std::vector<uint8_t> write_save(const Career& c) {
     std::memcpy(&b[8], head, 8);
     put32(&b[16], s.cash);
     std::memcpy(&b[20], s.name.data(), s.name.size());
-    for (size_t r = 0; r < 10; ++r)
-        for (size_t k = 0; k < 3; ++k) put32(&b[40 + 12 * r + 4 * k], uint32_t(c.relations[r][k]));
+    const size_t rider = size_t(character_rider(c.state.character));
+    for (size_t p = 0; p < 10; ++p)
+        for (size_t k = 0; k < 3; ++k) put32(&b[40 + 12 * p + 4 * k], uint32_t(c.relations[p][rider][k]));
     put32(&b[0], save_checksum(&b[4], save_size - 4));
     return b;
 }
 
-Career read_save(const std::vector<uint8_t>& b) {
+Career read_save(const std::vector<uint8_t>& b, const CareerTables& t) {
     if (b.size() != save_size) throw std::runtime_error("Save file has the wrong size");
     if (le32(&b[4]) != save_magic) throw std::runtime_error("Not a Road Rash save file");
     if (le32(&b[0]) != save_checksum(&b[4], save_size - 4)) throw std::runtime_error("Save file checksum mismatch");
@@ -208,8 +208,10 @@ Career read_save(const std::vector<uint8_t>& b) {
     if (s.character > 8 || s.level > 4 || s.qualified > all_qualified || s.bike > 14 || s.course > 5)
         throw std::runtime_error("Save file has out-of-range values");
     s.name.back() = '\0';
-    for (size_t r = 0; r < 10; ++r)
-        for (size_t k = 0; k < 3; ++k) c.relations[r][k] = int32_t(le32(&b[40 + 12 * r + 4 * k]));
+    c.relations = t.default_relations;   // 0x004078f0 before the saved triples are applied
+    const size_t rider = size_t(character_rider(s.character));
+    for (size_t p = 0; p < 10; ++p)
+        for (size_t k = 0; k < 3; ++k) c.relations[p][rider][k] = int32_t(le32(&b[40 + 12 * p + 4 * k]));
     c.mode = GameMode::big_game;   // 0x0042f110 -> 0x00444fb0(2)
     c.unsaved = false;
     return c;

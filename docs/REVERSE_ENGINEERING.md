@@ -409,3 +409,90 @@ All 343 panels emitted by 128 original calls match coordinates/material/PRE0/fli
 - The native reader additionally rejects out-of-range state bytes; the original performs no range checks.
 
 **String slots used:** 192/195/199/200 are the results captions; 201+place is "%s finished in …"; 197/194 are the fine/repair formats; 193/196 the Thrash penalty texts; 198 game over.
+
+## Front end (October 2, 2026, session 20)
+
+The menus are a Win32 window with child "RashButton" windows over two 640×480 15/16-bit DirectDraw surfaces. One surface holds the picture; the other is the same picture with every 5-bit channel halved (`0x0041e6e0`) and sits behind text boxes and buttons. Menus therefore do not use the 8-bit race surface; the native front end draws into a 32-bit image quantised to RGB555.
+
+**Screen table** `0x0046a390`, 0x24 entries × 0x14 bytes: item count, item array, title string slot, title DrawText format, last focus index. At start-up `0x00423881` sets the counts of screens `0x10`/`0x11`/`0x12`/`0x13`/`0x0b`/`0x0d` from `0x00474668`/`0x0047466c`/`0x00465fb0`/`0x00474670`/`0x0046ca88`/`0x0046ce80` (13, 9, 22, 8, 6, 18). A screen with no items is a race-start or quit code: `0x00421df0(n)` posts `WM_QUIT(n)`, and the main loop (`0x00448200`) starts course n (1..5) or quits (6).
+
+**Items** (0x38 bytes):
+
+| Offset | Field |
+| --- | --- |
+| +4 | target screen |
+| +8 | caption slot |
+| +0xc..+0x18 | x, y, w, h |
+| +0x1c | navigation bytes: left, right, up, down, tab, shift-tab (`0x004227d0` follows a chain until an enabled item without flag `0x40000`) |
+| +0x24 | flags (see below) |
+| +0x28 | enabled |
+| +0x2c | handler; activation `0x00423200` calls it, else enters +4 |
+| +0x30 | description slot |
+| +0x34 | box format |
+
+Flags: 1 title box shows the caption; 2 title box shows the description; 4 description box; 0x10 popup item; 0x20 the button keeps the picture behind it (otherwise darkened); 0x40 light colour when disabled; 0x2000 price box; 0x4000 course length; 0x8000 Escape target; 0x40000 skipped; 0x80000 dimmed under a popup.
+
+**Screens:**
+- 7 Credits (1 s timer)
+- 8 "GAME LOADING / Get ready to race!"; its item's target is the course
+- 9 main menu
+- 0x0a Thrash courses
+- 0x0b/0x0c/0x0d mano-a-mano
+- 0x0e characters
+- 0x0f The Street
+- 0x10 Restroom
+- 0x11 Jukebox
+- 0x12 Configure Input
+- 0x13 Graphics Options
+- 0x14 Olley's
+- 0x15/0x16/0x17 Rat/Sport/Super bikes
+- 0x18 showroom
+- 0x19 Der Panzer Klub
+- 0x1a Schmooze
+- 0x1b Big Game bulletin board
+- 0x1c..0x1f wrecked/busted/won/lost
+- 0x20 level progression
+- 0x21 fine/repair/penalty
+- 0x22 race results
+- 0x23 finale (2 s)
+
+The course screens share one item array; the sixth item is copied from `0x00469130` (Thrash: Restroom), `0x00469168` (mano: Disconnect) or `0x004690f8` (Big Game: Der Panzer Klub).
+
+**Pictures:**
+- `0x0041d970` picks the screen picture: Credits, Main, Postcard, Street, Olleys, Panzer, `Bikes/<class>/<name>`, `Restroom/Rest1..6`, `Results/Wreck|Bust|Win|Lose 1..6`, `Results/Level<level>`, `Results/Finale`, and `Chars/<name>-F` behind the loading screen.
+- `0x0041dbc0` swaps the picture while an item has focus: `Postcard/[Q]City|Sierra[R]|Penin|Napa|PCH` (Q = qualified, R = alternate artwork toggled with A), `Chars/<name>-N`, `Showroom/<class>/<name>`, Street/Klub/Olley/Home.
+
+**Fonts** (`0x00423881`): title boxes Badloc 72; buttons Futura Condensed Bold 24; full-width buttons and descriptions Futura Condensed Regular 32 (Demi 24 when flag 0x80; Regular 36 in Schmooze); "QUALIFIED" Badloc 42 at (452,272); standings New Courier Bold 18.
+
+**Colours** (`0x0041fc90`): normal `#DEFFF0`, focused `#E1E180` with a Wingdings arrow, disabled/dimmed `#A0A0A0`, skipped `#FF6432`, titles `#FF6432`. All text has a 2-pixel black shadow.
+
+**Box geometry:**
+- Title box (`0x0041f770`): left (text + 0x31 by text + 0x2a), right-aligned (min 0x13c), centred at 3/4 height, or 640×300.
+- Description box (`0x00420470`): ≤300 wide at x = 8 or 316, y = 122; or full width at y = 380.
+- Restroom/jukebox items without a width take the title box width, clamped to 0xe6/0xa0..0x118 (`0x004459f0`).
+
+**Popups** `0x004224b0`: header plus choices for mode `0x004735c0`, level `0x004736a0`, name `0x004737f0`, resolution `0x00474240`, biker `0x00474320` and videos `0x004743c8`. Choosing calls the stored setter (`0x0049e0a8`) with the item target: `0x00445090` mode, `0x004453f0` level, `0x004457f0` resolution, `0x00445900` biker detail, `0x00445990` videos.
+
+**Restroom enabling** `0x00444fb0`: Y/N strings `0x00473598..0x004735b4` by mode, character and save file.
+
+**Course length** (flag 0x4000): u32 tenths of miles at `0x00468f58[course*5 + level]`; metric ×1.609 truncated (`0x00462008`), units string 27/28.
+
+**Character text:** `"Height/Weight/Bike/Cash"` uses language strings 4000..4003 (feet/inches or metres; lbs or kg ×0.454) and rider heights/weights at `0x00463c78` +8/+0xc. The bike is the level default.
+
+**Standings rows:** `"%2d)  $%4d  %*s  %s"` (Big Game) or `"%2d)  %*s  %s"`, time `"%d:%02d<decimal>%d"` in tenths, `"------------"` for none. Three rows are shown, plus the player's row when placed below third (`0x00421290`).
+
+**Schmooze** `0x00420bb0`:
+- Pick a random rider 0..7 not yet seen this visit; the player's own bit is set on entry.
+- Compute `value = rel[r][character][1] − rel[r][character][0] + rel[r][character][2]`.
+- Attitude is `0x0046ab44[value < 16000 − 1500L ? 1 : value ≥ 32000 − 3000L ? 3 : 2]`.
+- Two to four candidate lines come from `0x0046a6e0[level*8 + r]` (shorts; extra lines when +24/+26 name the player's character). The picture is `Chars/<name>-<"FNH"[attitude]>`.
+- A visit shows at most five riders (`0x00420b50`).
+
+**Not ported or replaced natively:**
+- Mano-a-mano is disabled (plan 09).
+- Jukebox, Sound Mix and Configure Input items do nothing yet.
+- The 60-second attract-demo timer on the main menu is not implemented.
+- Windows common file dialogs are replaced by numbered `<Character> N.RRS` saves in the preference directory and a list of the newest eight.
+- MessageBox prompts are replaced by an in-picture dialog.
+- Wingdings and New Courier are substituted.
+- Title text placement within its box is approximate.

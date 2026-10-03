@@ -228,3 +228,16 @@ Session 19 final validation: native CTest 35/35; ASAN+UBSAN CTest 35/35; standal
 - **Not verified:** round trip of a save written by the original game. No original save has been captured yet.
 - `text-test` (skips without the disc): all four disc TrueType faces (Badloc, Futura Condensed Regular/Bold/Demi) load; empty width is 0; ink is confined to the measured box and drawn in the exact colour; the longest string of each language word-wraps into a 300-pixel description box. An invalid font buffer is rejected. Passes.
 - **Not verified:** glyph-level equality with Windows GDI. GDI hinting is not reproduced, and coverage is thresholded at 50% without anti-aliasing.
+- `frontend-test` (skips without the disc). It reads the screen, popup, pattern and Schmooze tables from the EXE and drives the original menu flow:
+  - credits timer, main menu, Thrash course select, Start video, loading screen, race-start event;
+  - win screen and video, standings text, return with the qualified course skipped;
+  - wreck and Thrash penalty;
+  - Big Game character select (Cydney: $1000), Olley's, Rat bikes, showroom video, refused purchase;
+  - Panzer Klub and Schmooze;
+  - restroom with Save Game skipped while disabled, Save As, Load;
+  - busted game over;
+  - the unsaved-game prompt on Go Home.
+  
+  Every visited screen draws a 640×480 frame. `settings-test` covers settings parse/format/file round trip and rejection of invalid values. All 42 tests pass.
+- Visual inspection: native main menu, character select (Slim Jim bio with 6'2"/142 lbs/125cc Perro Pico/$600), showroom, "IN YOUR DREAMS!", Schmooze, winner and race results frames were rendered and inspected (copies in `analysis/frontend/`, git-ignored).
+- **Not verified:** pixel or layout equality with the original menus. The original front end could not be captured: the macOS screen capture is unavailable to the sandboxed session, and the oracle hooks only cover the race surface.

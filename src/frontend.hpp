@@ -1,0 +1,164 @@
+#pragma once
+#include "career.hpp"
+#include "settings.hpp"
+#include "text.hpp"
+#include <array>
+#include <deque>
+#include <map>
+#include <string>
+#include <vector>
+
+namespace rr {
+class Assets;
+
+// One 0x38-byte menu item (screen tables at 0x0046a390).
+struct MenuItem {
+    int32_t target = 0;      // +4 screen to enter when activated without a handler
+    int32_t caption = 0;     // +8 string slot
+    int32_t x = 0, y = 0, w = 0, h = 0;   // +0xc..+0x18, 640x480 coordinates
+    std::array<uint8_t, 8> nav{};         // +0x1c left, right, up, down, tab, shift-tab (0x004227d0)
+    uint32_t flags = 0;      // +0x24
+    bool enabled = false;    // +0x28
+    uint32_t handler = 0;    // +0x2c original handler address
+    int32_t desc = 0;        // +0x30 description string slot
+    uint32_t format = 0;     // +0x34 DrawText format of the title/description boxes
+};
+
+// Item flags.
+namespace item_flag {
+constexpr uint32_t title_caption = 0x1, title_desc = 0x2, description = 0x4, popup_item = 0x10, keep_background = 0x20,
+                   light = 0x40, course_length = 0x4000, price = 0x2000, escape = 0x8000, skip = 0x40000, dimmed = 0x80000;
+}
+
+struct MenuScreen {
+    std::vector<MenuItem> items;
+    int32_t title = 0;            // screen title string slot (0x0041f770)
+    uint32_t title_format = 0;
+};
+
+// Everything the front end reads from the user's executable.
+struct FrontendData {
+    std::array<MenuScreen, 0x24> screens;
+    std::map<uint32_t, std::vector<MenuItem>> popups;     // by original address
+    std::array<MenuItem, 3> course_extra{};               // 6th course-select item: Thrash, mano, Big Game templates
+    std::array<std::string, 8> restroom_patterns;         // 0x00473598: 'Y'/'N' per restroom item
+    std::array<uint32_t, 25> course_length{};             // 0x00468f58: tenths of miles [course*5 + level]
+    std::array<std::array<uint16_t, 14>, 40> schmooze{};  // 0x0046a6e0: [level*8 + rider]
+    std::array<uint8_t, 4> attitude{};                    // 0x0046ab44
+    std::array<uint32_t, 24> schmooze_format{};           // 0x0046a680
+    std::array<std::array<int32_t, 2>, 10> body{};        // rider table 0x00463c78 +8 height (in), +0xc weight (lb)
+};
+FrontendData read_frontend_data(const std::vector<uint8_t>& exe);
+// Game string table (0x0042f5d0) plus the unit formats 4000..4003 the front end loads directly.
+std::vector<std::string> frontend_strings(const std::map<uint32_t, std::u16string>& resources);
+
+struct MenuInput {
+    bool left = false, right = false, up = false, down = false, tab = false, shift_tab = false;
+    bool home = false, end = false, select = false, back = false, backspace = false;
+    bool alternate_artwork = false;      // 'A' key (0x004227d0)
+    bool pointer_moved = false, pointer_click = false;
+    int pointer_x = -1, pointer_y = -1;  // 640x480 coordinates
+    std::string text;                    // typed characters (Windows-1252)
+};
+
+struct FrontendEvent {
+    enum class Kind { none, play_video, start_race, quit } kind = Kind::none;
+    std::string video;   // path relative to the ROADRASH directory, e.g. VIDEO/START3.AVI
+    int course = 0;      // 1..5
+};
+
+// One finisher in the race results (0x00420e30 rows).
+struct Standing {
+    std::string name;      // Windows-1252
+    int32_t tenths = -1;   // race time in tenths of a second, -1 for none
+    bool player = false;
+};
+
+// The original front end: screen state machine of 0x00421df0, keyboard/mouse handling of
+// 0x004227d0, item handlers, and the GDI drawing of 0x0041fc90 / 0x0041f770 / 0x00420470,
+// drawn into a 640x480 RGB image.
+class Frontend {
+public:
+    Frontend(const Assets&, const TextRenderer&, std::vector<std::string> strings, FrontendData, CareerTables,
+             Career&, Settings&, std::string save_directory);
+    void start();                                 // intro video, then the Credits screen
+    void update(const MenuInput&, uint64_t now_ms);
+    bool poll(FrontendEvent&);                    // next host action
+    void draw(RgbImage&) const;                   // 640x480
+    void race_finished(RaceOutcome, int place, const std::vector<Standing>&);
+    void enter(int screen);                       // 0x00421df0
+    int screen() const { return screen_; }
+    int focus() const { return focus_; }
+    const std::vector<MenuItem>& items() const { return items_; }
+    bool dialog_open() const { return !dialog_.text.empty(); }
+    std::string caption_text(const MenuItem&) const;
+    const std::string& current_save() const { return save_file_; }
+
+private:
+    struct Dialog { std::string text; std::vector<std::pair<int, int>> buttons; int focus = 0; int kind = 0; };
+    const std::string& str(int slot) const;
+    void activate(size_t index);
+    int run_handler(size_t index);
+    void set_focus(size_t index);
+    void navigate(int direction);
+    void open_popup(const std::vector<MenuItem>&, int current, int setter);
+    void close_popup();
+    void apply_restroom_pattern();
+    void set_background(const std::string& name);
+    std::string background_for(int previous, int screen, int title);
+    std::string focus_image(const MenuItem&) const;
+    void prepare_screen(int previous, int screen);
+    void prepare_courses(int screen);
+    void prepare_characters();
+    void prepare_schmooze(int previous);
+    void title_box(int slot, uint32_t format);
+    void describe(const MenuItem&);
+    void show_dialog(const std::string& text, int kind, std::vector<std::pair<int, int>> buttons);
+    void finish_dialog(int choice);
+    bool confirm_unsaved(int then);                // 0x004450e0; false while a dialog is pending
+    void save_current();
+    void save_new();
+    void open_load_list();
+    void queue_video(const std::string& base, int variants);
+    std::string player_name() const;               // 0x0041c140
+    std::string format_standing(size_t place, const Standing&) const;
+    void draw_text_box(RgbImage&, const TextRect&, Face, int height, const std::string&, unsigned flags, uint32_t colour) const;
+
+    const Assets& assets_;
+    const TextRenderer& text_;
+    std::vector<std::string> strings_;
+    FrontendData data_;
+    CareerTables tables_;
+    Career& career_;
+    Settings& settings_;
+    std::string save_dir_, save_file_;
+    std::deque<FrontendEvent> events_;
+
+    int screen_ = 0, previous_ = 0, focus_ = -1;
+    std::vector<MenuItem> items_;          // current items including an open popup
+    size_t popup_base_ = 0;                // 0x00496020
+    int popup_setter_ = 0;                 // 0x0049e0a8
+    std::array<int, 0x24> last_focus_{};   // 0x0046a3a0
+    int character_return_ = screen_id::street;   // 0x0049705c
+    int schmooze_target_ = 0x19, schmooze_count_ = 0;   // 0x00469e1c, 0x0046ab40
+    uint8_t schmooze_used_ = 0;            // 0x00485ce4
+    int rest_picture_ = 1;                 // 0x00485ce8
+    RgbImage background_, dark_;
+    std::string background_name_;
+    int title_slot_ = 0; uint32_t title_format_ = 0;
+    int desc_slot_ = 0; uint32_t desc_format_ = 0, desc_flags_ = 0;
+    std::string price_text_;
+    bool qualified_overlay_ = false;
+    bool dark_screen_ = false;             // standings: the darkened copy fills the screen
+    uint64_t now_ = 0, timer_at_ = 0;      // screens 7 and 0x23 advance on a timer (0x00424140)
+    Dialog dialog_;
+    int dialog_then_ = 0;
+    bool editing_name_ = false;
+    std::string edit_buffer_;
+    std::vector<std::string> save_list_;
+    std::vector<Standing> standings_;
+    RaceReport report_;
+    uint32_t random_ = 0x1234567;
+    uint32_t next_random();
+};
+}

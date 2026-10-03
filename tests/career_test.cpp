@@ -27,7 +27,7 @@ int main(int argc, char** argv) {
     choose_character(c, t, 1);
     check(character_rider(1) == 8 && character_rider(8) == 1 && character_rider(0) == 0, "character to rider");
     check(c.state.cash == 100 && c.state.level == 0 && c.state.bike == t.level_bike[0 + 8 * 5] && c.unsaved, "big game start");
-    check(c.relations[3] == t.default_relations[3][8], "relations for the player's rider");
+    check(c.relations[3][8] == t.default_relations[3][8], "relations restored from defaults");
 
     // Prize for 1st at level 1 (index 0) and level 3 (index 2).
     start_race(c, 2);
@@ -82,24 +82,24 @@ int main(int argc, char** argv) {
     // Saves: round trip, checksum, and rejection of every truncation and of garbage.
     Career s = c;
     s.state.cash = 123456; s.state.name = {'R', 'a', 's', 'h'};
-    s.relations[9] = {-1, 2, 0x7fffffff};
+    s.relations[9][character_rider(s.state.character)] = {-1, 2, 0x7fffffff};
     const auto bytes = write_save(s);
     check(bytes.size() == 0xa0 && bytes[4] == 0xad && bytes[7] == 0xca, "save layout");
-    const Career l = read_save(bytes);
+    const Career l = read_save(bytes, t);
     check(l.state.cash == 123456 && l.state.character == s.state.character && l.relations[9] == s.relations[9] && l.mode == GameMode::big_game && !l.unsaved, "save round trip");
     check(write_save(l) == bytes, "save byte identity");
     for (size_t n = 0; n < bytes.size(); ++n) {
-        try { read_save({bytes.begin(), bytes.begin() + long(n)}); ++failures; } catch (const std::runtime_error&) {}
+        try { read_save({bytes.begin(), bytes.begin() + long(n)}, t); ++failures; } catch (const std::runtime_error&) {}
     }
     std::mt19937 rng(7);
     for (int i = 0; i < 2000; ++i) {
         std::vector<uint8_t> g(0xa0);
         for (auto& x : g) x = uint8_t(rng());
         if (i & 1) { g[4] = 0xad; g[5] = 0xde; g[6] = 0xfe; g[7] = 0xca; }
-        try { read_save(g); ++failures; } catch (const std::runtime_error&) {}
+        try { read_save(g, t); ++failures; } catch (const std::runtime_error&) {}
     }
     auto flipped = bytes; flipped[50] ^= 1;
-    try { read_save(flipped); ++failures; } catch (const std::runtime_error&) {}
+    try { read_save(flipped, t); ++failures; } catch (const std::runtime_error&) {}
     // Checksum definition from 0x0042efc0 on a tiny input: bytes {1,2}: n=2 gives sum 1, weighted 2, alt -1; n=1 gives sum 3, weighted 4, alt 1.
     const uint8_t tiny[2] = {1, 2};
     check(save_checksum(tiny, 2) == ((uint32_t(1) << 16 | 3) ^ 4), "checksum definition");
