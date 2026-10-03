@@ -209,3 +209,12 @@ Session 17 final checks: **31/31 native and address/undefined sanitizer tests pa
 - Natural scene geometry/order, dynamic rider specialization and Android device pixels remain unverified.
 
 Session 18 build checks: native CTest 32/32, ASAN+UBSAN CTest 32/32; Android `assembleDebug` BUILD SUCCESSFUL including `verifyDebugNoGameData`. Viewer resource smoke and all-five-course projection sweep pass. Logs: `analysis/nodes-tests.log`, `analysis/nodes-sanitizer-tests.log`, `analysis/android-nodes-build.log`, `analysis/nodes-smoke.log`, `analysis/nodes-courses.log`.
+
+### Road-panel construction and material integration (October 2, 2026)
+
+- 128 original `0x0043c170` cases, 343 emitted quads: all Q16 coordinates, material slots, PRE0 and flips exact.
+- The original loads road textures from the owned disc with `0x0040b800`, substitutes their pixel-resource pointers into panel lists, and draws with `0x0040ff40`. Native panel construction + executable descriptor lookup + CEL decode + display-list rendering matches all **24,576,000 indexed pixels** in both modes and quality masks 16/48/112.
+- PE data reader rejects all 530 truncated prefixes required by its synthetic payload, unmapped/below-base addresses and reads crossing raw section boundaries. Material binding rejects missing IDs and truncated resource data; synthetic material rendering passes. Eight slots bind successfully from actual imported GLOBAL/executable data.
+- These are isolated road-component fixtures; natural course scene construction, full race frames and Android hardware output remain open.
+
+Session 19 final validation: native CTest 35/35; ASAN+UBSAN CTest 35/35; standalone release CTest 35/35 and macOS bundle verifier PASS (ARM64, 22 system dependencies, ad-hoc signature, no game assets). Android debug and development-signed optimized release BUILD SUCCESSFUL with data exclusion; APK v1/v2 signature verifies. Viewer smoke and all-five-course projection sweep pass. `adb devices` lists no connected device. Logs: `analysis/panels-tests.log`, `analysis/panels-sanitizer-tests.log`, `analysis/panels-macos-release.log`, `analysis/android-panels-build.log`, `analysis/android-panels-release.log`, `analysis/android-panels-signature.log`, `analysis/panels-smoke.log`, `analysis/panels-courses.log`.

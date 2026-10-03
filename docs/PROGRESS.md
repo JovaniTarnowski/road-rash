@@ -20,7 +20,7 @@ Detailed evidence is in [REVERSE_ENGINEERING.md](REVERSE_ENGINEERING.md) and tes
 | Terrain profiles (building / mountain / hill) | All 109 sections decoded; stateful iterator matches 864 original slices; live cache/random integration open | `src/terrain.cpp` |
 | Other section chunks (`BORR`, `MSRR`, `DZHR`, `CESR`) | Mapped to iterators only | REVERSE_ENGINEERING.md |
 | CEL / PLUT and PC mip textures | 42 CEL wrappers, 117 indexed mip blocks match original loader; legacy packet drawing/table selection open | `src/cel.cpp` |
-| World rendering, colours, horizon and scenery (`CEL `) | Generic display-list rendering matches 32 original lists; scene/resource integration open; viewer still uses placeholder shading | `src/world_renderer.cpp` |
+| World rendering, colours, horizon and scenery (`CEL `) | Generic display lists and lane-panel/material path verified; full scene integration open; viewer still uses placeholder shading | `src/world_renderer.cpp` |
 | Bike specs (`BIKESPEC.RSC`) | Decoded and applied (`0x00405ea0`) | `src/bike.cpp` |
 | Player bike physics | Ported from the executable: throttle, brake, steering, gears, drag, traction, curve drift, movement along the course, vertical motion/jumps; not oracle-verified | `src/bike.cpp`, `src/race.cpp` |
 | Walls, crashes, remount | Simplified stand-ins | `src/race.cpp` |
@@ -30,7 +30,7 @@ Detailed evidence is in [REVERSE_ENGINEERING.md](REVERSE_ENGINEERING.md) and tes
 | Rider contact | Detection and separation ported; contact response is the bike branch only | `src/race.cpp` |
 | Combat | Hit test, damage, stamina, bike condition, knock-offs, steering knocks, weapon grabs; attack timing and AI attack rule are stand-ins | `src/race.cpp` |
 | Traffic, police, gameplay menus, saves | Not started | — |
-| macOS build | Standalone ARM64 `.app`/ZIP with static pinned SDL, system-only dependencies, ad-hoc signature; 23 release tests pass | `tools/build_macos_app.sh` |
+| macOS build | Standalone ARM64 `.app`/ZIP with static pinned SDL, system-only dependencies, ad-hoc signature; 35 release tests pass | `tools/build_macos_app.sh` |
 | Android build | Debug and optimized development release APKs build/sign; runtime rendering/import/controls still unverified on hardware | `android/` |
 | Platform lifecycle and timing | Pause on background/focus loss/controller removal, explicit resume, texture reset recovery, rational fixed-step clock | `src/session.cpp`, `src/game_main.cpp` |
 | Multi-touch | Independent finger tracking, cancellation and brake priority | `src/input.cpp`, `tests/input_test.cpp` |
@@ -263,3 +263,13 @@ Session 17 final validation: 31/31 native and sanitizer tests pass; Android buil
 - Dynamic rider frame specialization (`0x00443820`), original scene construction/selector resolution, sky, natural full-frame equality and replacing the game's placeholder renderer remain open. Whole-port completion has not been achieved.
 
 Session 18 validation: 32/32 native and address/undefined sanitizer tests pass. Synthetic dispatch tests also run without oracle captures. Android ARM64 debug build and asset exclusion pass; resource/viewer smoke and five-course projection sweep pass. No Android device pixel comparison was performed.
+
+### Session 19: original road panels and imported materials (October 2, 2026)
+
+- Ported `0x0043c170` lane-panel construction and `0x0043c0b0` material selection: byte lane counts, fractional Q8 lane widths, four-pixel outer expansion, Q16 row masking, marking direction, visibility/clipping, terrain-dependent PRE0 and quad UV flips.
+- 128 original-function cases emit 343 panels. Every coordinate, material slot, PRE0 and flip matches exactly, including fractional lanes, reversed direction, negative steps, offscreen panels and hidden slices.
+- Added bounded PE virtual-address data extraction. Road material IDs are read from the user's executable descriptor table at `0x0046dfb0`, then decoded from imported `GLOBAL.RSC`. The eight logical slots include the original `0x00444e30` marked-middle alias. No game tables/pixels are embedded in source.
+- Combined original panel construction and actual imported CEL rendering match **24,576,000 indexed pixels** across 128 fixtures in both modes and all three quality masks. These are isolated synthetic road panels, not natural race-frame comparisons.
+- Synthetic PE truncation/address checks and resource-binding/rendering checks run without game assets. Original scene cache/occlusion, terrain, scenery, horizon, player/sprite specialization and complete game renderer integration remain open. The whole-port goal remains active.
+
+Session 19 final checks: 35/35 native, sanitizer and standalone release tests pass; Android debug and optimized development release build asset-free. Development APK v1/v2 signature verifies. Refreshed macOS `.app`/ZIP passes ARM64, system-library, signature and game-data checks. Viewer smoke and five-course projection sweep pass. No Android device is connected.

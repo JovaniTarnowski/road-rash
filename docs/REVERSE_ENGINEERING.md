@@ -349,3 +349,13 @@ The oracle calls original `0x0044fb10` to initialize a saved dimension table, ru
 `0x0044d300` walks in list order; quality-mask intersection with resource flags selects flat fill (resource +44 color, or node +60 for the flat template). Texture paths normalize points, update horizontal flip, inset each UV endpoint by one, and call `0x004180b0`. Mip choice uses the original pre-normalization integer bounding box and inclusive signed UV extents. Quality masks observed in settings are 16, 48 and 112. Rider flag 0x2000 specializes the resource with `0x00443820`; that path remains unported.
 
 The native generic renderer matches 32 synthetic original lists (384 nodes, both 320×240 and 640×480 modes), comparing all 6,144,000 pixels exactly. CEL signed UV bounds also match the original relocated loader on all 17 real indexed textures. This verifies generic dispatch/composition, not natural scene construction or whole race frames.
+
+### Lane-panel construction and road material table (October 2, 2026)
+
+`0x0043c170` builds one quad per lane using projected lane spacing (+0x24) of the neighboring/current slice, starts (+0x30/+0x40), and rows (+0x28/+0x38) masked with 0xffffc000. It expands the first and last panels by 0x40000 in logical Q16. Marking flag 0x10 reverses the two ends. Counts come from source bytes +0x34/+0x35; the source Q8 lane values at +0x30/+0x2c determine boundary/interior material roles via `0x0043c0b0`. Surface flag 0x20 selects the plain template. Marking flags 8/16 select marked variants, 0x20 selects the alternate material, and 0x40 suppresses special selection.
+
+`0x00450720` emits quads in first-left, first-right, second-right, second-left order, with U/V reversals when end ordering is inverted. `0x0043c170` uses PRE0 0x18 for consecutive crossover terrain (type 3), otherwise 0x1f001f00. PRE0 is captured for structural verification; indexed texture drawing uses resource mip data.
+
+`0x00441770` reads 20-byte load descriptors at `0x0046dfb0`: destination, resource tag, zero-based ID, loader state fields. CEL IDs are incremented before lookup. Destination slots 0x4c3cc0/0x4c3cb0 and the 0x4c3cd0/0x4c3ce0 arrays identify plain, alternate, marked and normal panels. The native loader reads these IDs from the original executable, resolving imported CELs without embedding the table. `0x00444e30` aliases marked slot 1 to marked slot 0.
+
+All 343 panels emitted by 128 original calls match coordinates/material/PRE0/flips. Substituting actual original-loaded road CEL pixel resources into those original lists and drawing through `0x0040ff40` yields 24,576,000 pixels identical to native construction + imported material binding + generic renderer. Natural frame visibility/cache/order is not covered.

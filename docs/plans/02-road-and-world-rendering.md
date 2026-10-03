@@ -301,3 +301,7 @@ Known lead: every simulation step (`0x0044b3b0`) accumulates `DAT_004b7ef8 += be
 ### Display-list draw stage milestone (October 2, 2026)
 
 `src/world_renderer.*` now implements generic ordered dispatch from caller-owned `DrawNode` objects. Original flat/texture quality selection, inclusive bbox rejection, normalization/flip handling, UV insets and mip selection match 32 original-function synthetic lists in both resolutions: 6,144,000 pixels exact. Signed CEL UV bounds match all 17 real indexed resources. Scene construction, resource selector resolution, dynamic rider specialization, horizon, natural full-frame comparisons and viewer switch-over are still required; Task 8 is not complete.
+
+### Road construction/material milestone (October 2, 2026)
+
+`src/road_panels.*` ports `0x0043c170` / `0x0043c0b0` geometry and material roles: 128 original cases, 343 emitted panels exact. `src/exe_tables.*` bounds-checks PE virtual-address data; `src/road_materials.*` reads original load descriptors and binds eight imported CEL slots, preserving the marked-middle alias. Together with the generic renderer, all 24,576,000 original pixels from 128 isolated real-material fixtures match. Natural cache/slice visibility, road/terrain composition, scene order and viewer switch-over remain pending; this does not close the full world renderer tasks.
