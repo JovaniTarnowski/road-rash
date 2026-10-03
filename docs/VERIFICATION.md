@@ -146,3 +146,10 @@ Final Session 9 follow-up: address/undefined sanitizer CTest remains **23/23 pas
 - `build/oracle-raster-test` and sanitizer equivalent: **64 fixtures compared, 0 mismatched**, comparing all 19,660,800 indexed pixels. Malformed metadata/missing raw images fail; absent captures alone skip 77. These are original-function component comparisons, not native/full-original race screenshots.
 - CTest: **25/25 pass**, also **25/25 under address/undefined sanitizers**. Viewer/resource smoke and five-course sweep pass. Android debug build and no-game-data verifier pass.
 - No scene integration, arbitrary-quad normalization, textured spans, terrain/scenery, low view mode or Android hardware pixels are claimed by these results.
+
+## Session 12: view mapping (October 2, 2026)
+
+- Recaptured loader-only `raster-fixtures`: 24 original `0x0040ffc0` coordinate conversions, including signed extremes and fractional boundaries. `view-test` compares every mapping exactly.
+- Raster remains **64 fixtures, zero mismatches**, now including the full high-view coordinate extremes.
+- Debug and address/undefined sanitizer CTest: **26/26 pass**. Android debug build and game-data exclusion pass. Logs: ignored `analysis/view-tests.log`, `analysis/view-sanitizer-tests.log`, `analysis/android-view-build.log`.
+- Low and inset dimensions come from disassembly; component mapping equality does not establish full low/inset rendered-frame equality or hardware presentation.

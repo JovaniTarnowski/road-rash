@@ -291,3 +291,9 @@ Each row floors signed Q16 edge positions, clips the lesser x to the left bound 
 The native `fill_quad` accepts normalized polygons, bounds coordinates to the supported original Q16 edge range and rejects unnormalized shapes requiring more than two active edges. This is a partial primitive port: arbitrary topology normalization/texture handling are not implemented. All 64 captured normalized fixture images match exactly; this does not establish a full-frame world renderer match.
 
 Oracle loader mode 2 calls the original pure filler on synthetic points into a separately allocated 640×480 buffer, restoring pixel pointer, pitch, clip and bbox globals afterward. Original EXE bytes on disk remain unchanged. Original function normalization is captured in the recorded points. Capture outputs contain synthetic geometry rather than disc graphics. Live mode 1 additionally permits component capture after the first locked draw.
+
+## View coordinate conversion (October 2, 2026)
+
+`0x00410160` sets shift/mask globals `0x00481fa8` / `0x00481ff4`: low uses 16 / `0xffffffff`, high uses 15 / `0xfffffffe`. `0x0040ffc0` applies arithmetic shift then mask to eight Q16 node coordinates. High mode therefore computes twice the low-mode floor, snapping all vertices to even pixels. Negative values require signed floor, not division truncation. The earlier description of shift 15 alone was incomplete.
+
+`0x00448870` sets logical view dimensions to 640×480 or 320×240. Low inset mode sets display size 640×480 and view origin (160,120); high mode uses origin zero. `0x004457f0` maps settings 1, 2, 3 to low fullscreen, low inset, high fullscreen. `view_mode` implements these fields; the existing game scene does not yet consume this abstraction. Twenty-four original conversion-helper fixtures match including both signed extremes.

@@ -16,7 +16,7 @@ void fill_quad(Framebuffer& fb,const RasterQuad& quad,RasterClip clip) {
     const auto& points=quad.points;
     int32_t min_y=points[0].y,max_y=min_y,min_x=points[0].x,max_x=min_x;
     for (const auto& p:points) {
-        if (p.x<-32768 || p.x>32767 || p.y<-32768 || p.y>32767) throw std::runtime_error("Raster coordinate exceeds original Q16 edge range");
+        if (p.x<-65536 || p.x>65535 || p.y<-65536 || p.y>65535) throw std::runtime_error("Raster coordinate exceeds original coordinate conversion range");
         min_y=std::min(min_y,p.y);max_y=std::max(max_y,p.y);min_x=std::min(min_x,p.x);max_x=std::max(max_x,p.x);
     }
     if (max_y<clip.top || min_y>clip.bottom || max_x<=clip.left || min_x>=clip.right) return;

@@ -115,8 +115,8 @@ Before rasterising, establish how the original maps the 320×240 Q16 view onto i
 - Create: `src/view.hpp`
 
 **Interfaces:**
-- Produces: `struct rr::ViewMode { int surface_width, surface_height; int scale_shift; };` and `rr::ViewMode rr::view_mode(bool high_resolution);`.
-  - `scale_shift` is the left shift from 320×240 view pixels to surface pixels: 1 if high resolution doubles, 0 otherwise.
+- Implemented: `rr::ViewMode` / `rr::view_mode(bool high, bool inset=false)` including surface/display dimensions, origin and signed Q16 conversion. High maps `(q16 >> 15) & 0xfffffffe`, low maps `q16 >> 16`.
+- Evidence: `0x00410160`, `0x0040ffc0`, `0x00448870`, `0x004457f0`; 24 original helper comparisons pass. Scene integration and actual low/inset frame comparisons remain open.
 
 - [ ] **Step 1: Measure**
 

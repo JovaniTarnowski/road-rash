@@ -56,6 +56,8 @@ static char g_output[MAX_PATH];
 static int g_raster;
 static struct { int vertices[8],clip[4],colour,width,height; } g_raster_cases[64];
 static int g_raster_count;
+static int g_view_inputs[12]={0,65535,65536,65537,-1,-65535,-65536,-65537,32768,-32768,0x7fffffff,(int)0x80000000u};
+static int g_view_outputs[2][12];
 #define RD32(a) (*(volatile int32_t*)(uintptr_t)(a))
 #define RD8(a) (*(volatile uint8_t*)(uintptr_t)(a))
 
@@ -91,6 +93,7 @@ static void capture_raster(uintptr_t base,int width,int height,int pitch) {
             for (int i=0;i<4;++i) { int v=(i+c)%4;vertices[i*2]=generated[v*2];vertices[i*2+1]=generated[v*2+1]; }
             if (c%7==0) { int v=(c/7)%4,j=(v+1)%4;vertices[v*2]=vertices[j*2];vertices[v*2+1]=vertices[j*2+1]; }
         }
+        if (c==62) { int extreme[8]={-65536,-65536,65534,-65536,65534,65534,-65536,65534};memcpy(vertices,extreme,sizeof extreme); }
         if (c==63) { int huge[8]={-16384,-16384,16384,-16384,16384,16384,-16384,16384};memcpy(vertices,huge,sizeof huge); }
         for (int row=0;row<height;++row) memset((void*)(base+(size_t)row*pitch),0,width);
         int clip[4]={0,0,width,height-1};
@@ -167,6 +170,27 @@ static void dump_raster(void) {
     }
 }
 
+static void capture_view(void) {
+    const int shift=RD32(0x00481fa8),mask=RD32(0x00481ff4);
+    for (int mode=0;mode<2;++mode) {
+        RD32(0x00481fa8)=mode ? 15 : 16;
+        RD32(0x00481ff4)=mode ? (int)0xfffffffeu : -1;
+        for (int i=0;i<12;++i) {
+            int source[32]={0},destination[32]={0};
+            // No sprite pointer: 0x00410080 returns after copying null.
+            source[0x44/4]=g_view_inputs[i];
+            ((void (__fastcall*)(int*,int*))0x0040ffc0)(destination,source);
+            g_view_outputs[mode][i]=destination[0x18/4];
+        }
+    }
+    RD32(0x00481fa8)=shift;RD32(0x00481ff4)=mask;
+    char key[96];
+    for (int mode=0;mode<2;++mode) for (int i=0;i<12;++i) {
+        snprintf(key,sizeof key,"view.map.%d.%d.input",mode,i);rr_log(key,g_view_inputs[i]);
+        snprintf(key,sizeof key,"view.map.%d.%d.output",mode,i);rr_log(key,g_view_outputs[mode][i]);
+    }
+}
+
 static void dump_frame(uint32_t site) {
     char key[96];
     fprintf(g_out, "frame\t%u\n", g_frame);
@@ -178,6 +202,7 @@ static void dump_frame(uint32_t site) {
     rr_log("camera.height", RD32(0x004bc7dc));
     rr_log("camera.half", RD8(0x00473498));
     rr_log("view.coordinate_shift", RD32(0x00481fa8));
+    rr_log("view.coordinate_mask", (uint32_t)RD32(0x00481ff4));
     if (g_frame==0) dump_raster();
     if (g_pixel_written) {
         rr_log("pixels.file",g_frame);
@@ -306,7 +331,7 @@ BOOL WINAPI DllMain(HINSTANCE inst, DWORD reason, LPVOID reserved) {
                 RD32(0x004b7ec0)=(int)(uintptr_t)pixels;RD32(0x004b7ec4)=width;
                 capture_raster((uintptr_t)pixels,width,height,width);
                 RD32(0x004b7ec0)=base;RD32(0x004b7ec4)=pitch;free(pixels);
-                fputs("frame\t0\n",g_out);dump_raster();fputs("end\n",g_out);
+                fputs("frame\t0\n",g_out);dump_raster();capture_view();fputs("end\n",g_out);
                 fclose(g_out);g_out=NULL;
             }
         }

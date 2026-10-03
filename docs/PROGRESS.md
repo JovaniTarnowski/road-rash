@@ -203,3 +203,11 @@ Import follow-up (October 2): nonseekable ISO input now caches inside the owned 
 - Native and address/undefined sanitizer suites pass **25/25**. Resource/viewer smoke and all-course sweep pass; Android ARM64 debug builds with asset exclusion.
 - Timed oracle cleanup now targets only the process it launched, without killing every Wine process in the prefix. Old scenario raw outputs are removed before capture to prevent stale fixtures from being mistaken for new output.
 - Full polygon normalization, original scene/texture/scenery/terrain drawing and full-frame equality remain open. The game still uses the placeholder scene renderer.
+
+### Session 12: original view coordinate mapping (October 2, 2026)
+
+- Added `ViewMode` from `0x00448870`: 320×240 low, 640×480 high, or a low view centered at (160,120) in a 640×480 display.
+- Recovered `0x00410160` / `0x0040ffc0`: high mode shifts Q16 by 15 and masks with `0xfffffffe`. Vertices therefore lie on even pixels; simply shifting by 15 was insufficient. Low mode uses signed floor by 16 without masking.
+- The isolated oracle calls the original conversion helper for twelve signed/boundary coordinates in each mode. All 24 mappings match. This is helper evidence; low-resolution race pixels remain unmeasured.
+- Expanded raster input bounds to the complete converted high-mode range −65,536..65,535. A new extreme rectangle remains exact against the original; all 64 raster fixtures still match.
+- Native and address/undefined sanitizer suites pass 26/26. Android ARM64 debug builds and asset exclusion pass. Scene integration remains open; the whole-port goal continues.

@@ -25,8 +25,8 @@ int main(int argc,char** argv) {
             const int width=value(prefix+"width",1,1280),height=value(prefix+"height",1,960);
             rr::RasterQuad quad;quad.colour=uint8_t(value(prefix+"colour",0,255));
             for (size_t v=0;v<4;++v) {
-                quad.points[v].x=value(prefix+"vertex."+std::to_string(v*2),-32768,32767);
-                quad.points[v].y=value(prefix+"vertex."+std::to_string(v*2+1),-32768,32767);
+                quad.points[v].x=value(prefix+"vertex."+std::to_string(v*2),-65536,65535);
+                quad.points[v].y=value(prefix+"vertex."+std::to_string(v*2+1),-65536,65535);
             }
             rr::RasterClip clip{value(prefix+"clip.0",0,width),value(prefix+"clip.1",0,height-1),value(prefix+"clip.2",0,width),value(prefix+"clip.3",0,height-1)};
             const auto raw=path.parent_path()/(file.scenario+"-raster"+std::to_string(c)+".raw");
