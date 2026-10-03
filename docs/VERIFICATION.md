@@ -218,3 +218,8 @@ Session 18 build checks: native CTest 32/32, ASAN+UBSAN CTest 32/32; Android `as
 - These are isolated road-component fixtures; natural course scene construction, full race frames and Android hardware output remain open.
 
 Session 19 final validation: native CTest 35/35; ASAN+UBSAN CTest 35/35; standalone release CTest 35/35 and macOS bundle verifier PASS (ARM64, 22 system dependencies, ad-hoc signature, no game assets). Android debug and development-signed optimized release BUILD SUCCESSFUL with data exclusion; APK v1/v2 signature verifies. Viewer smoke and all-five-course projection sweep pass. `adb devices` lists no connected device. Logs: `analysis/panels-tests.log`, `analysis/panels-sanitizer-tests.log`, `analysis/panels-macos-release.log`, `analysis/android-panels-build.log`, `analysis/android-panels-release.log`, `analysis/android-panels-signature.log`, `analysis/panels-smoke.log`, `analysis/panels-courses.log`.
+
+## Session 20: language string tables (October 2, 2026)
+
+- `pe_strings-test`: synthetic PE string block (UTF-16 to UTF-8, Windows-1252 conversion), rejection of every truncated length and a bad PE signature, the `0x0042f5d0` continuation splice, buffer truncation and malformed continuation. Passes.
+- `pe-strings-corpus` (skips without the disc): all five language DLLs decode to 985 populated slots each. Passes.
