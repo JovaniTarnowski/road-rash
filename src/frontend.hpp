@@ -51,6 +51,8 @@ struct FrontendData {
 FrontendData read_frontend_data(const std::vector<uint8_t>& exe);
 // Game string table (0x0042f5d0) plus the unit formats 4000..4003 the front end loads directly.
 std::vector<std::string> frontend_strings(const std::map<uint32_t, std::u16string>& resources);
+// 0x00424140 loads string tables 1000 (screen 7) and 2000 (screen 0x23) with the 0x0042f5d0 rules.
+std::array<std::vector<std::string>, 2> credit_lines(const std::map<uint32_t, std::u16string>& resources);
 
 struct MenuInput {
     bool left = false, right = false, up = false, down = false, tab = false, shift_tab = false;
@@ -79,8 +81,9 @@ struct Standing {
 // drawn into a 640x480 RGB image.
 class Frontend {
 public:
-    Frontend(const Assets&, const TextRenderer&, std::vector<std::string> strings, FrontendData, CareerTables,
-             Career&, Settings&, std::string save_directory);
+    // credits: the scrolling string tables at 1000 (opening) and 2000 (finale), see credit_lines().
+    Frontend(const Assets&, const TextRenderer&, std::vector<std::string> strings, std::array<std::vector<std::string>, 2> credits,
+             FrontendData, CareerTables, Career&, Settings&, std::string save_directory);
     void start();                                 // intro video, then the Credits screen
     void update(const MenuInput&, uint64_t now_ms);
     bool poll(FrontendEvent&);                    // next host action
@@ -93,6 +96,9 @@ public:
     bool dialog_open() const { return !dialog_.text.empty(); }
     std::string caption_text(const MenuItem&) const;
     const std::string& current_save() const { return save_file_; }
+    std::string player_name() const;               // 0x0041c140
+    bool editing_text() const { return editing_name_; }
+    const std::string& string_slot(int slot) const { return str(slot); }
 
 private:
     struct Dialog { std::string text; std::vector<std::pair<int, int>> buttons; int focus = 0; int kind = 0; };
@@ -120,7 +126,6 @@ private:
     void save_new();
     void open_load_list();
     void queue_video(const std::string& base, int variants);
-    std::string player_name() const;               // 0x0041c140
     std::string format_standing(size_t place, const Standing&) const;
     void draw_text_box(RgbImage&, const TextRect&, Face, int height, const std::string&, unsigned flags, uint32_t colour) const;
 
@@ -150,7 +155,12 @@ private:
     std::string price_text_;
     bool qualified_overlay_ = false;
     bool dark_screen_ = false;             // standings: the darkened copy fills the screen
-    uint64_t now_ = 0, timer_at_ = 0;      // screens 7 and 0x23 advance on a timer (0x00424140)
+    uint64_t now_ = 0, timer_at_ = 0;
+    // Scrolling credits (0x00424140 / 0x00424230): lines, y, first line, speed (0x00468f50), timer ticks.
+    std::array<std::vector<std::string>, 2> credits_;
+    int credit_set_ = -1, credit_y_ = 0, credit_line_ = 1, credit_speed_ = 1, credit_ticks_ = 0;
+    uint64_t credit_next_ = 0;
+    void credit_tick();
     Dialog dialog_;
     int dialog_then_ = 0;
     bool editing_name_ = false;

@@ -118,6 +118,14 @@ std::vector<std::string> frontend_strings(const std::map<uint32_t, std::u16strin
     return s;
 }
 
+std::array<std::vector<std::string>, 2> credit_lines(const std::map<uint32_t, std::u16string>& resources) {
+    std::array<std::vector<std::string>, 2> c;
+    for (int i = 0; i < 2; ++i) {
+        try { c[size_t(i)] = load_game_strings(resources, uint32_t(1000 * (i + 1))); } catch (const std::runtime_error&) {}
+    }
+    return c;
+}
+
 FrontendData read_frontend_data(const std::vector<uint8_t>& exe) {
     FrontendData d;
     // Counts the original fills in at start-up (0x00423881) for screens whose table count is 0.
@@ -159,10 +167,11 @@ FrontendData read_frontend_data(const std::vector<uint8_t>& exe) {
     return d;
 }
 
-Frontend::Frontend(const Assets& assets, const TextRenderer& text, std::vector<std::string> strings, FrontendData data,
-                   CareerTables tables, Career& career, Settings& settings, std::string save_directory)
+Frontend::Frontend(const Assets& assets, const TextRenderer& text, std::vector<std::string> strings,
+                   std::array<std::vector<std::string>, 2> credits, FrontendData data, CareerTables tables, Career& career,
+                   Settings& settings, std::string save_directory)
     : assets_(assets), text_(text), strings_(std::move(strings)), data_(std::move(data)), tables_(tables),
-      career_(career), settings_(settings), save_dir_(std::move(save_directory)) {
+      career_(career), settings_(settings), save_dir_(std::move(save_directory)), credits_(std::move(credits)) {
     if (strings_.size() < 4004) strings_.resize(4004);
     background_ = RgbImage(640, 480, 0);
     dark_ = background_;
@@ -489,9 +498,17 @@ void Frontend::enter(int screen) {
     for (int guard = 0; guard < 64 && (!items_[index].enabled || (items_[index].flags & item_flag::skip)); ++guard)
         index = items_[index].nav[4] < items_.size() ? items_[index].nav[4] : 0;
     set_focus(index);
-    if (screen == 7) timer_at_ = now_ + 1000;
-    else if (screen == 0x23) timer_at_ = now_ + 2000;
-    else timer_at_ = 0;
+    timer_at_ = 0;
+    credit_set_ = -1;
+    if (screen == 7 || screen == 0x23) {
+        // 0x00424140: string table 1000 scrolls from y 0x30 (left, tab stops); 2000 from 0x1c8 (centred).
+        credit_set_ = screen == 7 ? 0 : 1;
+        credit_y_ = screen == 7 ? 0x30 : 0x1c8;
+        credit_line_ = 1;
+        credit_ticks_ = 0;
+        credit_next_ = now_ + 15;
+        if (credits_[size_t(credit_set_)].size() < 2) timer_at_ = now_ + 1;
+    }
 }
 
 void Frontend::open_popup(const std::vector<MenuItem>& popup, int current, int setter) {
@@ -783,8 +800,33 @@ void Frontend::navigate(int k) {
     }
 }
 
+void Frontend::credit_tick() {
+    // 0x00424230: the first tick re-arms the timer for 1.5 s, later ticks every 15 ms; scroll by the
+    // speed, step to the next line at -24, and leave when the table ends.
+    const auto& lines = credits_[size_t(credit_set_)];
+    credit_next_ += credit_ticks_ == 0 ? 0x5dc : 15;
+    ++credit_ticks_;
+    credit_y_ -= credit_speed_;
+    if (credit_y_ <= -0x18) {
+        credit_y_ = 0;
+        ++credit_line_;
+        if (size_t(credit_line_) >= lines.size()) { credit_set_ = -1; if (!items_.empty()) activate(0); }
+    }
+}
+
 void Frontend::update(const MenuInput& in, uint64_t now_ms) {
     now_ = now_ms;
+    if (credit_set_ >= 0) {
+        for (const char c : in.text) {
+            // 0x004227d0 WM_CHAR: '+' doubles the scroll speed (max 32), '-' halves it.
+            if (c == '+') credit_speed_ = credit_speed_ == 0 ? 1 : std::min(32, credit_speed_ * 2);
+            if (c == '-') credit_speed_ >>= 1;
+        }
+        int guard = 0;
+        while (credit_set_ >= 0 && now_ >= credit_next_ && guard++ < 4096) credit_tick();
+        if (credit_set_ >= 0 && now_ > credit_next_) credit_next_ = now_;
+        if (credit_set_ < 0) return;
+    }
     if (!dialog_.text.empty()) {
         if (in.left || in.up || in.shift_tab) dialog_.focus = (dialog_.focus + int(dialog_.buttons.size()) - 1) % int(dialog_.buttons.size());
         if (in.right || in.down || in.tab) dialog_.focus = (dialog_.focus + 1) % int(dialog_.buttons.size());
@@ -854,6 +896,47 @@ void Frontend::draw_text_box(RgbImage& img, const TextRect& r, Face face, int he
 
 void Frontend::draw(RgbImage& out) const {
     out = dark_screen_ ? dark_ : background_;
+    if (credit_set_ >= 0) {
+        // 0x00424340: twenty 24-pixel lines in Futura Condensed Bold 24; the first character picks the colour.
+        const auto& lines = credits_[size_t(credit_set_)];
+        const bool centred = credit_set_ == 1;
+        const int tab = 35 * text_.width(Face::futura_bold, 24, "x");   // DRAWTEXTPARAMS iTabLength 35, margin 40
+        int y = credit_y_;
+        for (size_t i = size_t(credit_line_); i < lines.size() && i < size_t(credit_line_) + 20; ++i, y += 0x18) {
+            const std::string& l = lines[i];
+            if (l.empty()) continue;
+            uint32_t colour = colour_light;
+            switch (l[0]) {
+            case 'G': colour = colour_grey; break;
+            case 'O': colour = colour_orange; break;
+            case 'R': colour = 0xff0000; break;
+            case 'Y': colour = colour_focus; break;
+            default: break;
+            }
+            const std::string body = l.substr(1);
+            for (int pass = 0; pass < 2; ++pass) {
+                const int off = pass ? -2 : 0;
+                const uint32_t col = pass ? colour : 0;
+                if (centred) {
+                    TextRect r{off, y + off, 640 + off, y + 0x18 + off};
+                    text_.draw_box(&out, Face::futura_bold, 24, r, col, body, dt::center | dt::singleline);
+                    continue;
+                }
+                int x = 40 + off;
+                size_t from = 0;
+                while (from <= body.size()) {
+                    size_t to = body.find('\t', from);
+                    if (to == std::string::npos) to = body.size();
+                    const std::string part = body.substr(from, to - from);
+                    text_.draw(out, Face::futura_bold, 24, x, y + off, col, part);
+                    x += text_.width(Face::futura_bold, 24, part);
+                    if (to < body.size()) x = 40 + off + ((x - 40 - off) / tab + 1) * tab;
+                    from = to + 1;
+                }
+            }
+        }
+        return;
+    }
     // Title box (0x0041f770): Badloc 72 on the darkened picture, orange with a black shadow.
     const std::string& title = str(title_slot_);
     if (title_slot_ && !title.empty() && title != "*") {

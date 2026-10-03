@@ -171,7 +171,7 @@ Language default_language() {
     return l;
 }
 
-std::vector<std::string> load_game_strings(const std::map<uint32_t, std::u16string>& resources) {
+std::vector<std::string> load_game_strings(const std::map<uint32_t, std::u16string>& resources, uint32_t base) {
     // LoadStringA: copies at most buffer-1 ANSI chars and returns how many; 0 if the id is absent.
     auto load = [&](uint32_t id, size_t buffer) -> std::string {
         const auto it = resources.find(id);
@@ -180,14 +180,14 @@ std::vector<std::string> load_game_strings(const std::map<uint32_t, std::u16stri
         if (s.size() > buffer - 1) s.resize(buffer - 1);
         return s;
     };
-    const std::string header = load(0, 16);
+    const std::string header = load(base, 16);
     unsigned buffer = 0, count = 0;
     if (header.empty() || std::sscanf(header.c_str(), "%u %u", &buffer, &count) != 2 || count == 0 || count > 65536 || buffer > (1u << 24))
         throw std::runtime_error("Language DLL has no string table header");
     std::vector<std::string> table(count + 1);
     size_t remaining = buffer;
     for (uint32_t id = count; id != 0; --id) {
-        std::string s = load(id, remaining);
+        std::string s = load(base + id, remaining);
         if (s.empty()) continue;
         size_t used = s.size();
         // A trailing 0xff splices string 3000 + (signed) the byte before it over those two bytes.

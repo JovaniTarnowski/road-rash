@@ -12,6 +12,13 @@
 #include "road_draw.hpp"
 #include "session.hpp"
 #include "video_player.hpp"
+#include "career.hpp"
+#include "exe_tables.hpp"
+#include "frontend.hpp"
+#include "pe_strings.hpp"
+#include "settings.hpp"
+#include "text.hpp"
+#include <filesystem>
 #include <algorithm>
 #include <cstdio>
 #include <memory>
@@ -35,10 +42,14 @@ struct Game {
     rr::Palette palette;
     std::vector<rr::Opponent> opponents;
     int level = 0;
+    int32_t rider_value = 90;   // rider table +0xc / 2 for the player's rider
+    bool career = false;        // race ends after the finish delay instead of restarting
+    std::string quit_prompt;    // string 316, shown after Escape in a career race
+    bool quitting = false;
 
     void restart() {
         race = std::make_unique<rr::Race>(rr::make_route(course, false), rr::make_route(course, true),
-                                          physics, specs.at(size_t(bike)), 90, opponents, level);
+                                          physics, specs.at(size_t(bike)), rider_value, opponents, level);
         countdown = countdown_ticks;
     }
     void tick(uint32_t controls) {
@@ -193,7 +204,7 @@ void draw_hud(SDL_Renderer* r, const Game& g) {
         SDL_SetRenderScale(r, 3, 3);
         SDL_RenderDebugText(r, 50, 60, line);
         SDL_SetRenderScale(r, 1, 1);
-        SDL_RenderDebugText(r, 200, 260, "Enter / A / tap: race again");
+        if (!g.career) SDL_RenderDebugText(r, 200, 260, "Enter / A / tap: race again");
     } else if (race.crashed()) {
         SDL_SetRenderScale(r, 3, 3);
         SDL_RenderDebugText(r, 80, 60, "WIPEOUT!");
@@ -306,25 +317,377 @@ void play_video(const rr::Assets& assets,const std::string& path,SDL_Renderer* r
 }
 }
 
+// Original course files by course number 1..5 (0x0046df58): City, Sierra Nevada, Peninsula, Napa, Pacific Highway.
+const char* const original_course_files[5] = {"CITY", "HIWAY", "MEDLY", "NAPA", "CANYN"};
+constexpr int race_end_delay = 0xb4;   // 0x00416010: ticks the race keeps running after it is decided
+
+struct RaceEnd {
+    bool quit_app = false;
+    rr::RaceOutcome outcome = rr::RaceOutcome::lost;
+    int place = 0;   // 0-based
+};
+
+struct RaceOptions {
+    bool auto_drive = false, start_paused = false;
+    std::string screenshot;
+};
+
+// One race: the playable loop. In career mode the race is decided by the player finishing
+// (0x00434660: code 0x7f), wrecking or quitting (code 5), and runs on for 0xb4 ticks.
+RaceEnd run_race(Game& g, SDL_Renderer* renderer, const RaceOptions& opt) {
+    RaceEnd result;
+    SpriteCache sprites;
+    LifecycleWatch lifecycle;
+    if (opt.start_paused) lifecycle.state.pause();
+    rr::TouchInput touch;
+    rr::TickClock clock;
+    SDL_Gamepad* pad = nullptr;
+    for (int i = 0; i < 8 && !pad; ++i) {
+        int count = 0;
+        SDL_JoystickID* ids = SDL_GetGamepads(&count);
+        if (ids && count > 0) pad = SDL_OpenGamepad(ids[0]);
+        SDL_free(ids);
+        break;
+    }
+    bool running = true, decided = false;
+    int end_ticks = 0;
+    uint64_t last = SDL_GetTicksNS();
+    SDL_SetRenderLogicalPresentation(renderer, 640, 510, SDL_LOGICAL_PRESENTATION_LETTERBOX);
+    while (running) {
+        SDL_Event e;
+        bool restart = false;
+        while (SDL_PollEvent(&e)) {
+            if (e.type == SDL_EVENT_QUIT) { running = false; result.quit_app = true; }
+            if (!lifecycle_event(e.type)) lifecycle.state.handle(e);
+            if (e.type == SDL_EVENT_KEY_DOWN && !e.key.repeat) {
+                if (g.quitting) {
+                    // 0x004227d0: a second Escape quits the race (outcome 5), any other key continues.
+                    g.quitting = false;
+                    if (e.key.key == SDLK_ESCAPE) {
+                        if (!decided) { result.outcome = rr::RaceOutcome::wrecked; result.place = std::max(0, g.race->place(0) - 1); }
+                        running = false;
+                    }
+                    continue;
+                }
+                if (e.key.key == SDLK_Q && !g.career) { running = false; result.quit_app = true; }
+                if (e.key.key == SDLK_AC_BACK) lifecycle.state.pause();
+                if (e.key.key == SDLK_ESCAPE && g.career && !lifecycle.state.paused()) g.quitting = true;
+                else if (e.key.key == SDLK_ESCAPE || e.key.key == SDLK_P) {
+                    if (lifecycle.state.paused()) lifecycle.state.resume(); else lifecycle.state.pause();
+                }
+                if (e.key.key == SDLK_RETURN) {
+                    if (lifecycle.state.paused()) lifecycle.state.resume();
+                    else if (g.race->finished() && !g.career) restart = true;
+                }
+            }
+            if (e.type == SDL_EVENT_GAMEPAD_ADDED && !pad) pad = SDL_OpenGamepad(e.gdevice.which);
+            if (e.type == SDL_EVENT_GAMEPAD_REMOVED && pad && SDL_GetGamepadID(pad) == e.gdevice.which) {
+                SDL_CloseGamepad(pad); pad = nullptr;
+                lifecycle.state.pause();
+            }
+            if (e.type == SDL_EVENT_GAMEPAD_BUTTON_DOWN && pad && SDL_GetGamepadID(pad) == e.gbutton.which) {
+                if (g.quitting) {
+                    g.quitting = false;
+                    if (e.gbutton.button == SDL_GAMEPAD_BUTTON_BACK) {
+                        if (!decided) { result.outcome = rr::RaceOutcome::wrecked; result.place = std::max(0, g.race->place(0) - 1); }
+                        running = false;
+                    }
+                } else if (e.gbutton.button == SDL_GAMEPAD_BUTTON_START) {
+                    if (lifecycle.state.paused()) lifecycle.state.resume(); else lifecycle.state.pause();
+                } else if (e.gbutton.button == SDL_GAMEPAD_BUTTON_BACK && g.career && !lifecycle.state.paused()) g.quitting = true;
+                else if (e.gbutton.button == SDL_GAMEPAD_BUTTON_SOUTH && !lifecycle.state.paused() && g.race->finished() && !g.career) restart = true;
+            }
+            if (e.type == SDL_EVENT_FINGER_DOWN || e.type == SDL_EVENT_FINGER_MOTION ||
+                e.type == SDL_EVENT_FINGER_UP || e.type == SDL_EVENT_FINGER_CANCELED) {
+                if (lifecycle.state.paused()) {
+                    if (e.type == SDL_EVENT_FINGER_DOWN) lifecycle.state.resume();
+                } else if (e.type == SDL_EVENT_FINGER_DOWN && g.race->finished() && !g.career) restart = true;
+                else touch.handle(e);
+            }
+            if (e.type == SDL_EVENT_RENDER_DEVICE_RESET || e.type == SDL_EVENT_RENDER_TARGETS_RESET) sprites.clear();
+            if (e.type == SDL_EVENT_RENDER_DEVICE_LOST) throw std::runtime_error("Render device lost");
+            if (lifecycle.state.take_clock_reset()) {
+                touch.clear(); clock.reset(); last = SDL_GetTicksNS();
+            }
+        }
+        if (!running) break;
+        if (restart) g.restart();
+        rr::PlayerInput in = touch.current();
+        const bool* keys = SDL_GetKeyboardState(nullptr);
+        in.accelerate |= keys[SDL_SCANCODE_UP] || keys[SDL_SCANCODE_W];
+        in.brake |= keys[SDL_SCANCODE_DOWN] || keys[SDL_SCANCODE_S];
+        in.left |= keys[SDL_SCANCODE_LEFT] || keys[SDL_SCANCODE_A];
+        in.right |= keys[SDL_SCANCODE_RIGHT] || keys[SDL_SCANCODE_D];
+        in.punch |= keys[SDL_SCANCODE_Z] || keys[SDL_SCANCODE_LCTRL];
+        in.kick |= keys[SDL_SCANCODE_X] || keys[SDL_SCANCODE_LALT];
+        in.backhand |= keys[SDL_SCANCODE_C];
+        if (pad) {
+            in.accelerate |= SDL_GetGamepadButton(pad, SDL_GAMEPAD_BUTTON_SOUTH) || SDL_GetGamepadAxis(pad, SDL_GAMEPAD_AXIS_RIGHT_TRIGGER) > 8000;
+            in.brake |= SDL_GetGamepadButton(pad, SDL_GAMEPAD_BUTTON_EAST) || SDL_GetGamepadAxis(pad, SDL_GAMEPAD_AXIS_LEFT_TRIGGER) > 8000;
+            in.left |= SDL_GetGamepadButton(pad, SDL_GAMEPAD_BUTTON_DPAD_LEFT);
+            in.right |= SDL_GetGamepadButton(pad, SDL_GAMEPAD_BUTTON_DPAD_RIGHT);
+            in.steer_axis = SDL_GetGamepadAxis(pad, SDL_GAMEPAD_AXIS_LEFTX);
+            in.punch |= SDL_GetGamepadButton(pad, SDL_GAMEPAD_BUTTON_WEST);
+            in.kick |= SDL_GetGamepadButton(pad, SDL_GAMEPAD_BUTTON_NORTH);
+            in.backhand |= SDL_GetGamepadButton(pad, SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER);
+        }
+        const uint32_t controls = opt.auto_drive ? autopilot(*g.race) : rr::controls_from(in);
+
+        const uint64_t now = SDL_GetTicksNS();
+        if (lifecycle.state.take_clock_reset()) { touch.clear(); clock.reset(); last = now; }
+        const bool frozen = lifecycle.state.paused() || g.quitting;
+        const int steps = clock.advance(now - last, frozen);
+        last = now;
+        for (int step = 0; step < steps && !frozen; ++step) {
+            g.tick(controls);
+            if (!g.career) continue;
+            if (!decided && (g.race->finished() || g.race->wrecked())) {
+                decided = true;
+                end_ticks = race_end_delay;
+                result.place = std::max(0, g.race->place(0) - 1);
+                // 0x00416010: finished becomes won for places 1-3 (0-based < 3), lost otherwise.
+                result.outcome = g.race->finished() ? (result.place < 3 ? rr::RaceOutcome::won : rr::RaceOutcome::lost)
+                                                    : rr::RaceOutcome::wrecked;
+            } else if (decided && --end_ticks <= 0) running = false;
+        }
+        if (lifecycle.state.background()) { SDL_Delay(20); continue; }
+
+        SDL_SetRenderDrawColor(renderer, 15, 18, 22, 255);
+        SDL_RenderClear(renderer);
+        const auto slices = rr::project_road(g.race->route(), g.race->camera_position(), g.race->camera(), g.depth);
+        rr::draw_road(renderer, slices);
+        draw_opponents(renderer, g, sprites, slices);
+        draw_bike(renderer, g, sprites);
+        draw_hud(renderer, g);
+        if (g.quitting) {
+            SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND);
+            SDL_SetRenderDrawColor(renderer, 0, 0, 0, 190);
+            SDL_RenderFillRect(renderer, nullptr);
+            SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_NONE);
+            SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
+            float y = 200;
+            size_t from = 0;
+            while (from <= g.quit_prompt.size()) {
+                size_t to = g.quit_prompt.find('\n', from);
+                if (to == std::string::npos) to = g.quit_prompt.size();
+                const std::string line = rr::cp1252_to_utf8(g.quit_prompt.substr(from, to - from));
+                SDL_RenderDebugText(renderer, 320 - 4.f * float(line.size()), y, line.c_str());
+                y += 14;
+                from = to + 1;
+            }
+        } else if (lifecycle.state.paused()) draw_pause(renderer);
+        if (!opt.screenshot.empty()) {
+            SDL_Surface* capture = SDL_RenderReadPixels(renderer, nullptr);
+            if (!capture || !SDL_SaveBMP(capture, opt.screenshot.c_str())) throw std::runtime_error(SDL_GetError());
+            SDL_DestroySurface(capture);
+            running = false;
+            result.quit_app = true;
+        }
+        SDL_RenderPresent(renderer);
+    }
+    if (pad) SDL_CloseGamepad(pad);
+    return result;
+}
+
+std::string pref_directory() {
+    if (const char* o = SDL_getenv("RR_PREF_OVERRIDE")) return o;
+    char* p = SDL_GetPrefPath("RoadRashNative", "RoadRash");
+    if (!p) throw std::runtime_error(SDL_GetError());
+    std::string s = p;
+    SDL_free(p);
+    return s;
+}
+
+// Menus -> videos -> races -> results: the original main loop (0x00448200) around the front end.
+int run_game(const rr::Assets& assets, SDL_Window* window, SDL_Renderer* renderer, Game& g, const std::vector<uint8_t>& exe,
+             const std::string& screenshot, long menu_frames) {
+    const std::string pref = pref_directory();
+    const std::string settings_path = (std::filesystem::path(pref) / "settings.txt").string();
+    rr::Settings settings = rr::load_settings(settings_path);
+    const rr::TextRenderer text(assets);
+    const auto tables = rr::read_career_tables(exe);
+    rr::Career career;
+    const auto resources = rr::read_string_resources(assets.read(rr::language_dll(settings.language)));
+    const auto strings = rr::frontend_strings(resources);
+    rr::Frontend fe(assets, text, strings, rr::credit_lines(resources), rr::read_frontend_data(exe), tables, career, settings,
+                    (std::filesystem::path(pref) / "saves").string());
+    // Opponent names: personality +0x165 -> 0x00464188 -> string slot (0x00437860).
+    const auto name_table = rr::read_exe_data(exe, 0x00464188, 9 * 4);
+    auto personality_name = [&](int p) {
+        const uint32_t slot = p >= 0 && p < 9 ? uint32_t(name_table[size_t(p) * 4]) | uint32_t(name_table[size_t(p) * 4 + 1]) << 8 : 0;
+        return slot ? fe.string_slot(int(slot)) : std::string();
+    };
+    SDL_Texture* texture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_XRGB8888, SDL_TEXTUREACCESS_STREAMING, 640, 480);
+    if (!texture) throw std::runtime_error(SDL_GetError());
+    SDL_SetTextureScaleMode(texture, SDL_SCALEMODE_NEAREST);
+    SDL_Gamepad* pad = nullptr;
+    LifecycleWatch lifecycle;
+    rr::RgbImage frame;
+    fe.start();
+    bool running = true, text_input = false;
+    long frames = 0;
+    while (running) {
+        rr::FrontendEvent ev;
+        while (running && fe.poll(ev)) {
+            if (ev.kind == rr::FrontendEvent::Kind::quit) running = false;
+            else if (ev.kind == rr::FrontendEvent::Kind::play_video) {
+                if (menu_frames < 0) play_video(assets, ev.video, renderer, {}, -1);
+            } else if (ev.kind == rr::FrontendEvent::Kind::start_race) {
+                // Race set-up from the career: course, level, bike, rider weight, opponents (plan 05).
+                g.course_name = original_course_files[ev.course - 1];
+                g.course = rr::read_course(assets.read("DATA/COURSES/" + g.course_name + ".CRS"));
+                g.level = career.state.level;
+                g.bike = career.state.bike;
+                const auto body = rr::read_exe_data(exe, 0x00463c78 + uint32_t(rr::character_rider(career.state.character)) * 0x40 + 0xc, 4);
+                g.rider_value = int32_t(uint32_t(body[0]) | uint32_t(body[1]) << 8) / 2;
+                g.opponents = rr::original_opponents(exe, g.specs, g.level, 7);
+                g.career = true;
+                g.quit_prompt = fe.string_slot(316);
+                g.restart();
+                if (menu_frames >= 0) { running = false; break; }   // smoke run: stop at the first race
+                const RaceEnd end = run_race(g, renderer, {});
+                SDL_SetRenderLogicalPresentation(renderer, 640, 480, SDL_LOGICAL_PRESENTATION_LETTERBOX);
+                if (end.quit_app) { running = false; break; }
+                // Finishing order: riders who finished, by finish tick (0x00420e30 rows).
+                std::vector<std::pair<int32_t, size_t>> order;
+                for (size_t i = 0; i < g.race->riders().size(); ++i)
+                    if (g.race->riders()[i].finished) order.emplace_back(g.race->riders()[i].finish_tick, i);
+                std::sort(order.begin(), order.end());
+                std::vector<rr::Standing> standings;
+                for (const auto& [tick, i] : order)
+                    standings.push_back({i == 0 ? fe.player_name() : personality_name(int(i)), tick * 100 / rr::ticks_per_second / 10, i == 0});
+                fe.race_finished(end.outcome, end.place, standings);
+                rr::save_settings(settings_path, settings);
+            }
+        }
+        if (!running) break;
+        if (fe.editing_text() != text_input) {
+            text_input = fe.editing_text();
+            if (text_input) SDL_StartTextInput(window); else SDL_StopTextInput(window);
+        }
+        rr::MenuInput in;
+        SDL_Event e;
+        while (SDL_PollEvent(&e)) {
+            if (e.type == SDL_EVENT_QUIT) running = false;
+            if (!lifecycle_event(e.type)) lifecycle.state.handle(e);
+            if (e.type == SDL_EVENT_KEY_DOWN) {
+                switch (e.key.key) {
+                case SDLK_LEFT: in.left = true; break;
+                case SDLK_RIGHT: in.right = true; break;
+                case SDLK_UP: in.up = true; break;
+                case SDLK_DOWN: in.down = true; break;
+                case SDLK_TAB: (e.key.mod & SDL_KMOD_SHIFT ? in.shift_tab : in.tab) = true; break;
+                case SDLK_HOME: in.home = true; break;
+                case SDLK_END: in.end = true; break;
+                case SDLK_RETURN: case SDLK_KP_ENTER: case SDLK_SPACE: if (!e.key.repeat && !(text_input && e.key.key == SDLK_SPACE)) in.select = true; break;
+                case SDLK_ESCAPE: case SDLK_AC_BACK: if (!e.key.repeat) in.back = true; break;
+                case SDLK_BACKSPACE: in.backspace = true; break;
+                case SDLK_A: if (!text_input && !e.key.repeat) in.alternate_artwork = true; break;
+                case SDLK_KP_PLUS: case SDLK_EQUALS: if (!text_input) in.text += '+'; break;
+                case SDLK_KP_MINUS: case SDLK_MINUS: if (!text_input) in.text += '-'; break;
+                default: break;
+                }
+            }
+            if (e.type == SDL_EVENT_TEXT_INPUT && text_input) {
+                // UTF-8 -> Windows-1252 for the alias.
+                std::u16string u;
+                const unsigned char* t = reinterpret_cast<const unsigned char*>(e.text.text);
+                for (size_t i = 0; t[i];) {
+                    uint32_t c = t[i];
+                    int n = c < 0x80 ? 1 : c < 0xe0 ? 2 : c < 0xf0 ? 3 : 4;
+                    if (n > 1) { c &= 0x3f >> (n - 1); for (int k = 1; k < n && t[i + size_t(k)]; ++k) c = c << 6 | (t[i + size_t(k)] & 0x3f); }
+                    u.push_back(c < 0x10000 ? char16_t(c) : u'?');
+                    i += size_t(n);
+                }
+                in.text += rr::to_cp1252(u);
+            }
+            if (e.type == SDL_EVENT_GAMEPAD_ADDED && !pad) pad = SDL_OpenGamepad(e.gdevice.which);
+            if (e.type == SDL_EVENT_GAMEPAD_REMOVED && pad && SDL_GetGamepadID(pad) == e.gdevice.which) { SDL_CloseGamepad(pad); pad = nullptr; }
+            if (e.type == SDL_EVENT_GAMEPAD_BUTTON_DOWN) {
+                switch (e.gbutton.button) {
+                case SDL_GAMEPAD_BUTTON_DPAD_LEFT: in.left = true; break;
+                case SDL_GAMEPAD_BUTTON_DPAD_RIGHT: in.right = true; break;
+                case SDL_GAMEPAD_BUTTON_DPAD_UP: in.up = true; break;
+                case SDL_GAMEPAD_BUTTON_DPAD_DOWN: in.down = true; break;
+                case SDL_GAMEPAD_BUTTON_SOUTH: case SDL_GAMEPAD_BUTTON_START: in.select = true; break;
+                case SDL_GAMEPAD_BUTTON_EAST: case SDL_GAMEPAD_BUTTON_BACK: in.back = true; break;
+                default: break;
+                }
+            }
+            if (e.type == SDL_EVENT_MOUSE_MOTION || e.type == SDL_EVENT_MOUSE_BUTTON_DOWN || e.type == SDL_EVENT_FINGER_DOWN) {
+                float x = 0, y = 0;
+                if (e.type == SDL_EVENT_FINGER_DOWN) {
+                    int w = 0, h = 0;
+                    SDL_GetWindowSize(window, &w, &h);
+                    SDL_RenderCoordinatesFromWindow(renderer, e.tfinger.x * float(w), e.tfinger.y * float(h), &x, &y);
+                } else if (e.type == SDL_EVENT_MOUSE_MOTION) {
+                    if (e.motion.which == SDL_TOUCH_MOUSEID) continue;
+                    SDL_RenderCoordinatesFromWindow(renderer, e.motion.x, e.motion.y, &x, &y);
+                } else {
+                    if (e.button.which == SDL_TOUCH_MOUSEID) continue;
+                    SDL_RenderCoordinatesFromWindow(renderer, e.button.x, e.button.y, &x, &y);
+                }
+                in.pointer_x = int(x); in.pointer_y = int(y);
+                in.pointer_moved = true;
+                if (e.type != SDL_EVENT_MOUSE_MOTION) in.pointer_click = true;
+            }
+            if (e.type == SDL_EVENT_RENDER_DEVICE_RESET || e.type == SDL_EVENT_RENDER_TARGETS_RESET) {
+                SDL_DestroyTexture(texture);
+                texture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_XRGB8888, SDL_TEXTUREACCESS_STREAMING, 640, 480);
+                if (!texture) throw std::runtime_error(SDL_GetError());
+                SDL_SetTextureScaleMode(texture, SDL_SCALEMODE_NEAREST);
+            }
+            if (e.type == SDL_EVENT_RENDER_DEVICE_LOST) throw std::runtime_error("Render device lost");
+        }
+        if (!running) break;
+        if (lifecycle.state.paused() && (in.select || in.pointer_click)) { lifecycle.state.resume(); in = {}; }
+        if (!lifecycle.state.paused()) fe.update(in, SDL_GetTicks());
+        if (lifecycle.state.background()) { SDL_Delay(20); continue; }
+        fe.draw(frame);
+        SDL_SetRenderLogicalPresentation(renderer, 640, 480, SDL_LOGICAL_PRESENTATION_LETTERBOX);
+        SDL_UpdateTexture(texture, nullptr, frame.pixels.data(), 640 * 4);
+        SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
+        SDL_RenderClear(renderer);
+        SDL_RenderTexture(renderer, texture, nullptr, nullptr);
+        if (lifecycle.state.paused()) draw_pause(renderer);
+        if (menu_frames >= 0 && ++frames >= menu_frames) {
+            if (!screenshot.empty()) {
+                SDL_Surface* capture = SDL_RenderReadPixels(renderer, nullptr);
+                if (!capture || !SDL_SaveBMP(capture, screenshot.c_str())) throw std::runtime_error(SDL_GetError());
+                SDL_DestroySurface(capture);
+            }
+            running = false;
+        }
+        SDL_RenderPresent(renderer);
+    }
+    rr::save_settings(settings_path, settings);
+    if (text_input) SDL_StopTextInput(window);
+    if (pad) SDL_CloseGamepad(pad);
+    SDL_DestroyTexture(texture);
+    return 0;
+}
+
 int main(int argc, char** argv) {
     std::string root, screenshot, video;
     int course = 0, bike = 0, level = 0, opponents = 7;
-    long run_ticks = -1;
-    bool auto_drive = false, start_paused = false, first_run_smoke = false;
+    long run_ticks = -1, menu_frames = -1;
+    bool auto_drive = false, start_paused = false, first_run_smoke = false, quick_race = false;
     for (int i = 1; i < argc; ++i) {
         const std::string a = argv[i];
         if (a == "--assets" && i + 1 < argc) root = argv[++i];
         else if (a == "--video" && i + 1 < argc) video = argv[++i];
-        else if (a == "--course" && i + 1 < argc) course = std::atoi(argv[++i]);
-        else if (a == "--bike" && i + 1 < argc) bike = std::atoi(argv[++i]);
-        else if (a == "--ticks" && i + 1 < argc) run_ticks = std::atol(argv[++i]);
+        else if (a == "--course" && i + 1 < argc) { course = std::atoi(argv[++i]); quick_race = true; }
+        else if (a == "--bike" && i + 1 < argc) { bike = std::atoi(argv[++i]); quick_race = true; }
+        else if (a == "--ticks" && i + 1 < argc) { run_ticks = std::atol(argv[++i]); quick_race = true; }
         else if (a == "--screenshot" && i + 1 < argc) screenshot = argv[++i];
-        else if (a == "--autopilot") auto_drive = true;
+        else if (a == "--autopilot") { auto_drive = true; quick_race = true; }
         else if (a == "--paused") start_paused = true;
+        else if (a == "--race") quick_race = true;
+        else if (a == "--menu-frames" && i + 1 < argc) menu_frames = std::atol(argv[++i]);
         else if (a == "--first-run-smoke") first_run_smoke = true;
-        else if (a == "--level" && i + 1 < argc) level = std::atoi(argv[++i]) - 1;
-        else if (a == "--opponents" && i + 1 < argc) opponents = std::atoi(argv[++i]);
-        else { std::fprintf(stderr, "Usage: rr-game [--assets DIR] [--course 0-4] [--bike 0-14] [--level 1-5] [--opponents 0-7] [--autopilot] [--paused] [--ticks N --screenshot FILE.bmp]\n"); return 2; }
+        else if (a == "--level" && i + 1 < argc) { level = std::atoi(argv[++i]) - 1; quick_race = true; }
+        else if (a == "--opponents" && i + 1 < argc) { opponents = std::atoi(argv[++i]); quick_race = true; }
+        else { std::fprintf(stderr, "Usage: rr-game [--assets DIR] [--menu-frames N --screenshot FILE.bmp] | [--race] [--course 0-4] [--bike 0-14] [--level 1-5] [--opponents 0-7] [--autopilot] [--paused] [--ticks N --screenshot FILE.bmp]\n"); return 2; }
     }
     if (course < 0 || course > 4 || level < 0 || level > 4 || opponents < 0 || opponents > 7) return 2;
     SDL_Window* window = nullptr;
@@ -358,117 +721,25 @@ int main(int argc, char** argv) {
         g.depth = rr::read_depth_table(exe);
         g.physics = rr::read_physics_tables(exe);
         g.specs = rr::read_bike_specs(assets.read("DATA/BIKESPEC.RSC"));
-        g.course_name = course_names[course];
-        g.course = rr::read_course(assets.read("DATA/COURSES/" + g.course_name + ".CRS"));
-        if (bike < 0 || size_t(bike) >= g.specs.size()) throw std::runtime_error("Bike index out of range");
-        g.bike = bike;
         g.bobs = rr::read_bobs(assets.read("DATA/BIKERS/HIBOB.DAT"), rr::bob_frames);
         g.remaps = rr::read_rider_remaps(exe, 9);
         g.palette = rr::Palette::from_raw(assets.read("DATA/PALETTE.RAW"));
-        g.level = level;
-        g.opponents = rr::original_opponents(exe, g.specs, level, opponents);
-        g.restart();
-
-        if (run_ticks >= 0) {   // headless-style verification run
-            for (long t = 0; t < run_ticks && !g.race->finished(); ++t) g.tick(auto_drive ? autopilot(*g.race) : 0);
+        if (!quick_race) {
+            SDL_SetRenderLogicalPresentation(renderer, 640, 480, SDL_LOGICAL_PRESENTATION_LETTERBOX);
+            result = run_game(assets, window, renderer, g, exe, screenshot, menu_frames);
+        } else {
+            g.course_name = course_names[course];
+            g.course = rr::read_course(assets.read("DATA/COURSES/" + g.course_name + ".CRS"));
+            if (bike < 0 || size_t(bike) >= g.specs.size()) throw std::runtime_error("Bike index out of range");
+            g.bike = bike;
+            g.level = level;
+            g.opponents = rr::original_opponents(exe, g.specs, level, opponents);
+            g.restart();
+            if (run_ticks >= 0) {   // headless-style verification run
+                for (long t = 0; t < run_ticks && !g.race->finished(); ++t) g.tick(auto_drive ? autopilot(*g.race) : 0);
+            }
+            run_race(g, renderer, {auto_drive, start_paused, screenshot});
         }
-        SpriteCache sprites;
-        LifecycleWatch lifecycle;
-        if (start_paused) lifecycle.state.pause();
-        rr::TouchInput touch;
-        rr::TickClock clock;
-        SDL_Gamepad* pad = nullptr;
-        bool running = true;
-        uint64_t last = SDL_GetTicksNS();
-        while (running) {
-            SDL_Event e;
-            bool restart = false;
-            while (SDL_PollEvent(&e)) {
-                if (e.type == SDL_EVENT_QUIT) running = false;
-                // Android lifecycle state is set immediately by the event watch;
-                // do not replay older queued lifecycle events here.
-                if (!lifecycle_event(e.type)) lifecycle.state.handle(e);
-                if (e.type == SDL_EVENT_KEY_DOWN && !e.key.repeat) {
-                    if (e.key.key == SDLK_Q) running = false;
-                    if (e.key.key == SDLK_AC_BACK) lifecycle.state.pause();
-                    if (e.key.key == SDLK_ESCAPE || e.key.key == SDLK_P) {
-                        if (lifecycle.state.paused()) lifecycle.state.resume(); else lifecycle.state.pause();
-                    }
-                    if (e.key.key == SDLK_RETURN) {
-                        if (lifecycle.state.paused()) lifecycle.state.resume();
-                        else if (g.race->finished()) restart = true;
-                    }
-                }
-                if (e.type == SDL_EVENT_GAMEPAD_ADDED && !pad) pad = SDL_OpenGamepad(e.gdevice.which);
-                if (e.type == SDL_EVENT_GAMEPAD_REMOVED && pad && SDL_GetGamepadID(pad) == e.gdevice.which) {
-                    SDL_CloseGamepad(pad); pad = nullptr;
-                    lifecycle.state.pause();
-                }
-                if (e.type == SDL_EVENT_GAMEPAD_BUTTON_DOWN && pad && SDL_GetGamepadID(pad) == e.gbutton.which) {
-                    if (e.gbutton.button == SDL_GAMEPAD_BUTTON_START) {
-                        if (lifecycle.state.paused()) lifecycle.state.resume(); else lifecycle.state.pause();
-                    } else if (e.gbutton.button == SDL_GAMEPAD_BUTTON_SOUTH && !lifecycle.state.paused() && g.race->finished()) restart = true;
-                }
-                if (e.type == SDL_EVENT_FINGER_DOWN || e.type == SDL_EVENT_FINGER_MOTION ||
-                    e.type == SDL_EVENT_FINGER_UP || e.type == SDL_EVENT_FINGER_CANCELED) {
-                    if (lifecycle.state.paused()) {
-                        if (e.type == SDL_EVENT_FINGER_DOWN) lifecycle.state.resume();
-                    } else if (e.type == SDL_EVENT_FINGER_DOWN && g.race->finished()) restart = true;
-                    else touch.handle(e);
-                }
-                if (e.type == SDL_EVENT_RENDER_DEVICE_RESET || e.type == SDL_EVENT_RENDER_TARGETS_RESET) sprites.clear();
-                if (e.type == SDL_EVENT_RENDER_DEVICE_LOST) throw std::runtime_error("Render device lost");
-                if (lifecycle.state.take_clock_reset()) {
-                    touch.clear(); clock.reset(); last = SDL_GetTicksNS();
-                }
-            }
-            if (!running) break;
-            if (restart) g.restart();
-            rr::PlayerInput in = touch.current();
-            const bool* keys = SDL_GetKeyboardState(nullptr);
-            in.accelerate |= keys[SDL_SCANCODE_UP] || keys[SDL_SCANCODE_W];
-            in.brake |= keys[SDL_SCANCODE_DOWN] || keys[SDL_SCANCODE_S];
-            in.left |= keys[SDL_SCANCODE_LEFT] || keys[SDL_SCANCODE_A];
-            in.right |= keys[SDL_SCANCODE_RIGHT] || keys[SDL_SCANCODE_D];
-            in.punch |= keys[SDL_SCANCODE_Z] || keys[SDL_SCANCODE_LCTRL];
-            in.kick |= keys[SDL_SCANCODE_X] || keys[SDL_SCANCODE_LALT];
-            in.backhand |= keys[SDL_SCANCODE_C];
-            if (pad) {
-                in.accelerate |= SDL_GetGamepadButton(pad, SDL_GAMEPAD_BUTTON_SOUTH) || SDL_GetGamepadAxis(pad, SDL_GAMEPAD_AXIS_RIGHT_TRIGGER) > 8000;
-                in.brake |= SDL_GetGamepadButton(pad, SDL_GAMEPAD_BUTTON_EAST) || SDL_GetGamepadAxis(pad, SDL_GAMEPAD_AXIS_LEFT_TRIGGER) > 8000;
-                in.left |= SDL_GetGamepadButton(pad, SDL_GAMEPAD_BUTTON_DPAD_LEFT);
-                in.right |= SDL_GetGamepadButton(pad, SDL_GAMEPAD_BUTTON_DPAD_RIGHT);
-                in.steer_axis = SDL_GetGamepadAxis(pad, SDL_GAMEPAD_AXIS_LEFTX);
-                in.punch |= SDL_GetGamepadButton(pad, SDL_GAMEPAD_BUTTON_WEST);
-                in.kick |= SDL_GetGamepadButton(pad, SDL_GAMEPAD_BUTTON_NORTH);
-                in.backhand |= SDL_GetGamepadButton(pad, SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER);
-            }
-            const uint32_t controls = auto_drive ? autopilot(*g.race) : rr::controls_from(in);
-
-            const uint64_t now = SDL_GetTicksNS();
-            if (lifecycle.state.take_clock_reset()) { touch.clear(); clock.reset(); last = now; }
-            const int steps = clock.advance(now - last, lifecycle.state.paused());
-            last = now;
-            for (int step = 0; step < steps && !lifecycle.state.paused(); ++step) g.tick(controls);
-            if (lifecycle.state.background()) { SDL_Delay(20); continue; }
-
-            SDL_SetRenderDrawColor(renderer, 15, 18, 22, 255);
-            SDL_RenderClear(renderer);
-            const auto slices = rr::project_road(g.race->route(), g.race->camera_position(), g.race->camera(), g.depth);
-            rr::draw_road(renderer, slices);
-            draw_opponents(renderer, g, sprites, slices);
-            draw_bike(renderer, g, sprites);
-            draw_hud(renderer, g);
-            if (lifecycle.state.paused()) draw_pause(renderer);
-            if (!screenshot.empty()) {
-                SDL_Surface* capture = SDL_RenderReadPixels(renderer, nullptr);
-                if (!capture || !SDL_SaveBMP(capture, screenshot.c_str())) throw std::runtime_error(SDL_GetError());
-                SDL_DestroySurface(capture);
-                running = false;
-            }
-            SDL_RenderPresent(renderer);
-        }
-        if (pad) SDL_CloseGamepad(pad);
     } catch (const std::exception& e) { SDL_Log("%s", e.what()); result = 1; }
     SDL_DestroyRenderer(renderer);
     SDL_DestroyWindow(window);

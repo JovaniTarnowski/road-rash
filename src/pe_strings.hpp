@@ -22,5 +22,5 @@ Language default_language();               // SDL preferred locales, original fa
 // Port of 0x0042f5d0: string 0 is "<buffer bytes> <count>"; strings 1..count are loaded and a
 // trailing 0xff splices string 3000+<previous byte>. Result index i == original table slot i
 // (the table at 0x00475378), slot 0 is empty. Strings are ANSI (Windows-1252) bytes as the game saw them.
-std::vector<std::string> load_game_strings(const std::map<uint32_t, std::u16string>& resources);
+std::vector<std::string> load_game_strings(const std::map<uint32_t, std::u16string>& resources, uint32_t base = 0);
 }

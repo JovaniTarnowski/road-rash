@@ -46,7 +46,10 @@ int main(int argc, char** argv) {
     Career career;
     Settings settings;
     settings.video_mode = 2;
-    Frontend fe(assets, text, strings, data, tables, career, settings, saves);
+    const auto res = read_string_resources(assets.read("TEXT/ENU.DLL"));
+    const auto credits = credit_lines(res);
+    check(credits[0].size() > 300 && credits[1].size() > 10, "credit tables");
+    Frontend fe(assets, text, strings, credits, data, tables, career, settings, saves);
     uint64_t now = 0;
     int shot = 0;
     RgbImage img;
@@ -83,8 +86,11 @@ int main(int argc, char** argv) {
     fe.start();
     check(event_video("VIDEO/INTRO.AVI") && fe.screen() == 7, "intro then credits");
     snap("credits");
-    now += 1500; fe.update({}, now);
-    check(fe.screen() == screen_id::main_menu, "credits timer leads to the main menu");
+    now += 3000; fe.update({}, now);
+    check(fe.screen() == 7, "credits still scrolling");
+    snap("credits-scroll");
+    key("back");
+    check(fe.screen() == screen_id::main_menu, "Escape skips the credits to the main menu");
     snap("main");
     // Thrash: City at level 1, a win qualifies it.
     key("select");

@@ -496,3 +496,10 @@ The course screens share one item array; the sixth item is copied from `0x004691
 - MessageBox prompts are replaced by an in-picture dialog.
 - Wingdings and New Courier are substituted.
 - Title text placement within its box is approximate.
+
+**Credits** (`0x00424140`, `0x00424230`, `0x00424340`):
+- Screens 7 and `0x23` scroll string tables 1000 (opening, from y 0x30, left aligned with DRAWTEXTPARAMS tab length 35 and left margin 40) and 2000 (finale, from y 0x1c8, centred). Both are loaded with the `0x0042f5d0` rules over the normal picture.
+- Twenty 24-pixel lines are drawn in Futura Condensed Bold 24 with a shadow. The first character of each line picks its colour: G grey, O orange, R red, Y yellow, others pale.
+- The first timer tick re-arms for 1.5 s, then the roll scrolls `0x00468f50` (1) pixels every 15 ms. '+'/'-' double or halve the speed. When the table ends, the screen's item (handler `0x004241e0`) leads to `0x0041f6d0`. Escape skips.
+
+**Race end** (`0x00416010`): finishing (`0x00434660`, code `0x7f`), wrecking (`0x0040a600`/`0x0043a190`, code 5) and being busted (`0x00407f30`, code 4) set the outcome once. The race then keeps running for 0xb4 ticks (`0x00442e10`). Confirming the in-race Escape prompt (string 316) while still racing sets outcome 5, so quitting counts as wrecked (`0x00423408`).
