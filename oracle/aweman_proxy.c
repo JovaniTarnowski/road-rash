@@ -53,6 +53,9 @@ static int g_quit_after = -1;
 static int g_pixels, g_pixel_every=30, g_pixel_written;
 static int g_pixel_width, g_pixel_height, g_pixel_pitch;
 static char g_output[MAX_PATH];
+static int g_raster;
+static struct { int vertices[8],clip[4],colour,width,height; } g_raster_cases[64];
+static int g_raster_count;
 #define RD32(a) (*(volatile int32_t*)(uintptr_t)(a))
 #define RD8(a) (*(volatile uint8_t*)(uintptr_t)(a))
 
@@ -63,16 +66,74 @@ static int readable(uintptr_t p, size_t size) {
     return size <= (uintptr_t)info.BaseAddress + info.RegionSize - p;
 }
 
+// Isolated synthetic inputs exercise the original filler. These images contain
+// no disc graphics and are kept as local oracle output, not embedded goldens.
+static void capture_raster(uintptr_t base,int width,int height,int pitch) {
+    static const int fixture[8][8]={
+        {1,1,5,1,5,5,1,5}, {3,0,6,3,3,6,0,3},
+        {-20,40,100,40,60,40,0,40}, {-40,-30,80,-30,80,30,-40,30},
+        {20,20,20,20,120,120,20,120}, {50,20,100,50,50,130,10,70},
+        {200,20,500,35,450,170,150,155}, {-10,479,650,479,650,479,-10,479}
+    };
+    int saved[8];
+    const uint32_t globals[8]={0x004b7eb0,0x004b7eb4,0x004b7eb8,0x004b7ebc,0x004c5d60,0x004c5d64,0x004c5d68,0x004c5d6c};
+    for (int i=0;i<8;++i) saved[i]=RD32(globals[i]);
+    uint32_t seed=1;
+    for (int c=0;c<64;++c) {
+        int vertices[8];
+        if (c<8) memcpy(vertices,fixture[c],sizeof vertices);
+        else {
+            int values[6];
+            for (int i=0;i<6;++i) { seed=seed*1664525u+1013904223u;values[i]=(int)(seed>>16); }
+            int top=values[0]%900-300,bottom=top+1+values[1]%500;
+            int left_top=values[2]%1200-300,left_bottom=values[3]%1200-300;
+            int generated[8]={left_top,top,left_top+1+values[4]%800,top,left_bottom+1+values[5]%800,bottom,left_bottom,bottom};
+            for (int i=0;i<4;++i) { int v=(i+c)%4;vertices[i*2]=generated[v*2];vertices[i*2+1]=generated[v*2+1]; }
+            if (c%7==0) { int v=(c/7)%4,j=(v+1)%4;vertices[v*2]=vertices[j*2];vertices[v*2+1]=vertices[j*2+1]; }
+        }
+        if (c==63) { int huge[8]={-16384,-16384,16384,-16384,16384,16384,-16384,16384};memcpy(vertices,huge,sizeof huge); }
+        for (int row=0;row<height;++row) memset((void*)(base+(size_t)row*pitch),0,width);
+        int clip[4]={0,0,width,height-1};
+        if (c==3) { clip[0]=7;clip[1]=3;clip[2]=60;clip[3]=25; }
+        int minx=vertices[0],maxx=minx,miny=vertices[1],maxy=miny;
+        for (int v=1;v<4;++v) {
+            if (vertices[2*v]<minx) minx=vertices[2*v];
+            if (vertices[2*v]>maxx) maxx=vertices[2*v];
+            if (vertices[2*v+1]<miny) miny=vertices[2*v+1];
+            if (vertices[2*v+1]>maxy) maxy=vertices[2*v+1];
+        }
+        for (int i=0;i<4;++i) RD32(globals[i])=clip[i];
+        RD32(0x004c5d60)=minx;RD32(0x004c5d64)=miny;RD32(0x004c5d68)=maxx;RD32(0x004c5d6c)=maxy;
+        const int colour=20+c;
+        ((void (__fastcall*)(int*,unsigned char))0x0044d620)(vertices,(unsigned char)colour);
+        memcpy(g_raster_cases[c].vertices,vertices,sizeof vertices);memcpy(g_raster_cases[c].clip,clip,sizeof clip);
+        g_raster_cases[c].colour=colour;g_raster_cases[c].width=width;g_raster_cases[c].height=height;
+        char path[MAX_PATH];const char* slash=strrchr(g_output,'\\');
+        const size_t prefix=slash ? (size_t)(slash-g_output)+1 : 0;
+        if (prefix>sizeof path-64) continue;
+        memcpy(path,g_output,prefix);
+        int count=snprintf(path+prefix,sizeof path-prefix,"%s-raster%u.raw",g_scenario,(unsigned)c);
+        if (count<0 || (size_t)count>=sizeof path-prefix) continue;
+        FILE* output=fopen(path,"wb");if (!output) continue;
+        int ok=1;for (int row=0;row<height;++row) if (fwrite((void*)(base+(size_t)row*pitch),1,width,output)!=(size_t)width) { ok=0;break; }
+        if (fclose(output)) ok=0;
+        if (ok) g_raster_count=c+1;
+    }
+    for (int i=0;i<8;++i) RD32(globals[i])=saved[i];
+}
+
 // 0x0044d300 locks the surface while drawing and stores its view-origin pixel
 // pointer/pitch at 0x004b7ec0/0x004b7ec4. Capture before 0x0044c780 unlocks it.
 static void __cdecl hook_draw(void) {
     ((rr_frame_fn)0x00450420)();
     g_pixel_written=0;
-    if (!g_pixels || !g_out || g_frame % (uint32_t)g_pixel_every || !RD8(0x00475620)) return;
+    if (!g_out || !RD8(0x00475620)) return;
     const uintptr_t base=(uint32_t)RD32(0x004b7ec0);
     const int width=RD32(0x0047539c), height=RD32(0x004753a0), pitch=RD32(0x004b7ec4);
     if (width<1 || width>1280 || height<1 || height>960 || pitch<width || pitch>16384) return;
     if (!readable(base,(size_t)(height-1)*pitch+width)) return;
+    if (g_raster && g_frame==0) capture_raster(base,width,height,pitch);
+    if (!g_pixels || g_frame % (uint32_t)g_pixel_every) return;
     char path[MAX_PATH];
     const char* slash=strrchr(g_output,'\\');
     const size_t prefix=slash ? (size_t)(slash-g_output)+1 : 0;
@@ -92,6 +153,20 @@ static void __cdecl hook_draw(void) {
     }
 }
 
+static void dump_raster(void) {
+    char key[96];
+    if (g_raster_count) {
+        rr_log("raster.count",g_raster_count);
+        for (int c=0;c<g_raster_count;++c) {
+            snprintf(key,sizeof key,"raster.%d.width",c);rr_log(key,g_raster_cases[c].width);
+            snprintf(key,sizeof key,"raster.%d.height",c);rr_log(key,g_raster_cases[c].height);
+            snprintf(key,sizeof key,"raster.%d.colour",c);rr_log(key,g_raster_cases[c].colour);
+            for (int i=0;i<8;++i) { snprintf(key,sizeof key,"raster.%d.vertex.%d",c,i);rr_log(key,g_raster_cases[c].vertices[i]); }
+            for (int i=0;i<4;++i) { snprintf(key,sizeof key,"raster.%d.clip.%d",c,i);rr_log(key,g_raster_cases[c].clip[i]); }
+        }
+    }
+}
+
 static void dump_frame(uint32_t site) {
     char key[96];
     fprintf(g_out, "frame\t%u\n", g_frame);
@@ -103,6 +178,7 @@ static void dump_frame(uint32_t site) {
     rr_log("camera.height", RD32(0x004bc7dc));
     rr_log("camera.half", RD8(0x00473498));
     rr_log("view.coordinate_shift", RD32(0x00481fa8));
+    if (g_frame==0) dump_raster();
     if (g_pixel_written) {
         rr_log("pixels.file",g_frame);
         rr_log("pixels.width",g_pixel_width); rr_log("pixels.height",g_pixel_height);
@@ -164,6 +240,7 @@ static int rr_install_hooks(void) {
     char buf[32];
     if (GetEnvironmentVariableA("RR_ORACLE_FRAMES", buf, sizeof buf)) g_quit_after = atoi(buf);
     if (GetEnvironmentVariableA("RR_ORACLE_PIXELS",buf,sizeof buf)) g_pixels=atoi(buf)!=0;
+    env("RR_ORACLE_RASTER",buf,sizeof buf,"0");g_raster=atoi(buf);
     if (GetEnvironmentVariableA("RR_ORACLE_SHOT_EVERY",buf,sizeof buf) && atoi(buf)>0) g_pixel_every=atoi(buf);
     static const struct { uint32_t site; void* hook; uint8_t bytes[5]; } calls[] = {
         {0x004163fa, hook_frame_0, {0xe8,0xf1,0xd5,0x02,0}},
@@ -220,6 +297,18 @@ BOOL WINAPI DllMain(HINSTANCE inst, DWORD reason, LPVOID reserved) {
         if (!rr_install_hooks()) {
             if (g_out) { fclose(g_out); g_out = NULL; }
             return FALSE;
+        }
+        if (g_raster==2 && g_out) {
+            const int width=640,height=480;
+            void* pixels=malloc((size_t)width*height);
+            if (pixels) {
+                int base=RD32(0x004b7ec0),pitch=RD32(0x004b7ec4);
+                RD32(0x004b7ec0)=(int)(uintptr_t)pixels;RD32(0x004b7ec4)=width;
+                capture_raster((uintptr_t)pixels,width,height,width);
+                RD32(0x004b7ec0)=base;RD32(0x004b7ec4)=pitch;free(pixels);
+                fputs("frame\t0\n",g_out);dump_raster();fputs("end\n",g_out);
+                fclose(g_out);g_out=NULL;
+            }
         }
         if (g_out) fflush(g_out);
     } else if (reason == DLL_PROCESS_DETACH && g_out) {

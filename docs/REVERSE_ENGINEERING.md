@@ -281,3 +281,13 @@ Original MCI destination setup `0x00402820`: native-size x=160 and y=240-height/
 ## Packaging evidence (October 2, 2026)
 
 No additional original-game behavior is inferred by packaging. The standalone macOS build uses the [official SDL 3.4.8 release](https://github.com/libsdl-org/SDL/releases/tag/release-3.4.8), verifies the published source archive digest, links it statically, and is ARM64/macOS 13 with Apple system dependencies only. Android still uses the existing verified SDL AAR. Both packages contain licence notices and exclude original disc assets. Hardware and full game fidelity remain separate acceptance items.
+
+## Flat polygon raster recovered (October 2, 2026)
+
+`0x0044d620` receives four integer surface vertices and one palette index, with bbox globals prepared by `0x0044d300`. It calls `0x0044ce60` to normalize vertex topology/orientation, then builds up to four directed edges. Horizontal edges are inactive. Each lower-to-upper edge starts at `x<<16`; slope is `(dx%dy<<16)/dy + (dx/dy)*65536`, using signed divisions and 32-bit wrap. An upper endpoint below the next vertex in that edge's direction has its final row decremented. Edge slots are acquired in original edge order at each start row, stepped with wrapped addition and released after their inclusive final row.
+
+Each row floors signed Q16 edge positions, clips the lesser x to the left bound and greater x to the right bound, and `0x0044db30` writes exactly right-left bytes (exclusive right). The bbox bottom is inclusive and capped by the clip bottom. Fully horizontal polygons draw one span. The original's degenerate adjacency tables `0x0047564c..0x00475687` correspond to skipping duplicate neighboring vertices; the native filler computes that relation without embedding table bytes.
+
+The native `fill_quad` accepts normalized polygons, bounds coordinates to the supported original Q16 edge range and rejects unnormalized shapes requiring more than two active edges. This is a partial primitive port: arbitrary topology normalization/texture handling are not implemented. All 64 captured normalized fixture images match exactly; this does not establish a full-frame world renderer match.
+
+Oracle loader mode 2 calls the original pure filler on synthetic points into a separately allocated 640×480 buffer, restoring pixel pointer, pitch, clip and bbox globals afterward. Original EXE bytes on disk remain unchanged. Original function normalization is captured in the recorded points. Capture outputs contain synthetic geometry rather than disc graphics. Live mode 1 additionally permits component capture after the first locked draw.

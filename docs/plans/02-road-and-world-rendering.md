@@ -148,69 +148,25 @@ Corrected by disassembly and original frame capture (October 2): polygon fill is
 - Create: `src/raster.hpp`, `src/raster.cpp`, `tests/raster_test.cpp`
 - Modify: `CMakeLists.txt`
 
-**Interfaces:**
-- Consumes: `rr::Framebuffer` (plan 01), `rr::ViewMode` (Task 2)
-- Produces (names fixed here; bodies are ports):
-  ```cpp
-  namespace rr {
-  // A trapezoid between two scanline edges, coordinates in Q16 view space.
-  struct Trapezoid { int32_t y_top, y_bottom; int32_t x_top_left, x_top_right, x_bottom_left, x_bottom_right; uint8_t colour; };
-  // Fill exactly as the original filler that handles road/terrain polygons (identified in Step 1).
-  void fill_trapezoid(Framebuffer& fb, const ViewMode& mode, const Trapezoid& t, int32_t clip_bottom_q16);
-  }
-  ```
-  If Step 1 shows the original primitive is not a trapezoid (e.g. span lists or quads with independent edges), change the struct to match the original, keep the function name, and update this plan's later tasks in the same commit.
+**Current interfaces (corrected from original disassembly):**
+- `RasterPoint` contains integer surface x/y after `0x0040ffc0` coordinate conversion.
+- `RasterQuad` contains four normalized points and one palette index.
+- `RasterClip` has left/top/right/bottom bounds; span right is exclusive, bottom row inclusive.
+- `fill_quad(Framebuffer&, const RasterQuad&, RasterClip)` ports the edge/span stage after `0x0044ce60` normalization.
 
-- [ ] **Step 1: Identify primitive and edge-stepping rules**
+**Verified implementation (October 2):**
+- Q16 signed edge slopes use the original split quotient/remainder calculation and 32-bit shifts/add wrap.
+- Scan rows include the bottom endpoint. An edge ending below its next neighboring vertex drops that endpoint, so another edge can replace it without double participation.
+- Spans floor signed Q16 x values and write left-inclusive/right-exclusive palette bytes. A fully horizontal polygon draws one clipped span.
+- Duplicate neighboring points are skipped when selecting endpoint neighbors; this reproduces the original degenerate-edge tables without embedding those tables.
+- Synthetic cases cover rectangles, diamonds, clipped negative coordinates, horizontal spans, duplicate-point triangles and rotations.
+- `RR_ORACLE_RASTER=2 oracle/run.sh raster-fixtures 3` invokes the original pure filler on 64 synthetic inputs into an isolated 640×480 memory buffer during oracle setup. This avoids waiting for cinematics; it does not capture natural race frames. Original normalization runs before vertices are recorded.
+- `oracle-raster` compares every byte of every resulting image: **64 fixtures, zero mismatches**, including fractional trapezoids, rotations/degeneracies and ±16,384 pixel coordinates.
 
-Read `0x0044d620`, `0x0044db30`, `0x0044d300` and the coordinate conversion in `0x0040ffc0`. Document in `REVERSE_ENGINEERING.md`:
-- The primitive type
-- How edges step (Q16 per row)
-- Rounding at top and bottom rows (inclusive or exclusive)
-- Horizontal clipping
-- Whether colour is flat, per-row or textured
-
-- [ ] **Step 2: Write failing synthetic tests**
-
-These are derived from the rules documented in Step 1. Example, assuming a top-inclusive/bottom-exclusive, left-inclusive/right-exclusive rule; adjust the expected numbers to the documented rule before running:
-```cpp
-#include "raster.hpp"
-#include <iostream>
-int main() {
-    int failures = 0;
-    auto check = [&](bool v, const char* w) { if (!v) { ++failures; std::cerr << "FAIL " << w << '\n'; } };
-    rr::Framebuffer fb(320, 240);
-    rr::ViewMode mode{320, 240, 0};
-    fb.clear(0);
-    rr::fill_trapezoid(fb, mode, {10<<16, 20<<16, 100<<16, 200<<16, 100<<16, 200<<16, 7}, 240<<16);
-    int count = 0;
-    for (int y = 0; y < 240; ++y) for (int x = 0; x < 320; ++x) count += fb.row(y)[x] == 7;
-    check(count == 10*100, "axis-aligned rectangle area");
-    fb.clear(0);
-    rr::fill_trapezoid(fb, mode, {-(1<<30), 1<<30, -(1<<30), 1<<30, -(1<<30), 1<<30, 3}, 240<<16);
-    check(fb.row(0)[0] == 3 && fb.row(239)[319] == 3, "huge polygon clipped to screen, no overflow");
-    fb.clear(0);
-    rr::fill_trapezoid(fb, mode, {100<<16, 200<<16, 0, 320<<16, 0, 320<<16, 5}, 150<<16);
-    check(fb.row(149)[10] == 5 && fb.row(150)[10] == 0, "clip_bottom honoured");
-    std::cout << failures << " failures\n";
-    return failures ? 1 : 0;
-}
-```
-Register it as CTest `raster`.
-
-- [ ] **Step 3: Run it to verify it fails**
-
-Run: `cmake --build build --parallel 2>&1 | grep -m1 raster.hpp`
-Expected: header missing.
-
-- [ ] **Step 4: Port the filler(s) line by line into `src/raster.cpp`**
-
-Use 64-bit intermediates only where the original's 32-bit arithmetic cannot overflow for valid inputs, and clamp exactly where it clamps.
-
-- [ ] **Step 5: Run the tests**
-
-Run: `ctest --test-dir build -R raster --output-on-failure`
-Expected: PASS.
+**Still open:**
+- Port `0x0044ce60` normalization for arbitrary scene nodes; the current native entry point takes normalized polygons.
+- Hook this primitive into original scene construction and recover textured/sprite drawing.
+- Full-frame original comparison, both view modes, terrain/occlusion and actual Android output remain open.
 
 - [ ] **Step 6: Commit**
 
@@ -312,7 +268,7 @@ Colours come from the per-sample selector bytes (`+0x148/+0x149`), the `DLSR` fl
 - Create: `src/world_renderer.hpp`, `src/world_renderer.cpp`, `tests/oracle_frame_test.cpp`
 
 **Interfaces:**
-- Consumes: `rr::Scene`, `rr::fill_trapezoid`, `rr::Framebuffer`, `rr::Palette`
+- Consumes: `rr::Scene`, `rr::fill_quad`, `rr::Framebuffer`, `rr::Palette`
 - Produces:
   ```cpp
   namespace rr {

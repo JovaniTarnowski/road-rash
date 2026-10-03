@@ -138,3 +138,11 @@ Final Session 9 follow-up: address/undefined sanitizer CTest remains **23/23 pas
 - `assembleDebug assembleRelease -PreleaseDebugSigning=true`: successful. Both variant asset verifiers pass. Release `apksigner verify --verbose` passes v1/v2 with one local debug signer. Standard Gradle metadata unsigned-entry warnings remain. APK asset listing contains only `assets/licenses/LICENSE` and `assets/licenses/SDL-LICENSE.txt`.
 - `tools/ci.sh`: native configure/build/tests, image/resource smoke, all-course sweep, Android debug build and APK check finish with **CI OK**.
 - Owner-key signing configuration and tag-based naming are implemented; an owner production key was not supplied/tested. Device remains absent. Installation, SAF import, input/audio lifecycle, hardware rendering/frame times and career persistence are not validated.
+
+## Session 11: flat polygon raster oracle (October 2, 2026)
+
+- Synthetic raster checks pass: inclusive bottom/exclusive span right, shared diamond endpoints, horizontal span, clipping negative vertices, duplicate-point triangle and rotated ordering.
+- `RR_ORACLE_RASTER=2 oracle/run.sh raster-fixtures 3`: complete golden plus 64 raw 640×480 component images. Every fixture is initialized to index zero and drawn by original `0x0044d620`. Recorded vertices reflect original normalization. Loader-only capture avoids cinema timing and restores the temporary globals.
+- `build/oracle-raster-test` and sanitizer equivalent: **64 fixtures compared, 0 mismatched**, comparing all 19,660,800 indexed pixels. Malformed metadata/missing raw images fail; absent captures alone skip 77. These are original-function component comparisons, not native/full-original race screenshots.
+- CTest: **25/25 pass**, also **25/25 under address/undefined sanitizers**. Viewer/resource smoke and five-course sweep pass. Android debug build and no-game-data verifier pass.
+- No scene integration, arbitrary-quad normalization, textured spans, terrain/scenery, low view mode or Android hardware pixels are claimed by these results.

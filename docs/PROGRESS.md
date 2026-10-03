@@ -40,6 +40,8 @@ Detailed evidence is in [REVERSE_ENGINEERING.md](REVERSE_ENGINEERING.md) and tes
 | Audio decoding/mixing | All 72 effects and 14 RRA tracks decode; queued stereo mixer, resampling, pause and device reopening; original triggers/priority/music streaming open | `src/wav.cpp`, `src/mixer.cpp` |
 | Video | AVI scan, Cinepak and IMA: all 59 videos match FFmpeg RGB/audio; native playback via `--video`; frontend selection and hardware A/V sync open | `src/avi.cpp`, `src/cinepak.cpp`, `src/video_player.cpp` |
 
+| Flat polygon raster | Normalized integer quad edge/span stage matches 64 original-function fixtures exactly; normalization, textures and scene integration open | `src/raster.cpp`, `tests/oracle_raster_test.cpp` |
+
 ## Timeline
 
 Sessions 1–6: September 28, 2026. Later dates are listed per session.
@@ -192,3 +194,12 @@ Import follow-up (October 2): nonseekable ISO input now caches inside the owned 
 - Added `tools/ci.sh`, standalone build/ZIP script, bundle verifier and current-development `docs/USER_GUIDE.md`. Local CI reports `CI OK`.
 - Video gamepad Start now pauses/resumes; active controller disconnect pauses, and desktop Q quits. Physical gamepad behavior remains unverified.
 - Packaging is software-verified. Hardware testing, Developer ID/notarization, full original frontend/gameplay/audio behavior and final whole-port acceptance remain open.
+
+### Session 11: original flat polygon filler (October 2, 2026)
+
+- Ported the normalized edge/span stage of `0x0044d620` and the byte-fill behavior of `0x0044db30` to an indexed framebuffer. Q16 slopes, signed floor, wrap, inclusive bottom/exclusive span right, shared endpoints and degenerate points follow measured original behavior.
+- Added synthetic coverage and an isolated original-function oracle mode. Loader mode `RR_ORACLE_RASTER=2` runs the pure original filler on a private buffer before graphics setup, records the original-normalized vertices, restores modified globals and closes a complete golden. Live mode 1 can run during the first locked draw. These fixtures are component tests, not full race images.
+- 64 original fixtures compare with **zero pixel mismatches**: rectangles, diamonds, horizontal spans, negative clipping, fractional/rotated trapezoids, duplicate-point triangles and large ±16,384 coordinates. Golden images stay in ignored `analysis/oracle/`.
+- Native and address/undefined sanitizer suites pass **25/25**. Resource/viewer smoke and all-course sweep pass; Android ARM64 debug builds with asset exclusion.
+- Timed oracle cleanup now targets only the process it launched, without killing every Wine process in the prefix. Old scenario raw outputs are removed before capture to prevent stale fixtures from being mistaken for new output.
+- Full polygon normalization, original scene/texture/scenery/terrain drawing and full-frame equality remain open. The game still uses the placeholder scene renderer.
