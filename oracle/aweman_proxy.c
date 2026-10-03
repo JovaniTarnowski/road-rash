@@ -133,6 +133,10 @@ static void capture_raster(uintptr_t base,int width,int height,int pitch) {
 // resource header and an FNV-1a hash of mip 0 so a native decoder can identify the resource.
 static int g_scene_written;static uint32_t g_scene_nodes;
 static uint32_t fnv(const unsigned char* p,size_t n){uint32_t h=2166136261u;for(size_t i=0;i<n;++i){h^=p[i];h*=16777619u;}return h;}
+// Region records: {base, size} then bytes. Version 2 dumps all of .data/.bss and a two-level
+// closure of heap blocks referenced from the course ring, projected slices and scratch blocks.
+static void put_region(FILE* out,uint32_t base,uint32_t size){uint32_t h[2]={base,size};fwrite(h,4,2,out);fwrite((void*)(uintptr_t)base,1,size,out);}
+static int heap_pointer(uint32_t v){return v>=0x00500000u && v<0x7ff00000u && readable(v,0x200);}
 static void dump_scene(void) {
     char path[1024];const char* slash=strrchr(g_output,'\\');const size_t prefix=slash?(size_t)(slash-g_output)+1:0;
     if (prefix>sizeof path-64) return;
@@ -141,12 +145,30 @@ static void dump_scene(void) {
     const uint32_t base=(uint32_t)RD32(0x0049e66c),end=(uint32_t)RD32(0x0049e660);
     uint32_t count=end>=base?(end-base)/0xa8:0;
     if (!readable(base,(size_t)count*0xa8)) count=0;
-    const uint32_t header[8]={0x52524e53u,1,g_frame,count,base,(uint32_t)RD32(0x0049e664),0x0049f250,0x004bc800};
+    static uint32_t blocks[4096];uint32_t nblocks=0;
+    const uint32_t roots[3][2]={{0x0049f250,128*0x2f8},{0x004bc800,33*0x224},{0x004ba190,0x1320+33*0x240}};
+    for (int level=0;level<2;++level) {
+        const uint32_t from=level?0:0, upto=nblocks;
+        if (level==0) {
+            for (int r=0;r<3;++r) for (uint32_t o=0;o+4<=roots[r][1];o+=4) {
+                const uint32_t v=(uint32_t)RD32(roots[r][0]+o);
+                if (!heap_pointer(v)) continue;
+                uint32_t k=0;for(;k<nblocks && blocks[k]!=v;++k);
+                if (k==nblocks && nblocks<4096) blocks[nblocks++]=v;
+            }
+        } else {
+            for (uint32_t b=from;b<upto;++b) for (uint32_t o=0;o<0x200;o+=4) {
+                const uint32_t v=(uint32_t)RD32(blocks[b]+o);
+                if (!heap_pointer(v)) continue;
+                uint32_t k=0;for(;k<nblocks && blocks[k]!=v;++k);
+                if (k==nblocks && nblocks<4096) blocks[nblocks++]=v;
+            }
+        }
+    }
+    const uint32_t header[8]={0x52524e53u,2,g_frame,count,base,(uint32_t)RD32(0x0049e664),1+nblocks,0};
     fwrite(header,4,8,out);
-    fwrite((void*)0x0049f250,1,128*0x2f8,out);
-    fwrite((void*)0x004bc800,1,33*0x224,out);
-    fwrite((void*)0x004ba190,1,0x1320,out);
-    fwrite((void*)0x004bb4b0,1,33*0x240,out);
+    put_region(out,0x00463000,0x661c8);
+    for (uint32_t b=0;b<nblocks;++b) put_region(out,blocks[b],0x200);
     for (uint32_t i=0;i<count;++i) {
         const unsigned char* n=(const unsigned char*)(uintptr_t)(base+i*0xa8);
         fwrite(n,1,0xa8,out);
