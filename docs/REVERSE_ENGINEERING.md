@@ -341,3 +341,11 @@ PC pixel bodies start at PDAT+8 with magic `0x00bc614e`. Header: flags +12, name
 Seventeen GLOBAL textures contain 117 indexed mip blocks. Twenty-five other GLOBAL/course CEL resources contain only four legacy pixel bytes; the reader retains those words and does not pretend they are decoded images. Course selectors additionally reference external/local CEL tables (`0x0044ac00` / `0x0044aca0`), whose preparation is not yet ported.
 
 The oracle calls original `0x0044fb10` to initialize a saved dimension table, runs `0x0040b800` on copied disc resource payloads, captures numeric fields and writes each original-relocated mip byte range, then restores the table. All 42 dimensions/flags and all 117 byte ranges match native decoding. This establishes resource interpretation, not original scene selection or full sprite drawing.
+
+### Ordered node renderer recovered (October 2, 2026)
+
+`0x0040ff40` transforms the source linked list in place into 64-byte nodes at source +0x68, stopping on the +0x0c sentinel 0x40000000. `0x0040ffc0` maps eight Q16 coordinates at +0x44..+0x60. `0x00410080` consumes the source +8 pixel-resource pointer directly, accepts magic 0xbc614e via `0x0040feb0`, and copies signed bounds at resource +4/+6/+8/+10 through `0x0040fe50`. The source is not an extra CCB pointer layer. Rejected resources with source +0x66 set become flat-template nodes colored from +0x67.
+
+`0x0044d300` walks in list order; quality-mask intersection with resource flags selects flat fill (resource +44 color, or node +60 for the flat template). Texture paths normalize points, update horizontal flip, inset each UV endpoint by one, and call `0x004180b0`. Mip choice uses the original pre-normalization integer bounding box and inclusive signed UV extents. Quality masks observed in settings are 16, 48 and 112. Rider flag 0x2000 specializes the resource with `0x00443820`; that path remains unported.
+
+The native generic renderer matches 32 synthetic original lists (384 nodes, both 320×240 and 640×480 modes), comparing all 6,144,000 pixels exactly. CEL signed UV bounds also match the original relocated loader on all 17 real indexed textures. This verifies generic dispatch/composition, not natural scene construction or whole race frames.

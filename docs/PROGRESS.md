@@ -20,7 +20,7 @@ Detailed evidence is in [REVERSE_ENGINEERING.md](REVERSE_ENGINEERING.md) and tes
 | Terrain profiles (building / mountain / hill) | All 109 sections decoded; stateful iterator matches 864 original slices; live cache/random integration open | `src/terrain.cpp` |
 | Other section chunks (`BORR`, `MSRR`, `DZHR`, `CESR`) | Mapped to iterators only | REVERSE_ENGINEERING.md |
 | CEL / PLUT and PC mip textures | 42 CEL wrappers, 117 indexed mip blocks match original loader; legacy packet drawing/table selection open | `src/cel.cpp` |
-| World rendering, colours, horizon and scenery (`CEL `) | Indexed flat/texture primitives verified; original scene/resource integration open; viewer still uses placeholder shading | `src/raster.cpp`, `src/texture.cpp` |
+| World rendering, colours, horizon and scenery (`CEL `) | Generic display-list rendering matches 32 original lists; scene/resource integration open; viewer still uses placeholder shading | `src/world_renderer.cpp` |
 | Bike specs (`BIKESPEC.RSC`) | Decoded and applied (`0x00405ea0`) | `src/bike.cpp` |
 | Player bike physics | Ported from the executable: throttle, brake, steering, gears, drag, traction, curve drift, movement along the course, vertical motion/jumps; not oracle-verified | `src/bike.cpp`, `src/race.cpp` |
 | Walls, crashes, remount | Simplified stand-ins | `src/race.cpp` |
@@ -39,7 +39,7 @@ Detailed evidence is in [REVERSE_ENGINEERING.md](REVERSE_ENGINEERING.md) and tes
 | Android data packaging | Normal APK excludes game data; guarded developer assets are opt-in | `android/app/build.gradle` |
 | Audio decoding/mixing | All 72 effects and 14 RRA tracks decode; queued stereo mixer, resampling, pause and device reopening; original triggers/priority/music streaming open | `src/wav.cpp`, `src/mixer.cpp` |
 | Video | AVI scan, Cinepak and IMA: all 59 videos match FFmpeg RGB/audio; native playback via `--video`; frontend selection and hardware A/V sync open | `src/avi.cpp`, `src/cinepak.cpp`, `src/video_player.cpp` |
-| Flat polygon raster | Normalization matches 2,048 original calls; full flat path matches 64 indexed fixtures; textures and world integration open | `src/raster.cpp`, `src/polygon.cpp` |
+| Flat polygon raster | Normalization matches 2,048 original calls; full flat path matches 64 indexed fixtures; scene integration open | `src/raster.cpp`, `src/polygon.cpp` |
 
 ## Timeline
 
@@ -253,3 +253,13 @@ Session 16 final validation: 30/30 native and sanitizer tests pass, Android buil
 - Original course CEL selector tables, legacy packet interpretation, CCB transform semantics, palette use outside indexed mip blocks, animation and scene/resource integration are still pending. The whole-port goal remains active.
 
 Session 17 final validation: 31/31 native and sanitizer tests pass; Android builds asset-free. Whole-port completion is not yet achieved.
+
+### Session 18: original display-list rendering (October 2, 2026)
+
+- Added `render_nodes`: original Q16 view conversion, ordered node traversal, bounding-box rejection, quality-mask flat dispatch, normalization/UV flips, inset UV coordinates, mip selection and indexed scan conversion. Callers own texture storage and display-list construction.
+- CEL texture bounds are now decoded as signed shorts and verified against the original loader for all 17 indexed resources.
+- The isolated oracle runs the actual `0x0040ff40` → `0x0044d300` path on 32 synthetic lists with 12 overlapping nodes each, both resolutions and quality masks 16/48/112. All **6,144,000 pixels match exactly**.
+- An initial fixture incorrectly pointed nodes at a CCB wrapper. Disassembly shows `0x00410080` accepts the pixel-resource pointer directly. Correcting the fixture enabled actual textured dispatch; native expectations were not adjusted to conceal a renderer difference.
+- Dynamic rider frame specialization (`0x00443820`), original scene construction/selector resolution, sky, natural full-frame equality and replacing the game's placeholder renderer remain open. Whole-port completion has not been achieved.
+
+Session 18 validation: 32/32 native and address/undefined sanitizer tests pass. Synthetic dispatch tests also run without oracle captures. Android ARM64 debug build and asset exclusion pass; resource/viewer smoke and five-course projection sweep pass. No Android device pixel comparison was performed.

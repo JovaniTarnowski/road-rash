@@ -12,10 +12,11 @@ int main() {
     int failures=0;auto check=[&](bool ok,const char* what){if(!ok){++failures;std::cerr<<what<<'\n';}};
     Bytes b(176);word(b,0,0x43434220);word(b,4,80);word(b,72,0x80000002);word(b,76,2);
     word(b,80,0x504c5554);word(b,84,16);word(b,88,2);b[92]=0x34;b[93]=0x12;b[94]=0x78;b[95]=0x56;
-    word(b,96,0x50444154);word(b,100,80);word(b,104,0xbc614e);word(b,136,4);word(b,140,2);word(b,144,1);word(b,160,36);
+    word(b,96,0x50444154);word(b,100,80);word(b,104,0xbc614e);word(b,108,0xfffeffff);word(b,112,0x00010003);word(b,136,4);word(b,140,2);word(b,144,1);word(b,160,36);
     for(int i=0;i<8;++i)b[168+i]=uint8_t(i);
     const auto cel=rr::read_cel(b);
     check(cel.width==4 && cel.height==2,"CCB dimensions");check(cel.palette.entries==std::vector<uint16_t>{0x1234,0x5678},"PLUT endian");
+    check(cel.texture && cel.texture->bounds==std::array<int32_t,4>{-1,-2,3,1},"signed texture bounds");
     check(cel.texture && cel.texture->mips[0].pixels==Bytes({0,1,2,3,4,5,6,7}),"indexed PDAT pixels");
     for(size_t n=0;n<b.size();++n){try{rr::read_cel(Bytes(b.begin(),b.begin()+n));check(false,"truncated cel accepted");}catch(const std::runtime_error&){}}
     auto corrupt=b;word(corrupt,160,0xffffffffu);try{rr::read_cel(corrupt);check(false,"bad mip offset accepted");}catch(const std::runtime_error&){}
@@ -46,6 +47,7 @@ int main() {
                             if(value.texture) {
                                 check(fields.at(prefix+"magic")==0xbc614e && fields.at(prefix+"levels")==int64_t(value.texture->mips.size()),"original mip header");
                                 check(fields.at(prefix+"texture_flags")==value.texture->flags,"original texture flags");
+                                for(int bound=0;bound<4;++bound)check(fields.at(prefix+"bound."+std::to_string(bound))==value.texture->bounds[bound],"original texture bounds");
                                 for(size_t level=0;level<value.texture->mips.size();++level) {
                                     const auto raw=std::filesystem::path(golden_path).parent_path()/(golden->scenario+"-cel"+std::to_string(file-files.begin())+"-"+std::to_string(resource.id)+"-mip"+std::to_string(level)+".raw");
                                     std::ifstream reference(raw,std::ios::binary);if(!reference)throw std::runtime_error("Missing original mip bytes");

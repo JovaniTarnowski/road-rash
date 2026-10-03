@@ -200,3 +200,12 @@ Session 16 final checks: **30/30 native and address/undefined sanitizer tests pa
 The 117 original-loader mip blocks contain **189,266 palette indices**, all compared byte for byte.
 
 Session 17 final checks: **31/31 native and address/undefined sanitizer tests pass**. Android ARM64 debug build and game-data exclusion pass. Logs: `analysis/cel-tests.log`, `analysis/cel-sanitizer-tests.log`, `analysis/android-cel-build.log`.
+
+### Display-list renderer component oracle (October 2, 2026)
+
+- Original calls: `0x0040ff40`, `0x0040ffc0`, `0x00410080`, `0x0044d300` on isolated buffers. 32 lists ×12 nodes, both resolutions, three quality masks, texture flags 0/2/4/8/16/32, flat overrides, UV flips, clipping and overlap. **6,144,000 pixels, zero mismatches**.
+- All four signed texture bounds from each of 17 real indexed CELs match original-loader values.
+- Fixture resource-pointer correction is recorded in PROGRESS/REVERSE_ENGINEERING. Original disc bytes remain untouched; fixture captures stay ignored.
+- Natural scene geometry/order, dynamic rider specialization and Android device pixels remain unverified.
+
+Session 18 build checks: native CTest 32/32, ASAN+UBSAN CTest 32/32; Android `assembleDebug` BUILD SUCCESSFUL including `verifyDebugNoGameData`. Viewer resource smoke and all-five-course projection sweep pass. Logs: `analysis/nodes-tests.log`, `analysis/nodes-sanitizer-tests.log`, `analysis/android-nodes-build.log`, `analysis/nodes-smoke.log`, `analysis/nodes-courses.log`.

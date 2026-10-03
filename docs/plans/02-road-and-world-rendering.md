@@ -297,3 +297,7 @@ Known lead: every simulation step (`0x0044b3b0`) accumulates `DAT_004b7ef8 += be
 - [ ] **Step 1:** Implement the switch. Keep `--screenshot`, now saving the framebuffer through `to_rgba` to BMP, so it is exact.
 - [ ] **Step 2:** Rebuild the APK. If a device is connected, capture NAPA sample 300 on Android (`adb exec-out screencap -p`) and on macOS. Compare with `tools/compare_frames.py`; expect 100% inside the view after scaling with nearest-neighbour. If no device is connected, record "not verified on device" in `VERIFICATION.md`.
 - [ ] **Step 3:** Update PROGRESS/REVERSE_ENGINEERING/VERIFICATION. Commit: `viewer: original world renderer replaces placeholder shading`.
+
+### Display-list draw stage milestone (October 2, 2026)
+
+`src/world_renderer.*` now implements generic ordered dispatch from caller-owned `DrawNode` objects. Original flat/texture quality selection, inclusive bbox rejection, normalization/flip handling, UV insets and mip selection match 32 original-function synthetic lists in both resolutions: 6,144,000 pixels exact. Signed CEL UV bounds match all 17 real indexed resources. Scene construction, resource selector resolution, dynamic rider specialization, horizon, natural full-frame comparisons and viewer switch-over are still required; Task 8 is not complete.

@@ -1,5 +1,6 @@
 #include "cel.hpp"
 #include <algorithm>
+#include <cstring>
 #include <stdexcept>
 namespace rr {
 namespace {
@@ -42,7 +43,9 @@ Cel read_cel(const std::vector<uint8_t>& b) {
                 if(!width || width>256 || (width&(width-1)) || !height || height>512 || !levels || levels>9)throw std::runtime_error("Invalid indexed texture dimensions");
                 unsigned shift=0;while((1u<<shift)<width)++shift;
                 if(levels>shift+1)throw std::runtime_error("Too many texture mip levels");
-                CelTexture texture;texture.flags=r.word(body+12);texture.flat_index=uint8_t(r.word(body+44));
+                CelTexture texture;
+                for(size_t i=0;i<4;++i){const uint16_t bits=uint16_t(b[body+4+2*i]|uint16_t(b[body+5+2*i])<<8);int16_t value;std::memcpy(&value,&bits,2);texture.bounds[i]=value;}
+                texture.flags=r.word(body+12);texture.flat_index=uint8_t(r.word(body+44));
                 for(size_t i=0;i<16 && b[body+16+i];++i)texture.name.push_back(char(b[body+16+i]));
                 for(uint32_t level=0;level<levels;++level) {
                     const size_t entry=56+12*level;

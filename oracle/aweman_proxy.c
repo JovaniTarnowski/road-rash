@@ -399,6 +399,7 @@ static void capture_cels(void) {
                 const unsigned char* body=(void*)(uintptr_t)data;
                 const uint32_t width=cel_word(body,32),height=cel_word(body,36),levels=cel_word(body,40);
                 CEL_LOG("texture_flags",cel_word(body,12));CEL_LOG("levels",levels);
+                for(int bound=0;bound<4;++bound){short value;memcpy(&value,body+4+bound*2,2);snprintf(key,sizeof key,"cel.%d.%u.bound.%d",file,id,bound);rr_log(key,value);}
                 if(width && width<=256 && height && height<=512 && levels<=9) for(uint32_t level=0;level<levels;++level) {
                     const uint32_t pointer=cel_word(body,56+12*level);
                     const size_t pixels=(width>>level)*((height>>level)?height>>level:1);
@@ -413,6 +414,46 @@ static void capture_cels(void) {
         free(bytes);
     }
     rr_log("cel.count",count);memcpy((void*)0x4b6e70,dimension_table,sizeof dimension_table);
+}
+
+static void capture_node_render(void) {
+    const uint32_t addresses[]={0x4b7eb0,0x4b7eb4,0x4b7eb8,0x4b7ebc,0x4b7ec0,0x4b7ec4,0x4c5d88,0x4c5d60,0x4c5d64,0x4c5d68,0x4c5d6c,0x484278,0x4c5d20,0x4c5d50,0x466680,0x481fe0,0x481fa8,0x481ff4,0x475648,0x481fb0,0x481fbc};
+    int saved[sizeof addresses/sizeof addresses[0]];for(unsigned i=0;i<sizeof addresses/sizeof addresses[0];++i)saved[i]=RD32(addresses[i]);
+    const unsigned char locked=RD8(0x475620);RD8(0x475620)=1;RD32(0x466680)=1;RD32(0x481fb0)=0x10;RD32(0x481fbc)=0x10;
+    unsigned char* pixels=malloc(640*480);unsigned char* texture=malloc(1344);unsigned char* edges=malloc(11520);unsigned char uv_saved[32];
+    if(!pixels || !texture || !edges){free(pixels);free(texture);free(edges);goto restore;}
+    memcpy(edges,(void*)0x484280,5760);memcpy(edges+5760,(void*)0x482bf8,5760);memcpy(uv_saved,(void*)0x4c5d30,32);
+    for(int level=0;level<3;++level){const int offset=level==0?0:level==1?1024:1280,size=1024>>(level*2);for(int i=0;i<size;++i)texture[offset+i]=(unsigned char)(i*37+i/7+level*53);}
+    const int masks[3]={16,48,112},flags[6]={0,2,4,8,16,32};char key[96];
+    for(int c=0;c<32;++c) {
+        const int high=c%2,width=high?640:320,height=high?480:240;
+        int source[12][42]={{0}},resource[12][32]={{0}},legacy=0;
+        RD32(0x481fa8)=high?15:16;RD32(0x481ff4)=high?(int)0xfffffffeu:-1;RD32(0x475648)=masks[c%3];
+        RD32(0x4b7eb0)=0;RD32(0x4b7eb4)=0;RD32(0x4b7eb8)=width;RD32(0x4b7ebc)=height-1;RD32(0x4b7ec0)=(int)(uintptr_t)pixels;RD32(0x4b7ec4)=width;
+        memset(pixels,125,width*height);
+        for(int n=0;n<12;++n) {
+            source[n][1]=n<11?(int)(uintptr_t)source[n+1]:0;source[n][2]=(int)(uintptr_t)(n%4==0?&legacy:resource[n]);source[n][3]=n==11?0x40000000:0;
+            resource[n][0]=0xbc614e;resource[n][2]=31|(31<<16);resource[n][3]=flags[(c+n)%6];resource[n][8]=32;resource[n][9]=32;resource[n][10]=3;resource[n][11]=196+n;
+            resource[n][14]=(int)(uintptr_t)texture;resource[n][17]=(int)(uintptr_t)(texture+1024);resource[n][20]=(int)(uintptr_t)(texture+1280);
+            unsigned char* bytes=(void*)source[n];bytes[0x64]=(c+n)%2;bytes[0x65]=(c+n)%3==0;bytes[0x66]=n%4==0;bytes[0x67]=20+n;
+            const int left=(n*37+c*13)%420-60,top=(n*29+c*17)%320-40,right=left+20+(n*23+c*7)%180,bottom=top+10+(n*13+c*3)%100;
+            const int points[8]={left,top,right,top+((n+c)%3),right-3,bottom,left+5,bottom};
+            for(int i=0;i<8;++i)source[n][0x44/4+i]=points[i]*65536+((c+n+i)*1777)%65536;
+            snprintf(key,sizeof key,"nodes.%d.%d.flat",c,n);rr_log(key,n%4==0?20+n:-1);
+            snprintf(key,sizeof key,"nodes.%d.%d.flags",c,n);rr_log(key,resource[n][3]);
+            snprintf(key,sizeof key,"nodes.%d.%d.index",c,n);rr_log(key,resource[n][11]);
+            snprintf(key,sizeof key,"nodes.%d.%d.flip_u",c,n);rr_log(key,bytes[0x64]);snprintf(key,sizeof key,"nodes.%d.%d.flip_v",c,n);rr_log(key,bytes[0x65]);
+            for(int i=0;i<8;++i){snprintf(key,sizeof key,"nodes.%d.%d.point.%d",c,n,i);rr_log(key,source[n][0x44/4+i]);}
+        }
+        ((int (__fastcall*)(void*))0x40ff40)(source[0]);
+        snprintf(key,sizeof key,"nodes.%d.mask",c);rr_log(key,masks[c%3]);snprintf(key,sizeof key,"nodes.%d.high",c);rr_log(key,high);
+        char path[1024];const char* slash=strrchr(g_output,'\\');const size_t prefix=slash?(size_t)(slash-g_output)+1:0;memcpy(path,g_output,prefix);snprintf(path+prefix,sizeof path-prefix,"%s-nodes%d.raw",g_scenario,c);
+        FILE* out=fopen(path,"wb");if(out){fwrite(pixels,1,width*height,out);fclose(out);}
+    }
+    memcpy((void*)0x484280,edges,5760);memcpy((void*)0x482bf8,edges+5760,5760);memcpy((void*)0x4c5d30,uv_saved,32);
+    free(edges);free(texture);free(pixels);
+restore:
+    RD8(0x475620)=locked;for(unsigned i=0;i<sizeof addresses/sizeof addresses[0];++i)RD32(addresses[i])=saved[i];
 }
 
 static void dump_frame(uint32_t site) {
@@ -555,7 +596,7 @@ BOOL WINAPI DllMain(HINSTANCE inst, DWORD reason, LPVOID reserved) {
                 RD32(0x004b7ec0)=(int)(uintptr_t)pixels;RD32(0x004b7ec4)=width;
                 capture_raster((uintptr_t)pixels,width,height,width);
                 RD32(0x004b7ec0)=base;RD32(0x004b7ec4)=pitch;free(pixels);
-                fputs("frame\t0\n",g_out);dump_raster();capture_view();capture_terrain();capture_hill_projection();capture_polygon();capture_texture_spans();capture_texture_quads();capture_cels();fputs("end\n",g_out);
+                fputs("frame\t0\n",g_out);dump_raster();capture_view();capture_terrain();capture_hill_projection();capture_polygon();capture_texture_spans();capture_texture_quads();capture_cels();capture_node_render();fputs("end\n",g_out);
                 fclose(g_out);g_out=NULL;
             }
         }
