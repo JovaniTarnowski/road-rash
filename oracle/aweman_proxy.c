@@ -135,8 +135,45 @@ static int g_scene_written;static uint32_t g_scene_nodes;
 static uint32_t fnv(const unsigned char* p,size_t n){uint32_t h=2166136261u;for(size_t i=0;i<n;++i){h^=p[i];h*=16777619u;}return h;}
 // Region records: {base, size} then bytes. Version 2 dumps all of .data/.bss and a two-level
 // closure of heap blocks referenced from the course ring, projected slices and scratch blocks.
-static void put_region(FILE* out,uint32_t base,uint32_t size){uint32_t h[2]={base,size};fwrite(h,4,2,out);fwrite((void*)(uintptr_t)base,1,size,out);}
 static int heap_pointer(uint32_t v){return v>=0x00500000u && v<0x7ff00000u && readable(v,0x200);}
+// Snapshot of .data/.bss plus a two-level heap closure of the course ring, projected slices and
+// scratch blocks. Taken before 0x00443d70 projects the frame (pre) and before 0x00450420 flushes
+// the display list (post).
+typedef struct { uint32_t base,size; unsigned char* bytes; } snap_region;
+static snap_region g_pre[4097];static uint32_t g_npre;static int g_pre_frame=-1;
+static uint32_t closure(uint32_t* blocks) {
+    uint32_t nblocks=0;
+    const uint32_t roots[3][2]={{0x0049f250,128*0x2f8},{0x004bc800,33*0x224},{0x004ba190,0x1320+33*0x240}};
+    for (int r=0;r<3;++r) for (uint32_t o=0;o+4<=roots[r][1];o+=4) {
+        const uint32_t v=(uint32_t)RD32(roots[r][0]+o);
+        if (!heap_pointer(v)) continue;
+        uint32_t k=0;for(;k<nblocks && blocks[k]!=v;++k);
+        if (k==nblocks && nblocks<4096) blocks[nblocks++]=v;
+    }
+    const uint32_t first=nblocks;
+    for (uint32_t b=0;b<first;++b) for (uint32_t o=0;o<0x200;o+=4) {
+        const uint32_t v=(uint32_t)RD32(blocks[b]+o);
+        if (!heap_pointer(v)) continue;
+        uint32_t k=0;for(;k<nblocks && blocks[k]!=v;++k);
+        if (k==nblocks && nblocks<4096) blocks[nblocks++]=v;
+    }
+    return nblocks;
+}
+static void snapshot(snap_region* out,uint32_t* n) {
+    static uint32_t blocks[4096];
+    for (uint32_t i=0;i<*n;++i) free(out[i].bytes);
+    const uint32_t nb=closure(blocks);
+    *n=0;
+    out[(*n)++]=(snap_region){0x00463000,0x661c8,NULL};
+    for (uint32_t b=0;b<nb;++b) out[(*n)++]=(snap_region){blocks[b],0x200,NULL};
+    for (uint32_t i=0;i<*n;++i) { out[i].bytes=malloc(out[i].size); if(out[i].bytes) memcpy(out[i].bytes,(void*)(uintptr_t)out[i].base,out[i].size); }
+}
+static int capture_frame(void){return g_out && g_pixels && !(g_frame % (uint32_t)g_pixel_every);}
+static void __fastcall hook_project(uint32_t a,int* b,int c,int* d,int e) {
+    if (capture_frame()) { snapshot(g_pre,&g_npre); g_pre_frame=(int)g_frame; }
+    ((void (__fastcall*)(uint32_t,int*,int,int*,int))0x00443d70)(a,b,c,d,e);
+}
+static void put_regions(FILE* out,snap_region* r,uint32_t n){for(uint32_t i=0;i<n;++i){if(!r[i].bytes)continue;uint32_t h[2]={r[i].base,r[i].size};fwrite(h,4,2,out);fwrite(r[i].bytes,1,r[i].size,out);}}
 static void dump_scene(void) {
     char path[1024];const char* slash=strrchr(g_output,'\\');const size_t prefix=slash?(size_t)(slash-g_output)+1:0;
     if (prefix>sizeof path-64) return;
@@ -145,30 +182,15 @@ static void dump_scene(void) {
     const uint32_t base=(uint32_t)RD32(0x0049e66c),end=(uint32_t)RD32(0x0049e660);
     uint32_t count=end>=base?(end-base)/0xa8:0;
     if (!readable(base,(size_t)count*0xa8)) count=0;
-    static uint32_t blocks[4096];uint32_t nblocks=0;
-    const uint32_t roots[3][2]={{0x0049f250,128*0x2f8},{0x004bc800,33*0x224},{0x004ba190,0x1320+33*0x240}};
-    for (int level=0;level<2;++level) {
-        const uint32_t from=level?0:0, upto=nblocks;
-        if (level==0) {
-            for (int r=0;r<3;++r) for (uint32_t o=0;o+4<=roots[r][1];o+=4) {
-                const uint32_t v=(uint32_t)RD32(roots[r][0]+o);
-                if (!heap_pointer(v)) continue;
-                uint32_t k=0;for(;k<nblocks && blocks[k]!=v;++k);
-                if (k==nblocks && nblocks<4096) blocks[nblocks++]=v;
-            }
-        } else {
-            for (uint32_t b=from;b<upto;++b) for (uint32_t o=0;o<0x200;o+=4) {
-                const uint32_t v=(uint32_t)RD32(blocks[b]+o);
-                if (!heap_pointer(v)) continue;
-                uint32_t k=0;for(;k<nblocks && blocks[k]!=v;++k);
-                if (k==nblocks && nblocks<4096) blocks[nblocks++]=v;
-            }
-        }
-    }
-    const uint32_t header[8]={0x52524e53u,2,g_frame,count,base,(uint32_t)RD32(0x0049e664),1+nblocks,0};
+    static snap_region post[4097];static uint32_t npost;
+    snapshot(post,&npost);
+    uint32_t npre=g_pre_frame==(int)g_frame?g_npre:0, pre_ok=0, post_ok=0;
+    for(uint32_t i=0;i<npre;++i)pre_ok+=g_pre[i].bytes!=NULL;
+    for(uint32_t i=0;i<npost;++i)post_ok+=post[i].bytes!=NULL;
+    const uint32_t header[8]={0x52524e53u,3,g_frame,count,base,(uint32_t)RD32(0x0049e664),pre_ok,post_ok};
     fwrite(header,4,8,out);
-    put_region(out,0x00463000,0x661c8);
-    for (uint32_t b=0;b<nblocks;++b) put_region(out,blocks[b],0x200);
+    put_regions(out,g_pre,npre);
+    put_regions(out,post,npost);
     for (uint32_t i=0;i<count;++i) {
         const unsigned char* n=(const unsigned char*)(uintptr_t)(base+i*0xa8);
         fwrite(n,1,0xa8,out);
@@ -189,7 +211,7 @@ static void dump_scene(void) {
 // 0x0044d300 locks the surface while drawing and stores its view-origin pixel
 // pointer/pitch at 0x004b7ec0/0x004b7ec4. Capture before 0x0044c780 unlocks it.
 static void __cdecl hook_draw(void) {
-    if (g_out && g_pixels && !(g_frame % (uint32_t)g_pixel_every) && RD8(0x00475620)) dump_scene();
+    if (capture_frame() && RD8(0x00475620)) dump_scene();
     ((rr_frame_fn)0x00450420)();
     g_pixel_written=0;
     if (!g_out || !RD8(0x00475620)) return;
@@ -665,7 +687,8 @@ static int rr_install_hooks(void) {
         {0x00416406, hook_frame_1, {0xe8,0xe5,0xd5,0x02,0}},
         {0x0041656d, hook_frame_2, {0xe8,0x7e,0xd4,0x02,0}},
         {0x00443249, hook_frame_3, {0xe8,0xa2,0x07,0,0}},
-        {0x004439f5, hook_draw, {0xe8,0x26,0xca,0,0}}
+        {0x004439f5, hook_draw, {0xe8,0x26,0xca,0,0}},
+        {0x00443a5c, hook_project, {0xe8,0x0f,0x03,0,0}}
     };
     const unsigned count=sizeof calls/sizeof calls[0];
     // Validate ALL sites before changing ANY. A foreign binary is never patched.
@@ -676,7 +699,7 @@ static int rr_install_hooks(void) {
         }
     }
     for (unsigned i = 0; i < count; ++i) {
-        const uint32_t target=calls[i].site==0x004439f5 ? 0x00450420 : 0x004439f0;
+        const uint32_t target=calls[i].site==0x004439f5 ? 0x00450420 : calls[i].site==0x00443a5c ? 0x00443d70 : 0x004439f0;
         if (!rr_patch_call((uint8_t*)(uintptr_t)calls[i].site, target, calls[i].hook)) {
             // Restore any earlier call sites on a protection failure.
             for (unsigned j = 0; j < i; ++j) {

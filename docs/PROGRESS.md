@@ -152,6 +152,14 @@ Sessions 1–6: September 28, 2026. Later dates are listed per session.
   - native file list instead of Windows file dialogs;
   - interactive play-through on hardware not performed.
 
+### Session 20 (continued): sound, resource unpacking, natural-frame renderer equality
+
+- Race sound and soundtrack added (see the Audio rows in the status table and REVERSE_ENGINEERING.md).
+- PKWARE-implode resource unpacking with CRC checks covers all 163 FAM records. Cel groups (CLGP) and dynamic rider textures are decoded.
+- The oracle `dump_scene` writes the original's display list for each captured frame. Rendering that list natively reproduces 7 natural CITY frames with 0 differing pixels.
+- The oracle DLL now has dump format v3: a memory snapshot before `0x00443d70`, one after the build, and the node list. It is built but **not yet captured with**. A `city-moving` capture (v1 DLL, 900 frames) was still running when the session ended.
+- **Next:** port the scene build (`0x00443af0` subtree, `0x00443d70`/`0x00444630`, ring fill `0x00454240`) as a literal port over an emulated address space. Families need to load and relocate as `0x0044aa80` does, with templates resolved through `0x0044acd0`/`0x0044a870`. Compare emitted nodes against v3 dumps, then replace the placeholder race renderer. After that: HUD/dashboard, traffic/police (plan 05), race MIDI, controls/sound-mix screens, and device validation.
+
 ## Assumptions and approximations in current code
 
 - **Rider commit:** after a split the preview assumes the rider has already committed to the selected branch, so the other road is dropped 82 samples in. In the game this depends on the bike's lateral position (`0x00439390`).

@@ -39,7 +39,8 @@ struct Node {
 
 struct Dump {
     uint32_t version = 0, frame = 0, node_base = 0, capacity = 0;
-    Memory memory;
+    Memory memory;   // state when the display list was complete (v1/v2/v3 post)
+    Memory before;   // v3: state before 0x00443d70 projected the frame (empty if not captured)
     std::vector<Node> nodes;
 };
 
@@ -56,11 +57,15 @@ inline Dump load(const std::string& path) {
     const uint32_t count = word();
     d.node_base = word(); d.capacity = word();
     const uint32_t a = word(), c = word();
-    auto region = [&](uint32_t base, size_t size) { const size_t at = take(size); d.memory.regions.push_back({base, {b.begin() + long(at), b.begin() + long(at + size)}}); };
+    auto region_into = [&](Memory& m, uint32_t base, size_t size) { const size_t at = take(size); m.regions.push_back({base, {b.begin() + long(at), b.begin() + long(at + size)}}); };
+    auto region = [&](uint32_t base, size_t size) { region_into(d.memory, base, size); };
     if (d.version == 1) {
         region(a, 128 * 0x2f8); region(c, 33 * 0x224); region(0x004ba190, 0x1320); region(0x004bb4b0, 33 * 0x240);
     } else if (d.version == 2) {
         for (uint32_t i = 0; i < a; ++i) { const uint32_t base = word(), size = word(); region(base, size); }
+    } else if (d.version == 3) {
+        for (uint32_t i = 0; i < a; ++i) { const uint32_t base = word(), size = word(); region_into(d.before, base, size); }
+        for (uint32_t i = 0; i < c; ++i) { const uint32_t base = word(), size = word(); region(base, size); }
     } else throw std::runtime_error("Unknown scene dump version");
     for (uint32_t i = 0; i < count; ++i) {
         Node n;
