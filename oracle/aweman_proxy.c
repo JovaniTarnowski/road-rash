@@ -653,6 +653,33 @@ static void capture_building_panels(void) {
     }
     rr_log("building.count",128);for(int i=0;i<5;++i)RD32(addresses[i])=saved[i];
 }
+static void capture_actor_selection(uint32_t*,int,int,int);
+static void capture_vehicle_descriptors(void) {
+    const int count=RD8(0x474d88);char key[128];uint32_t output[5];
+    rr_log("vehicle.graphics.count",count);
+    for(int v=0;v<count;++v) {
+        uint32_t* pair=(uint32_t*)(0x474db8+v*8);uint32_t* snac=(uint32_t*)(uintptr_t)pair[0];
+        const uint32_t groups=snac[snac[2]==1?11:3];uint32_t* ccb=(uint32_t*)(uintptr_t)RD32(pair[1]+12);uint32_t saved[20];memcpy(saved,ccb,sizeof saved);
+        snprintf(key,sizeof key,"vehicle.graphics.%d.mask",v);rr_log(key,(uint32_t)RD32(0x4b8fe0+v*4));
+        snprintf(key,sizeof key,"vehicle.graphics.%d.groups",v);rr_log(key,groups);
+        for(uint32_t g=0;g<groups;++g) {
+            uint32_t* metadata=((uint32_t* (__fastcall*)(uint32_t*,int))0x40b5a0)(pair,g);
+            snprintf(key,sizeof key,"vehicle.graphics.%d.%u.count",v,g);rr_log(key,metadata[1]);
+            for(uint32_t f=0;f<metadata[1];++f) {
+                uint32_t flags=0;uint32_t* selected=((uint32_t* (__fastcall*)(uint32_t*,int,int,uint32_t*))0x40b6f0)(pair,g,f,&flags);
+                snprintf(key,sizeof key,"vehicle.graphics.%d.%u.%u.frame",v,g,f);rr_log(key,((uintptr_t)selected-pair[1]-28)/28);
+                snprintf(key,sizeof key,"vehicle.graphics.%d.%u.%u.flags",v,g,f);rr_log(key,flags);
+            }
+        }
+        for(int code=0;code<3;++code) {
+            memset(output,0,sizeof output);const int available=((uint32_t (__fastcall*)(uint32_t*,int*,uint32_t*))0x40b200)(pair,(int*)(0x474da0+code*8),output)&255;
+            snprintf(key,sizeof key,"vehicle.graphics.%d.code.%d.available",v,code);rr_log(key,available);
+            for(int b=0;b<16;++b){snprintf(key,sizeof key,"vehicle.graphics.%d.code.%d.byte.%d",v,code,b);rr_log(key,((unsigned char*)output)[b]);}
+            if(available)capture_actor_selection(output,v+2,v,code);
+        }
+        memcpy(ccb,saved,sizeof saved);
+    }
+}
 static void capture_riding_animation(void) {
     const uint32_t saved_player=RD32(0x4642d8),saved_tick=RD32(0x4b7ecc);const unsigned char saved_limit=RD8(0x4c7ff0);
     int32_t bike[256],actor[256];char key[128];const int8_t initial[]={-1,2,8,3,4,0,1,5,6,9};const int32_t speeds[]={-1,0,299,300,1799,1800,9499,9500,9501,30000};
@@ -703,7 +730,7 @@ static void capture_actor_projection(void) {
 }
 static void capture_actor_selection(uint32_t* descriptor,int bank,int binding,int frame) {
     int32_t actor[128],projection[16],angles[3];char key[128];
-    uint32_t* pair=(uint32_t*)(0x4b9220+bank*8);
+    uint32_t* pair=(uint32_t*)(bank>=2?0x474db8+(bank-2)*8:0x4b9220+bank*8);
     uint32_t* ccb=(uint32_t*)(uintptr_t)RD32(pair[1]+12);uint32_t saved[20];memcpy(saved,ccb,sizeof saved);
     const int32_t yaw[]={-0xff0000,-0x800000,-0x400000,-1,0,1,0x400000,0x7effff,0x7f0000,0x800000,0xff0000,0x1000000};
     for(int c=0;c<48;++c) {
@@ -712,7 +739,7 @@ static void capture_actor_selection(uint32_t* descriptor,int bank,int binding,in
         actor[0x68/4]=yaw[c%12];actor[0x6c/4]=yaw[(c/12)*3];
         projection[0x18/4]=256;projection[0x10/4]=RD32(0x4bc7d8);
         ((void (__fastcall*)(int32_t*,int32_t*,int32_t*))0x413ae0)(actor,angles,projection);
-#define AS_LOG(label,value) do{snprintf(key,sizeof key,"actor.selection.%d.%d.%d.%s",binding,frame,c,label);rr_log(key,value);}while(0)
+#define AS_LOG(label,value) do{snprintf(key,sizeof key,"%s.%d.%d.%d.%s",bank>=2?"vehicle.selection":"actor.selection",binding,frame,c,label);rr_log(key,value);}while(0)
         AS_LOG("yaw",angles[1]);AS_LOG("roll",angles[2]);AS_LOG("heading",actor[0x68/4]);AS_LOG("view_angle",actor[0xd0/4]);
         ((void (__fastcall*)(int32_t*,int32_t*))0x43af60)(actor,projection);
         AS_LOG("frame",ccb[0x40/4]);AS_LOG("flags",actor[0xb8/4]);AS_LOG("selected_roll",actor[0xbc/4]);
@@ -885,6 +912,7 @@ static void dump_groups(void) {
     capture_actor_views();
     capture_actor_projection();
     capture_riding_animation();
+    capture_vehicle_descriptors();
 }
 // Region records: {base, size} then bytes. Version 2 dumps all of .data/.bss and a two-level
 // closure of heap blocks referenced from the course ring, projected slices and scratch blocks.

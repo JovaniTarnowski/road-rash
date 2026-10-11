@@ -1,4 +1,5 @@
 #include "traffic.hpp"
+#include "actor_render.hpp"
 #include "exe_tables.hpp"
 #include <algorithm>
 #include <cstring>
@@ -29,7 +30,7 @@ uint32_t snac_mask(const std::vector<uint8_t>& payload) {
 }
 }
 
-VehicleLibrary::VehicleLibrary(const std::vector<uint8_t>& container) {
+VehicleLibrary::VehicleLibrary(const std::vector<uint8_t>& container,const std::vector<uint8_t>& exe) {
     const auto entries=read_resources(container);
     std::vector<const Resource*> anims,cans;
     for(const auto& e:entries) {
@@ -41,6 +42,7 @@ VehicleLibrary::VehicleLibrary(const std::vector<uint8_t>& container) {
     // missing animation, and that index becomes the vehicle count DAT_00474d88.
     std::sort(anims.begin(),anims.end(),[](const Resource* a,const Resource* b){return a->id<b->id;});
     std::sort(cans.begin(),cans.end(),[](const Resource* a,const Resource* b){return a->id<b->id;});
+    std::vector<uint8_t> inherited_cans;
     for(size_t i=0;i<anims.size();++i) {
         if(anims[i]->id!=i+1)break;    // FUN_004153a0('MINA', i+1) miss ends the loop
         Vehicle v;
@@ -48,9 +50,22 @@ VehicleLibrary::VehicleLibrary(const std::vector<uint8_t>& container) {
             container.begin()+anims[i]->offset+anims[i]->size));
         // 'CANS' entries pair sequentially (the original counts its own hits).
         if(!cans.empty() && cans.front()->id==vehicles_.size()+1) {
-            v.mask=snac_mask(std::vector<uint8_t>(container.begin()+cans.front()->offset,
-                container.begin()+cans.front()->offset+cans.front()->size));
+            inherited_cans={container.begin()+cans.front()->offset,container.begin()+cans.front()->offset+cans.front()->size};
+            v.mask=snac_mask(inherited_cans);
             cans.erase(cans.begin());
+        }
+        // 0x004465f0 falls back to the previous pair's CANS pointer.
+        if(!inherited_cans.empty())v.mask=snac_mask(inherited_cans);
+        if(!exe.empty()) {
+            if(inherited_cans.empty())throw std::runtime_error("Missing initial vehicle CANS");
+            v.views=read_actor_graphics(inherited_cans);
+            for(int code=0;code<3;++code) {
+                const auto sequence=read_actor_sequence(inherited_cans,read_exe_data(exe,0x474da0+code*8,8));
+                if(!sequence){v.playback.push_back(std::nullopt);continue;}
+                ActorSequence frames;for(const auto& descriptor:*sequence)frames.push_back(descriptor.playback);
+                v.playback.push_back(std::move(frames));
+            }
+            for(const auto& group:v.views)for(const auto& cell:group)if(cell.frame>=v.animation.frames.size())throw std::runtime_error("Vehicle CANS reference outside RRAN");
         }
         vehicles_.push_back(std::move(v));
         if(vehicles_.size()>=15)break;    // original stops after index 14
@@ -205,6 +220,21 @@ void TrafficSystem::append_snapshot(std::vector<FieldValue>& out) const {
     }
 }
 
+std::optional<DrawNode> traffic_car_node(const Vehicle& vehicle,const TrafficCar& car,
+    const RoadSlice& near,const RoadSlice& far,int road,const RouteSample& sample,
+    const Camera& camera,const DepthTable& depths,int32_t camera_q8,int32_t ceiling) {
+    if(vehicle.playback.size()!=3)return std::nullopt;
+    const int64_t distance=std::abs(int64_t(car.position)-camera_q8);
+    const size_t code=distance>0xa00 && vehicle.playback[2]?2:distance>0x500 && vehicle.playback[1]?1:0;
+    const auto& sequence=vehicle.playback[code];if(!sequence || sequence->empty())return std::nullopt;
+    const auto& a=near.road[road];const auto& b=far.road[road];
+    ActorOrientation orientation;orientation.depth=near.depth;orientation.position=car.position;orientation.road_x=a.road_x+camera.x;orientation.lateral_q8=car.lateral-sample.offset*256;orientation.road_heading=a.heading;orientation.heading=car.kind==2?-0x800000:0;
+    const auto angles=actor_angles(orientation,camera.x);
+    const auto selected=select_actor_view(sequence->front(),vehicle.views,angles.yaw,angles.roll);
+    const auto& cell=vehicle.views.at(selected.group).at(selected.subframe);const auto& frame=vehicle.animation.frames.at(cell.frame);
+    ActorProjection projection;projection.road_x=orientation.road_x;projection.far_x=b.road_x+camera.x;projection.road_y=a.world_y;projection.far_y=b.world_y;projection.lateral=orientation.lateral_q8/256;projection.depth=near.depth;projection.fraction=uint8_t(car.position);projection.size=0x500;projection.flags=cell.flags;projection.occlusion=ceiling;
+    return actor_node(frame,frame.texture.get(),projection,camera,depths);
+}
 std::vector<DrawNode> traffic_draw_nodes(const TrafficSystem& system,
     const std::vector<RouteSample>& route,const std::vector<RoadSlice>& slices,
     const Camera& camera,const DepthTable& depths,int32_t camera_q8,uint32_t tick) {

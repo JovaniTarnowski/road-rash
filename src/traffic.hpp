@@ -1,5 +1,6 @@
 #pragma once
 #include "animation.hpp"
+#include "actor_descriptors.hpp"
 #include "cel.hpp"
 #include "course.hpp"
 #include "race.hpp"
@@ -17,16 +18,18 @@ namespace rr {
 // the original loader 0x004465f0: vehicle i pairs the i-th 'ANIM' (RRAN)
 // animation with the i-th 'CANS' wrapper when present. The vehicle mask
 // 0x004b8fe0[i] is the CCB flags word inside the CANS 'SNAC' wrapper, read
-// through the 0x0040b5f0/0x0040b620 chain; vehicles without a CANS keep the
-// zero-initialised mask, which accepts every speed class.
+// through the 0x0040b5f0/0x0040b620 chain; vehicles without a CANS inherit the
+// previous pair's wrapper, as measured against the original initializer.
 struct Vehicle {
     Animation animation;
     uint32_t mask = 0;
+    ActorGraphicsGroups views;
+    ActorAnimationBank playback;
 };
 class VehicleLibrary {
 public:
     // Throws std::runtime_error on malformed container entries.
-    explicit VehicleLibrary(const std::vector<uint8_t>& cars_container);
+    explicit VehicleLibrary(const std::vector<uint8_t>& cars_container,const std::vector<uint8_t>& exe={});
     const std::vector<Vehicle>& vehicles() const { return vehicles_; }
     // 0x0044df60 type choice: accepted vehicles are those whose mask selects
     // no speed class ((mask & 0x1c0000) == 0) or the class matching the kind
@@ -104,6 +107,12 @@ private:
     uint32_t serial_ = 0;                       // DAT_004b7e98
     uint8_t sprite_size_ = 10;
 };
+
+// 0x004467e0 / 0x0044e710 selects one of three one-frame descriptor
+// sequences by distance; 0x00446830 emits the actor billboard.
+std::optional<DrawNode> traffic_car_node(const Vehicle&,const TrafficCar&,
+    const RoadSlice&,const RoadSlice&,int road,const RouteSample&,
+    const Camera&,const DepthTable&,int32_t camera_q8,int32_t ceiling);
 
 // Display nodes for the active cars, ordered far to near. The projection
 // follows the verified scenery path (scenery_node) with the depth-table scale

@@ -93,7 +93,7 @@ struct Game {
         traffic.reset();
         if(assets.exists("DATA/CARS/"+course_name+".CAR")) {
             try {
-                vehicles=std::make_unique<rr::VehicleLibrary>(assets.read("DATA/CARS/"+course_name+".CAR"));
+                vehicles=std::make_unique<rr::VehicleLibrary>(assets.read("DATA/CARS/"+course_name+".CAR"),exe);
                 traffic=std::make_unique<rr::TrafficSystem>(*vehicles,exe);
                 traffic->configure(6);
             } catch(const std::exception&) {traffic.reset();}
@@ -115,16 +115,27 @@ struct Game {
         countdown = countdown_ticks;
     }
     std::vector<rr::DrawNode> rider_nodes(const rr::RoadSlice& near,const rr::RoadSlice& far,int road,int32_t ceiling,bool back)const {
-        std::vector<size_t> visible;
+        struct Visible {int32_t position;size_t index;bool car;};
+        std::vector<Visible> visible;
         for(size_t i=0;i<race->riders().size();++i) {
             const auto& rd=race->riders()[i];const auto pos=uint32_t(rd.bike.i32(0x1c));
             if(rd.bike.i32(0x2f4) || (pos>>8)!=near.sample || ((pos&255)>=128)!=back || !actor_states[i].selected)continue;
             if(near.count==2 && rd.route!=road)continue;
-            visible.push_back(i);
+            visible.push_back({rd.bike.i32(0x1c),i,false});
         }
-        std::stable_sort(visible.begin(),visible.end(),[&](size_t a,size_t b){return race->riders()[a].bike.i32(0x1c)>race->riders()[b].bike.i32(0x1c);});
+        if(traffic && road==near.own)for(size_t i=0;i<traffic->cars().size();++i) {
+            const auto& car=traffic->cars()[i];const auto pos=uint32_t(car.position);
+            if(car.active && (pos>>8)==near.sample && ((pos&255)>=128)==back)visible.push_back({car.position,i,true});
+        }
+        std::stable_sort(visible.begin(),visible.end(),[](const Visible& a,const Visible& b){return a.position>b.position;});
         std::vector<rr::DrawNode> output;
-        for(size_t i:visible) {
+        for(const auto& item:visible) {
+            const size_t i=item.index;
+            if(item.car) {
+                const auto& car=traffic->cars()[i];
+                if(auto node=rr::traffic_car_node(traffic->library().vehicles().at(car.vehicle),car,near,far,road,race->route().at(near.sample),race->camera(),depth,int32_t(race->camera_position()),ceiling))output.push_back(*node);
+                continue;
+            }
             const auto& rd=race->riders()[i];const auto& bike=rd.bike;const auto& sample=race->route_of(rd).at(near.sample);
             const auto& a=near.road[road];const auto& b=far.road[road];const auto camera=race->camera();
             rr::ActorOrientation orientation;orientation.depth=near.depth;orientation.position=bike.i32(0x1c);orientation.road_x=a.road_x+camera.x;orientation.lateral_q8=bike.i32(0x28)-sample.offset*256;orientation.road_heading=a.heading;orientation.heading=bike.i32(0x5c);orientation.roll=bike.i32(0x60);orientation.rider=true;
@@ -247,12 +258,6 @@ struct CourseCanvas {
     void draw(SDL_Renderer* renderer,const Game& game,const std::vector<rr::RoadSlice>& slices) {
         game.scene->draw_horizon(frame,game.race->horizon_scroll());
         rr::render_nodes(frame,game.scene->draw_nodes(game.race->route(),slices,game.race->camera(),game.depth,[&](const rr::RoadSlice& near,const rr::RoadSlice& far,int road,int32_t ceiling,bool back){return game.rider_nodes(near,far,road,ceiling,back);}),rr::view_mode(true),16);
-        // Traffic between the composed scene and the rider sprites; car/rider
-        // overlap order is a native approximation until the original's
-        // per-object dispatch order is ported.
-        if(game.traffic)
-            rr::render_nodes(frame,rr::traffic_draw_nodes(*game.traffic,game.race->route(),slices,
-                game.race->camera(),game.depth,int32_t(game.race->camera_position()),uint32_t(game.race->ticks())),rr::view_mode(true),16);
         frame.to_rgba(game.palette,rgba.data(),640*4);
         if(!texture) {
             texture=SDL_CreateTexture(renderer,SDL_PIXELFORMAT_RGBA32,SDL_TEXTUREACCESS_STREAMING,640,480);

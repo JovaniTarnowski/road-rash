@@ -388,3 +388,5 @@ construction or live merged actor drawing. REA static evidence is retained in
 `analysis/oracle/rea-actor-animation.json`.
 
 Actor graphics fixtures (`analysis/oracle/napa-actor-animation-fixtures.tsv`): 672 CANS/RRAN view cells, 9,312 descriptor view selections, and 256 orientation/projection cases (235 accepted billboards) match original private calls. `actor_descriptors-test` checks selected frame, flags, roll and hotspots; `actor_render-test` checks visibility and all Q16 corners. `actor_nodes-test` exercises owned HI Bob/copy/shadow pages and their stable ownership. Runtime fixture capture restores modified graphics CCBs and projection globals. These module checks do not establish live race ordering or animation-trigger parity.
+
+`actor_traffic-test` checks all ten original Napa car masks (including inherited CANS), 207 graphics cells, 30 playback descriptors and 1,440 yaw/lean view selections against runtime helper captures in the actor fixture. Car live rendering uses the verified `actor_node` projection; per-car movement-derived heading and complete object-chain ordering still require race goldens.
