@@ -29,6 +29,67 @@ static int g_groups;
 static int g_drive;
 static int readable(uintptr_t p,size_t size);
 
+/* Plan 10 simulation oracle: per-tick dumps of riders and cars. */
+#include "sim_fields.h"
+void rr_log(const char* key, long long value);
+static uint32_t* sim_rand_state(void);
+#ifndef RD32
+#define RD32(a) (*(volatile int32_t*)(uintptr_t)(a))
+#define RD8(a) (*(volatile uint8_t*)(uintptr_t)(a))
+#endif
+static int g_sim;
+static int g_seed = -1, g_seed_applied;
+static int g_race_started;
+static FILE* g_record;
+static FILE* g_input;
+static int g_input_exhausted_tick = -1;
+static uint32_t g_sim_frames;
+static int32_t g_first_tick = -1;
+static int g_solo;
+
+/* Solo isolation (plan 10 task 5): freeze every scheduler node except
+ * the player bike and the player rider-half. 0x00437e60 skips NULL
+ * think (+0xe0) and NULL move (+0xe4), so zeroing both safely parks a
+ * node against every dispatch path (scheduler and direct calls). The
+ * traffic pool is nulled, so 0x0044df60 never places cars. Frozen
+ * opponents still occupy the track; contact with them is deterministic.
+ * The player half (think 0x00434660 at the player's position on the
+ * first step) stays live. */
+static void sim_freeze_others(void) {
+    const uintptr_t player = (uint32_t)RD32(0x004642d8);
+    const int32_t ppos = readable(player + 0x20, 4) ? (int32_t)*(uint32_t*)(player + 0x1c) : 0;
+    if (!readable(0x0046dcc8, 4)) return;
+    const uintptr_t S = (uint32_t)RD32(0x0046dcc8);
+    if (!readable(S, 4)) return;
+    const uintptr_t end = (uint32_t)*(uint32_t*)S;
+    uintptr_t node = 0;
+    if (readable(S + 4, 4)) {
+        const uintptr_t cursor = (uint32_t)*(uint32_t*)(S + 4);
+        if (readable(cursor + 4, 4)) node = (uint32_t)*(uint32_t*)(cursor + 4);
+    }
+    for (int guard = 0; node && node != end && guard < 512; ++guard) {
+        if (!readable(node, 0xe8)) break;
+        if (node != player) {
+            const uint32_t think = (uint32_t)*(uint32_t*)(node + 0xe0);
+            int spare = 0;
+            if (think == 0x00434660 && readable(node + 0x20, 4)) {
+                const int32_t npos = (int32_t)*(uint32_t*)(node + 0x1c);
+                if (npos > ppos - 256 && npos < ppos + 256) spare = 1;
+            }
+            if (!spare) {
+                DWORD old;
+                if (VirtualProtect((void*)node, 0xe8, PAGE_EXECUTE_READWRITE, &old)) {
+                    *(uint32_t*)(node + 0xe0) = 0;
+                    *(uint32_t*)(node + 0xe4) = 0;
+                    VirtualProtect((void*)node, 0xe8, old, &old);
+                }
+            }
+        }
+        node = (uint32_t)*(uint32_t*)(node + 4);
+    }
+    RD32(0x0049e654) = 0;
+}
+
 // Test-only bootstrap through the original race setup. Avoid waiting for the
 // interactive intro/menu during capture; never modify the installed executable.
 static uint32_t __fastcall hook_menu_video(int screen) {
@@ -40,8 +101,20 @@ static void __fastcall hook_menu_enter(int screen) {
     // credits first would leave its timer running after race setup freed the
     // menu surfaces, making subsequent oracle frames fault in that timer.
     ((void (__fastcall*)(int))0x00421df0)(g_capture_course?g_capture_course:screen);
+    if (g_sim && g_seed >= 0 && !g_race_started) {
+        // Pin the stream before race setup (rider building consumes rand):
+        // identical runs then build identical grids. Only the first entry
+        // seeds; later menus must not reset a live race stream.
+        uint32_t* st = sim_rand_state();
+        if (st) *st = (uint32_t)g_seed;
+        g_seed_applied = 1;
+    }
+    g_race_started = 1;
 }
 static uint32_t __cdecl hook_controls(void) {
+    // Input files are consumed per step in hook_step (one word per tick);
+    // consuming here per poll would eat words on stepless menu frames.
+    if (g_input) return ((uint32_t(__cdecl*)(void))0x0044f800)();
     if(!g_drive)return ((uint32_t (__cdecl*)(void))0x0044f800)();
     uint32_t controls=1; // original accelerate bit
     if(g_drive==2) {
@@ -55,6 +128,221 @@ static uint32_t __cdecl hook_controls(void) {
         }
     }
     return controls;
+}
+
+/* Live CRT rand state (plan 10 task 1): 0x00455eb0 advances the MSVC seed at
+ * getptd()+0x14 (0x004592b0 is _getptd). DAT_0049bce8 is only live in rand
+ * mode 3, so the seed hook writes here instead. */
+static uint32_t* sim_rand_state(void) {
+    void* ptd = ((void*(__cdecl*)(void))0x004592b0)();
+    if (!ptd || !readable((uintptr_t)ptd, 0x18)) return 0;
+    return (uint32_t*)((char*)ptd + 0x14);
+}
+
+/* Diagnostic rand-call counter (RR_ORACLE_RANDCOUNT=1): entry-patches
+ * 0x00455eb0 (first 5 bytes are `call 0x4592b0`) with a jump to an exact
+ * reimplementation that counts calls and records the tick-1 caller. */
+static uint8_t g_rand_orig[5];
+static uint32_t g_rand_calls, g_step_start_calls;
+static uint32_t g_tick1_caller;
+static int32_t g_randtrace_tick = -1;
+static uint32_t g_randtrace_callers[64];
+static int g_randtrace_count;
+static int g_randlog_all;
+static uint32_t g_randlog_tick[32768];
+static uint32_t g_randlog_caller[32768];
+static int g_randlog_count;
+static int g_randlog_flushed;
+static void dump_randlog(void) {
+    char key[64];
+    while (g_randlog_flushed < g_randlog_count) {
+        snprintf(key, sizeof key, "randlog.%d", g_randlog_flushed);
+        rr_log(key, (long long)g_randlog_tick[g_randlog_flushed] * 4294967296ll + g_randlog_caller[g_randlog_flushed]);
+        ++g_randlog_flushed;
+    }
+}
+static uint32_t sim_rand_step(void) {
+    uint32_t* st = sim_rand_state();
+    if (!st) return 0;
+    uint32_t s = *st;
+    *st = s * 0x343fdu + 0x269ec3u;
+    return (*st >> 16) & 0x7fff;
+}
+static uint32_t __cdecl hook_rand_count(void) {
+    void* caller = __builtin_return_address(0);
+    ++g_rand_calls;
+    if (g_first_tick < 0 && !g_tick1_caller) g_tick1_caller = (uint32_t)(uintptr_t)caller;
+    if (g_randtrace_tick >= 0 && RD32(0x004b7ecc) == g_randtrace_tick && g_randtrace_count < 64)
+        g_randtrace_callers[g_randtrace_count++] = (uint32_t)(uintptr_t)caller;
+    if (g_randlog_all && g_race_started && g_randlog_count < 32768) {
+        g_randlog_tick[g_randlog_count] = (uint32_t)RD32(0x004b7ecc);
+        g_randlog_caller[g_randlog_count] = (uint32_t)(uintptr_t)caller;
+        ++g_randlog_count;
+    }
+    return sim_rand_step();
+}
+static void sim_patch_rand_entry(void) {
+    static const uint8_t expect[5] = {0xe8, 0xfb, 0x33, 0, 0};
+    uint8_t* site = (uint8_t*)0x00455eb0;
+    if (memcmp(site, expect, 5)) return;
+    memcpy(g_rand_orig, site, 5);
+    DWORD old;
+    if (!VirtualProtect(site, 5, PAGE_EXECUTE_READWRITE, &old)) return;
+    site[0] = 0xe9;
+    int32_t rel = (int32_t)((uint8_t*)hook_rand_count - (site + 5));
+    memcpy(site + 1, &rel, 4);
+    VirtualProtect(site, 5, old, &old);
+    FlushInstructionCache(GetCurrentProcess(), site, 5);
+}
+
+static long long sim_field_value(uintptr_t base, uint32_t offset, uint8_t width, uint8_t is_signed) {
+    if (width == 1) {
+        if (!readable(base + offset, 1)) return -1;
+        uint8_t v = *(volatile uint8_t*)(base + offset);
+        return is_signed ? (long long)(int8_t)v : (long long)v;
+    }
+    if (!readable(base + offset, 4)) return -1;
+    uint32_t v = *(volatile uint32_t*)(base + offset);
+    return is_signed ? (long long)(int32_t)v : (long long)v;
+}
+
+/* One golden frame per simulation tick. Riders key by discovery order with
+ * the player (node == DAT_004642d8) pinned to rider.0; grid-slot mapping of
+ * opponents is open (plan 10 task 6). Cars and other nodes are dumped raw. */
+static void dump_sim_tick(void) {
+    char key[96];
+    const int32_t tick = RD32(0x004b7ecc);
+    if (g_first_tick < 0) {
+        g_first_tick = tick;
+        fprintf(g_out, "frame\t0\n");
+        rr_log("course", g_capture_course);
+        rr_log("level", RD8(0x004b8a12));
+        rr_log("bike", -1);
+        rr_log("character", -1);
+        rr_log("seed", g_seed);
+        rr_log("solo", g_solo);
+        if (g_tick1_caller) rr_log("tick1_caller", (long long)g_tick1_caller);
+    } else {
+        fprintf(g_out, "frame\t%u\n", g_sim_frames);
+    }
+    rr_log("tick", tick);
+    uint32_t* rst = sim_rand_state();
+    rr_log("rng", rst ? (long long)*rst : -1);
+    rr_log("rng_calls", (long long)(g_rand_calls - g_step_start_calls));
+    if (g_randtrace_tick == tick)
+        for (int i = 0; i < g_randtrace_count; ++i) {
+            snprintf(key, sizeof key, "randtrace.%d", i);
+            rr_log(key, (long long)g_randtrace_callers[i]);
+        }
+    rr_log("controls", (long long)(uint32_t)RD32(0x004b7ed0));
+    if (g_record) { fprintf(g_record, "%x\n", (uint32_t)RD32(0x004b7ed0)); fflush(g_record); }
+    const uintptr_t player = (uint32_t)RD32(0x004642d8);
+    int rider_index = 1, node_index = 0;
+    /* Scheduler ring (0x00438170, see disassembly): S = [0x46dcc8],
+     * end = [S], start = [[S+4]+4], links at +0x4, think at +0xe0. */
+    if (readable(0x0046dcc8, 4)) {
+        const uintptr_t S = (uint32_t)RD32(0x0046dcc8);
+        const uintptr_t end = (readable(S, 4)) ? (uint32_t)*(uint32_t*)S : 0;
+        uintptr_t node = 0;
+        if (readable(S + 4, 4)) {
+            const uintptr_t cursor = (uint32_t)*(uint32_t*)(S + 4);
+            if (readable(cursor + 4, 4)) node = (uint32_t)*(uint32_t*)(cursor + 4);
+        }
+        if (g_sim_frames == 0) {
+            rr_log("probe.S", (long long)S);
+            rr_log("probe.end", (long long)end);
+            rr_log("probe.player", (long long)player);
+        }
+        for (int guard = 0; node && node != end && guard < 512; ++guard) {
+            if (!readable(node, 0xe4)) break;
+            int slot = -1;
+            if (node == player) slot = 0;
+            else {
+                const uint32_t think = (uint32_t)*(uint32_t*)(node + 0xe0);
+                if (think == 0x00407a90 || think == 0x00434660) slot = rider_index++;
+            }
+            if (slot >= 0) {
+                snprintf(key, sizeof key, "rider.%d.think", slot);
+                rr_log(key, sim_field_value(node, 0xe0, 4, 0));
+                for (unsigned f = 0; f < RR_SIM_RIDER_FIELD_COUNT; ++f) {
+                    const uint32_t off = rr_sim_rider_fields[f].offset;
+                    /* Only bike-half words are mapped (see REVERSE_ENGINEERING.md).
+                     * The slice pointer is process-specific: keep it as debug-only
+                     * slice_ptr. Rider-half words (stamina/weapon/ai_*) are
+                     * omitted until their object is traced. */
+                    if (off != 0x1c && off != 0x28 && off != 0x20 && off != 0xf4 &&
+                        off != 0xec && off != 0x23c && off != 0x2f0 && off != 0x2f4 &&
+                        off != 0xc0 && off != 0x140) continue;
+                    if (off == 0x140) {
+                        snprintf(key, sizeof key, "rider.%d.slice_ptr", slot);
+                        rr_log(key, sim_field_value(node, off, 4, 0));
+                        continue;
+                    }
+                    snprintf(key, sizeof key, "rider.%d.%s", slot, rr_sim_rider_fields[f].name);
+                    rr_log(key, sim_field_value(node, off,
+                           rr_sim_rider_fields[f].width, rr_sim_rider_fields[f].is_signed));
+                }
+                /* Rider-half raw window: the brain lives at *(bike+0x2fc)
+                 * (weapon +0x1d4, invuln +0x1d0, AI words). Values are
+                 * compared across runs; pointers are stable in practice. */
+                if (readable(node + 0x2fc, 4)) {
+                    const uintptr_t rh = (uint32_t)*(uint32_t*)(node + 0x2fc);
+                    for (unsigned w = 0; w < 16; ++w) {
+                        snprintf(key, sizeof key, "rider.%d.raw_%x", slot, 0x180 + 4 * w);
+                        rr_log(key, sim_field_value(rh, 0x180 + 4 * w, 4, 1));
+                    }
+                }
+            } else {
+                snprintf(key, sizeof key, "node.%d.think", node_index);
+                rr_log(key, sim_field_value(node, 0xdc, 4, 0));
+                snprintf(key, sizeof key, "node.%d.position", node_index);
+                rr_log(key, sim_field_value(node, 0x1c, 4, 1));
+                snprintf(key, sizeof key, "node.%d.kind", node_index);
+                rr_log(key, sim_field_value(node, 0x73, 1, 0));
+                ++node_index;
+            }
+            node = (uint32_t)*(uint32_t*)(node + 4);
+        }
+    }
+    rr_log("riders", rider_index);
+    ++g_sim_frames;
+    if (g_randlog_all) dump_randlog();
+    fflush(g_out);
+    if (g_input_exhausted_tick >= 0 && tick >= g_input_exhausted_tick + 0xb4) {
+        fputs("end\n", g_out); fclose(g_out); g_out = NULL;
+        ExitProcess(0);
+    }
+}
+
+/* Per-step hook at 0x0044b324 (call 0x0044b3b0). The tick counters increment
+ * before the call, so the dump after the original sees the new tick. Steps
+ * before the bootstrapped race entry (startup 0x0044b2e0(1) calls) are
+ * skipped via g_race_started. */
+static void __cdecl hook_step(void) {
+    // The seed fixes the live stream before the race's first step consumes
+    // it, so the golden rng after tick 0 equals f(seed) on both sides.
+    if (g_sim && g_race_started && !g_seed_applied && g_seed >= 0) {
+        uint32_t* st = sim_rand_state();
+        if (st) *st = (uint32_t)g_seed;
+        g_seed_applied = 1;
+    }
+    g_step_start_calls = g_rand_calls;
+    if (g_sim && g_race_started && g_solo) sim_freeze_others();
+    if (g_sim && g_race_started && g_input && g_out) {
+        // Control replay (plan 10): one hex word per tick, overriding the
+        // frame poll. Menus produce no steps, so no words are lost there.
+        // At end of file the player coasts (0); the dump quits 0xb4 ticks
+        // after exhaustion.
+        unsigned w;
+        if (fscanf(g_input, "%x", &w) == 1) RD32(0x004b7ed0) = (int32_t)w;
+        else {
+            RD32(0x004b7ed0) = 0;
+            if (g_input_exhausted_tick < 0) g_input_exhausted_tick = RD32(0x004b7ecc);
+        }
+    }
+    ((void(__cdecl*)(void))0x0044b3b0)();
+    if (!g_sim || !g_race_started || !g_out) return;
+    dump_sim_tick();
 }
 
 /* Ordinal 2 of the original AWEMAN32.DLL, loaded from AWEMAN_REAL.DLL.
@@ -998,7 +1286,7 @@ static void dump_frame(uint32_t site) {
 #define FRAME_HOOK(n, site) \
     static void __cdecl hook_frame_##n(void) { \
         orig_frame(); \
-        if (g_out) dump_frame(site); \
+        if (g_out && !g_sim) dump_frame(site); \
         ++g_frame; \
         if (g_quit_after > 0 && g_frame >= (uint32_t)g_quit_after) { \
             if (g_out) { fputs("end\n", g_out); fclose(g_out); g_out = NULL; } \
@@ -1011,13 +1299,21 @@ FRAME_HOOK(2, 0x0041656d)
 FRAME_HOOK(3, 0x00443249)
 
 static int rr_install_hooks(void) {
-    char buf[32];
+    char buf[32], path[MAX_PATH];
     if (GetEnvironmentVariableA("RR_ORACLE_FRAMES", buf, sizeof buf)) g_quit_after = atoi(buf);
     if (GetEnvironmentVariableA("RR_ORACLE_PIXELS",buf,sizeof buf)) g_pixels=atoi(buf)!=0;
     if (GetEnvironmentVariableA("RR_ORACLE_GROUPS",buf,sizeof buf)) g_groups=atoi(buf)!=0;
     if (GetEnvironmentVariableA("RR_ORACLE_DRIVE",buf,sizeof buf)) {
         g_drive=atoi(buf);if(g_drive<0 || g_drive>2)return 0;
     }
+    if (GetEnvironmentVariableA("RR_ORACLE_SIM",buf,sizeof buf)) g_sim=atoi(buf)!=0;
+    if (GetEnvironmentVariableA("RR_ORACLE_SEED",buf,sizeof buf)) g_seed=atoi(buf);
+    if (GetEnvironmentVariableA("RR_ORACLE_RECORD",path,sizeof path) && path[0]) g_record=fopen(path,"w");
+    if (GetEnvironmentVariableA("RR_ORACLE_INPUT",path,sizeof path) && path[0]) g_input=fopen(path,"r");
+    if (GetEnvironmentVariableA("RR_ORACLE_RANDCOUNT",buf,sizeof buf) && atoi(buf)) sim_patch_rand_entry();
+    if (GetEnvironmentVariableA("RR_ORACLE_RANDTRACE",buf,sizeof buf)) g_randtrace_tick = atoi(buf);
+    if (GetEnvironmentVariableA("RR_ORACLE_RANDLOG",buf,sizeof buf)) g_randlog_all = atoi(buf)!=0;
+    if (GetEnvironmentVariableA("RR_ORACLE_SOLO",buf,sizeof buf)) g_solo = atoi(buf)!=0;
     env("RR_ORACLE_RASTER",buf,sizeof buf,"0");g_raster=atoi(buf);
     if (GetEnvironmentVariableA("RR_ORACLE_SHOT_EVERY",buf,sizeof buf) && atoi(buf)>0) g_pixel_every=atoi(buf);
     if(GetEnvironmentVariableA("RR_ORACLE_COURSE",buf,sizeof buf)) {
@@ -1035,6 +1331,7 @@ static int rr_install_hooks(void) {
         {0x004439f5,0x00450420, hook_draw, {0xe8,0x26,0xca,0,0}},
         {0x00443a5c,0x00443d70, hook_project, {0xe8,0x0f,0x03,0,0}},
         {0x00442ea8,0x0044f800, hook_controls, {0xe8,0x53,0xc9,0,0}},
+        {0x0044b324,0x0044b3b0, hook_step, {0xe8,0x87,0,0,0}},
         {0x00448381,0x00449150, hook_menu_video, {0xe8,0xca,0x0d,0,0}},
         {0x00448392,0x00421df0, hook_menu_enter, {0xe8,0x59,0x9a,0xfd,0xff}}
     };

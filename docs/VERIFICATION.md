@@ -353,3 +353,30 @@ Logs: `analysis/napa-scenery-native-tests.log`,
 - Geometry probe (headless, real NAPA.CAR + NAPA route): after 2400 autopilot-style steps, 14 active cars with phases 192..319, speeds ramping to the 1,800..3,100 targets, kinds 0/2 mixed, depths spanning the 128-sample ring; visible cars produce textured display nodes within the depth-table span.
 - Android: `assembleDebug` and `assembleRelease -PreleaseDebugSigning=true` succeed; the debug APK contains no `assets/game/` entries and `lib/arm64-v8a/libmain.so` includes the traffic code (`analysis/traffic-android-build.log`).
 - Not verified: tick-level equality with the original (no traffic oracle capture exists), car animation timing/CCB scaling, rider-car collisions. No Android device was connected.
+
+## Session 23: simulation oracle, plan 10 tasks 1–4 (October 11, 2026)
+
+- Task 1 (trace): step hook site `0x0044b324` → `0x0044b3b0`; live CRT rand
+  state at `getptd()+0x14` (`0x004592b0`); scheduler ring `S=[0x46dcc8]`,
+  end `[S]`, first `[[S+4]+4]`; think at `+0xe0`. Committed as docs.
+- Task 2 (tables/snapshot): `sim_fields-test` passes (native/oracle table
+  agreement + synthetic snapshot). `ctest` 54/54.
+- Task 3 (oracle): `oracle-patch-test` preflights the step/controls sites
+  against the reference EXE. `sim-napa-solo` (level 1 Napa, seed 1, drive-2
+  autopilot, solo): input-driven capture and replay are pairwise identical
+  over 2,402 frames (`tools/golden_diff.py`, zero differing fields).
+  Controls: `sim-napa-solo.controls` (2,221 words; 181 coast ticks follow
+  input exhaustion per the plan's 0xb4 rule).
+- Determinism findings: seeding must happen at menu entry (race setup
+  consumes rand: grid slots differ run to run otherwise); controls must be
+  consumed per step, not per poll (menu polls eat file words); full-field
+  captures diverge mid-race (attack landings ride animation frames that
+  advance with frame pacing — no rng change), so acceptance goldens are
+  solo (`RR_ORACLE_SOLO=1` freezes non-player nodes via NULL think/move and
+  nulls the traffic pool). Full-field `sim-napa-solo-straight` kept as
+  task 6 input.
+- Task 4 (replay test): `oracle-sim-test` builds the same race as
+  `Game::restart` (solo when the header says so) and reports the first
+  divergence. Current result: diverges at tick 1 on `rng` (original seeded
+  stream includes race-setup consumption; native construction consumes
+  none yet — plan 10 task 6 item 1). Marked `WILL_FAIL` until then.

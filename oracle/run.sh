@@ -17,6 +17,7 @@ export RR_ORACLE_GROUPS="${RR_ORACLE_GROUPS:-}"
 export RR_ORACLE_DRIVE="${RR_ORACLE_DRIVE:-}"
 export RR_ORACLE_RASTER="${RR_ORACLE_RASTER:-}"
 export RR_ORACLE_PIXELS="${RR_ORACLE_PIXELS:-}" RR_ORACLE_SHOT_EVERY="${RR_ORACLE_SHOT_EVERY:-}"
+export RR_ORACLE_SIM="${RR_ORACLE_SIM:-}"
 [ -d "$ROOT/cdrom/ROADRASH" ] || hdiutil attach -readonly -nobrowse -mountpoint "$ROOT/cdrom" "$ROOT/Road Rash (USA) (En,Fr,De,Es,It) (Rerelease) (19970930).iso" >/dev/null
 ln -sfn "$ROOT/cdrom" "$WINEPREFIX/dosdevices/d:"
 rm -f "$WINEPREFIX/drive_c/oracle-$NAME.tsv"
@@ -36,6 +37,11 @@ else
 fi
 mkdir -p "$ROOT/native-port/analysis/oracle"
 cp "$WINEPREFIX/drive_c/oracle-$NAME.tsv" "$ROOT/native-port/analysis/oracle/$NAME.tsv"
+if [ -n "$RR_ORACLE_RECORD" ]; then
+    ctrl="$RR_ORACLE_RECORD"
+    case "$ctrl" in 'C:\'*) ctrl="${ctrl#C:\\}" ;; esac
+    [ -f "$WINEPREFIX/drive_c/$ctrl" ] && cp "$WINEPREFIX/drive_c/$ctrl" "$ROOT/native-port/analysis/oracle/$NAME.controls"
+fi
 for frame in "$WINEPREFIX/drive_c/$NAME"-f*.raw "$WINEPREFIX/drive_c/$NAME"-raster*.raw "$WINEPREFIX/drive_c/$NAME"-texture*.raw "$WINEPREFIX/drive_c/$NAME"-cel*.raw "$WINEPREFIX/drive_c/$NAME"-nodes*.raw "$WINEPREFIX/drive_c/$NAME"-panels*.raw "$WINEPREFIX/drive_c/$NAME"-scene*.raw; do
     [ -f "$frame" ] || continue
     cp "$frame" "$ROOT/native-port/analysis/oracle/"
