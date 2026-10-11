@@ -8,7 +8,7 @@
 #include <iostream>
 using Bytes=std::vector<uint8_t>;
 static void word(Bytes& b,size_t p,uint32_t v){for(int i=0;i<4;++i)b[p+i]=uint8_t(v>>(8*i));}
-int main() {
+int main(int argc,char** argv) {
     int failures=0;auto check=[&](bool ok,const char* what){if(!ok){++failures;std::cerr<<what<<'\n';}};
     Bytes b(176);word(b,0,0x43434220);word(b,4,80);word(b,72,0x80000002);word(b,76,2);
     word(b,80,0x504c5554);word(b,84,16);word(b,88,2);b[92]=0x34;b[93]=0x12;b[94]=0x78;b[95]=0x56;
@@ -21,8 +21,15 @@ int main() {
     for(size_t n=0;n<b.size();++n){try{rr::read_cel(Bytes(b.begin(),b.begin()+n));check(false,"truncated cel accepted");}catch(const std::runtime_error&){}}
     auto corrupt=b;word(corrupt,160,0xffffffffu);try{rr::read_cel(corrupt);check(false,"bad mip offset accepted");}catch(const std::runtime_error&){}
     corrupt=b;word(corrupt,136,3);try{rr::read_cel(corrupt);check(false,"bad stride accepted");}catch(const std::runtime_error&){}
+    Bytes partial(106);word(partial,0,0xbc614e);word(partial,32,4);word(partial,36,3);word(partial,40,3);
+    word(partial,56,60);word(partial,68,72);word(partial,80,76);
+    for(size_t i=88;i<partial.size();++i)partial[i]=uint8_t(i);
+    const auto npot=rr::read_indexed_texture(partial.data(),partial.size());
+    check(npot.mips[0].height==3 && npot.mips[1].height==2 && npot.mips[2].height==1,"partial mip rows retained");
+    check(npot.mips[1].pixels==Bytes({100,101,102,103}),"partial mip final row pixels");
+    partial.resize(103);try{rr::read_indexed_texture(partial.data(),partial.size());check(false,"truncated partial mip row accepted");}catch(const std::runtime_error&){}
     const auto data=std::filesystem::path(RR_SOURCE_DIR)/"../cdrom/ROADRASH/DATA";
-    const auto golden_path=rr::golden::oracle_dir()+"/raster-fixtures.tsv";
+    const std::string golden_path=argc>1?argv[1]:rr::golden::oracle_dir()+"/raster-fixtures.tsv";
     std::optional<rr::golden::File> golden;
     if(std::filesystem::exists(golden_path))golden=rr::golden::load(golden_path);
     if(std::filesystem::exists(data)) {
@@ -52,7 +59,13 @@ int main() {
                                     const auto raw=std::filesystem::path(golden_path).parent_path()/(golden->scenario+"-cel"+std::to_string(file-files.begin())+"-"+std::to_string(resource.id)+"-mip"+std::to_string(level)+".raw");
                                     std::ifstream reference(raw,std::ios::binary);if(!reference)throw std::runtime_error("Missing original mip bytes");
                                     const Bytes expected((std::istreambuf_iterator<char>(reference)),{});
-                                    check(expected==value.texture->mips[level].pixels,"original loaded mip bytes");
+                                    const auto& mip=value.texture->mips[level];
+                                    // Older oracle files exported floor(height/2^level)
+                                    // rows. They verify their captured prefix; new captures
+                                    // include the final partial row as well.
+                                    const size_t old_size=size_t(mip.width)*std::max(1,value.texture->mips[0].height>>level);
+                                    check((expected.size()==mip.pixels.size() || expected.size()==old_size) &&
+                                        expected.size()<=mip.pixels.size() && std::equal(expected.begin(),expected.end(),mip.pixels.begin()),"original loaded mip bytes");
                                 }
                             }else check(fields.at(prefix+"magic")==*value.legacy_pixel_word,"original legacy word retained");
                         }

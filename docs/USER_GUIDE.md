@@ -1,9 +1,10 @@
 # Using the development port
 
 The port is under active development. It currently provides a playable race,
-verified disc import and native cutscene playback. Original presentation,
-traffic/police, career/shop/saves, game sound triggers and music selection are
-still being implemented. [PROGRESS.md](PROGRESS.md) records the exact gaps.
+verified disc import, native cutscene playback, menus, career/shop/saves and
+race effects/engine sounds. Original world scene construction, traffic/police,
+race MIDI and several menu settings remain unfinished.
+[PROGRESS.md](PROGRESS.md) records the exact gaps.
 
 ## Requirements and installation
 
@@ -74,7 +75,22 @@ controller disconnect pauses; returning requires explicit resume.
 
 The original control bindings and configurable rebinding/settings are still
 open. Current race HUD and several behaviors are provisional, as documented
-in PROGRESS.md. Career saves are not implemented yet.
+in PROGRESS.md. Career saves use the recovered original format; compatibility
+with a save written by the original game has not been measured.
+
+## Menu controls
+
+Launch without race options to enter the menus. Keyboard arrows or Tab move
+focus, Enter/Space selects, and Escape/Android Back returns. Touch or click a
+menu item to select it. On gamepad, use the D-pad or left stick to move focus,
+South/Start to select and East/Back to return. The stick chooses one direction
+on diagonals and repeats after 350 ms, then every 100 ms while held.
+
+Controllers already connected when entering menus or videos are detected.
+Disconnecting the active menu controller pauses; South/Start or a tap resumes.
+After a pause, video or race, release the stick to neutral before navigating
+again. This prevents a held race steering input from moving menu focus.
+Physical controls on the MANGMI AIR X still require device validation.
 
 ## Developer commands
 
@@ -88,7 +104,7 @@ tools/ci.sh
 Course indexes: 0 NAPA, 1 CITY, 2 HIWAY, 3 CANYN, 4 MEDLY. Levels are 1–5,
 bike indexes 0–14. Videos support P/Esc/Start pause, input to skip, input to
 resume while paused, and desktop Q to quit. The explicit video path bypasses
-the unfinished original frontend.
+the menu flow.
 
 `RR_CODEC_ORACLE=1 tools/ci.sh` adds the full FFmpeg codec comparison;
 `RR_STANDALONE_APP=1 tools/ci.sh` also builds/verifies the macOS bundle.

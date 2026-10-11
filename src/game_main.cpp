@@ -1,5 +1,4 @@
-// Playable single-course race: original bike physics and road projection,
-// placeholder shading (the original raster, sprites and HUD are plans 02/03/06).
+// Shared native/Android frontend and playable race.
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_main.h>
 #include "assets.hpp"
@@ -13,6 +12,8 @@
 #include "session.hpp"
 #include "video_player.hpp"
 #include "career.hpp"
+#include "course_scene.hpp"
+#include "hud.hpp"
 #include "exe_tables.hpp"
 #include "frontend.hpp"
 #include "pe_strings.hpp"
@@ -29,11 +30,25 @@ namespace {
 const char* const course_names[] = {"NAPA", "CITY", "HIWAY", "CANYN", "MEDLY"};
 constexpr int countdown_ticks = 3 * rr::ticks_per_second;
 
+SDL_Gamepad* open_first_gamepad() {
+    int count = 0;
+    SDL_JoystickID* ids = SDL_GetGamepads(&count);
+    SDL_Gamepad* pad = nullptr;
+    for (int i = 0; ids && i < count && !pad; ++i) pad = SDL_OpenGamepad(ids[i]);
+    SDL_free(ids);
+    return pad;
+}
+
 struct Game {
     rr::DepthTable depth;
     rr::PhysicsTables physics;
     std::vector<rr::BikeSpec> specs;
     rr::Course course;
+    std::unique_ptr<rr::CourseScene> scene;
+    std::unique_ptr<rr::Hud> hud;
+    bool metric=false;
+    std::string player_name="Player";
+    std::vector<std::string> rider_names;
     std::string course_name;
     int bike = 0;
     std::unique_ptr<rr::Race> race;
@@ -50,9 +65,20 @@ struct Game {
     rr::SoundSystem* sound = nullptr;   // race effects and engines (0x00434980)
     rr::Mixer* mixer = nullptr;
 
+    void load_course(const rr::Assets& assets,const std::vector<uint8_t>& exe) {
+        scene.reset();
+        hud.reset();
+        course=rr::read_course(assets.read("DATA/COURSES/"+course_name+".CRS"));
+        if(course_name=="NAPA") {
+            scene=std::make_unique<rr::CourseScene>(assets,exe,course,course_name,1,level);
+            hud=std::make_unique<rr::Hud>(assets,exe,bike,metric);
+        }
+    }
+
     void restart() {
         race = std::make_unique<rr::Race>(rr::make_route(course, false), rr::make_route(course, true),
                                           physics, specs.at(size_t(bike)), rider_value, opponents, level);
+        if(scene)race->set_terrain_source([this](const rr::RouteSample& sample)->const rr::TerrainSlice&{return scene->terrain(sample.section,sample.local);});
         countdown = countdown_ticks;
     }
     void tick(uint32_t controls) {
@@ -129,24 +155,60 @@ struct SpriteCache {
     }
 };
 
+struct CourseCanvas {
+    rr::Framebuffer frame{640,480};
+    std::vector<uint8_t> rgba=std::vector<uint8_t>(640*480*4);
+    SDL_Texture* texture=nullptr;
+    SDL_Texture* dashboard=nullptr;
+    ~CourseCanvas(){clear();}
+    void clear(){SDL_DestroyTexture(texture);texture=nullptr;SDL_DestroyTexture(dashboard);dashboard=nullptr;}
+    void draw_dashboard(SDL_Renderer* renderer,const Game& game) {
+        const int target=game.race->last_target();
+        const auto image=game.hud->compose(game.hud->state(*game.race,game.player_name,
+            target>0 && size_t(target)<game.rider_names.size()?game.rider_names[size_t(target)]:std::string()),game.physics);
+        for(size_t i=0;i<image.pixels.size();++i){const uint32_t c=image.pixels[i];rgba[4*i]=uint8_t(c>>16);rgba[4*i+1]=uint8_t(c>>8);rgba[4*i+2]=uint8_t(c);rgba[4*i+3]=c==0x01000000?0:255;}
+        if(!dashboard) {
+            dashboard=SDL_CreateTexture(renderer,SDL_PIXELFORMAT_RGBA32,SDL_TEXTUREACCESS_STREAMING,640,480);
+            if(!dashboard)throw std::runtime_error(SDL_GetError());
+            SDL_SetTextureScaleMode(dashboard,SDL_SCALEMODE_NEAREST);SDL_SetTextureBlendMode(dashboard,SDL_BLENDMODE_BLEND);
+        }
+        if(!SDL_UpdateTexture(dashboard,nullptr,rgba.data(),640*4))throw std::runtime_error(SDL_GetError());
+        const SDL_FRect dst{0,0,640,480};SDL_RenderTexture(renderer,dashboard,nullptr,&dst);
+    }
+    void draw(SDL_Renderer* renderer,const Game& game,const std::vector<rr::RoadSlice>& slices) {
+        game.scene->draw_horizon(frame,game.race->horizon_scroll());
+        rr::render_nodes(frame,game.scene->draw_nodes(game.race->route(),slices,game.race->camera(),game.depth),rr::view_mode(true),16);
+        frame.to_rgba(game.palette,rgba.data(),640*4);
+        if(!texture) {
+            texture=SDL_CreateTexture(renderer,SDL_PIXELFORMAT_RGBA32,SDL_TEXTUREACCESS_STREAMING,640,480);
+            if(!texture)throw std::runtime_error(SDL_GetError());
+            SDL_SetTextureScaleMode(texture,SDL_SCALEMODE_NEAREST);
+        }
+        if(!SDL_UpdateTexture(texture,nullptr,rgba.data(),640*4))throw std::runtime_error(SDL_GetError());
+        const SDL_FRect dst{0,0,640,480};
+        if(!SDL_RenderTexture(renderer,texture,nullptr,&dst))throw std::runtime_error(SDL_GetError());
+    }
+};
+
 // Player bike: original sprite, horizontal position projected at the bike's depth, bottom of the view.
-void draw_bike(SDL_Renderer* r, const Game& g, SpriteCache& cache) {
+void draw_bike(SDL_Renderer* r, const Game& g, SpriteCache& cache,const std::vector<rr::RoadSlice>& slices) {
     const rr::Race& race = *g.race;
-    const int32_t depth = int32_t(race.position() - race.camera_position());
-    const size_t index = size_t(depth & ~1) / 2;
-    const int32_t scale = g.depth.scale[std::min(index, g.depth.scale.size() - 1)];
-    const auto& road = race.route()[race.camera_position() >> 8];
-    const int64_t rel = int64_t(race.lateral() - road.offset - race.camera().x);
-    float x = float((rel * scale) >> 16) + 160.f;
-    if (x < 20) x = 20;
-    if (x > 300) x = 300;
     const auto& me = race.riders()[0];
     const int frame = race.crashed() ? 21 : me.attack.timer ? attack_frame(me) : riding_frame(race.bike());
     SDL_Texture* t = cache.get(r, g, frame, 0);
     if (!t) return;
     float w, h;
     SDL_GetTextureSize(t, &w, &h);
-    const SDL_FRect dst{x * 2 - w / 2, 476 - h, w, h};
+    const uint32_t sample=race.position()>>8;
+    if(slices.size()<2 || sample<slices.front().sample || sample>=slices.back().sample)return;
+    const size_t at=sample-slices.front().sample;const auto& a=slices[at];const auto& b=slices[at+1];
+    const float fraction=float(race.position()&255)/256;
+    const auto& pa=a.road[a.own];const auto& pb=b.road[b.own];
+    const float base=(float(pa.screen_y)+(float(pb.screen_y)-float(pa.screen_y))*fraction)/32768;
+    const int lateral=race.lateral()-race.route()[sample].offset;
+    const float x=(float(a.screen_x(a.own,lateral))+(float(b.screen_x(b.own,lateral))-float(a.screen_x(a.own,lateral)))*fraction)/65536;
+    const float size=(float(a.scale)+(float(b.scale)-float(a.scale))*fraction)/32768;
+    const SDL_FRect dst{x * 2 - w*size / 2, base-h*size, w*size, h*size};
     SDL_RenderTexture(r, t, nullptr, &dst);
 }
 
@@ -199,7 +261,7 @@ void draw_hud(SDL_Renderer* r, const Game& g) {
     SDL_SetRenderDrawColor(r, 255, 255, 255, 255);
     SDL_snprintf(line, sizeof line, "%s  PLACE %d/%zu  SPEED %3d  GEAR %d  TIME %d:%02d  %3d%%", g.course_name.c_str(),
                  race.place(0), race.riders().size(), race.speed() / 100, race.gear() + 1, seconds / 60, seconds % 60, progress);
-    SDL_RenderDebugText(r, 8, 8, line);
+    if(!g.hud)SDL_RenderDebugText(r, 8, 8, line);
     if (g.countdown > 0) {
         SDL_snprintf(line, sizeof line, "GET READY  %d", g.countdown / rr::ticks_per_second + 1);
         SDL_SetRenderScale(r, 3, 3);
@@ -225,8 +287,10 @@ void draw_hud(SDL_Renderer* r, const Game& g) {
         SDL_SetRenderDrawColor(r, 40, 40, 40, 255); SDL_RenderFillRect(r, &back);
         SDL_SetRenderDrawColor(r, 220, 60, 40, 255); SDL_RenderFillRect(r, &fill);
     };
-    bar(24, "YOU", race.riders()[0].stamina);
-    if (race.last_target() > 0) bar(36, "THEM", race.riders()[size_t(race.last_target())].stamina);
+    if(!g.hud) {
+        bar(24, "YOU", race.riders()[0].stamina);
+        if (race.last_target() > 0) bar(36, "THEM", race.riders()[size_t(race.last_target())].stamina);
+    }
     SDL_SetRenderDrawColor(r, 255, 255, 255, 255);
     SDL_RenderDebugText(r, 8, 483, "Up/Down throttle/brake, Left/Right steer, Z punch, X kick, C backhand");
     SDL_RenderDebugText(r, 8, 497, "P/Esc/Back/Start pauses. Enter/Start/tap resumes. Q quits");
@@ -273,7 +337,7 @@ void play_video(const rr::Assets& assets,const std::string& path,SDL_Renderer* r
     if (ticks<0 && SDL_InitSubSystem(SDL_INIT_AUDIO) && !mixer.open_device()) SDL_Log("Audio unavailable: %s",SDL_GetError());
     rr::VideoPlayer player(assets,path,mixer);
     LifecycleWatch lifecycle(&mixer);
-    std::unique_ptr<SDL_Gamepad,decltype(&SDL_CloseGamepad)> pad(nullptr,SDL_CloseGamepad);
+    std::unique_ptr<SDL_Gamepad,decltype(&SDL_CloseGamepad)> pad(open_first_gamepad(),SDL_CloseGamepad);
     bool running=true;
     player.update(ticks>=0 ? 0 : SDL_GetTicksNS());
     if (ticks>=0) player.update(uint64_t(ticks)*1000000000ull/rr::ticks_per_second);
@@ -344,18 +408,12 @@ struct RaceOptions {
 RaceEnd run_race(Game& g, SDL_Renderer* renderer, const RaceOptions& opt) {
     RaceEnd result;
     SpriteCache sprites;
+    CourseCanvas course_canvas;
     LifecycleWatch lifecycle(g.mixer);
     if (opt.start_paused) lifecycle.state.pause();
     rr::TouchInput touch;
     rr::TickClock clock;
-    SDL_Gamepad* pad = nullptr;
-    for (int i = 0; i < 8 && !pad; ++i) {
-        int count = 0;
-        SDL_JoystickID* ids = SDL_GetGamepads(&count);
-        if (ids && count > 0) pad = SDL_OpenGamepad(ids[0]);
-        SDL_free(ids);
-        break;
-    }
+    SDL_Gamepad* pad = open_first_gamepad();
     bool running = true, decided = false;
     int end_ticks = 0;
     uint64_t last = SDL_GetTicksNS();
@@ -412,7 +470,7 @@ RaceEnd run_race(Game& g, SDL_Renderer* renderer, const RaceOptions& opt) {
                 } else if (e.type == SDL_EVENT_FINGER_DOWN && g.race->finished() && !g.career) restart = true;
                 else touch.handle(e);
             }
-            if (e.type == SDL_EVENT_RENDER_DEVICE_RESET || e.type == SDL_EVENT_RENDER_TARGETS_RESET) sprites.clear();
+            if (e.type == SDL_EVENT_RENDER_DEVICE_RESET || e.type == SDL_EVENT_RENDER_TARGETS_RESET) {sprites.clear();course_canvas.clear();}
             if (e.type == SDL_EVENT_RENDER_DEVICE_LOST) throw std::runtime_error("Render device lost");
             if (lifecycle.state.take_clock_reset()) {
                 touch.clear(); clock.reset(); last = SDL_GetTicksNS();
@@ -464,9 +522,11 @@ RaceEnd run_race(Game& g, SDL_Renderer* renderer, const RaceOptions& opt) {
         SDL_SetRenderDrawColor(renderer, 15, 18, 22, 255);
         SDL_RenderClear(renderer);
         const auto slices = rr::project_road(g.race->route(), g.race->camera_position(), g.race->camera(), g.depth);
-        rr::draw_road(renderer, slices);
+        if(g.scene)course_canvas.draw(renderer,g,slices);
+        else rr::draw_road(renderer, slices);
         draw_opponents(renderer, g, sprites, slices);
-        draw_bike(renderer, g, sprites);
+        draw_bike(renderer, g, sprites,slices);
+        if(g.hud)course_canvas.draw_dashboard(renderer,g);
         draw_hud(renderer, g);
         if (g.quitting) {
             SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND);
@@ -551,7 +611,8 @@ int run_game(const rr::Assets& assets, SDL_Window* window, SDL_Renderer* rendere
     SDL_Texture* texture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_XRGB8888, SDL_TEXTUREACCESS_STREAMING, 640, 480);
     if (!texture) throw std::runtime_error(SDL_GetError());
     SDL_SetTextureScaleMode(texture, SDL_SCALEMODE_NEAREST);
-    SDL_Gamepad* pad = nullptr;
+    SDL_Gamepad* pad = open_first_gamepad();
+    rr::MenuStickInput menu_stick;
     LifecycleWatch lifecycle;
     rr::RgbImage frame;
     fe.start();
@@ -568,15 +629,19 @@ int run_game(const rr::Assets& assets, SDL_Window* window, SDL_Renderer* rendere
                                           ev.video.find("/SUPER/") != std::string::npos;
                     if (showroom) music.set_volume(0); else music.stop();
                     play_video(assets, ev.video, renderer, {}, -1);
+                    menu_stick.suspend();
                     apply_levels();
                     if (!showroom && !music.active()) music.play(music.track());
                 }
             } else if (ev.kind == rr::FrontendEvent::Kind::start_race) {
                 // Race set-up from the career: course, level, bike, rider weight, opponents (plan 05).
                 g.course_name = original_course_files[ev.course - 1];
-                g.course = rr::read_course(assets.read("DATA/COURSES/" + g.course_name + ".CRS"));
                 g.level = career.state.level;
                 g.bike = career.state.bike;
+                g.metric=settings.metric;g.player_name=fe.player_name();
+                g.rider_names.clear();g.rider_names.push_back(g.player_name);
+                for(int i=1;i<8;++i)g.rider_names.push_back(personality_name(i));
+                g.load_course(assets,exe);
                 const auto body = rr::read_exe_data(exe, 0x00463c78 + uint32_t(rr::character_rider(career.state.character)) * 0x40 + 0xc, 4);
                 g.rider_value = int32_t(uint32_t(body[0]) | uint32_t(body[1]) << 8) / 2;
                 g.opponents = rr::original_opponents(exe, g.specs, g.level, 7);
@@ -588,6 +653,7 @@ int run_game(const rr::Assets& assets, SDL_Window* window, SDL_Renderer* rendere
                 g.sound = sound.get();
                 if (sound) sound->start_race(career.state.bike, career.state.character);
                 const RaceEnd end = run_race(g, renderer, {});
+                menu_stick.suspend();
                 if (sound) sound->stop_race();
                 g.sound = nullptr;
                 settings.music_track = music.track();
@@ -612,6 +678,12 @@ int run_game(const rr::Assets& assets, SDL_Window* window, SDL_Renderer* rendere
             if (text_input) SDL_StartTextInput(window); else SDL_StopTextInput(window);
         }
         rr::MenuInput in;
+        // Nested race/video loops may have consumed the removal notification.
+        if (pad && !SDL_GamepadConnected(pad)) {
+            SDL_CloseGamepad(pad); pad = open_first_gamepad();
+            menu_stick.suspend();
+            lifecycle.state.pause();
+        }
         SDL_Event e;
         while (SDL_PollEvent(&e)) {
             if (e.type == SDL_EVENT_QUIT) running = false;
@@ -649,8 +721,12 @@ int run_game(const rr::Assets& assets, SDL_Window* window, SDL_Renderer* rendere
                 in.text += rr::to_cp1252(u);
             }
             if (e.type == SDL_EVENT_GAMEPAD_ADDED && !pad) pad = SDL_OpenGamepad(e.gdevice.which);
-            if (e.type == SDL_EVENT_GAMEPAD_REMOVED && pad && SDL_GetGamepadID(pad) == e.gdevice.which) { SDL_CloseGamepad(pad); pad = nullptr; }
-            if (e.type == SDL_EVENT_GAMEPAD_BUTTON_DOWN) {
+            if (e.type == SDL_EVENT_GAMEPAD_REMOVED && pad && SDL_GetGamepadID(pad) == e.gdevice.which) {
+                SDL_CloseGamepad(pad); pad = open_first_gamepad();
+                menu_stick.suspend();
+                lifecycle.state.pause();
+            }
+            if (e.type == SDL_EVENT_GAMEPAD_BUTTON_DOWN && pad && SDL_GetGamepadID(pad) == e.gbutton.which) {
                 switch (e.gbutton.button) {
                 case SDL_GAMEPAD_BUTTON_DPAD_LEFT: in.left = true; break;
                 case SDL_GAMEPAD_BUTTON_DPAD_RIGHT: in.right = true; break;
@@ -687,7 +763,13 @@ int run_game(const rr::Assets& assets, SDL_Window* window, SDL_Renderer* rendere
             if (e.type == SDL_EVENT_RENDER_DEVICE_LOST) throw std::runtime_error("Render device lost");
         }
         if (!running) break;
+        if (lifecycle.state.take_clock_reset() || lifecycle.state.paused()) menu_stick.suspend();
         if (lifecycle.state.paused() && (in.select || in.pointer_click)) { lifecycle.state.resume(); in = {}; }
+        if (!lifecycle.state.paused() && pad) {
+            const auto stick = menu_stick.update(SDL_GetGamepadAxis(pad, SDL_GAMEPAD_AXIS_LEFTX),
+                                                 SDL_GetGamepadAxis(pad, SDL_GAMEPAD_AXIS_LEFTY), SDL_GetTicks());
+            in.left |= stick.left; in.right |= stick.right; in.up |= stick.up; in.down |= stick.down;
+        }
         if (!lifecycle.state.paused()) fe.update(in, SDL_GetTicks());
         music.update();
         mixer.pause(lifecycle.state.paused() || audio_lifecycle.state.paused());
@@ -780,10 +862,10 @@ int main(int argc, char** argv) {
             result = run_game(assets, window, renderer, g, exe, screenshot, menu_frames);
         } else {
             g.course_name = course_names[course];
-            g.course = rr::read_course(assets.read("DATA/COURSES/" + g.course_name + ".CRS"));
             if (bike < 0 || size_t(bike) >= g.specs.size()) throw std::runtime_error("Bike index out of range");
             g.bike = bike;
             g.level = level;
+            g.load_course(assets,exe);
             g.opponents = rr::original_opponents(exe, g.specs, level, opponents);
             g.restart();
             if (run_ticks >= 0) {   // headless-style verification run

@@ -1,4 +1,5 @@
 #include "race.hpp"
+#include "terrain_ground.hpp"
 #include <algorithm>
 #include <cstdlib>
 #include <stdexcept>
@@ -80,13 +81,14 @@ Race::Race(std::vector<RouteSample> a, std::vector<RouteSample> b, const Physics
         riders_.push_back(r);
     }
     update_camera();
+    previous_camera_position_=camera_position();
 }
 
 SliceEdges Race::edges(const Rider& r, size_t i) const {
     const auto& s = route_of(r)[i];
-    // Terrain chunks are not decoded yet: flags 0, type 0 (building-style sides).
+    // Imported terrain is attached by the game; standalone physics fixtures keep their original synthetic sides.
     return {s.offset - s.path.left, s.offset + s.path.right,
-            s.offset - s.path.left - s.path.shoulder_left, s.offset + s.path.right + s.path.shoulder_right, 0, 0};
+            s.offset - s.path.left - s.path.shoulder_left, s.offset + s.path.right + s.path.shoulder_right, terrain_source_?s.path.marking_flags:uint8_t(0), terrain_source_?terrain_source_(s).type:uint8_t(0)};
 }
 
 void Race::accumulate(Rider& r, uint32_t from, uint32_t to, size_t from_sample, size_t to_sample) {
@@ -319,7 +321,7 @@ void Race::walls(Rider& r) {
 }
 
 void Race::vertical(Rider& r) {
-    // 0x0043a190 with ground height from 0x00439b10 case 0 (no terrain selectors decoded).
+    // 0x0043a190 with imported terrain ground height from 0x00439b10.
     Bike& b = r.bike;
     const SliceEdges e = edges(r, r.sample);
     const auto& s = route_of(r)[r.sample].path;
@@ -328,6 +330,10 @@ void Race::vertical(Rider& r) {
     if (x < e.left || x > e.right) {
         if (x > e.right) ground = x >= e.right_shoulder ? ground_wall : s.height_right;
         else ground = x <= e.left_shoulder ? ground_wall : s.height_left;
+    }
+    if(terrain_source_) {
+        const auto& route=route_of(r);const auto& current=route[r.sample];const auto& next=route[std::min(r.sample+1,route.size()-1)];
+        ground=terrain_height(terrain_source_(current),current.path,terrain_source_(next),next.path,b.i32(0x28)-current.offset*256,uint8_t(b.i32(0x1c)),next.offset-current.offset);
     }
     b.i32(0x24) = ground;
     const int32_t dt = b.i32(0x18);
@@ -683,5 +689,8 @@ void Race::step(uint32_t controls) {
             collide(a, b);
         }
     update_camera();
+    const auto& player=riders_[0];const auto& road=route_of(player);
+    camera_heading_=advance_heading(camera_heading_,previous_camera_position_,camera_position(),road[player.previous_sample].path.bend,road[player.sample].path.bend,(player.bike.u8(0xc0)&16)!=0);
+    previous_camera_position_=camera_position();
 }
 }

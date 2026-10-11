@@ -4,6 +4,11 @@
 int main() {
     int failures = 0;
     auto check = [&](bool value, const char* what) { if (!value) { ++failures; std::cerr << "FAIL " << what << '\n'; } };
+    check(rr::advance_heading(0,0x120,0x150,2,3)==3*48*256,"heading within sample");
+    check(rr::advance_heading(0,0x1f0,0x220,2,3)==(2*16+3*32)*256,"heading across sample");
+    check(rr::advance_heading(0,0x220,0x1f0,3,2)==(-3*32-2*16)*256,"heading reverses");
+    check(rr::advance_heading(17,0,257,1,1)==17 && rr::advance_heading(17,0,128,1,1,true)==17,"heading ignores jump and frozen camera");
+    check(rr::horizon_scroll(-1)==0 && rr::horizon_scroll(0x400000)==-40 && rr::horizon_scroll(-0x400000)==40,"horizon signed truncation");
     rr::DepthTable table;
     for (int i=0; i<4352; ++i) table.scale.push_back(i<128 ? 65536 : (1<<23)/i); // synthetic, not original data
     auto route = [](int bend, int rise, size_t n) {

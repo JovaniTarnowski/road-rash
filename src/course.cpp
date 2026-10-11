@@ -77,6 +77,15 @@ Course read_course(const std::vector<uint8_t>& bytes) {
         segments.chunk(path,"HTPR",16,2);
         const uint32_t count=segments.u32(path+8);
         CourseSection section;
+        const size_t roadside=segments.u32(row+8),scenery=segments.u32(row+0x1c);
+        if(roadside) {
+            segments.chunk(roadside,"BORR",20,4);
+            for(uint32_t j=0;j<segments.u32(roadside+8);++j)section.roadside_profiles.push_back(segments.u32(roadside+20+4*j));
+        }
+        if(scenery) {
+            segments.chunk(scenery,"DZHR",16,8);
+            for(uint32_t j=0;j<segments.u32(scenery+8);++j)section.scenery_events.push_back({segments.u32(scenery+16+8*j),segments.u32(scenery+20+8*j)});
+        }
         for(uint32_t j=0;j<count;++j)
             // No lane table: 0x004528f0 reports 0x200 (two lanes) each side.
             section.samples.push_back({segments.signed_byte(path+16+2*j),segments.signed_byte(path+17+2*j),500,500,512,512});
@@ -103,6 +112,52 @@ Course read_course(const std::vector<uint8_t>& bytes) {
             const size_t extent=segments.u32(terrain+4);segments.range(terrain,extent);
             section.terrain=read_terrain(std::vector<uint8_t>(bytes.begin()+segments.base+terrain,
                 bytes.begin()+segments.base+terrain+extent),count);
+        }
+        // CESR events, 0x00452690/0x00452710/0x004527d0. The initial
+        // iterator has no active type until its first forward step.
+        const size_t events=segments.u32(row+0x24);
+        if(events) {
+            segments.chunk(events,"CESR",20,12);
+            const uint32_t n=segments.u32(events+8);
+            for(uint32_t k=0;k<n;++k) {
+                const size_t p=events+20+k*12;
+                if(segments.s32(p)>segments.s32(p+4) || (k && segments.s32(p)<segments.s32(p-12)))
+                    throw std::runtime_error("Invalid course event interval");
+            }
+            uint32_t k=0;
+            for(uint32_t j=0;n && j<count;++j) {
+                if(j && k+1<n && segments.s32(events+20+(k+1)*12)<=j)++k;
+                const size_t p=events+20+k*12;
+                const int64_t start=segments.s32(p),end=segments.s32(p+4);
+                auto& sample=section.samples[j];
+                for(int v=0;v<3;++v)sample.event_parameters[v]=uint8_t(segments.byte(p+9+v));
+                if(j<start || j>end)continue;
+                if(j)sample.event_type=uint8_t(segments.byte(p+8)+1);
+                if(sample.event_type==4)sample.marking_flags=0x40;
+                else if(sample.event_type==5 || sample.event_type==7)sample.marking_flags=0;
+                else if(j==end)sample.marking_flags=0; // end marker 0x80000000 has a zero low byte
+                else if(j==start)sample.marking_flags=8;
+                else if(end-j==1)sample.marking_flags=16;
+                else if(sample.event_type==1) {
+                    const int64_t middle=int64_t(end)-2*int64_t(j)+start;
+                    sample.marking_flags=middle==0 || middle==1 ? 0x22:
+                        uint8_t(0x20+(end-j<j-start+1));
+                } else sample.marking_flags=0x21;
+            }
+        }
+        // MSRR family load/unload requests. Preserve their actual ordering,
+        // including records at the same sample and the original forward bias.
+        const size_t families=segments.u32(row+0xc);
+        if(families) {
+            segments.chunk(families,"MSRR",24,12);
+            section.family_forward_bias=segments.byte(families+14)-0x58;
+            for(uint32_t k=0;k<segments.u32(families+8);++k) {
+                const size_t p=families+24+k*12;
+                const uint8_t type=uint8_t(segments.byte(p+4)),slot=uint8_t(segments.byte(p+5));
+                if(slot>3 || type<1 || type>4 || (k && segments.s32(p)<segments.s32(p-12)))
+                    throw std::runtime_error("Invalid family event record");
+                section.family_events.push_back({int32_t(segments.s32(p)),type,slot,uint16_t(segments.u32(p+8))});
+            }
         }
         course.sections.push_back(std::move(section));
     }
@@ -142,30 +197,31 @@ const CourseNode& node_at(const Course& course,uint32_t offset) {
 }
 
 // Samples of a branch from road node `offset` up to the next split/merge node.
-std::vector<PathSample> branch_forward(const Course& course,uint32_t offset) {
-    std::vector<PathSample> samples;
+std::vector<RouteSample> branch_forward(const Course& course,uint32_t offset) {
+    std::vector<RouteSample> samples;
     for(size_t guard=0;guard<=course.nodes.size();++guard) {
         const auto& node=node_at(course,offset);
         if(node.kind!=0) return samples;
         const auto& section=course.sections.at(node.link);
-        samples.insert(samples.end(),section.samples.begin(),section.samples.begin()+node.length);
+        for(uint32_t i=0;i<node.length;++i)samples.push_back({section.samples.at(i),offset,node.link,i});
         offset=node.next;
     }
     throw std::runtime_error("Cycle in course branch");
 }
 
 // Samples of a branch ending at road node `offset`, walking back to the previous split.
-std::vector<PathSample> branch_backward(const Course& course,uint32_t offset) {
-    std::vector<std::vector<PathSample>> parts;
+std::vector<RouteSample> branch_backward(const Course& course,uint32_t offset) {
+    std::vector<std::vector<RouteSample>> parts;
     for(size_t guard=0;guard<=course.nodes.size();++guard) {
         const auto& node=node_at(course,offset);
         if(node.kind!=0) {
-            std::vector<PathSample> samples;
+            std::vector<RouteSample> samples;
             for(auto part=parts.rbegin();part!=parts.rend();++part) samples.insert(samples.end(),part->begin(),part->end());
             return samples;
         }
         const auto& section=course.sections.at(node.link);
-        parts.emplace_back(section.samples.begin(),section.samples.begin()+node.length);
+        parts.emplace_back();
+        for(uint32_t i=0;i<node.length;++i)parts.back().push_back({section.samples.at(i),offset,node.link,i});
         offset=node.previous;
     }
     throw std::runtime_error("Cycle in course branch");
@@ -209,7 +265,7 @@ std::vector<RouteSample> make_route(const Course& course,bool second_branch) {
     bool dual=false, after_split=false;
     uint8_t primary=0;
     int32_t own_offset=0, other_offset=0, dx_sep=0, x_sep=0;
-    std::vector<PathSample> other;
+    std::vector<RouteSample> other;
     size_t other_index=0;
     // Merge window states from the backward walk of 0x00453b60, indexed by distance to merge.
     struct Snapshot { size_t other_index; int32_t dx_sep, x_sep; };
@@ -235,7 +291,7 @@ std::vector<RouteSample> make_route(const Course& course,bool second_branch) {
             primary=second_branch?1:0;
             other_index=0;
             const auto& before=route[i-1].path;
-            auto [h0,h1]=halves(sample.path,other[0]);
+            auto [h0,h1]=halves(sample.path,other[0].path);
             const int32_t o0=own_offset+lane_shift(h0->left_q8-before.left_q8);
             const int32_t o1=own_offset+lane_shift(before.right_q8-h1->right_q8);
             own_offset=primary?o1:o0; other_offset=primary?o0:o1;
@@ -248,7 +304,7 @@ std::vector<RouteSample> make_route(const Course& course,bool second_branch) {
                 dual=false; after_split=false; primary=0;
             } else {
                 if(other_index+1<other.size()) ++other_index;
-                auto [h0,h1]=halves(sample.path,other[other_index]);
+                auto [h0,h1]=halves(sample.path,other[other_index].path);
                 x_sep+=dx_sep; dx_sep+=h1->bend-h0->bend;
             }
         } else {
@@ -268,7 +324,7 @@ std::vector<RouteSample> make_route(const Course& course,bool second_branch) {
                 snapshot.assign(window,{});
                 auto other_at=[&](size_t d){ return other.size()>d ? other.size()-1-d : 0; };
                 auto d_at=[&](size_t d) {
-                    auto [h0,h1]=halves(*mine[mine.size()-1-d],other[other_at(d)]);
+                    auto [h0,h1]=halves(*mine[mine.size()-1-d],other[other_at(d)].path);
                     return h1->bend-h0->bend;
                 };
                 int32_t s5=-d_at(0), s6=0;
@@ -278,7 +334,7 @@ std::vector<RouteSample> make_route(const Course& course,bool second_branch) {
                 }
                 // Offsets relative to the outgoing road, as the backward merge entry aligns them.
                 const auto& out=route[pending->index].path;
-                auto [h0,h1]=halves(*mine.back(),other.back());
+                auto [h0,h1]=halves(*mine.back(),other.back().path);
                 const int32_t o0=lane_shift(h0->left_q8-out.left_q8), o1=lane_shift(out.right_q8-h1->right_q8);
                 snapshot_offset=primary ? o0-o1 : o1-o0;
                 other_offset=own_offset+snapshot_offset;
@@ -292,7 +348,8 @@ std::vector<RouteSample> make_route(const Course& course,bool second_branch) {
         }
         sample.offset=own_offset;
         if(dual) {
-            sample.dual=true; sample.half=primary; sample.other=other[other_index];
+            sample.dual=true; sample.half=primary; sample.other=other[other_index].path;
+            sample.other_node=other[other_index].node;sample.other_section=other[other_index].section;sample.other_local=other[other_index].local;
             sample.other_offset=other_offset; sample.dx_sep=dx_sep; sample.x_sep=x_sep;
         }
     }

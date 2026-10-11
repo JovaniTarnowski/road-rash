@@ -98,7 +98,7 @@ std::vector<RoadSlice> project_road(const std::vector<RouteSample>& route, uint3
             slice.road[r]={road[r].x+sub[r].offset-camera_x,
                 int32_t(int64_t(camera.height-road[r].y)*slice.scale+int64_t(view_horizon)*65536),
                 -sub[r].path->left,sub[r].path->right,
-                -sub[r].path->left-sub[r].path->shoulder_left,sub[r].path->right+sub[r].path->shoulder_right};
+                -sub[r].path->left-sub[r].path->shoulder_left,sub[r].path->right+sub[r].path->shoulder_right,road[r].y};
             road[r].x+=road[r].dx; road[r].y+=road[r].rise;
         }
         slices.push_back(slice);
@@ -106,4 +106,19 @@ std::vector<RoadSlice> project_road(const std::vector<RouteSample>& route, uint3
     }
     return slices;
 }
+int32_t advance_heading(int32_t heading,uint32_t previous,uint32_t current,int32_t previous_bend,int32_t current_bend,bool frozen) {
+    const int64_t delta=int64_t(current)-previous;
+    if(frozen || !delta || delta>256 || delta<-256)return heading;
+    int64_t weighted;
+    if(!((current^previous)&0xffffff00u))weighted=int64_t(current_bend)*delta;
+    else if(delta>0)weighted=int64_t(previous_bend)*(256-int32_t(previous&255))+int64_t(current_bend)*(current&255);
+    else weighted=-int64_t(previous_bend)*(previous&255)+int64_t(current_bend)*(int32_t(current&255)-256);
+    const uint32_t result=uint32_t(heading)+uint32_t(weighted)*256u;
+    return result<=INT32_MAX?int32_t(result):int32_t(int64_t(result)-0x100000000LL);
+}
+int32_t horizon_scroll(int32_t heading,bool high) {
+    const int32_t quarter=heading/4;
+    return -((quarter+quarter/4)>>(high?15:16));
+}
+
 }

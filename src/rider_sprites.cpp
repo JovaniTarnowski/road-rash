@@ -25,6 +25,7 @@ std::optional<CelTexture> rider_texture(const RiderSprites& s, int32_t colour, i
     else if (colour == 0xe0) sheet = &s.shadow;
     if (!sheet || size_t(frame) >= sheet->size()) return std::nullopt;
     const Image8& f = (*sheet)[size_t(frame)];
+    if(!f.width || !f.height)return std::nullopt;
     CelTexture t;
     t.bounds = {0, 0, f.width, f.height};
     t.flags = 2;   // transparent index 0

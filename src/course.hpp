@@ -14,8 +14,22 @@ struct PathSample {
     // (0x00454240) and shoulder height (0x00444630). flags: record bytes +16/+17.
     int32_t shoulder_left=0, shoulder_right=0, height_left=0, height_right=0;
     uint8_t side_flags[2]={0,0};
+    uint8_t marking_flags=0,event_type=0;
+    std::array<uint8_t,3> event_parameters{};
 };
-struct CourseSection { std::vector<PathSample> samples; TerrainDefinition terrain; };
+struct FamilyEvent {
+    int32_t sample=0;
+    uint8_t type=0,slot=0;
+    uint16_t family=0;
+};
+struct CourseSection {
+    std::vector<PathSample> samples;
+    TerrainDefinition terrain;
+    std::vector<FamilyEvent> family_events;
+    int32_t family_forward_bias=0;
+    std::vector<uint32_t> roadside_profiles; // BORR packed words, in original order
+    std::vector<std::array<uint32_t,2>> scenery_events; // DZHR packed records, before random placement
+};
 struct CourseNode {
     uint32_t offset, kind, next=0, previous=0, link=0, length=0;
 };
@@ -36,6 +50,7 @@ struct RouteSample {
     uint8_t half=0;         // half this route follows
     RoadEvent event=RoadEvent::none;
     PathSample other{};
+    uint32_t other_node=0,other_section=0,other_local=0;
     int32_t other_offset=0;
     int32_t dx_sep=0, x_sep=0; // half 1 minus half 0: traversal [5], [6]
 };

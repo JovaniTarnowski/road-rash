@@ -48,6 +48,28 @@ int main() {
     check(touches.current().right && !touches.current().left, "motion updates same finger");
     touches.clear();
     check(rr::controls_from(touches.current()) == 0, "pause clears all touch controls");
+    rr::MenuStickInput menu;
+    auto idle = [](const rr::MenuDirections& d) { return !d.left && !d.right && !d.up && !d.down; };
+    check(idle(menu.update(12000, -12000, 0)), "menu stick activation dead zone");
+    check(menu.update(-32768, 10000, 10).left, "menu stick signed minimum and dominant horizontal direction");
+    check(idle(menu.update(-20000, 0, 359)), "menu stick initial repeat delay");
+    check(menu.update(-20000, 0, 360).left, "menu stick repeats at 350ms");
+    check(idle(menu.update(-20000, 0, 459)), "menu stick repeat interval");
+    check(menu.update(-20000, 0, 460).left, "menu stick repeats at 100ms");
+    check(menu.update(-10000, 0, 560).left, "menu stick release hysteresis");
+    check(menu.update(20000, 0, 561).right, "menu stick reversal navigates immediately");
+    auto vertical = menu.update(20000, -30000, 562);
+    check(vertical.up && !vertical.right, "diagonal stick produces one dominant direction");
+    check(menu.update(0, 32767, 563).down, "menu stick vertical reversal");
+    check(menu.update(0, 32767, 100000).down, "long stall emits one repeat");
+    check(idle(menu.update(0, 32767, 100000)), "long stall does not accumulate navigation debt");
+    check(idle(menu.update(0, 8000, 100001)), "release threshold clears menu stick");
+    check(idle(menu.update(0, 10000, 100002)), "release requires activation threshold again");
+    menu.suspend();
+    check(idle(menu.update(0, 30000, 200000)), "pause or nested race blocks held stick");
+    check(idle(menu.update(0, 10000, 200001)), "interrupted stick must fully return to neutral");
+    check(idle(menu.update(0, 0, 200002)), "neutral rearms interrupted menu stick");
+    check(menu.update(0, -30000, 200003).up, "menu navigation works after explicit neutral");
     std::cout << failures << " failures\n";
     return failures ? 1 : 0;
 }

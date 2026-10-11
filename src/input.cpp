@@ -1,6 +1,38 @@
 #include "input.hpp"
+#include <cstdlib>
 
 namespace rr {
+void MenuStickInput::suspend() {
+    direction_ = Direction::none;
+    next_repeat_ = 0;
+    require_neutral_ = true;
+}
+
+MenuDirections MenuStickInput::update(int x, int y, uint64_t now_ms) {
+    // SDL axis values are signed 16-bit; use int so abs(-32768) is defined.
+    const int ax = std::abs(x), ay = std::abs(y);
+    if (ax <= 8000 && ay <= 8000) {
+        direction_ = Direction::none;
+        require_neutral_ = false;
+        return {};
+    }
+    if (require_neutral_) return {};
+    const int threshold = direction_ == Direction::none ? steer_dead_zone : 8000;
+    if (ax <= threshold && ay <= threshold) return {};
+    const Direction next = ax >= ay ? (x < 0 ? Direction::left : Direction::right)
+                                    : (y < 0 ? Direction::up : Direction::down);
+    if (next != direction_) {
+        direction_ = next;
+        next_repeat_ = now_ms + 350;
+    } else {
+        if (now_ms < next_repeat_) return {};
+        // At most one navigation step per frame, even after a long stall.
+        next_repeat_ = now_ms + 100;
+    }
+    return {next == Direction::left, next == Direction::right,
+            next == Direction::up, next == Direction::down};
+}
+
 uint32_t controls_from(const PlayerInput& in) {
     uint32_t c = 0;
     if (in.accelerate) c |= control_accelerate;

@@ -28,6 +28,8 @@ struct TerrainDefinition {
 TerrainDefinition read_terrain(const std::vector<uint8_t>& bytes,uint32_t sample_count);
 struct TerrainSlice {
     uint8_t type=0xff;
+    std::array<int32_t,2> building_height{};
+    std::array<bool,2> building_cut_roof{};
     std::array<uint8_t,2> selectors{};
     std::array<std::array<int32_t,3>,2> walls{}; // width, outer offset, height
     std::array<std::array<int32_t,2>,6> points{}; // left/right alternating: x,height

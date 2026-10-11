@@ -11,6 +11,14 @@ RoadMaterials read_road_materials(const std::vector<uint8_t>& exe,const std::vec
     const std::array<uint32_t,8> destinations={0x4c3cc0,0x4c3cb0,0x4c3cd0,0x4c3cd4,0x4c3cd8,0x4c3ce0,0x4c3ce4,0x4c3ce8};
     for(size_t p=0;p+20<=descriptors.size();p+=20) {
         const auto destination=word(p);if(!destination){ended=true;break;}
+        const std::array<uint32_t,3> ground_destinations={0x4c3cc4,0x4c3cb8,0x4c3cbc};
+        const auto ground=std::find(ground_destinations.begin(),ground_destinations.end(),destination);
+        if(ground!=ground_destinations.end()) {
+            const auto resource=std::find_if(resources.begin(),resources.end(),[&](const Resource& item){return item.tag=="CEL " && item.id==word(p+8)+1;});
+            if(resource==resources.end())throw std::runtime_error("Missing marked ground material");
+            auto& cel=result.terrain[size_t(ground-ground_destinations.begin())];cel=read_cel({global.begin()+resource->offset,global.begin()+resource->offset+resource->size});
+            if(!cel.texture)throw std::runtime_error("Marked ground lacks indexed texture");
+        }
         const auto found=std::find(destinations.begin(),destinations.end(),destination);if(found==destinations.end())continue;
         const size_t slot=size_t(found-destinations.begin());
         if(loaded[slot] || word(p+4)!=0x43454c20 || word(p+8)==0xffffffffu)throw std::runtime_error("Invalid road material descriptor");

@@ -33,7 +33,7 @@ void render_nodes(Framebuffer& fb,const std::vector<DrawNode>& nodes,const ViewM
         std::array<TextureVertex,4> vertices;
         for(size_t i=0;i<4;++i)vertices[i]={narrow(points[i].x),narrow(points[i].y),uint16_t(uv[i][0]>>level),uint16_t(uv[i][1]>>level)};
         const auto& mip=texture.mips.at(level);
-        draw_textured_quad(fb,vertices,mip.pixels,mip.stride_shift,(texture.flags&2)!=0,clip);
+        draw_textured_quad(fb,vertices,mip.sampling_storage.empty()?mip.pixels:mip.sampling_storage,mip.stride_shift,(texture.flags&2)!=0,clip);
     }
 }
 }

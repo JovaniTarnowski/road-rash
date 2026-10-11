@@ -24,6 +24,38 @@ int rr_patch_call(uint8_t* site, uint32_t expected_target, void* hook) { return 
 
 static FILE* g_out;
 static char g_scenario[256] = "unnamed";
+static int g_capture_course;
+static int g_groups;
+static int g_drive;
+static int readable(uintptr_t p,size_t size);
+
+// Test-only bootstrap through the original race setup. Avoid waiting for the
+// interactive intro/menu during capture; never modify the installed executable.
+static uint32_t __fastcall hook_menu_video(int screen) {
+    if(g_capture_course) return 1;
+    return ((uint32_t (__fastcall*)(int))0x00449150)(screen);
+}
+static void __fastcall hook_menu_enter(int screen) {
+    // Course entries 1..5 perform the original menu exit themselves. Entering
+    // credits first would leave its timer running after race setup freed the
+    // menu surfaces, making subsequent oracle frames fault in that timer.
+    ((void (__fastcall*)(int))0x00421df0)(g_capture_course?g_capture_course:screen);
+}
+static uint32_t __cdecl hook_controls(void) {
+    if(!g_drive)return ((uint32_t (__cdecl*)(void))0x0044f800)();
+    uint32_t controls=1; // original accelerate bit
+    if(g_drive==2) {
+        const uintptr_t rider=*(uint32_t*)0x004642d8;
+        if(readable(rider,0x144)) {
+            const uintptr_t slice=*(uint32_t*)(rider+0x140);
+            if(readable(slice,0xd0)) {
+                const int32_t x=(*(int32_t*)(rider+0x28)>>8)-*(int32_t*)(slice+0xcc);
+                if(x<-60)controls|=0x200;else if(x>60)controls|=4;
+            }
+        }
+    }
+    return controls;
+}
 
 /* Ordinal 2 of the original AWEMAN32.DLL, loaded from AWEMAN_REAL.DLL.
    GNU ld cannot forward by ordinal, so export a jump trampoline instead. */
@@ -133,6 +165,301 @@ static void capture_raster(uintptr_t base,int width,int height,int pitch) {
 // resource header and an FNV-1a hash of mip 0 so a native decoder can identify the resource.
 static int g_scene_written;static uint32_t g_scene_nodes;
 static uint32_t fnv(const unsigned char* p,size_t n){uint32_t h=2166136261u;for(size_t i=0;i<n;++i){h^=p[i];h*=16777619u;}return h;}
+static uint32_t group_seen[4096];static int group_count;
+static int group_dimension(uint32_t encoded) {
+    return encoded&0x80000000u ? (int)(1u<<(encoded&31)) : (int)(encoded&511);
+}
+static void capture_group(uint32_t group,uint32_t root,int family) {
+    for(int i=0;i<group_count;++i)if(group_seen[i]==group)return;
+    if(group_count>=4096 || !readable(group,28))return;
+    uint32_t ccb=(uint32_t)RD32(group+8);
+    if(!readable(ccb,68))return;
+    unsigned char saved[68];memcpy(saved,(void*)(uintptr_t)ccb,68);
+    const int index=group_count++;group_seen[index]=group;
+    char key[100];
+    snprintf(key,sizeof key,"group.%d.family",index);rr_log(key,family);
+    snprintf(key,sizeof key,"group.%d.offset",index);rr_log(key,group-root);
+    static const int sizes[8][2]={{0,0},{65536,65536},{7*65536,4*65536},{16*65536,8*65536},{32*65536,16*65536},{64*65536,32*65536},{128*65536,64*65536},{256*65536,512*65536}};
+    for(int s=0;s<8;++s) {
+        uint32_t out=((uint32_t (__fastcall*)(uint32_t,int,int))0x0044a870)(group,sizes[s][0],sizes[s][1]);
+        if(!readable(out,68))continue;
+        uint32_t res=(uint32_t)RD32(out+8),w=0,h=0,hash=0;
+        if(readable(res,60) && (uint32_t)RD32(res)==0xbc614e) {
+            w=(uint32_t)RD32(res+32);h=(uint32_t)RD32(res+36);uint32_t mip=(uint32_t)RD32(res+56);
+            if(w && w<=256 && h && h<=512 && readable(mip,w*h))hash=fnv((void*)(uintptr_t)mip,w*h);
+        }
+        snprintf(key,sizeof key,"group.%d.size.%d.width",index,s);rr_log(key,group_dimension((uint32_t)RD32(out+60)));
+        snprintf(key,sizeof key,"group.%d.size.%d.height",index,s);rr_log(key,group_dimension((uint32_t)RD32(out+64)));
+        snprintf(key,sizeof key,"group.%d.size.%d.hash",index,s);rr_log(key,hash);
+        snprintf(key,sizeof key,"group.%d.size.%d.bytes",index,s);rr_log(key,w*h);
+    }
+    memcpy((void*)(uintptr_t)ccb,saved,68);
+}
+static void walk_groups(uint32_t address,uint32_t root,int family,int is_root,int depth) {
+    if(depth>12 || !readable(address,4))return;
+    uint32_t tag=(uint32_t)RD32(address);
+    if(tag==0x434c4750){capture_group(address,root,family);return;}
+    if(tag==0x5252414e || tag==0x414e494d || tag==0x43414e53 || tag==0x464f524d || tag==0x4f465353 || tag==0x43434220 || tag==0x504c5554)return;
+    uint32_t count=is_root?tag:(readable(address-4,4)?(uint32_t)RD32(address-4):0x1000);
+    if(count>=0x1000 || !readable(address+(is_root?4:0),count*4))return;
+    for(uint32_t i=0;i<count;++i)walk_groups((uint32_t)RD32(address+(is_root?4:0)+i*4),root,family,0,depth+1);
+}
+static void capture_hill_strips(void) {
+    const uint32_t addresses[]={0x49e660,0x49e668,0x46667c,0x4bc7d8,0x4bc7dc};
+    int saved[5];for(int i=0;i<5;++i)saved[i]=RD32(addresses[i]);
+    int output[16][42],ccb[17]={0},parameters[14]={0},points[8];
+    const int depths[]={210,211,242,243,465,466,497,977,978,1000,1233,1234,2000,4096,8192,256};
+    ccb[15]=(int)0x80000005u;ccb[16]=(int)0x80000005u;
+    char key[128];
+    for(int c=0;c<128;++c) {
+        memset(output,0,sizeof output);RD32(0x49e660)=(int)(uintptr_t)output;RD32(0x49e668)=(int)(uintptr_t)(output+15);
+        RD32(0x46667c)=c%3==0?640:320;RD32(0x4bc7d8)=(c*177)%900-450;RD32(0x4bc7dc)=150+c%7*17;
+        parameters[0]=c%2;parameters[1]=depths[c%16];parameters[2]=(c%11==0?80:240)*65536;
+        const int direction=c%2?1:-1;
+        parameters[3]=direction*(150+c*3);parameters[4]=c%5*40;
+        parameters[5]=parameters[3]+direction*(200+c%7*50);parameters[6]=c%7*30;
+        parameters[7]=parameters[5]+(c%9-4)*50;parameters[8]=parameters[6]+(c%5-2)*20;
+        parameters[9]=parameters[3]+(c%7-3)*50;parameters[10]=parameters[4]+(c%9-4)*20;
+        if(c>=112){parameters[3]=direction*50000;parameters[5]=direction*55000;parameters[7]=direction*60000;parameters[9]=direction*53000;}
+        for(int i=0;i<4;++i){points[i*2]=((c*31+i*77)%800-200)*65536+1777*i;points[i*2+1]=((c*13+i*31)%300-30)*65536+i*911;}
+        parameters[11]=(int)(uintptr_t)ccb;parameters[12]=(int)(uintptr_t)points;parameters[13]=c%4==0;
+#define STRIP_LOG(label,value) do{snprintf(key,sizeof key,"hill.strip.%d.%s",c,label);rr_log(key,value);}while(0)
+        STRIP_LOG("width",RD32(0x46667c));STRIP_LOG("camera_x",RD32(0x4bc7d8));STRIP_LOG("camera_height",RD32(0x4bc7dc));
+        for(int i=0;i<11;++i){snprintf(key,sizeof key,"hill.strip.%d.input.%d",c,i);rr_log(key,parameters[i]);}
+        STRIP_LOG("seam",parameters[13]);for(int i=0;i<8;++i){snprintf(key,sizeof key,"hill.strip.%d.projected.%d",c,i);rr_log(key,points[i]);}
+        ((void (__fastcall*)(int*))0x44bd40)(parameters);
+        const int count=((uintptr_t)RD32(0x49e660)-(uintptr_t)output)/168;STRIP_LOG("count",count);
+        for(int n=0;n<count && n<16;++n)for(int i=0;i<8;++i){snprintf(key,sizeof key,"hill.strip.%d.%d.point.%d",c,n,i);rr_log(key,output[n][17+i]);}
+#undef STRIP_LOG
+    }
+    rr_log("hill.strip.count",128);
+    for(int i=0;i<5;++i)RD32(addresses[i])=saved[i];
+}
+static void capture_hill_panels(void) {
+    const uint32_t addresses[]={0x49e660,0x49e668,0x46667c,0x4bc7d8,0x4bc7dc,0x466678};
+    int saved[6];for(int i=0;i<6;++i)saved[i]=RD32(addresses[i]);
+    unsigned char scratch[64];memcpy(scratch,(void*)0x4c5ce0,64);
+    const unsigned char overlap=RD8(0x468960);
+    int output[40][42],current[65],previous[65],sub[96],old_sub[96],entry[8],cache[36],ccb[17],group[8],row[1];
+    memset(ccb,0,sizeof ccb);memset(group,0,sizeof group);
+    group[0]=0x434c4750;group[2]=(int)(uintptr_t)ccb;group[7]=(int)(uintptr_t)row;row[0]=17;
+    ((unsigned char*)group)[21]=7;((unsigned char*)group)[26]=5;((unsigned char*)group)[27]=5;
+    const int depths[]={465,466,977,978,1233,1234,2000,6000};char key[128];
+    for(int c=0;c<256;++c) {
+        memset(current,0,sizeof current);memset(previous,0,sizeof previous);memset(sub,0,sizeof sub);memset(old_sub,0,sizeof old_sub);memset(entry,0,sizeof entry);memset(cache,0,sizeof cache);memset(output,0,sizeof output);
+        for(int i=1;i<9;++i)cache[i]=(int)(uintptr_t)group;
+        const int side=c%2,direction=side?1:-1,width=c%3==0?640:320;
+        RD32(0x46667c)=width;RD32(0x4bc7d8)=(c*17)%200-100;RD32(0x4bc7dc)=150+c%7*17;RD8(0x468960)=c%4<2;
+        current[side]=(int)(uintptr_t)previous;current[2]=(int)(uintptr_t)entry;current[3]=(int)(uintptr_t)sub;current[63]=(int)(uintptr_t)cache;
+        previous[3]=(int)(uintptr_t)old_sub;current[6]=depths[c%8];previous[6]=current[6]+256;entry[4]=(c%13==0?80:240)*65536;
+        ((unsigned char*)old_sub)[0x3c]=(c/8)%5;
+        current[4]=(c*71)%400-200;previous[4]=current[4]+c%7*10;current[5]=c%5*10;previous[5]=current[5]+c%3*5;
+        for(int i=0;i<4;++i) {
+            const int nearx=width/2+direction*(70+i*50)-c%11*20,farx=width/2+direction*(30+i*20)-c%7*10;
+            const int near_y=160+i*(c%9-4)*7,far_y=100+i*(c%7-3)*5;
+            const int offset=0x60+side*8+(i?i*16:0);
+            current[offset/4]=nearx*65536+c*11;current[offset/4+1]=near_y*65536+c*7;
+            previous[offset/4]=farx*65536+c*13;previous[offset/4+1]=far_y*65536+c*17;
+            if(i==0){sub[0xe8/4+side]=direction*350;old_sub[0xe8/4+side]=direction*350;}
+            else {const int p=0xf0+(i-1)*16+side*8;sub[p/4]=direction*(350+i*500);old_sub[p/4]=direction*(350+i*500)+c%5*50;sub[p/4+1]=(c%7-3)*i*40;old_sub[p/4+1]=(c%5-2)*i*40;}
+        }
+#define HILL_LOG(label,value) do{snprintf(key,sizeof key,"hill.panels.%d.%s",c,label);rr_log(key,value);}while(0)
+        HILL_LOG("side",side);HILL_LOG("width",width);HILL_LOG("camera_x",RD32(0x4bc7d8));HILL_LOG("camera_height",RD32(0x4bc7dc));HILL_LOG("overlap",RD8(0x468960));HILL_LOG("occlusion",entry[4]);HILL_LOG("far_type",((unsigned char*)old_sub)[0x3c]);HILL_LOG("near_depth",current[6]);HILL_LOG("far_depth",previous[6]);
+        for(int i=0;i<4;++i) {
+            const int p=0x60+side*8+(i?i*16:0),w=i==0?0xe8+side*4:0xf0+(i-1)*16+side*8;
+            for(int axis=0;axis<2;++axis) {
+                snprintf(key,sizeof key,"hill.panels.%d.near.projected.%d",c,i*2+axis);rr_log(key,current[p/4+axis]);snprintf(key,sizeof key,"hill.panels.%d.far.projected.%d",c,i*2+axis);rr_log(key,previous[p/4+axis]);
+                const int a=axis==0?sub[w/4]+current[4]:(i?sub[w/4+1]:0)+current[5];
+                const int b=axis==0?old_sub[w/4]+previous[4]:(i?old_sub[w/4+1]:0)+previous[5];
+                snprintf(key,sizeof key,"hill.panels.%d.near.world.%d",c,i*2+axis);rr_log(key,a);snprintf(key,sizeof key,"hill.panels.%d.far.world.%d",c,i*2+axis);rr_log(key,b);
+            }
+        }
+        RD32(0x49e660)=(int)(uintptr_t)output;RD32(0x49e668)=(int)(uintptr_t)(output+39);
+        ((void (__fastcall*)(int*,int,int))0x41c390)(current,-1,side);
+        const int count=((uintptr_t)RD32(0x49e660)-(uintptr_t)output)/168;HILL_LOG("count",count);
+        for(int n=0;n<count && n<40;++n){const unsigned char* b=(void*)output[n];snprintf(key,sizeof key,"hill.panels.%d.%d.flip_u",c,n);rr_log(key,b[100]);snprintf(key,sizeof key,"hill.panels.%d.%d.flip_v",c,n);rr_log(key,b[101]);for(int i=0;i<8;++i){snprintf(key,sizeof key,"hill.panels.%d.%d.point.%d",c,n,i);rr_log(key,output[n][17+i]);}}
+#undef HILL_LOG
+        // Exercise the neighboring shoulder builder using the same owned test group.
+        ((unsigned char*)sub)[0x3c]=4;((unsigned char*)sub)[0x34]=c%5!=0;
+        sub[0xe0/4+side]=direction*250;old_sub[0xe0/4+side]=direction*250;
+        old_sub[0x14c/4+side*3]=direction*450;
+        current[0x50/4+side*2]=current[0x60/4+side*2]-direction*20*65536;
+        previous[0x50/4+side*2]=previous[0x60/4+side*2]-direction*10*65536;
+        RD32(0x466678)=240;
+#define SHOULDER_LOG(label,value) do{snprintf(key,sizeof key,"shoulder.%d.%s",c,label);rr_log(key,value);}while(0)
+        SHOULDER_LOG("side",side);SHOULDER_LOG("width",width);SHOULDER_LOG("height",240);SHOULDER_LOG("near_depth",current[6]);SHOULDER_LOG("far_depth",previous[6]);SHOULDER_LOG("lanes",c%5!=0);SHOULDER_LOG("camera_x",RD32(0x4bc7d8));SHOULDER_LOG("camera_height",RD32(0x4bc7dc));
+        const int old_type=((unsigned char*)old_sub)[0x3c],outer=(old_type==0 || old_type==4)?0x60:0x70;
+        const int sx[4]={previous[0x50/4+side*2],previous[outer/4+side*2],current[0x60/4+side*2],current[0x50/4+side*2]};
+        const int wx[4]={old_sub[0xe0/4+side]+previous[4],old_sub[(outer==0x60?0xe8+side*4:0x14c+side*12)/4]+previous[4],sub[0xe8/4+side]+current[4],sub[0xe0/4+side]+current[4]};
+        for(int i=0;i<4;++i){const int sy=i<2?previous[0x64/4+side*2]:current[0x64/4+side*2],wy=i<2?previous[5]:current[5];snprintf(key,sizeof key,"shoulder.%d.projected.%d",c,i*2);rr_log(key,sx[i]);snprintf(key,sizeof key,"shoulder.%d.projected.%d",c,i*2+1);rr_log(key,sy);snprintf(key,sizeof key,"shoulder.%d.world.%d",c,i*2);rr_log(key,wx[i]);snprintf(key,sizeof key,"shoulder.%d.world.%d",c,i*2+1);rr_log(key,wy);}
+        memset(output,0,sizeof output);RD32(0x49e660)=(int)(uintptr_t)output;
+        ((void (__fastcall*)(int*,int))0x41d260)(current,side);
+        const int shoulders=((uintptr_t)RD32(0x49e660)-(uintptr_t)output)/168;SHOULDER_LOG("count",shoulders);
+        for(int n=0;n<shoulders && n<40;++n){const unsigned char* b=(void*)output[n];snprintf(key,sizeof key,"shoulder.%d.%d.flip_u",c,n);rr_log(key,b[100]);snprintf(key,sizeof key,"shoulder.%d.%d.flip_v",c,n);rr_log(key,b[101]);for(int i=0;i<8;++i){snprintf(key,sizeof key,"shoulder.%d.%d.point.%d",c,n,i);rr_log(key,output[n][17+i]);}}
+#undef SHOULDER_LOG
+    }
+    rr_log("hill.panels.count",256);memcpy((void*)0x4c5ce0,scratch,64);RD8(0x468960)=overlap;
+    for(int i=0;i<6;++i)RD32(addresses[i])=saved[i];
+}
+static void capture_building_panels(void) {
+    const uint32_t addresses[]={0x49e660,0x49e668,0x46667c,0x4bc7d8,0x4bc7dc};
+    int saved[5];for(int i=0;i<5;++i)saved[i]=RD32(addresses[i]);
+    int output[20][42],current[65],previous[65],sub[96],old_sub[96],cache[36],old_cache[36],ccb[17],group[8],row[1],pixel[16],entry[8];
+    memset(ccb,0,sizeof ccb);memset(group,0,sizeof group);memset(pixel,0,sizeof pixel);
+    ccb[2]=(int)(uintptr_t)pixel;ccb[15]=5;ccb[16]=5;
+    group[0]=0x434c4750;group[2]=(int)(uintptr_t)ccb;group[7]=(int)(uintptr_t)row;row[0]=(int)(uintptr_t)pixel;
+    ((unsigned char*)group)[21]=7;((unsigned char*)group)[26]=5;((unsigned char*)group)[27]=5;
+    char key[128];
+    for(int c=0;c<128;++c) {
+        memset(current,0,sizeof current);memset(previous,0,sizeof previous);memset(sub,0,sizeof sub);memset(old_sub,0,sizeof old_sub);memset(cache,0,sizeof cache);memset(old_cache,0,sizeof old_cache);memset(output,0,sizeof output);
+        const int side=c%2,direction=side?1:-1,width=c%3?320:640;
+        RD32(0x46667c)=width;current[side]=(int)(uintptr_t)previous;current[3]=(int)(uintptr_t)sub;previous[3]=(int)(uintptr_t)old_sub;current[63]=(int)(uintptr_t)cache;previous[63]=(int)(uintptr_t)old_cache;
+        cache[1]=cache[2]=old_cache[1]=old_cache[2]=(int)(uintptr_t)group;
+        ((unsigned char*)sub)[0x148+side]=c%7?0:255;((unsigned char*)old_sub)[0x3c]=(c/32)%5;
+        current[0x60/4+side*2]=(width/2+direction*(90-c%11*15))*65536+c*9;
+        previous[0x60/4+side*2]=(width/2+direction*(40-c%13*9))*65536+c*7;
+        current[0x54/4+side*2]=180*65536+c*3;previous[0x54/4+side*2]=(100+c%5*25)*65536+c*5;
+        current[0x74/4+side*2]=c%7*15*65536;current[0x84/4+side*2]=c%5*11*65536;
+        previous[0x74/4+side*2]=(c/3)%7*17*65536;
+        current[0x70/4+side*2]=direction*current[0x74/4+side*2]/2;current[0x80/4+side*2]=direction*current[0x84/4+side*2]/2;
+        previous[0x70/4+side*2]=direction*previous[0x74/4+side*2]/2;previous[0x80/4+side*2]=direction*(c%4)*9*65536;
+        current[0x90/4+side*2]=c%3==0;
+#define BUILD_LOG(label,value) do{snprintf(key,sizeof key,"building.%d.%s",c,label);rr_log(key,value);}while(0)
+        BUILD_LOG("side",side);BUILD_LOG("width",width);BUILD_LOG("selector",((unsigned char*)sub)[0x148+side]);BUILD_LOG("far_type",((unsigned char*)old_sub)[0x3c]);BUILD_LOG("cut_roof",current[0x90/4+side*2]);
+        const int offsets[]={0x60,0x54,0x74,0x84,0x70,0x80};
+        for(int i=0;i<6;++i){snprintf(key,sizeof key,"building.%d.near.%d",c,i);rr_log(key,current[offsets[i]/4+side*2]);snprintf(key,sizeof key,"building.%d.far.%d",c,i);rr_log(key,previous[offsets[i]/4+side*2]);}
+        RD32(0x49e660)=(int)(uintptr_t)output;RD32(0x49e668)=(int)(uintptr_t)(output+19);
+        ((void (__fastcall*)(int*,int))0x40c770)(current,side);
+        int count=((uintptr_t)RD32(0x49e660)-(uintptr_t)output)/168;BUILD_LOG("count",count);
+        for(int n=0;n<count && n<20;++n){snprintf(key,sizeof key,"building.%d.%d.flip_u",c,n);rr_log(key,((unsigned char*)output[n])[100]);snprintf(key,sizeof key,"building.%d.%d.flip_v",c,n);rr_log(key,((unsigned char*)output[n])[101]);for(int i=0;i<8;++i){snprintf(key,sizeof key,"building.%d.%d.point.%d",c,n,i);rr_log(key,output[n][17+i]);}}
+        // Raised shoulder and vertical curb beside the facade.
+        memset(output,0,sizeof output);memset(entry,0,sizeof entry);memset(current,0,sizeof current);memset(previous,0,sizeof previous);memset(sub,0,sizeof sub);memset(old_sub,0,sizeof old_sub);
+        const int depths[]={465,466,977,978,1233,1234,2000,6000};
+        const int nd=depths[c%8],fd=nd+256,ns=RD32(0x46f098+(nd&~1)*2),fs=RD32(0x46f098+(fd&~1)*2);
+        RD32(0x4bc7d8)=0;RD32(0x4bc7dc)=150;
+        current[side]=(int)(uintptr_t)previous;current[2]=(int)(uintptr_t)entry;current[3]=(int)(uintptr_t)sub;previous[3]=(int)(uintptr_t)old_sub;current[63]=(int)(uintptr_t)cache;
+        for(int i=1;i<12;++i)cache[i]=(int)(uintptr_t)group;
+        current[6]=nd;previous[6]=fd;entry[4]=(c%9?240:80)*65536;
+        current[4]=c%11*40-200;previous[4]=current[4]+c%5*20;current[5]=c%5*7;previous[5]=c%7*5;
+        const int nh=c%4*8,fh=c%6*5;
+        sub[0xe0/4+side]=old_sub[0xe0/4+side]=direction*250;
+        sub[0x138/4+side]=100+c%5*30;old_sub[0x138/4+side]=100+c%7*20;
+        sub[0x140/4+side]=nh;old_sub[0x140/4+side]=fh;
+        current[0x50/4+side*2]=(current[4]+direction*250)*ns+width/2*65536;
+        previous[0x50/4+side*2]=(previous[4]+direction*250)*fs+width/2*65536;
+        current[0x60/4+side*2]=current[0x50/4+side*2]+direction*sub[0x138/4+side]*ns;
+        previous[0x60/4+side*2]=previous[0x50/4+side*2]+direction*old_sub[0x138/4+side]*fs;
+        current[0x4c/4]=(150-current[5])*ns+90*65536;previous[0x4c/4]=(150-previous[5])*fs+90*65536;
+        current[0x54/4+side*2]=current[0x4c/4]-nh*ns;previous[0x54/4+side*2]=previous[0x4c/4]-fh*fs;
+#define BS_LOG(label,value) do{snprintf(key,sizeof key,"building.shoulder.%d.%s",c,label);rr_log(key,value);}while(0)
+        BS_LOG("side",side);BS_LOG("width",width);BS_LOG("near_depth",nd);BS_LOG("far_depth",fd);BS_LOG("ceiling",entry[4]);BS_LOG("near_base",current[0x4c/4]);BS_LOG("far_base",previous[0x4c/4]);BS_LOG("near_world_base",current[5]);BS_LOG("far_world_base",previous[5]);
+        const int px[]={previous[0x50/4+side*2],previous[0x60/4+side*2],current[0x60/4+side*2],current[0x50/4+side*2]};
+        const int wx[]={previous[4]+direction*250,previous[4]+direction*(250+old_sub[0x138/4+side]),current[4]+direction*(250+sub[0x138/4+side]),current[4]+direction*250};
+        for(int i=0;i<4;++i){snprintf(key,sizeof key,"building.shoulder.%d.projected.%d",c,i*2);rr_log(key,px[i]);snprintf(key,sizeof key,"building.shoulder.%d.projected.%d",c,i*2+1);rr_log(key,i<2?previous[0x54/4+side*2]:current[0x54/4+side*2]);snprintf(key,sizeof key,"building.shoulder.%d.world.%d",c,i*2);rr_log(key,wx[i]);snprintf(key,sizeof key,"building.shoulder.%d.world.%d",c,i*2+1);rr_log(key,i<2?previous[5]+fh:current[5]+nh);}
+        RD32(0x49e660)=(int)(uintptr_t)output;
+        ((void (__fastcall*)(int*,int,int))0x40bde0)(current,side,-1);
+        count=((uintptr_t)RD32(0x49e660)-(uintptr_t)output)/168;BS_LOG("count",count);
+        for(int n=0;n<count && n<20;++n){snprintf(key,sizeof key,"building.shoulder.%d.%d.flip_u",c,n);rr_log(key,((unsigned char*)output[n])[100]);snprintf(key,sizeof key,"building.shoulder.%d.%d.flip_v",c,n);rr_log(key,((unsigned char*)output[n])[101]);for(int i=0;i<8;++i){snprintf(key,sizeof key,"building.shoulder.%d.%d.point.%d",c,n,i);rr_log(key,output[n][17+i]);}}
+#undef BS_LOG
+#undef BUILD_LOG
+    }
+    rr_log("building.count",128);for(int i=0;i<5;++i)RD32(addresses[i])=saved[i];
+}
+static void capture_terrain_ground(void) {
+    int current[96],next[96];char key[128];
+    for(int c=0;c<32;++c) {
+        memset(current,0,sizeof current);memset(next,0,sizeof next);current[3]=(int)(uintptr_t)next;
+        ((unsigned char*)current)[0x3c]=c%5==0?0:4;((unsigned char*)current)[0x37]=c%5==0?(c/5)%4*8:0;
+        ((unsigned char*)current)[0x148]=c%2?255:0;((unsigned char*)current)[0x149]=c%3?0:255;
+        current[0xe0/4]=-250;current[0xe4/4]=250;current[0xe8/4]=-350;current[0xec/4]=350;current[0x140/4]=c%4*7;current[0x144/4]=c%3*9;
+        next[0xe0/4]=-250-c%3*10;next[0xe4/4]=250+c%5*7;next[0xe8/4]=-350-c%5*13;next[0xec/4]=350+c%7*9;next[0x140/4]=c%3*11;next[0x144/4]=c%4*13;
+        for(int band=0;band<3;++band)for(int side=0;side<2;++side){const int offset=0xf0+band*16+side*8,sign=side?1:-1;current[offset/4]=sign*(650+band*600+c%4*30);current[offset/4+1]=(c%7-3)*(band+1)*25;next[offset/4]=sign*(630+band*610+c%5*25);next[offset/4+1]=(c%5-2)*(band+1)*35;}
+#define GROUND_LOG(label,value) do{snprintf(key,sizeof key,"ground.%d.%s",c,label);rr_log(key,value);}while(0)
+        GROUND_LOG("type",((unsigned char*)current)[0x3c]);GROUND_LOG("flags",((unsigned char*)current)[0x37]);GROUND_LOG("selector_left",((unsigned char*)current)[0x148]);GROUND_LOG("selector_right",((unsigned char*)current)[0x149]);
+        const int offsets[]={0xe0,0xe4,0xe8,0xec,0x140,0x144,0xf0,0xf4,0xf8,0xfc,0x100,0x104,0x108,0x10c,0x110,0x114,0x118,0x11c};
+        for(int i=0;i<18;++i){snprintf(key,sizeof key,"ground.%d.near.%d",c,i);rr_log(key,current[offsets[i]/4]);snprintf(key,sizeof key,"ground.%d.far.%d",c,i);rr_log(key,next[offsets[i]/4]);}
+        for(int i=0;i<64;++i){const int x=(i-32)*75*256+c*3,frac=(i*13+c*7)&255;snprintf(key,sizeof key,"ground.%d.%d.x",c,i);rr_log(key,x);snprintf(key,sizeof key,"ground.%d.%d.fraction",c,i);rr_log(key,frac);snprintf(key,sizeof key,"ground.%d.%d.height",c,i);rr_log(key,((int (__fastcall*)(int*,int,uint32_t))0x439b10)(current,x,frac));}
+#undef GROUND_LOG
+    }
+    rr_log("ground.count",32);
+}
+static void terrain_word(unsigned char*,int,uint32_t);
+static void capture_scenery(void) {
+    const int prior_mode=RD32(0x4753b0),prior_random=RD32(0x49bce8),prior_level=RD8(0x4b8a12);
+    const int random_values[3]={0,123,32767};char key[128];
+    RD32(0x4753b0)=3;
+    for(int c=0;c<32;++c) {
+        uint32_t table[9]={0x52524f42,36,4,32,0,
+            0x014c0182u ^ ((uint32_t)(c%2)<<28) ^ ((uint32_t)(c%3==0)<<31) ^ ((uint32_t)(c%3==1)<<30) ^ ((uint32_t)(c%4==0)<<11),
+            0x034d3084u,0x01560082u,0x033f0081u};
+        int iterator[12]={0};unsigned char road[0x2f8]={0};
+        RD32(0x49bce8)=random_values[c%3];
+#define SCENERY_LOG(field,value) do{snprintf(key,sizeof key,"scenery.%d.%s",c,field);rr_log(key,(value));}while(0)
+        SCENERY_LOG("random",random_values[c%3]);SCENERY_LOG("left",-500-c*10);SCENERY_LOG("right",500+c*7);
+        for(int i=0;i<4;++i){snprintf(key,sizeof key,"scenery.%d.profile.%d",c,i);rr_log(key,table[5+i]);}
+        ((void (__fastcall*)(int*,void*,char))0x451b60)(iterator,table,1);
+        for(int j=0;j<32;++j) {
+            if(j)((void (__fastcall*)(int*,int))0x451e20)(iterator,256);
+            memset(road,0,sizeof road);terrain_word(road,0xe0,(uint32_t)(-500-c*10));terrain_word(road,0xe4,500+c*7);
+            ((void (__fastcall*)(int*,void*))0x451cb0)(iterator,road);
+            const int count=road[0x60];
+            snprintf(key,sizeof key,"scenery.%d.sample.%d.count",c,j);rr_log(key,count);
+            for(int k=0;k<count && k<8;++k){snprintf(key,sizeof key,"scenery.%d.sample.%d.x.%d",c,j,k);int value;memcpy(&value,road+0x6c+k*4,4);rr_log(key,value);}
+            snprintf(key,sizeof key,"scenery.%d.sample.%d.selector",c,j);rr_log(key,road[0x63]);
+            snprintf(key,sizeof key,"scenery.%d.sample.%d.size",c,j);rr_log(key,road[0x62]);
+            snprintf(key,sizeof key,"scenery.%d.sample.%d.mirror",c,j);rr_log(key,road[0x64]&1);
+        }
+#undef SCENERY_LOG
+    }
+    RD32(0x4753b0)=prior_mode;RD32(0x49bce8)=prior_random;RD8(0x4b8a12)=(unsigned char)prior_level;
+}
+
+static void capture_napa_events(void) {
+    FILE* input=fopen("D:\\ROADRASH\\DATA\\COURSES\\NAPA.CRS","rb");if(!input)return;
+    fseek(input,0,SEEK_END);const long size=ftell(input);rewind(input);
+    if(size<24 || size>10000000){fclose(input);return;}
+    unsigned char* bytes=malloc(size);if(!bytes){fclose(input);return;}
+    if(fread(bytes,1,size,input)!=(size_t)size){free(bytes);fclose(input);return;}fclose(input);
+#define COURSE_WORD(p) (*(uint32_t*)(bytes+(p)))
+    const uint32_t table=COURSE_WORD(16);uint32_t segments=0;
+    if(table>(uint32_t)size || (uint32_t)size-table<16)goto done;
+    const uint32_t entries=COURSE_WORD(table+8);
+    if(entries>((uint32_t)size-table-16)/32)goto done;
+    for(uint32_t i=0;i<entries;++i){const uint32_t row=table+16+i*32;if(COURSE_WORD(row)==0x53475320u)segments=COURSE_WORD(row+8);}
+    if(!segments || segments>(uint32_t)size || (uint32_t)size-segments<16)goto done;
+    const uint32_t count=COURSE_WORD(segments+8);char key[128];
+    if(count>((uint32_t)size-segments-16)/52)goto done;
+    for(uint32_t section=0;section<count;++section) {
+        const uint32_t row=segments+16+section*52,path=segments+COURSE_WORD(row+4),events=COURSE_WORD(row+0x24)?segments+COURSE_WORD(row+0x24):0;
+        if(path>(uint32_t)size || (uint32_t)size-path<16 || (events && (events>(uint32_t)size || (uint32_t)size-events<20)))continue;
+        const uint32_t samples=COURSE_WORD(path+8);if(samples>65536)continue;
+        int state[5]={0};((void (__fastcall*)(int*,int,char))0x452610)(state,events?(int)(uintptr_t)(bytes+events):0,1);
+        snprintf(key,sizeof key,"course.events.%u.count",section);rr_log(key,samples);
+        for(uint32_t sample=0;sample<samples;++sample) {
+            if(sample)((void (__fastcall*)(int*,int))0x452690)(state,256);
+            const int flags=((int (__fastcall*)(int*))0x452710)(state);unsigned char values[4];
+            ((void (__fastcall*)(int*,unsigned char*,unsigned char*,unsigned char*,unsigned char*))0x4527d0)(state,values,values+1,values+2,values+3);
+            snprintf(key,sizeof key,"course.events.%u.%u.flags",section,sample);rr_log(key,(unsigned char)flags);
+            for(int i=0;i<4;++i){snprintf(key,sizeof key,"course.events.%u.%u.value.%d",section,sample,i);rr_log(key,values[i]);}
+        }
+    }
+    rr_log("course.events.sections",count);
+done:
+    free(bytes);
+#undef COURSE_WORD
+}
+static void dump_groups(void) {
+    if(!g_groups)return;
+    group_count=0;
+    for(int slot=0;slot<4;++slot){uint32_t root=(uint32_t)RD32(0x0049e550+4*slot);int family=RD32(0x004b7f10+4*slot);if(family>0)walk_groups(root,root,family,1,0);}
+    rr_log("group.count",group_count);
+    capture_hill_strips();
+    capture_hill_panels();
+    capture_napa_events();
+    capture_scenery();
+    capture_building_panels();
+    capture_terrain_ground();
+}
 // Region records: {base, size} then bytes. Version 2 dumps all of .data/.bss and a two-level
 // closure of heap blocks referenced from the course ring, projected slices and scratch blocks.
 static int heap_pointer(uint32_t v){return v>=0x00500000u && v<0x7ff00000u && readable(v,0x200);}
@@ -485,7 +812,7 @@ static void capture_cels(void) {
                 for(int bound=0;bound<4;++bound){short value;memcpy(&value,body+4+bound*2,2);snprintf(key,sizeof key,"cel.%d.%u.bound.%d",file,id,bound);rr_log(key,value);}
                 if(width && width<=256 && height && height<=512 && levels<=9) for(uint32_t level=0;level<levels;++level) {
                     const uint32_t pointer=cel_word(body,56+12*level);
-                    const size_t pixels=(width>>level)*((height>>level)?height>>level:1);
+                    const size_t pixels=(width>>level)*((height+(1u<<level)-1)>>level);
                     if(!readable(pointer,pixels))continue;
                     char output_path[1024];const char* slash=strrchr(g_output,'\\');const size_t prefix=slash?(size_t)(slash-g_output)+1:0;
                     memcpy(output_path,g_output,prefix);snprintf(output_path+prefix,sizeof output_path-prefix,"%s-cel%d-%u-mip%u.raw",g_scenario,file,id,level);
@@ -503,13 +830,14 @@ static void capture_node_render(void) {
     const uint32_t addresses[]={0x4b7eb0,0x4b7eb4,0x4b7eb8,0x4b7ebc,0x4b7ec0,0x4b7ec4,0x4c5d88,0x4c5d60,0x4c5d64,0x4c5d68,0x4c5d6c,0x484278,0x4c5d20,0x4c5d50,0x466680,0x481fe0,0x481fa8,0x481ff4,0x475648,0x481fb0,0x481fbc};
     int saved[sizeof addresses/sizeof addresses[0]];for(unsigned i=0;i<sizeof addresses/sizeof addresses[0];++i)saved[i]=RD32(addresses[i]);
     const unsigned char locked=RD8(0x475620);RD8(0x475620)=1;RD32(0x466680)=1;RD32(0x481fb0)=0x10;RD32(0x481fbc)=0x10;
-    unsigned char* pixels=malloc(640*480);unsigned char* texture=malloc(1344);unsigned char* edges=malloc(11520);unsigned char uv_saved[32];
+    unsigned char* pixels=malloc(640*480);unsigned char* texture=malloc(8192+65536);unsigned char* edges=malloc(11520);unsigned char uv_saved[32];
     if(!pixels || !texture || !edges){free(pixels);free(texture);free(edges);goto restore;}
     memcpy(edges,(void*)0x484280,5760);memcpy(edges+5760,(void*)0x482bf8,5760);memcpy(uv_saved,(void*)0x4c5d30,32);
     for(int level=0;level<3;++level){const int offset=level==0?0:level==1?1024:1280,size=1024>>(level*2);for(int i=0;i<size;++i)texture[offset+i]=(unsigned char)(i*37+i/7+level*53);}
     const int masks[3]={16,48,112},flags[6]={0,2,4,8,16,32};char key[96];
-    for(int c=0;c<32;++c) {
-        const int high=c%2,width=high?640:320,height=high?480:240;
+    for(int c=0;c<33;++c) {
+        if(c==32)for(int i=0;i<8192+65536;++i)texture[i]=(unsigned char)(i*37+i/7);
+        const int high=c==32?1:c%2,width=high?640:320,height=high?480:240;
         int source[12][42]={{0}},resource[12][32]={{0}},legacy=0;
         RD32(0x481fa8)=high?15:16;RD32(0x481ff4)=high?(int)0xfffffffeu:-1;RD32(0x475648)=masks[c%3];
         RD32(0x4b7eb0)=0;RD32(0x4b7eb4)=0;RD32(0x4b7eb8)=width;RD32(0x4b7ebc)=height-1;RD32(0x4b7ec0)=(int)(uintptr_t)pixels;RD32(0x4b7ec4)=width;
@@ -522,7 +850,13 @@ static void capture_node_render(void) {
             const int left=(n*37+c*13)%420-60,top=(n*29+c*17)%320-40,right=left+20+(n*23+c*7)%180,bottom=top+10+(n*13+c*3)%100;
             const int points[8]={left,top,right,top+((n+c)%3),right-3,bottom,left+5,bottom};
             for(int i=0;i<8;++i)source[n][0x44/4+i]=points[i]*65536+((c+n+i)*1777)%65536;
-            snprintf(key,sizeof key,"nodes.%d.%d.flat",c,n);rr_log(key,n%4==0?20+n:-1);
+            if(c==32) {
+                source[n][2]=(int)(uintptr_t)resource[n];resource[n][2]=255|(31<<16);resource[n][3]=0;resource[n][8]=256;resource[n][9]=32;resource[n][10]=2;resource[n][17]=(int)(uintptr_t)(texture+8192);
+                bytes[0x64]=0;bytes[0x65]=1;bytes[0x66]=0;
+                const int edge[8]={15934114,5943941,20028589,5784981,19218217,5744193,16886329,5904753};
+                for(int i=0;i<8;++i)source[n][0x44/4+i]=n?1000*65536:edge[i];
+            }
+            snprintf(key,sizeof key,"nodes.%d.%d.flat",c,n);rr_log(key,c==32?-1:n%4==0?20+n:-1);
             snprintf(key,sizeof key,"nodes.%d.%d.flags",c,n);rr_log(key,resource[n][3]);
             snprintf(key,sizeof key,"nodes.%d.%d.index",c,n);rr_log(key,resource[n][11]);
             snprintf(key,sizeof key,"nodes.%d.%d.flip_u",c,n);rr_log(key,bytes[0x64]);snprintf(key,sizeof key,"nodes.%d.%d.flip_v",c,n);rr_log(key,bytes[0x65]);
@@ -616,7 +950,7 @@ static void dump_frame(uint32_t site) {
     rr_log("camera.half", RD8(0x00473498));
     rr_log("view.coordinate_shift", RD32(0x00481fa8));
     rr_log("view.coordinate_mask", (uint32_t)RD32(0x00481ff4));
-    if (g_frame==0) dump_raster();
+    if (g_frame==0) {dump_raster();dump_groups();}
     rr_log("view.quality_mask", RD32(0x00475648));
     if (g_scene_written) { rr_log("scene.file",g_frame);rr_log("scene.nodes",g_scene_nodes);g_scene_written=0; }
     if (g_pixel_written) {
@@ -680,15 +1014,29 @@ static int rr_install_hooks(void) {
     char buf[32];
     if (GetEnvironmentVariableA("RR_ORACLE_FRAMES", buf, sizeof buf)) g_quit_after = atoi(buf);
     if (GetEnvironmentVariableA("RR_ORACLE_PIXELS",buf,sizeof buf)) g_pixels=atoi(buf)!=0;
+    if (GetEnvironmentVariableA("RR_ORACLE_GROUPS",buf,sizeof buf)) g_groups=atoi(buf)!=0;
+    if (GetEnvironmentVariableA("RR_ORACLE_DRIVE",buf,sizeof buf)) {
+        g_drive=atoi(buf);if(g_drive<0 || g_drive>2)return 0;
+    }
     env("RR_ORACLE_RASTER",buf,sizeof buf,"0");g_raster=atoi(buf);
     if (GetEnvironmentVariableA("RR_ORACLE_SHOT_EVERY",buf,sizeof buf) && atoi(buf)>0) g_pixel_every=atoi(buf);
-    static const struct { uint32_t site; void* hook; uint8_t bytes[5]; } calls[] = {
-        {0x004163fa, hook_frame_0, {0xe8,0xf1,0xd5,0x02,0}},
-        {0x00416406, hook_frame_1, {0xe8,0xe5,0xd5,0x02,0}},
-        {0x0041656d, hook_frame_2, {0xe8,0x7e,0xd4,0x02,0}},
-        {0x00443249, hook_frame_3, {0xe8,0xa2,0x07,0,0}},
-        {0x004439f5, hook_draw, {0xe8,0x26,0xca,0,0}},
-        {0x00443a5c, hook_project, {0xe8,0x0f,0x03,0,0}}
+    if(GetEnvironmentVariableA("RR_ORACLE_COURSE",buf,sizeof buf)) {
+        g_capture_course=atoi(buf);
+        if(g_capture_course<1 || g_capture_course>5) {
+            if(g_out) fputs("# invalid RR_ORACLE_COURSE (expected 1..5)\n",g_out);
+            return 0;
+        }
+    }
+    static const struct { uint32_t site,target; void* hook; uint8_t bytes[5]; } calls[] = {
+        {0x004163fa,0x004439f0, hook_frame_0, {0xe8,0xf1,0xd5,0x02,0}},
+        {0x00416406,0x004439f0, hook_frame_1, {0xe8,0xe5,0xd5,0x02,0}},
+        {0x0041656d,0x004439f0, hook_frame_2, {0xe8,0x7e,0xd4,0x02,0}},
+        {0x00443249,0x004439f0, hook_frame_3, {0xe8,0xa2,0x07,0,0}},
+        {0x004439f5,0x00450420, hook_draw, {0xe8,0x26,0xca,0,0}},
+        {0x00443a5c,0x00443d70, hook_project, {0xe8,0x0f,0x03,0,0}},
+        {0x00442ea8,0x0044f800, hook_controls, {0xe8,0x53,0xc9,0,0}},
+        {0x00448381,0x00449150, hook_menu_video, {0xe8,0xca,0x0d,0,0}},
+        {0x00448392,0x00421df0, hook_menu_enter, {0xe8,0x59,0x9a,0xfd,0xff}}
     };
     const unsigned count=sizeof calls/sizeof calls[0];
     // Validate ALL sites before changing ANY. A foreign binary is never patched.
@@ -699,8 +1047,7 @@ static int rr_install_hooks(void) {
         }
     }
     for (unsigned i = 0; i < count; ++i) {
-        const uint32_t target=calls[i].site==0x004439f5 ? 0x00450420 : calls[i].site==0x00443a5c ? 0x00443d70 : 0x004439f0;
-        if (!rr_patch_call((uint8_t*)(uintptr_t)calls[i].site, target, calls[i].hook)) {
+        if (!rr_patch_call((uint8_t*)(uintptr_t)calls[i].site, calls[i].target, calls[i].hook)) {
             // Restore any earlier call sites on a protection failure.
             for (unsigned j = 0; j < i; ++j) {
                 DWORD old;

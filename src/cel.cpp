@@ -37,12 +37,21 @@ CelTexture read_indexed_texture(const uint8_t* data,size_t size) {
         const size_t entry=56+12*level;
         if(entry>size || 4>size-entry)throw std::runtime_error("Truncated mip pointer table");
         const uint64_t start=uint64_t(r.word(body+entry))+28;
-        const int w=int(width>>level),h=int(std::max(1u,height>>level));
+        // Non-power-of-two scenery images retain their final partial row at
+        // every mip. Flooring the height discards a row that the original UV
+        // bounds can sample (for example GRVP2SM2's 18 -> 9 -> 5 -> 3 -> 2).
+        const int w=int(width>>level),h=int((height+(1u<<level)-1)>>level);
         const size_t bytes=size_t(w)*h;
         const size_t header_end=56+12*(levels-1)+4;
         if(start<header_end || start>size || bytes>size-start)throw std::runtime_error("Mip pixels outside cel chunk");
         CelMip mip;mip.width=w;mip.height=h;mip.stride_shift=shift-level;
         mip.pixels.assign(b.begin()+body+size_t(start),b.begin()+body+size_t(start)+bytes);
+        const size_t available=std::min<size_t>(65536,size-size_t(start));
+        const size_t storage=available-(available%size_t(w));
+        if(size>header_end && bytes<65536) {
+            mip.sampling_storage.assign(65536,0);
+            std::copy_n(b.begin()+size_t(start),storage,mip.sampling_storage.begin());
+        }
         texture.mips.push_back(std::move(mip));
     }
     return texture;

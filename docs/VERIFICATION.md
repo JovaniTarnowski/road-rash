@@ -261,3 +261,63 @@ Session 19 final validation: native CTest 35/35; ASAN+UBSAN CTest 35/35; standal
   - Frames 10–60 of this capture are identical (the attract race had not started moving).
   - The horizon/sky backdrop drawn before the nodes was already present in the original frame used as the background.
 - `unpack_resource`: all 163 packed FAM records explode with matching size and CRC-32.
+
+## Session 21: native and Android menu controls (October 10, 2026)
+
+- Native Debug CTest: **44/44 pass**, including existing original-component and natural display-list oracle fixtures. Log: `analysis/menu-input-tests.log`.
+- Address/undefined sanitizer CTest: **44/44 pass**, with no sanitizer failures. Log: `analysis/menu-input-sanitizer-tests.log`.
+- Extended `input-test` covers stick activation/release boundaries, signed minimum/maximum, dominant-axis diagonals, immediate reversal, 350/100 ms repeat timing, bounded repeat after a stall, and neutral rearming after interruption. These check native menu conveniences; no original gamepad-menu equivalence is claimed.
+- Viewer resource smoke, all-five-course projection sweep and `rr-game --menu-frames 3 --screenshot analysis/menu-input-menu.bmp` pass. Logs: `analysis/menu-input-smoke.log`, `analysis/menu-input-courses.log`, `analysis/menu-input-frontend.log`. The frontend smoke renders without errors; no physical gamepad interaction or screenshot fidelity comparison was performed.
+- Android ARM64 `assembleDebug assembleRelease -PreleaseDebugSigning=true`: **BUILD SUCCESSFUL**, including both no-game-data checks. Each APK contains only `assets/licenses/LICENSE` and `assets/licenses/SDL-LICENSE.txt`. Development release v1/v2 signatures verify with JDK 21. Logs: `analysis/android-menu-input-build.log`, `analysis/android-menu-input-signature.log`.
+- Standalone macOS Release CTest: **44/44 pass**. Refreshed `.app` and ZIP pass ARM64, 22 system-library dependencies, ad-hoc signature and game-data exclusion checks. Log: `analysis/menu-input-macos-release.log`.
+- `adb devices` reports no connected device. Android rendering, Storage Access Framework import, physical stick/buttons and controller reconnection remain unverified on hardware. Tests verify stick intent separately from the SDL controller discovery/event path.
+
+### Opening Napa scene work (October 11, 2026, ongoing)
+
+- `family-test`: 163 populated disc families, 577 groups, 786 indexed variants; 176 original group selections matched (`analysis/oracle/napa-groups.tsv`).
+- `scene-test`: existing 96 hill projections, 128 new original perspective strip cases (`napa-hill-strips.tsv`), 256 original hill-band cases producing 1,164 nodes (`napa-hill-panels.tsv`); zero differences in points or flips. Input/output fixtures call the original executable's functions; offsets/depth tables are imported from the owned executable.
+- `oracle-scene-test analysis/oracle/napa-start.tsv`: 15 nodes rendered, zero unmatched resources and zero pixel differences. This is display-list replay over the captured frame, not independently constructed live Napa scenery.
+- Current geometry changes have not yet completed the full native/sanitizer/Android release gate. Full integration remains active.
+
+Additional Session 22 checks: `scene-test` compares 256 shoulder cases / 527 nodes with zero differences (`napa-shoulders.tsv`). `course-test` compares 7,949 original Napa event samples with zero differences (`napa-events.tsv`) and validates source metadata for both roadways in all five course routes. `oracle-road-test analysis/oracle/napa-start.tsv` compares one Napa frame with no mismatches. Logs are `analysis/napa-{shoulders,course}-tests.log`.
+
+Session 22 regression gate: native Debug and address/undefined sanitizer each
+pass **46/46 tests** (`analysis/napa-native-tests.log`,
+`analysis/napa-sanitizer-tests.log`). Android ARM64 debug and optimized
+release with development signing both build successfully and pass the existing
+asset exclusion tasks (`analysis/android-napa-scene-build.log`). No physical
+Android validation was possible.
+
+The corrected bootstrap completes `napa-moving.tsv` with 121 frames. Camera
+position remains 12544 throughout, so this is a stationary capture despite the
+filename. Road projection matches all 121 frames. Display-list replay matches
+all 48 nodes in five sampled frames, with zero unmatched resources or differing
+pixels (`analysis/napa-moving-render.log`). Background remains the captured
+original frame; independent scene construction remains unverified.
+
+October 11 playable Napa renderer continuation:
+
+- `build/oracle-scene-test analysis/oracle/napa-drive.tsv`: all four available moving-frame samples match every final indexed pixel (frames 0/150/300/750). Five zero-size shadows in frame 750 are omitted; 125 nonempty nodes render.
+- `build/world_renderer-test analysis/oracle/napa-edge-raster.tsv`: 33 original-function display lists, including the exact thin hill quad from the native sweep, match all pixels. This fixture confirms unsigned address wrapping at a fractional UV edge.
+- `build/course_scene-test`: 7,949 terrain samples, 7,589 hill samples, zero unresolved hill materials; 2,509 geometry windows across both routes and 503 rasterized windows pass.
+- `build/rr-game --assets ../cdrom/ROADRASH --race --ticks 600 --autopilot --screenshot analysis/napa-playable.bmp`: exits successfully with the new playable renderer. This is an early-race smoke check, not a complete race.
+
+Updated live renderer gate: 47/47 native and address/undefined sanitizer tests
+pass; Android ARM64 debug/release both build asset-free
+(`analysis/napa-live-{native,sanitizer}-tests.log`,
+`analysis/android-napa-live-build.log`). This gate precedes dashboard changes.
+The denser course sweep now renders all 2,509 tested geometry views; undefined
+original reads beyond imported storage use documented native zero guards.
+`build/cel-test analysis/oracle/napa-edge-raster.tsv` verifies newly captured
+complete partial mip rows with zero failures. The bounded 60,000-tick Napa
+autopilot reaches first-place finish at 9:49 (`analysis/napa-finish.bmp`).
+`build/hud-test` passes 24 imported dashboard variants and synthetic meter
+boundaries; dashboard changes are awaiting the next full regression gate.
+
+Napa animation/scenery gate (October 11): native 50/50 and ASan/UBSan 50/50
+pass; both Android variants assemble. Full branch raster sweep: 2,509 views,
+624,832 nodes, 6,471 scenery objects with no unresolved frames. Direct roadside
+fixtures: 1,024 samples match. These checks do not establish complete race parity.
+Logs: `analysis/napa-scenery-native-tests.log`,
+`analysis/napa-scenery-sanitizer-tests.log`, `analysis/android-napa-scenery-build.log`,
+`analysis/napa-scenery-raster-sweep.log`.

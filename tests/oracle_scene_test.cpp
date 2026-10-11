@@ -61,7 +61,14 @@ int main(int argc, char** argv) {
             nodes.push_back(n);
         }
         try {
-            rr::render_nodes(fb, nodes, rr::view_mode(f.at("view.high") != 0), uint32_t(f.count("view.quality_mask") ? f.at("view.quality_mask") : 16));
+            for(size_t i=0;i<nodes.size();++i) {
+                try {rr::render_nodes(fb,{nodes[i]},rr::view_mode(f.at("view.high") != 0),uint32_t(f.count("view.quality_mask") ? f.at("view.quality_mask") : 16));}
+                catch(const std::exception& e) {
+                    const auto* t=nodes[i].texture;
+                    if(t)std::cerr<<"texture "<<t->name<<" bounds "<<t->bounds[0]<<','<<t->bounds[1]<<','<<t->bounds[2]<<','<<t->bounds[3]<<" mip0 "<<t->mips[0].width<<'x'<<t->mips[0].height<<'\n';
+                    throw std::runtime_error("node "+std::to_string(i)+": "+e.what());
+                }
+            }
         } catch (const std::exception& e) { std::cerr << "frame " << f.at("scene.file") << ": " << e.what() << "\n"; ++failures; continue; }
         size_t differ = 0;
         for (int y = 0; y < height; ++y)

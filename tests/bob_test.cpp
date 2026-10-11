@@ -1,5 +1,6 @@
 #include "bob.hpp"
 #include "assets.hpp"
+#include "rider_sprites.hpp"
 #include <filesystem>
 #include <iostream>
 
@@ -12,6 +13,8 @@ int main() {
     check(frames.size() == 2 && frames[0].width == 2 && frames[0].height == 1, "frame sizes");
     check(frames[0].pixels == std::vector<uint8_t>({7, 9}), "frame pixels");
     check(frames[1].width == 0 && frames[1].pixels.empty(), "empty frame");
+    rr::RiderSprites sprites;sprites.shadow=frames;
+    check(!rr::rider_texture(sprites,0xe0,1),"empty shadow does not produce invalid texture bounds");
     for (size_t n = 0; n < file.size() - 2; ++n) {
         try { rr::read_bobs(std::vector<uint8_t>(file.begin(), file.begin() + long(n)), 2); check(false, "truncated accepted"); }
         catch (const std::runtime_error&) {}

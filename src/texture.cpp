@@ -7,7 +7,7 @@ void texture_span(uint8_t* destination,size_t count,const std::vector<uint8_t>& 
     uint32_t u=uint32_t(row),v=uint32_t(column);
     for(size_t i=0;i<count;++i) {
         const uint32_t address=(((u&0xffff0000u)<<shift)+v)>>16;
-        if(address>=pixels.size()) throw std::runtime_error("Texture span coordinate outside storage");
+        if(address>=pixels.size()) throw std::runtime_error("Texture span coordinate outside storage: "+std::to_string(address)+" / "+std::to_string(pixels.size())+" shift "+std::to_string(shift)+" row "+std::to_string(int32_t(u))+" column "+std::to_string(int32_t(v)));
         const auto index=pixels[address];if(index || !transparent)destination[i]=index;
         u+=uint32_t(row_step);v+=uint32_t(column_step);
     }

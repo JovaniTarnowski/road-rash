@@ -3,6 +3,7 @@
 #include "road.hpp"
 #include "sound_event.hpp"
 #include <vector>
+#include <functional>
 
 namespace rr {
 // Original timing: 0x004163d0 steps the simulation at QueryPerformanceFrequency/0x3c,
@@ -83,6 +84,7 @@ public:
     Race(std::vector<RouteSample> route_a, std::vector<RouteSample> route_b,
          const PhysicsTables&, const BikeSpec&, int32_t rider_value, std::vector<Opponent> opponents = {},
          int level = 0);   // level 0..4 (0x004b8a12)
+    void set_terrain_source(std::function<const TerrainSlice&(const RouteSample&)> source) { terrain_source_=std::move(source); }
     void step(uint32_t controls);      // one simulation tick
     const std::vector<Rider>& riders() const { return riders_; }
     const Bike& bike() const { return riders_[0].bike; }
@@ -94,6 +96,7 @@ public:
     bool crashed() const { return bike().i32(0x2f4) != 0; }
     int32_t ticks() const { return ticks_; }
     uint32_t camera_position() const;
+    int32_t horizon_scroll() const { return rr::horizon_scroll(camera_heading_); }
     int32_t camera_x() const { return camera_x_; }   // 0x004b7ee8: camera lateral, world units
     Camera camera() const;              // relative to the route's own road at camera_position()
     int32_t speed() const { return bike().i32(0xec); }
@@ -123,6 +126,7 @@ private:
     void resolve_hit(Rider& attacker, size_t index);
     uint32_t random();
 
+    std::function<const TerrainSlice&(const RouteSample&)> terrain_source_;
     std::vector<RouteSample> routes_[2];
     PhysicsTables tables_;
     std::vector<Rider> riders_;
@@ -132,6 +136,8 @@ private:
     uint32_t seed_ = 1;   // MSVC rand() state (0x00455eb0)
     std::vector<SoundEventRecord> sound_events_;
     void sound(SoundEvent, const Bike&);
+    uint32_t previous_camera_position_=0;
+    int32_t camera_heading_=0;
     int32_t camera_x_ = 0, camera_height_ = 150, camera_lift_ = 0, camera_back_ = 0;
 };
 }

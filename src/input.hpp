@@ -11,6 +11,20 @@ struct PlayerInput {
     int steer_axis = 0;   // gamepad stick, -32768..32767
 };
 constexpr int steer_dead_zone = 12000;
+struct MenuDirections {
+    bool left = false, right = false, up = false, down = false;
+};
+// Native menu convenience: one dominant stick direction, with bounded repeat.
+// After interruption, require neutral before accepting a held stick again.
+class MenuStickInput {
+public:
+    MenuDirections update(int x, int y, uint64_t now_ms);
+    void suspend();
+private:
+    enum class Direction { none, left, right, up, down } direction_ = Direction::none;
+    uint64_t next_repeat_ = 0;
+    bool require_neutral_ = false;
+};
 uint32_t controls_from(const PlayerInput&);
 // One touch point on a width x height window.
 PlayerInput touch_input(float x, float y, float width, float height);

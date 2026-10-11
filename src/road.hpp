@@ -13,6 +13,9 @@ DepthTable read_depth_table(const std::vector<uint8_t>& exe);
 
 // Camera position relative to the road surface of the current slice.
 // Race start (0x0044b250) and the camera update (0x00437d80) use height >= 150.
+// 0x0044b3b0 heading accumulation and 0x00438450/0x00443a80 horizon shift.
+int32_t advance_heading(int32_t heading,uint32_t previous,uint32_t current,int32_t previous_bend,int32_t current_bend,bool frozen=false);
+int32_t horizon_scroll(int32_t heading,bool high_resolution=true);
 struct Camera { int32_t x=0, height=150; };
 
 // One projected roadway at a slice.
@@ -22,6 +25,7 @@ struct RoadSurface {
     int32_t left, right;
     // Outer shoulder edges: sub-slice [0x3a]/[0x3b] = road edges -/+ RSLD widths (0x00454240).
     int32_t shoulder_left, shoulder_right;
+    int32_t world_y=0; // accumulated rise, needed by terrain/scenery projection
 };
 
 struct RoadSlice {
