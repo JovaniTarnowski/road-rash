@@ -29,7 +29,7 @@ void remount_crash_actor(Bike& bike,ActorAnimationState& bike_animation,CrashAct
     for(int offset:{0x13c,0x140,0x134,0x138,0x58,0x5c,0x60,0xec,0xf0,0xf4,0x108,0x10c,0x110})rider.motion.i32(offset)=bike.i32(offset);
 }
 CrashRecoveryAction recover_crash_actor(Bike& bike,CrashActor& rider,const ActorAnimationBank& bank,
-    const std::vector<int8_t>& fallback,uint32_t tick,const CrashRecoveryInput& input) {
+    const std::vector<int8_t>& fallback,uint32_t tick,CrashRecoveryInput& input) {
     auto& body=rider.motion;auto& state=rider.animation;
     const auto set=[&](int8_t code){set_animation_with_fallback(state,bank,code,tick,fallback);};
     const auto queue=[&](int8_t code){queue_animation_with_fallback(state,bank,code,fallback);};
@@ -52,7 +52,14 @@ CrashRecoveryAction recover_crash_actor(Bike& bike,CrashActor& rider,const Actor
                 set(41);queue(2);bike.i32(0x2f4)=3;
             }else set(37);
         }else {
-            const uint32_t angle=uint32_t(approx_atan2(longitudinal,lateral/256)&255)*65536;
+            int32_t toward=longitudinal,side=lateral;
+            if(input.player && (input.walk_controls&0x7800)) {
+                const auto controls=input.walk_controls;
+                toward=(controls&0x1000) && longitudinal<0?-1:(controls&0x800) && longitudinal>=1?1:0;
+                side=controls&0x4000?-256:int32_t((controls&0x2000)>>5);
+                input.state_elapsed=0;
+            }
+            const uint32_t angle=uint32_t(approx_atan2(toward,side/256)&255)*65536;
             body.i32(0x128)=angle>0x7fffff && angle!=0x800000?int32_t(int64_t(angle)-0x1000000):int32_t(angle);
             body.i32(0x5c)=body.i32(0x128);body.i32(0xec)=1200;
         }

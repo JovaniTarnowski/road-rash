@@ -15,6 +15,23 @@ int main(int argc,char** argv) {
         rr::CrashActor initialized;rr::init_crash_actor(initialized,config);if(initialized.motion.i32(0xc4)!=8)throw std::runtime_error("Imported rider behavior type");
         std::ifstream file(argc>1?argv[1]:RR_SOURCE_DIR "/analysis/oracle/napa-crash-entry-fixtures.tsv");if(!file){std::cout<<"Original crash fixture absent\n";return 0;}
         std::map<std::string,int64_t> values;std::string line,key;int64_t value;while(std::getline(file,line)){std::istringstream row(line);if(row>>key>>value)values[key]=value;}
+        std::ifstream walking_file(RR_SOURCE_DIR "/analysis/oracle/napa-crash-walking.tsv");
+        if(walking_file) {
+            std::map<std::string,int64_t> walking;while(std::getline(walking_file,line)){std::istringstream row(line);if(row>>key>>value)walking[key]=value;}
+            if(walking.at("crash.walk.count")!=256)throw std::runtime_error("Incomplete original walking fixture");
+            const int bike_offsets[]={0x1c,0x28,0x2f0,0x2f4},rider_offsets[]={0x1c,0x28,0x5c,0xec,0x128};
+            for(int c=0;c<256;++c) {
+                const auto root="crash.walk."+std::to_string(c)+".";rr::Bike bike;rr::CrashActor rider;rider.animation.animation=38;rider.animation.deadline=UINT32_MAX;
+                auto key_for=[&](const char* label,const char* who,int offset){std::ostringstream hex;hex<<std::hex<<offset;return root+label+who+hex.str();};
+                for(int offset:bike_offsets)bike.i32(offset)=int32_t(walking.at(key_for("input.","bike.",offset)));
+                for(int offset:rider_offsets)rider.motion.i32(offset)=int32_t(walking.at(key_for("input.","rider.",offset)));
+                rr::CrashRecoveryInput input;input.player=true;input.walk_controls=uint32_t(walking.at(root+"controls"));input.state_elapsed=int32_t(walking.at(root+"elapsed"));
+                rr::recover_crash_actor(bike,rider,library.playback[0],library.fallback,100,input);
+                for(int a=0;a<2;++a)for(int i=0;i<(a?5:4);++i){const int offset=(a?rider_offsets:bike_offsets)[i];const auto key=key_for("output.",a?"rider.":"bike.",offset);const auto actual=(a?rider.motion:bike).i32(offset);if(actual!=walking.at(key))throw std::runtime_error(key+" walking native="+std::to_string(actual)+" original="+std::to_string(walking.at(key)));}
+                if(input.state_elapsed!=walking.at(root+"output.elapsed") || rider.animation.animation!=walking.at(root+"animation") || rider.animation.queued!=walking.at(root+"queued"))throw std::runtime_error(root+"walking state mismatch");
+            }
+            std::cout<<"256 original player walking decisions match\n";
+        }
         const int remount_offsets[]={0x1c,0x20,0x24,0x28,0x2c,0x30,0x34,0x38,0x3c,0x40,0x58,0x5c,0x60,0xc0,0xec,0xf0,0xf4,0x104,0x108,0x10c,0x110,0x114,0x118,0x134,0x138,0x13c,0x140,0x154,0x174,0x178,0x17c,0x244,0x288,0x2f4};
         for(int c=0;c<values.at("crash.remount.count");++c) {
             const auto root="crash.remount."+std::to_string(c)+".";rr::Bike bike;rr::CrashActor rider;rr::ActorAnimationState bike_animation;

@@ -36,7 +36,7 @@ int main() {
 
     rr::Race race(straight(2000), straight(2000), t, spec, 90);
     check(race.position() == 0x3200, "start on the grid at sample 50 (0x00464218 slot 0)");
-    check(race.lateral() == 16384 >> 8, "grid slot 0 lateral offset");
+    check(race.lateral() == 16384 >> 8, "grid slot 0 lateral offset from the imported EXE table");
 
     uint32_t last = race.position();
     bool monotonic = true;

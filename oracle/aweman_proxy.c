@@ -330,7 +330,7 @@ static void capture_police_spawn(void) {
     if(!readable(cop,0x32c))return;
     const uintptr_t body=(uint32_t)RD32(cop+0x2fc),brain=(uint32_t)RD32(body+0x1d8),stats=(uint32_t)RD32(body+0x1e0);
     const int fields[]={0x18,0x1c,0x20,0x24,0x28,0xc0,0xc4,0xdc,0xe0,0xe4,0xe8,0xec,0xf0,0xf4,0x148,0x14c,0x150,0x154,0x15c,0x160,0x168,0x16c,0x170,0x174,0x178,0x17c,0x180,0x184,0x188,0x18c,0x190,0x194,0x198,0x1a0,0x1a4,0x1a8,0x1ac,0x1b0,0x1b4,0x1b8,0x1d0,0x1e0,0x1f0,0x200,0x260,0x2ec,0x2f0,0x2f4,0x324,0x328};
-    for(size_t i=0;i<sizeof fields/sizeof fields[0];++i)for(int a=0;a<2;++a){snprintf(key,sizeof key,"police.spawn.%s.%x",a?"rider":"bike",fields[i]);rr_log(key,RD32((a?body:cop)+fields[i]));}
+    for(size_t i=0;i<sizeof fields/sizeof fields[0];++i)for(int a=0;a<2;++a){if(a && fields[i]>=0x208)continue;snprintf(key,sizeof key,"police.spawn.%s.%x",a?"rider":"bike",fields[i]);rr_log(key,RD32((a?body:cop)+fields[i]));}
     for(int i=0;i<0x204;i+=4){snprintf(key,sizeof key,"police.spawn.brain.%x",i);rr_log(key,RD32(brain+i));}
     for(int i=0;i<0x40;i+=4){snprintf(key,sizeof key,"police.spawn.stats.%x",i);rr_log(key,RD32(stats+i));}
     for(int a=0;a<2;++a){const uintptr_t obj=a?body:cop;const char* who=a?"rider":"bike";
@@ -755,6 +755,30 @@ static void capture_crash_remount(void) {
     }
     rr_log("crash.remount.count",64);RD32(0x4b6e58)=saved_landmark;RD32(0x4642dc)=saved_cop;RD32(0x4b7ecc)=saved_tick;RD8(0x4c5b00)=saved_net;RD8(0x4c5af9)=saved_net2;
 }
+static void capture_crash_walking(void) {
+    const uint32_t saved_player=RD32(0x4642d8),saved_cop=RD32(0x4642dc),saved_controls=RD32(0x4b7ed0),saved_mode=RD32(0x4c5d7c),saved_tick=RD32(0x4b7ecc);const unsigned char saved_demo=RD8(0x4753c8);
+    int32_t bike[256],actor[256],brain[256],ring[256];char key[128];const int boff[]={0x1c,0x28,0x2f0,0x2f4},aoff[]={0x1c,0x28,0x5c,0xec,0x128};
+    RD32(0x4642dc)=0;RD32(0x4c5d7c)=1;RD8(0x4753c8)=0;RD32(0x4b7ecc)=100;
+    for(int c=0;c<256;++c) {
+        memset(bike,0,sizeof bike);memset(actor,0,sizeof actor);memset(brain,0,sizeof brain);memset(ring,0,sizeof ring);
+        bike[0x324/4]=0;bike[0x2fc/4]=(int32_t)(uintptr_t)actor;bike[0x140/4]=actor[0x140/4]=(int32_t)(uintptr_t)ring;actor[0x1d8/4]=(int32_t)(uintptr_t)brain;RD32(0x4642d8)=(int32_t)(uintptr_t)bike;
+        actor[0x78/4]=RD32(0x474d78);actor[0x80/4]=38;((signed char*)actor)[0x82]=-1;actor[0x84/4]=-1;
+        ((signed char*)brain)[0x160]=8;brain[(0x138+8*4)/4]=1200;
+        bike[0x1c/4]=0x5000;actor[0x1c/4]=0x5000+(c/16%5-2)*9;
+        bike[0x28/4]=0x3000;actor[0x28/4]=0x3000-6000+(c/80%3-1)*6001;
+        bike[0x2f0/4]=87;bike[0x2f4/4]=2;actor[0xec/4]=397;actor[0x5c/4]=actor[0x128/4]=0x70000;RD32(0x4b7ed0)=(c%16)*0x800;
+#define CW_LOG(label,value) do{snprintf(key,sizeof key,"crash.walk.%d.%s",c,label);rr_log(key,value);}while(0)
+        CW_LOG("controls",RD32(0x4b7ed0));CW_LOG("elapsed",1200);
+        for(size_t i=0;i<sizeof boff/sizeof boff[0];++i){snprintf(key,sizeof key,"crash.walk.%d.input.bike.%x",c,boff[i]);rr_log(key,bike[boff[i]/4]);}
+        for(size_t i=0;i<sizeof aoff/sizeof aoff[0];++i){snprintf(key,sizeof key,"crash.walk.%d.input.rider.%x",c,aoff[i]);rr_log(key,actor[aoff[i]/4]);}
+        ((void(__fastcall*)(int32_t*))0x40a600)(bike);
+        for(size_t i=0;i<sizeof boff/sizeof boff[0];++i){snprintf(key,sizeof key,"crash.walk.%d.output.bike.%x",c,boff[i]);rr_log(key,bike[boff[i]/4]);}
+        for(size_t i=0;i<sizeof aoff/sizeof aoff[0];++i){snprintf(key,sizeof key,"crash.walk.%d.output.rider.%x",c,aoff[i]);rr_log(key,actor[aoff[i]/4]);}
+        CW_LOG("output.elapsed",brain[(0x138+8*4)/4]);CW_LOG("animation",((signed char*)actor)[0x80]);CW_LOG("queued",((signed char*)actor)[0x82]);
+#undef CW_LOG
+    }
+    rr_log("crash.walk.count",256);RD32(0x4642d8)=saved_player;RD32(0x4642dc)=saved_cop;RD32(0x4b7ed0)=saved_controls;RD32(0x4c5d7c)=saved_mode;RD32(0x4b7ecc)=saved_tick;RD8(0x4753c8)=saved_demo;
+}
 static void capture_crash_recovery(void) {
     const uint32_t saved_tick=RD32(0x4b7ecc),saved_cop=RD32(0x4642dc),saved_controls=RD32(0x4b7ed0);
     int32_t bike[256],actor[256],brain[256];char key[128];const int codes[]={36,37,38,41};
@@ -1094,6 +1118,7 @@ static void dump_groups(void) {
     capture_crash_entry();
     capture_actor_motion();
     capture_crash_recovery();
+    capture_crash_walking();
     capture_crash_remount();
     capture_police_arrest();
     capture_vehicle_descriptors();

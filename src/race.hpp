@@ -139,7 +139,7 @@ private:
     void vertical(Rider&);
     void walls(Rider&);
     void crash(Rider&);
-    void step_crash(Rider&,bool player);
+    void step_crash(Rider&,bool player,uint32_t controls);
     void step_rider(Rider&, uint32_t controls, bool player);
     void ai_think(Rider&);
     int32_t curvature(const Rider&, size_t sample, int samples) const;

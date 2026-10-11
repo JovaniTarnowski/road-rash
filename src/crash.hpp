@@ -19,12 +19,13 @@ void remount_crash_actor(Bike&,ActorAnimationState& bike_animation,CrashActor&,c
 struct CrashRecoveryInput {
     int32_t state_elapsed=0;
     bool player=false,police_owner=false;
+    uint32_t walk_controls=0; // original 0x7800 direction bits, offline play
 };
 enum class CrashRecoveryAction { none,remount,wrecked };
 // Offline recovery decisions from 0x0040a600. Caller handles route bounds,
 // input-directed walking and the remount reset separately.
 CrashRecoveryAction recover_crash_actor(Bike&,CrashActor&,const ActorAnimationBank&,
-    const std::vector<int8_t>& fallback,uint32_t tick,const CrashRecoveryInput&);
+    const std::vector<int8_t>& fallback,uint32_t tick,CrashRecoveryInput&);
 // Local motion portion of 0x00439920. The callback applies road-relative
 // longitudinal movement (0x00439270) before lateral velocity is added.
 void advance_actor_motion(Bike&,const PhysicsTables&,const std::function<void(int32_t)>& advance_route);

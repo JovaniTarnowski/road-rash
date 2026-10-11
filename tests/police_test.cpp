@@ -1,5 +1,6 @@
 #include "police.hpp"
 #include "assets.hpp"
+#include "actor_descriptors.hpp"
 #include <fstream>
 #include <sstream>
 #include <map>
@@ -35,6 +36,16 @@ int main() {
             const auto root=std::string("police.spawn.");require(values.at(root+"present")==1,"Original cop spawn capture");
             const auto pursuit=rr::police_pursuit(config,int(values.at(root+"level")),int(values.at(root+"player.place")),int(values.at(root+"player.personality")));
             for(int offset:{0x4,0x8,0x7c,0x80,0x1a4,0x1bc,0x1c0,0x1c4,0x1c8,0x1cc}){std::ostringstream hex;hex<<std::hex<<offset;require(pursuit.personality[size_t(offset)/4]==values.at(root+"brain."+hex.str()),"Original police pursuit initialization");}
+            const auto exe=assets.read("ROADRASH.EXE");const rr::ActorAnimationLibrary library(exe,assets.read("DATA/GLOBAL.RSC"));
+            rr::PoliceSpawnInput input;input.level=int(values.at(root+"level"));input.player_place=int(values.at(root+"player.place"));input.player_personality=int(values.at(root+"player.personality"));input.position=int32_t(values.at(root+"bike.1c"));input.lane=int(values.at(root+"brain.18c"));input.lateral_q8=0;input.lane_target_q8=0;
+            const auto actor=rr::make_police_actor(config,rr::read_physics_tables(exe),rr::read_bike_specs(assets.read("DATA/BIKESPEC.RSC")),library,input);
+            const int bike_fields[]={0x18,0x1c,0x20,0x24,0x28,0xc0,0xc4,0xdc,0xe0,0xe4,0xe8,0xec,0xf0,0xf4,0x148,0x14c,0x150,0x154,0x15c,0x160,0x168,0x16c,0x170,0x174,0x178,0x17c,0x180,0x184,0x188,0x18c,0x190,0x194,0x198,0x1a0,0x1a4,0x1a8,0x1ac,0x1b0,0x1b4,0x1b8,0x1d0,0x1e0,0x1f0,0x200,0x260,0x2ec,0x2f0,0x2f4,0x324,0x328};
+            for(int a=0;a<2;++a)for(int offset:bike_fields) {
+                if(a && (offset==0x1e0 || offset>=0x208))continue; // stats pointer and fields beyond the rider allocation
+                std::ostringstream hex;hex<<std::hex<<offset;const auto key=root+(a?"rider.":"bike.")+hex.str();const auto actual=(a?actor.rider:actor.bike).i32(offset);
+                if(actual!=values.at(key))throw std::runtime_error(key+" local constructor native="+std::to_string(actual)+" original="+std::to_string(values.at(key)));
+            }
+            std::cout<<"Original opening Napa local police actor numeric fields match\n";
             for(int offset:{0xc,0x30,0x34,0x38,0x3c}){std::ostringstream hex;hex<<std::hex<<offset;require(config.stats[size_t(offset)/4]==values.at(root+"stats."+hex.str()),"Original police rider statistics");}
             std::cout<<"Original opening Napa police pursuit and stats match\n";
         }

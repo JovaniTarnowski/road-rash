@@ -414,7 +414,7 @@ void Race::crash(Rider& r) {
     r.crash_timer = 0;
 }
 
-void Race::step_crash(Rider& r,bool player) {
+void Race::step_crash(Rider& r,bool player,uint32_t controls) {
     auto& bike=r.bike;auto& body=r.crash_actor;const auto& library=*crash_library_;
     auto motion=[&](Rider& actor) {
         auto& b=actor.bike;b.i32(0x18)=1;
@@ -428,7 +428,14 @@ void Race::step_crash(Rider& r,bool player) {
     Rider detached;detached.bike=body.motion;detached.route=body.route;detached.sample=body.sample;detached.previous_sample=body.previous_sample;
     motion(detached);body.motion=detached.bike;body.route=detached.route;body.sample=detached.sample;body.previous_sample=detached.previous_sample;
     CrashRecoveryInput recovery;recovery.player=player;recovery.state_elapsed=r.crash_timer;
+    if(player) {
+        if(controls&control_accelerate)recovery.walk_controls|=0x800;
+        if(controls&control_brake)recovery.walk_controls|=0x1000;
+        if(controls&control_left)recovery.walk_controls|=0x4000;
+        if(controls&control_right)recovery.walk_controls|=0x2000;
+    }
     const auto action=recover_crash_actor(bike,body,library.playback[0],library.fallback,uint32_t(ticks_),recovery);
+    r.crash_timer=recovery.state_elapsed;
     if(action==CrashRecoveryAction::remount) {
         remount_crash_actor(bike,r.crash_bike_animation,body,crash_config_,library.playback[0],library.fallback,uint32_t(ticks_));
         r.stamina.current=r.stamina.max;r.crash_active=false;return;
@@ -540,7 +547,7 @@ void Race::step_rider(Rider& r, uint32_t controls, bool player) {
         integrate_speed(b, tables_, 0);
         return;
     }
-    if(crash_library_ && b.i32(0x2f4)) {if(!r.crash_active)crash(r);step_crash(r,player);return;}
+    if(crash_library_ && b.i32(0x2f4)) {if(!r.crash_active)crash(r);step_crash(r,player,controls);return;}
     fight(r, controls, size_t(&r - riders_.data()));
     if (b.i32(0x2f4) == 0) {
         if (r.ai) ai_think(r);
