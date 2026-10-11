@@ -1,6 +1,6 @@
 # Port progress
 
-Status of the native macOS ARM64 / Android ARM64 port of Road Rash (1996 Windows rerelease). The port is C++17 with SDL3 and uses no Wine or x86 emulation. It is a **playable game** (`rr-game`). The original front end (menus, Thrash and Big Game, characters, bike shop, Schmooze, restroom options, results, saves and credits) leads into races against seven AI opponents on the original courses. Races use the original bike physics, AI driving, rider contact and combat, drawn with the original rider sprites. Road shading is a placeholder, and there is no traffic or police yet. Audio/video codecs and an explicit video playback path are implemented; race sound triggers and music selection remain open.
+Status of the native macOS ARM64 / Android ARM64 port of Road Rash (1996 Windows rerelease). The port is C++17 with SDL3 and uses no Wine or x86 emulation. It is a **playable game** (`rr-game`). The original front end (menus, Thrash and Big Game, characters, bike shop, Schmooze, restroom options, results, saves and credits) leads into races against seven AI opponents on the original courses. Races use the ported bike physics, AI driving, rider contact, combat and free traffic; none of these has yet been compared with the original tick by tick (plan 10 is building that oracle). Napa draws with the original scene pipeline: road, hills, buildings, shoulders, scenery, horizon scroll and full dashboard. The other four courses still use the placeholder renderer. There are no police. Effects, engines, the RRA soundtrack and all videos play; race MIDI is not done. Remaining work is planned in [plans/00-INDEX.md](plans/00-INDEX.md) (plans 10–15).
 
 Detailed evidence is in [REVERSE_ENGINEERING.md](REVERSE_ENGINEERING.md) and test results in [VERIFICATION.md](VERIFICATION.md). Build and run instructions are in [../README.md](../README.md).
 
@@ -20,10 +20,10 @@ Detailed evidence is in [REVERSE_ENGINEERING.md](REVERSE_ENGINEERING.md) and tes
 | Terrain profiles (building / mountain / hill) | All 109 sections decoded; stateful iterator matches 864 original slices; live cache/random integration open | `src/terrain.cpp` |
 | Other section chunks (`BORR`, `MSRR`, `DZHR`, `CESR`) | Mapped to iterators only | REVERSE_ENGINEERING.md |
 | CEL / PLUT and PC mip textures | 42 CEL wrappers, 117 indexed mip blocks match original loader; legacy packet drawing/table selection open | `src/cel.cpp` |
-| World rendering, colours, horizon and scenery (`CEL `) | Generic display lists and lane-panel/material path verified; full scene integration open; viewer still uses placeholder shading | `src/world_renderer.cpp` |
+| World rendering, colours, horizon and scenery (`CEL `) | Napa: original scene construction (road, hills, shoulders, buildings, curbs, static scenery, horizon scroll) in the playable game, verified piecewise; split stitching/marked terrain open. Other courses and the viewer: placeholder shading | `src/course_scene.cpp`, `src/world_renderer.cpp` |
 | Bike specs (`BIKESPEC.RSC`) | Decoded and applied (`0x00405ea0`) | `src/bike.cpp` |
 | Player bike physics | Ported from the executable: throttle, brake, steering, gears, drag, traction, curve drift, movement along the course, vertical motion/jumps; not oracle-verified | `src/bike.cpp`, `src/race.cpp` |
-| Walls, crashes, remount | Simplified stand-ins | `src/race.cpp` |
+| Walls, crashes, remount | Simplified stand-ins (plan 11 Task 4) | `src/race.cpp` |
 | Playable race (`rr-game`) | Single course, solo, keyboard/gamepad/touch, countdown, HUD, finish/restart | `src/game_main.cpp` |
 | Rider sprites (`BIKERS/*.DAT`, colour remaps) | Decoded; drawn in the game; frame choice by inspection | `src/bob.cpp`, `src/game_main.cpp` |
 | AI opponents | Racing state ported (targets, curve speed, steering/speed control, re-plan, rubber band); overtaking and fight states not ported | `src/race.cpp` |
@@ -44,7 +44,7 @@ Detailed evidence is in [REVERSE_ENGINEERING.md](REVERSE_ENGINEERING.md) and tes
 | Disc import | ISO/folder reader, SHA-256 verification of 341 files, first-run picker/progress UI | `src/importer.cpp`, `src/import_ui.cpp` |
 | Android data packaging | Normal APK excludes game data; guarded developer assets are opt-in | `android/app/build.gradle` |
 | Audio decoding/mixing | All 72 effects and 14 RRA tracks decode; queued stereo mixer, resampling, pause and device reopening | `src/wav.cpp`, `src/mixer.cpp` |
-| Race sounds and soundtrack | Original effect slots, event codes at ported trigger points, engines with Doppler/pan/rpm, volume curve; RRA soundtrack cycling in menus; race MIDI, sirens and car engines not done | `src/sound.cpp` |
+| Race sounds and soundtrack | Original effect slots, event codes at ported trigger points, engines with Doppler/pan/rpm, volume curve; RRA soundtrack cycling in menus; race MIDI (plan 13), sirens and car engines (plan 11) not done | `src/sound.cpp` |
 | Video | AVI scan, Cinepak and IMA: all 59 videos match FFmpeg RGB/audio; native playback via `--video`; frontend selection and hardware A/V sync open | `src/avi.cpp`, `src/cinepak.cpp`, `src/video_player.cpp` |
 | Flat polygon raster | Normalization matches 2,048 original calls; full flat path matches 64 indexed fixtures; scene integration open | `src/raster.cpp`, `src/polygon.cpp` |
 
@@ -189,14 +189,21 @@ Sessions 1–6: September 28, 2026. Later dates are listed per session.
 
 ## Next steps
 
-The complete agent-executable plans to finish the port are in [plans/00-INDEX.md](plans/00-INDEX.md) (plans 01–09, with order and dependencies). The immediate items below are the start of plan 02.
+The plans to finish the port are indexed in [plans/00-INDEX.md](plans/00-INDEX.md), which was reviewed and rewritten on October 11, 2026. In order:
 
-1. Integrate the verified terrain iterators and flat/textured primitives with original per-type projection, cache/random state, visibility and scene construction. Hill projection is verified; shoulder heights, wall transforms and split stitching remain open.
-2. Work out the `DLSR` `+16`/`+17` flag bytes and the per-sample `+0x148`/`+0x149` bytes, which are likely colour or texture selectors.
-3. Find the original road/verge colours (renderers `0x0040b8e0`, `0x0040ccb0`, `0x0040ccf0`) and horizon placement.
-4. Capture the original under Wine (`../play-roadrash.sh`) at known positions and diff against `rr-native --screenshot`.
-5. Run the APK on the device once it is connected and unlocked.
-6. Later milestones (REVERSE_ENGINEERING.md): scenery `CEL `, sprites, bike physics, AI/combat, audio, menus, packaging.
+1. **Plan 10:** seeded per-tick simulation dumps from the original, and a native replay test; then fix physics, AI, combat and traffic until they match. Tasks 1–2 are done; Task 3 is in progress.
+2. **Plan 11:** finish the opening Napa race:
+   - actor animation and merged actor nodes;
+   - remaining scene items;
+   - crashes;
+   - AI fight states;
+   - police;
+   - car engines and the mini dashboard;
+   - a full-race acceptance test.
+3. **Plan 12:** the other four courses and all levels; delete the placeholder renderer.
+4. **Plan 13:** race MIDI with SBK banks, the sound mix/controls/jukebox screens, the attract demo, cutscene audit, save and menu verification.
+5. **Plan 14:** Android on the MANGMI AIR X: device check script, frame-time benchmark, the `HiRes` setting, touch overlay, import/controls/lifecycle checklist, owner signing. Task 1 runs as soon as a device is attached.
+6. **Plan 15:** acceptance script from a clean clone, macOS distribution, upgrade path, multiplayer decision, final docs.
 
 ## Tool and command reference
 
@@ -210,6 +217,7 @@ The complete agent-executable plans to finish the port are in [plans/00-INDEX.md
 | `build/rr-inspect FILE.RSC` | Dump a resource directory |
 | `python3 tools/check_corpus.py ../cdrom/ROADRASH` | Validate all resource containers |
 | `python3 tools/prepare_android_assets.py ../cdrom/ROADRASH` then `android/gradlew -p android assembleDebug` | Build the APK (needs `JAVA_HOME` set to JDK 21) |
+| `npx rea-agents@latest function "../cdrom/ROADRASH/ROADRASH.EXE" <address> --format md` | Independent Ghidra cross-check of one function (needs Node 24 and `GHIDRA_INSTALL_DIR`; setup and limits in [TOOLING.md](TOOLING.md)) |
 
 Import follow-up (October 2): nonseekable ISO input now caches inside the owned staging directory and the cached ISO is removed before commit. A synthetic FIFO import and cancellation/cleanup tests pass. First-run UI is now a CTest smoke check. Hardware SAF remains unverified.
 
@@ -388,3 +396,23 @@ Napa buildings and ground continuation:
   - `Race::set_traffic` steps traffic inside the tick with the per-step camera advance; `rr-game` draws cars through the verified scenery projection between the composed scene and the rider sprites. Traffic runs on every course with a CARS container; composed drawing only on Napa.
 - Verification: 53/53 native tests (`traffic` suite added: exact timer/lane/placement math, pool limit, movement, horn, corpus decode of the real NAPA.CAR and live spawn/draw on the Napa route) and 53/53 address/undefined-sanitizer tests pass. Autopilot screenshot `analysis/napa-traffic.bmp`; a frame diff against a CARS-less assets tree confirms the traffic path changes the render (the shared rand stream also shifts rider AI, as in the original). Android debug and optimized development release APKs build asset-free. No Android device is connected; hardware checks remain open.
 - Traffic is **not** oracle-verified (no tick-level object dump exists yet); the census is static. Rider-car collisions, DZHR scripted vehicles/police, and the original car animation/scaling laws remain open.
+
+### Session 23: port review and replanning (October 11, 2026)
+
+- Reviewed the native and Android ports against the plans. Native Debug CTest passes 53/53, including the `traffic` test (traffic was uncommitted when the review started and was committed as `51cb898` by a parallel session during it). No Android device is attached (`adb devices` is empty).
+- Findings:
+  - Plans 02–07 assumed a `World`/`Object` architecture that was never built.
+  - The oracle could not seed, replay inputs or dump objects per tick, so no simulation system is verified against the original. Plan 10 addresses this; a parallel session completed its Tasks 1–2 (`ab8cc79`, `37c4597`) during the review.
+  - Only Napa uses the original renderer.
+  - The race view ignores the `HiRes` setting.
+  - Android has never run on hardware.
+  - `/Users/archit/Dev/rr/android` is an older Wine-on-Android setup with a patched EXE, not part of the port.
+- Rewrote [plans/00-INDEX.md](plans/00-INDEX.md) with current status, findings, task status per old plan and a new order. Added status banners to plans 01–09.
+- Wrote new plans 10–15: simulation oracle, Napa completion, all courses, music and front end, Android on hardware, release and acceptance. Refreshed this file's header, status table and next steps.
+
+### Session 23 (tooling addendum): REA setup and analysis notes
+
+- `npx rea-agents@latest` (REA 6.4.0) now works on this Mac: Node 24 via nvm (the system Node 25.8.1 line is unsupported) and `GHIDRA_INSTALL_DIR=/opt/homebrew/Cellar/ghidra/12.1.4/libexec` with JDK 21. Setup steps, commands and evidence limits are in [TOOLING.md](TOOLING.md); `rea doctor` stays `healthy: false` overall because Hopper/IDA and agent registrations are optional and unconfigured, which does not block the Ghidra path.
+- REA's Ghidra backend re-analyzed `0x0044dd90` and produced pseudocode identical to the project's own export — an independent confirmation of the `tools/decompile.sh` pipeline. REA is for spot-checks (one to two minutes per function); the project pipeline remains the bulk source.
+- TOOLING.md also collects the session's transferable analysis lessons: Ghidra word-scaled pointer arithmetic, mis-decompiled helpers needing the raw disassembly (`0x0040b5f0`), int-sized object slots (the car phase wrap bug), reversed resource tags, the `CRSR`/`LBTR` fixture layout, runtime-initialised EXE words versus embeddable static tables, the single shared MSVC rand stream (and why feature-diff pixel comparisons diverge globally), and tracing constants to their exact address (`DAT_004b7e8c` = 25 versus the 2500 spawn rate).
+- Workflow lesson recorded for concurrent sessions: stage with explicit pathspecs, not `git add -A` (two interleaved commits already happened: `37c4597` and `51cb898`), and check file mtimes for active writers before editing shared docs.
