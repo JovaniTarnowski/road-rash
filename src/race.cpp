@@ -1,5 +1,6 @@
 #include "race.hpp"
 #include "terrain_ground.hpp"
+#include "traffic.hpp"
 #include <algorithm>
 #include <cstdlib>
 #include <stdexcept>
@@ -52,6 +53,7 @@ Race::Race(std::vector<RouteSample> a, std::vector<RouteSample> b, const Physics
     if (routes_[0].size() < 64 || routes_[1].size() < 64) throw std::runtime_error("Route too short for a race");
     auto place_rider = [&](const BikeSpec& s, int32_t value, int slot) {
         Rider r;
+        r.slot = slot;
         init_bike_object(r.bike, tables_);
         apply_spec(r.bike, s, value);
         r.bike.i32(0x18) = 1;                                   // updated every tick
@@ -532,6 +534,38 @@ uint32_t Race::random() {
     return (seed_ >> 16) & 0x7fff;
 }
 
+// Plan 10: field order follows tests/sim_fields.hpp rider_fields. Values are
+// read from the same members the game steps, keyed by grid slot.
+RaceSnapshot Race::snapshot() const {
+    RaceSnapshot out{ticks_, seed_, {}};
+    for (const auto& r : riders_) {
+        const std::string p = "rider." + std::to_string(r.slot) + ".";
+        const Bike& b = r.bike;
+        out.fields.push_back({p + "position", b.i32(0x1c)});
+        out.fields.push_back({p + "lateral", b.i32(0x28)});
+        out.fields.push_back({p + "height", b.i32(0x20)});
+        out.fields.push_back({p + "velocity", b.i32(0xf4)});
+        out.fields.push_back({p + "speed", b.i32(0xec)});
+        out.fields.push_back({p + "gear", b.i32(0x23c)});
+        out.fields.push_back({p + "condition", b.i32(0x2f0)});
+        out.fields.push_back({p + "crash", b.i32(0x2f4)});
+        out.fields.push_back({p + "slice", int64_t(r.sample)});
+        out.fields.push_back({p + "flags", b.u8(0xc0)});
+        out.fields.push_back({p + "stamina_current", r.stamina.current});
+        out.fields.push_back({p + "stamina_max", r.stamina.max});
+        out.fields.push_back({p + "weapon", r.weapon});
+        out.fields.push_back({p + "ai_target_x", r.brain.target_x});
+        out.fields.push_back({p + "ai_target_position", r.brain.target_position});
+        out.fields.push_back({p + "ai_target_speed", r.brain.target_speed});
+        out.fields.push_back({p + "ai_current_speed", r.brain.current_speed});
+        out.fields.push_back({p + "ai_base_speed", r.brain.base_speed});
+        out.fields.push_back({p + "ai_replan", r.brain.replan_ticks});
+        out.fields.push_back({p + "ai_lane", r.brain.lane});
+        out.fields.push_back({p + "ai_bias", r.brain.bias});
+    }
+    return out;
+}
+
 void Race::fight(Rider& r, uint32_t controls, size_t index) {
     Bike& b = r.bike;
     if (b.i32(0x2f4) != 0) { r.attack.timer = 0; return; }
@@ -691,6 +725,13 @@ void Race::step(uint32_t controls) {
     update_camera();
     const auto& player=riders_[0];const auto& road=route_of(player);
     camera_heading_=advance_heading(camera_heading_,previous_camera_position_,camera_position(),road[player.previous_sample].path.bend,road[player.sample].path.bend,(player.bike.u8(0xc0)&16)!=0);
+    if (traffic_) {
+        // 0x0044b3b0: distance moved this step feeds the spawn timers; the
+        // front cursor rides 0x5000 ahead of the camera (0x004552e0).
+        const int32_t camera=int32_t(camera_position());
+        traffic_->step(road,camera,camera+0x5000,camera-int32_t(previous_camera_position_),
+            player.bike.i32(0x1c),player.bike.i32(0x28),[this]{return random();});
+    }
     previous_camera_position_=camera_position();
 }
 }

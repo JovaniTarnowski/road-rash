@@ -1,0 +1,49 @@
+/* Shared per-tick field table for the simulation oracle (plan 10). C mirror
+ * of tests/sim_fields.hpp; the test checks names, offsets, widths and order
+ * agree. Offsets are original object words. */
+#ifndef RR_SIM_FIELDS_H
+#define RR_SIM_FIELDS_H
+
+#include <stdint.h>
+
+typedef struct { const char* name; uint32_t offset; uint8_t width; uint8_t is_signed; } rr_sim_field;
+
+static const rr_sim_field rr_sim_rider_fields[] = {
+    {"position", 0x1c, 4, 1},
+    {"lateral", 0x28, 4, 1},
+    {"height", 0x20, 4, 1},
+    {"velocity", 0xf4, 4, 1},
+    {"speed", 0xec, 4, 1},
+    {"gear", 0x23c, 4, 1},
+    {"condition", 0x2f0, 4, 1},
+    {"crash", 0x2f4, 4, 1},
+    {"slice", 0x140, 4, 1},
+    {"flags", 0xc0, 1, 0},
+    {"stamina_current", 0x3c, 4, 1},
+    {"stamina_max", 0x38, 4, 1},
+    {"weapon", 0x1c8, 4, 1},
+    {"ai_target_x", 0x194, 4, 1},
+    {"ai_target_position", 0x198, 4, 1},
+    {"ai_target_speed", 0x19c, 4, 1},
+    {"ai_current_speed", 0x1a4, 4, 1},
+    {"ai_base_speed", 0x1bc, 4, 1},
+    {"ai_replan", 0x188, 4, 1},
+    {"ai_lane", 0x18c, 4, 1},
+    {"ai_bias", 0x190, 4, 1}
+};
+
+static const rr_sim_field rr_sim_car_fields[] = {
+    {"active", 0xffffffffu, 1, 0},
+    {"kind", 0x73, 1, 0},
+    {"vehicle", 0x7f, 1, 0},
+    {"lane", 0x7a, 1, 1},
+    {"position", 0x1c, 4, 1},
+    {"lateral", 0x28, 4, 1},
+    {"speed", 0xec, 4, 1},
+    {"phase", 0x71, 4, 1}
+};
+
+#define RR_SIM_RIDER_FIELD_COUNT (sizeof rr_sim_rider_fields / sizeof rr_sim_rider_fields[0])
+#define RR_SIM_CAR_FIELD_COUNT (sizeof rr_sim_car_fields / sizeof rr_sim_car_fields[0])
+
+#endif

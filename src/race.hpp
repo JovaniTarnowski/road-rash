@@ -4,8 +4,10 @@
 #include "sound_event.hpp"
 #include <vector>
 #include <functional>
+#include <string>
 
 namespace rr {
+class TrafficSystem;
 // Original timing: 0x004163d0 steps the simulation at QueryPerformanceFrequency/0x3c,
 // at most 0x14 steps per frame.
 constexpr int ticks_per_second = 60;
@@ -61,6 +63,7 @@ struct AiState {
 struct Rider {
     Bike bike;
     int route = 0;                          // which branch route (0 = half 0)
+    int slot = 0;                           // grid slot 0..7 (0x00464218); 0 is the player
     size_t sample = 0, previous_sample = 0; // bike +0x140 / +0x13c
     bool ai = false;
     AiState brain;
@@ -74,6 +77,11 @@ struct Rider {
     int32_t invulnerable_until = 0;         // +0x1d0: no further hits before this tick
 };
 
+// Per-tick snapshot for the simulation oracle (plan 10). Rider fields are
+// keyed "rider.<grid slot>.<field>" from tests/sim_fields.hpp; the tick and
+// rng come first. Traffic cars are appended by TrafficSystem.
+struct FieldValue { std::string name; int64_t value; };
+struct RaceSnapshot { int32_t tick; uint32_t rng; std::vector<FieldValue> fields; };
 // Riders on a course: bike physics (bike.hpp), movement along the route
 // (0x004395e0/0x00439270/0x00439390/0x004394c0), ground height and vertical motion
 // (0x00439b10 case 0, 0x0043a190), branch choice at splits, AI racing (0x00407bd0 state 1)
@@ -85,6 +93,10 @@ public:
          const PhysicsTables&, const BikeSpec&, int32_t rider_value, std::vector<Opponent> opponents = {},
          int level = 0);   // level 0..4 (0x004b8a12)
     void set_terrain_source(std::function<const TerrainSlice&(const RouteSample&)> source) { terrain_source_=std::move(source); }
+    // Free traffic steps with the race on the player's route (0x0044b3b0 calls
+    // 0x0044dd90 with the per-step camera advance). The random-call
+    // interleaving against the original's scheduler is not verified.
+    void set_traffic(TrafficSystem* traffic) { traffic_ = traffic; }
     void step(uint32_t controls);      // one simulation tick
     const std::vector<Rider>& riders() const { return riders_; }
     const Bike& bike() const { return riders_[0].bike; }
@@ -101,6 +113,11 @@ public:
     Camera camera() const;              // relative to the route's own road at camera_position()
     int32_t speed() const { return bike().i32(0xec); }
     int gear() const { return bike().i32(0x23c); }
+    // Simulation oracle hooks (plan 10): read and write the MSVC rand state
+    // (0x00455eb0) and dump every snapshotted field.
+    uint32_t rng_state() const { return seed_; }
+    void set_rng_state(uint32_t s) { seed_ = s; }
+    RaceSnapshot snapshot() const;
     int place(size_t rider) const;      // 1-based race order (finished riders by finish tick)
     int last_target() const { return last_target_; }   // rider most recently hit by the player
     // Sound events queued this tick (0x00436830 call sites that involve the player).
@@ -127,6 +144,7 @@ private:
     uint32_t random();
 
     std::function<const TerrainSlice&(const RouteSample&)> terrain_source_;
+    TrafficSystem* traffic_ = nullptr;
     std::vector<RouteSample> routes_[2];
     PhysicsTables tables_;
     std::vector<Rider> riders_;
