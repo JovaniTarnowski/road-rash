@@ -1,5 +1,7 @@
 #pragma once
 #include "bike.hpp"
+#include "crash.hpp"
+#include "actor_descriptors.hpp"
 #include "road.hpp"
 #include "sound_event.hpp"
 #include <vector>
@@ -69,6 +71,9 @@ struct Rider {
     AiState brain;
     bool finished = false;
     int32_t finish_tick = -1;
+    CrashActor crash_actor;
+    ActorAnimationState crash_bike_animation;
+    bool crash_active=false;
     int32_t crash_timer = 0;
     int colour = 0;                         // rider colour remap index (0x0046e158)
     RiderStats stamina;
@@ -97,6 +102,7 @@ public:
     // 0x0044dd90 with the per-step camera advance). The random-call
     // interleaving against the original's scheduler is not verified.
     void set_traffic(TrafficSystem* traffic) { traffic_ = traffic; }
+    void set_crash_library(const ActorAnimationLibrary&,const CrashConfig&);
     void step(uint32_t controls);      // one simulation tick
     const std::vector<Rider>& riders() const { return riders_; }
     const Bike& bike() const { return riders_[0].bike; }
@@ -104,6 +110,7 @@ public:
     int32_t lateral() const { return bike().i32(0x28) >> 8; }
     const std::vector<RouteSample>& route() const { return route_of(riders_[0]); }
     const std::vector<RouteSample>& route_of(const Rider& r) const { return routes_[r.route]; }
+    const std::vector<RouteSample>& route_for(int road) const { return routes_[road]; }
     bool finished() const { return riders_[0].finished; }
     bool crashed() const { return bike().i32(0x2f4) != 0; }
     int32_t ticks() const { return ticks_; }
@@ -132,6 +139,7 @@ private:
     void vertical(Rider&);
     void walls(Rider&);
     void crash(Rider&);
+    void step_crash(Rider&,bool player);
     void step_rider(Rider&, uint32_t controls, bool player);
     void ai_think(Rider&);
     int32_t curvature(const Rider&, size_t sample, int samples) const;
@@ -145,6 +153,8 @@ private:
 
     std::function<const TerrainSlice&(const RouteSample&)> terrain_source_;
     TrafficSystem* traffic_ = nullptr;
+    const ActorAnimationLibrary* crash_library_=nullptr;
+    CrashConfig crash_config_;
     std::vector<RouteSample> routes_[2];
     PhysicsTables tables_;
     std::vector<Rider> riders_;

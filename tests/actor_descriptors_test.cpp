@@ -30,6 +30,37 @@ int main(int argc,char** argv) {
         if(file) {
             std::map<std::string,int64_t> values;std::string line,key;int64_t value;
             while(std::getline(file,line)){std::istringstream row(line);if(row>>key>>value)values[key]=value;}
+            size_t crash_rider_steps=0;
+            for(int c=0;c<values.at("actor.crash_rider.count");++c) {
+                const auto prefix="actor.crash_rider."+std::to_string(c)+".";rr::ActorAnimationState state;state.animation=int8_t(values.at(prefix+"initial"));state.deadline=UINT32_MAX;rr::CrashRiderAnimationInput input;input.crash=int32_t(values.at(prefix+"initial_crash"));
+                for(int t=0;t<32;++t) {
+                    const auto root=prefix+std::to_string(t)+".";auto get=[&](const char* key){return values.at(root+key);};
+                    input.speed=int32_t(get("speed"));input.height_q8=int32_t(get("height"));
+                    const auto* selected=rr::advance_crash_rider_animation(state,library.playback[0],library.fallback,input,uint32_t(get("tick")),[&]{return uint32_t(get("random"));});
+                    if(input.crash!=get("crash") || state.animation!=get("animation") || state.frame!=get("frame") || state.queued!=get("queued") || state.loops!=get("loops") || state.deadline!=get("deadline"))throw std::runtime_error(root+"crash rider state mismatch");
+                    for(int b=0;b<14;++b) {
+                        const int actual=selected?(b<12?int(selected->render[b]):b==12?int(uint8_t(selected->duration)):int(selected->control)):-1;
+                        if(actual!=values.at(root+"selected."+std::to_string(b)))throw std::runtime_error(root+"crash rider descriptor mismatch");
+                    }
+                    ++crash_rider_steps;
+                }
+            }
+            std::cout<<crash_rider_steps<<" original crash rider animation steps match\n";
+            size_t crash_steps=0;
+            for(int c=0;c<values.at("actor.crash_bike.count");++c) {
+                const auto prefix="actor.crash_bike."+std::to_string(c)+".";rr::ActorAnimationState state;state.animation=int8_t(values.at(prefix+"initial"));state.deadline=UINT32_MAX;
+                for(int t=0;t<32;++t) {
+                    const auto root=prefix+std::to_string(t)+".";auto get=[&](const char* key){return values.at(root+key);};
+                    const auto* selected=rr::advance_crash_bike_animation(state,library.playback[0],library.fallback,int32_t(get("speed")),uint32_t(get("tick")),[&]{return uint32_t(get("random"));});
+                    if(state.animation!=get("animation") || state.frame!=get("frame") || state.queued!=get("queued") || state.loops!=get("loops") || state.deadline!=get("deadline"))throw std::runtime_error(root+"crash bike state mismatch");
+                    for(int b=0;b<14;++b) {
+                        const int actual=selected?(b<12?int(selected->render[b]):b==12?int(uint8_t(selected->duration)):int(selected->control)):-1;
+                        if(actual!=values.at(root+"selected."+std::to_string(b)))throw std::runtime_error(root+"crash bike descriptor mismatch");
+                    }
+                    ++crash_steps;
+                }
+            }
+            std::cout<<crash_steps<<" original crash bike animation steps match\n";
             size_t riding_steps=0;
             for(int c=0;c<values.at("actor.riding.count");++c) {
                 const auto prefix="actor.riding."+std::to_string(c)+".";rr::ActorAnimationState state;state.animation=int8_t(values.at(prefix+"initial"));state.deadline=UINT32_MAX;

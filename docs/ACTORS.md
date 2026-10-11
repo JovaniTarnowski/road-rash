@@ -101,3 +101,5 @@ vehicle), four random bytes (phase, jitter), serial++.
 - Animation advancement `0x0043ae10`/`0x0043ae90` (native frame cycling is a
   stand-in) and the CCB world-size scaling law for cars.
 - Police (`LOCOP.DAT`), arrests and the `BUSTED*.AVI` selection.
+
+October 11 actor update: live Napa vehicles now load imported EXE/CANS descriptors and original view cells, use camera-distance code selection and size-0x500 actor projection, and merge with riders/scenery. The earlier animation/scaling stand-in bullets apply only to the legacy mask-only inspection path. Obstacle/traffic movement, scripted vehicles, collision and police bullets remain open. Live crash actors now separate bike/rider motion and render both through imported playback; whole-frame ordering and split interpolation still require original goldens.

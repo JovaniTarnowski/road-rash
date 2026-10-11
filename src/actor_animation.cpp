@@ -67,6 +67,42 @@ const ActorAnimationFrame* advance_riding_animation(ActorAnimationState& state,c
     }
     return advance_animation(state,bank,tick);
 }
+const ActorAnimationFrame* advance_crash_bike_animation(ActorAnimationState& state,const ActorAnimationBank& bank,const std::vector<int8_t>& fallback,int32_t speed,uint32_t tick,const std::function<uint32_t()>& random) {
+    if(!speed)set_animation_with_fallback(state,bank,48,tick,fallback);
+    else if(state.animation<44 || state.animation>48) {
+        set_animation_with_fallback(state,bank,int8_t(46+((random()&1)==0)),tick,fallback);
+        queue_animation_with_fallback(state,bank,44,fallback);
+    }
+    return advance_animation(state,bank,tick);
+}
+const ActorAnimationFrame* advance_crash_rider_animation(ActorAnimationState& state,const ActorAnimationBank& bank,const std::vector<int8_t>& fallback,CrashRiderAnimationInput& input,uint32_t tick,const std::function<uint32_t()>& random) {
+    auto set=[&](int8_t code){return set_animation_with_fallback(state,bank,code,tick,fallback);};
+    auto queue=[&](int8_t code){return queue_animation_with_fallback(state,bank,code,fallback);};
+    if(input.crash==1) {
+        if(!input.speed) {input.crash=2;set(36);queue(37);}
+        else if(state.animation==35 || state.animation==33) {
+            if(input.height_q8<=0xfff) {
+                if(state.animation==33) {
+                    set(34);
+                    queue(input.speed<0x1f41?int8_t((random()&3)==0?30:28):int8_t(29));
+                }else {set(29);queue(29);}
+            }
+        }else if(state.animation!=34) {
+            if(input.speed<0x1b59) {
+                if(input.speed<0x9c4)set(36);
+                else {
+                    int8_t next=state.animation;
+                    if((random()&3)==0 || next==29 || next==28) {
+                        const uint32_t roll=random()&3;next=roll<2?30:roll==2?31:32;
+                    }
+                    queue(next);
+                }
+            }else if(state.animation!=28 && state.animation!=29)set(29);
+            else queue(28);
+        }
+    }
+    return advance_animation(state,bank,tick);
+}
 const ActorAnimationFrame* advance_animation(ActorAnimationState& state,const ActorAnimationBank& bank,uint32_t tick) {
     const auto* selected=frame_at(bank,state.animation,state.frame);
     if(selected)state.selected=std::array<int8_t,2>{state.animation==-1?int8_t(0):state.animation,state.frame};

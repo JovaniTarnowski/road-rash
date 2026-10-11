@@ -680,6 +680,133 @@ static void capture_vehicle_descriptors(void) {
         memcpy(ccb,saved,sizeof saved);
     }
 }
+static void capture_crash_remount(void) {
+    const uint32_t saved_landmark=RD32(0x4b6e58),saved_cop=RD32(0x4642dc),saved_tick=RD32(0x4b7ecc);const unsigned char saved_net=RD8(0x4c5b00),saved_net2=RD8(0x4c5af9);
+    int32_t bike[256],actor[256],stamina[64],ring[4];char key[128];
+    const int offsets[]={0x1c,0x20,0x24,0x28,0x2c,0x30,0x34,0x38,0x3c,0x40,0x58,0x5c,0x60,0xc0,0xec,0xf0,0xf4,0x104,0x108,0x10c,0x110,0x114,0x118,0x134,0x138,0x13c,0x140,0x154,0x174,0x178,0x17c,0x244,0x288,0x2f4};
+    RD32(0x4b6e58)=0x5000;RD32(0x4642dc)=0;RD8(0x4c5b00)=RD8(0x4c5af9)=0;
+    for(int c=0;c<64;++c) {
+        for(int i=0;i<256;++i){bike[i]=(c+1)*71+i*7;actor[i]=(c+3)*97+i*11;}memset(stamina,0,sizeof stamina);memset(ring,0,sizeof ring);
+        bike[0x2c/4]=(int32_t)(uintptr_t)ring;bike[0x2fc/4]=(int32_t)(uintptr_t)actor;actor[0x1e0/4]=(int32_t)(uintptr_t)stamina;actor[0x1c4/4]=(int32_t)(uintptr_t)bike;bike[0x324/4]=2;stamina[0x38/4]=103;
+        for(int a=0;a<2;++a){int32_t* obj=a?actor:bike;obj[0x78/4]=RD32(0x474d78);obj[0x80/4]=41;((signed char*)obj)[0x82]=-1;obj[0x84/4]=-1;((unsigned char*)obj)[0x88]=c%4;}
+        RD32(0x4b7ecc)=100+c;
+#define RM_LOG(label,value) do{snprintf(key,sizeof key,"crash.remount.%d.%s",c,label);rr_log(key,value);}while(0)
+        RM_LOG("tick",RD32(0x4b7ecc));RM_LOG("input.loops",c%4);
+        for(size_t i=0;i<sizeof offsets/sizeof offsets[0];++i){snprintf(key,sizeof key,"crash.remount.%d.input.bike.%x",c,offsets[i]);rr_log(key,bike[offsets[i]/4]);snprintf(key,sizeof key,"crash.remount.%d.input.rider.%x",c,offsets[i]);rr_log(key,actor[offsets[i]/4]);}
+        ((void (__fastcall*)(int32_t*))0x404560)(bike);
+        for(size_t i=0;i<sizeof offsets/sizeof offsets[0];++i){snprintf(key,sizeof key,"crash.remount.%d.output.bike.%x",c,offsets[i]);rr_log(key,bike[offsets[i]/4]);snprintf(key,sizeof key,"crash.remount.%d.output.rider.%x",c,offsets[i]);rr_log(key,actor[offsets[i]/4]);}
+        RM_LOG("stamina",stamina[0x3c/4]);
+        for(int a=0;a<2;++a){int32_t* obj=a?actor:bike;const char* who=a?"rider":"bike";
+#define RM_STATE(label,value) do{snprintf(key,sizeof key,"crash.remount.%d.%s.%s",c,who,label);rr_log(key,value);}while(0)
+        RM_STATE("animation",((signed char*)obj)[0x80]);RM_STATE("frame",((signed char*)obj)[0x81]);RM_STATE("queued",((signed char*)obj)[0x82]);RM_STATE("loops",((unsigned char*)obj)[0x88]);RM_STATE("deadline",(uint32_t)obj[0x84/4]);
+#undef RM_STATE
+        }
+#undef RM_LOG
+    }
+    rr_log("crash.remount.count",64);RD32(0x4b6e58)=saved_landmark;RD32(0x4642dc)=saved_cop;RD32(0x4b7ecc)=saved_tick;RD8(0x4c5b00)=saved_net;RD8(0x4c5af9)=saved_net2;
+}
+static void capture_crash_recovery(void) {
+    const uint32_t saved_tick=RD32(0x4b7ecc),saved_cop=RD32(0x4642dc),saved_controls=RD32(0x4b7ed0);
+    int32_t bike[256],actor[256],brain[256];char key[128];const int codes[]={36,37,38,41};
+    const int boff[]={0x1c,0x28,0x2ec,0x2f0,0x2f4};const int aoff[]={0x1c,0x28,0x5c,0xec,0x128};
+    RD32(0x4642dc)=0;RD32(0x4b7ed0)=0;
+    for(int c=0;c<256;++c) {
+        memset(bike,0,sizeof bike);memset(actor,0,sizeof actor);memset(brain,0,sizeof brain);
+        bike[0x324/4]=2;bike[0x2fc/4]=(int32_t)(uintptr_t)actor;actor[0x1d8/4]=(int32_t)(uintptr_t)brain;
+        actor[0x78/4]=RD32(0x474d78);actor[0x80/4]=codes[c%4];((signed char*)actor)[0x82]=-1;actor[0x84/4]=-1;((unsigned char*)actor)[0x88]=c%4;
+        ((signed char*)brain)[0x160]=8;brain[(0x138+8*4)/4]=c%5==0?1201:1200;
+        bike[0x1c/4]=0x5000;actor[0x1c/4]=0x5000+(c%7-3)*9;
+        bike[0x28/4]=0x3000;actor[0x28/4]=0x3000-6000+(c%9-4)*2000;
+        bike[0x2ec/4]=103;bike[0x2f0/4]=c%3?87:0;bike[0x2f4/4]=c%13==0?1:2;
+        actor[0xec/4]=397;actor[0x5c/4]=actor[0x128/4]=0x70000;RD32(0x4b7ecc)=100+c;
+#define RC_LOG(label,value) do{snprintf(key,sizeof key,"crash.recovery.%d.%s",c,label);rr_log(key,value);}while(0)
+        RC_LOG("tick",RD32(0x4b7ecc));RC_LOG("elapsed",brain[(0x138+8*4)/4]);RC_LOG("input.animation",((signed char*)actor)[0x80]);RC_LOG("input.loops",((unsigned char*)actor)[0x88]);
+        for(size_t i=0;i<sizeof boff/sizeof boff[0];++i){snprintf(key,sizeof key,"crash.recovery.%d.input.bike.%x",c,boff[i]);rr_log(key,bike[boff[i]/4]);}
+        for(size_t i=0;i<sizeof aoff/sizeof aoff[0];++i){snprintf(key,sizeof key,"crash.recovery.%d.input.rider.%x",c,aoff[i]);rr_log(key,actor[aoff[i]/4]);}
+        ((void (__fastcall*)(int32_t*))0x40a600)(bike);
+        for(size_t i=0;i<sizeof boff/sizeof boff[0];++i){snprintf(key,sizeof key,"crash.recovery.%d.output.bike.%x",c,boff[i]);rr_log(key,bike[boff[i]/4]);}
+        for(size_t i=0;i<sizeof aoff/sizeof aoff[0];++i){snprintf(key,sizeof key,"crash.recovery.%d.output.rider.%x",c,aoff[i]);rr_log(key,actor[aoff[i]/4]);}
+        RC_LOG("animation",((signed char*)actor)[0x80]);RC_LOG("frame",((signed char*)actor)[0x81]);RC_LOG("queued",((signed char*)actor)[0x82]);RC_LOG("loops",((unsigned char*)actor)[0x88]);RC_LOG("deadline",(uint32_t)actor[0x84/4]);
+#undef RC_LOG
+    }
+    rr_log("crash.recovery.count",256);RD32(0x4b7ecc)=saved_tick;RD32(0x4642dc)=saved_cop;RD32(0x4b7ed0)=saved_controls;
+}
+static void capture_actor_motion(void) {
+    const uint32_t saved_accel=RD32(0x4c3cec),saved_cop=RD32(0x4642dc);int32_t actor[256],bike[256],ring[256];char key[128];
+    const int offsets[]={0x18,0x1c,0x20,0x24,0x28,0x2c,0x30,0x34,0x38,0x3c,0x40,0xec,0xf0,0xf4,0x108,0x10c,0x128,0x12c,0x130,0x134,0x138,0x13c,0x140,0x184,0x188,0x18c,0x19c};
+    RD32(0x4642dc)=0;
+    for(int c=0;c<512;++c) {
+        memset(actor,0,sizeof actor);memset(bike,0,sizeof bike);memset(ring,0,sizeof ring);
+        ring[8/4]=ring[12/4]=ring[24/4]=ring[28/4]=(int32_t)(uintptr_t)ring;actor[0x2c/4]=actor[0x13c/4]=actor[0x140/4]=(int32_t)(uintptr_t)ring;actor[0xc4/4]=8;actor[0x1c4/4]=(int32_t)(uintptr_t)bike;bike[0x324/4]=0;
+        actor[0x18/4]=c%4+1;actor[0x1c/4]=128+c*256;actor[0x20/4]=c%7*71;actor[0x24/4]=c%5*23;actor[0x28/4]=(c%9-4)*1000;actor[0xec/4]=(c%21-10)*997;actor[0xf0/4]=(c%11-5)*97;actor[0xf4/4]=(c%13-6)*113;actor[0x128/4]=c%16?((c%16)*0x100000+(c%5)*4096):0;actor[0x184/4]=(c%7-3)*123;actor[0x188/4]=(c%9-4)*137;actor[0x18c/4]=(c%11-5)*151;actor[0x19c/4]=c%2;RD32(0x4c3cec)=(c%9-4)*101;
+#define AM_LOG(label,value) do{snprintf(key,sizeof key,"actor.motion.%d.%s",c,label);rr_log(key,value);}while(0)
+        AM_LOG("accel",RD32(0x4c3cec));
+        for(size_t i=0;i<sizeof offsets/sizeof offsets[0];++i){snprintf(key,sizeof key,"actor.motion.%d.input.%x",c,offsets[i]);rr_log(key,actor[offsets[i]/4]);}
+        ((void (__fastcall*)(int32_t*))0x439920)(actor);
+        for(size_t i=0;i<sizeof offsets/sizeof offsets[0];++i){snprintf(key,sizeof key,"actor.motion.%d.output.%x",c,offsets[i]);rr_log(key,actor[offsets[i]/4]);}
+#undef AM_LOG
+    }
+    rr_log("actor.motion.count",512);RD32(0x4c3cec)=saved_accel;RD32(0x4642dc)=saved_cop;
+}
+static void capture_crash_entry(void) {
+    const uint32_t saved_landmark=RD32(0x4b6e58),saved_cop=RD32(0x4642dc),saved_tick=RD32(0x4b7ecc);const unsigned char saved_net=RD8(0x4c5b00),saved_net2=RD8(0x4c5af9);
+    int32_t bike[256],actor[256],ring[4],rider_impulse[3],bike_impulse[3];char key[128];
+    const int offsets[]={0x1c,0x20,0x24,0x28,0x2c,0x30,0x34,0x38,0x3c,0x40,0x58,0x5c,0x60,0xbc,0xc0,0xec,0xf0,0xf4,0x104,0x108,0x10c,0x110,0x114,0x118,0x11c,0x120,0x124,0x128,0x12c,0x130,0x134,0x138,0x13c,0x140,0x154,0x158,0x160,0x164,0x16c,0x174,0x178,0x17c,0x198,0x19c,0x1a0,0x244,0x288,0x2f4,0x2f8};
+    RD32(0x4b6e58)=0x5000;RD32(0x4642dc)=0;RD8(0x4c5b00)=RD8(0x4c5af9)=0;
+    for(int c=0;c<64;++c) {
+        for(int i=0;i<256;++i){bike[i]=(c+1)*97+i*11;actor[i]=(c+3)*71+i*5;}
+        memset(ring,0,sizeof ring);bike[0x2c/4]=(int32_t)(uintptr_t)ring;bike[0x2fc/4]=(int32_t)(uintptr_t)actor;bike[0x324/4]=2;bike[0x2f4/4]=c%11==0?1:0;actor[0x1c4/4]=(int32_t)(uintptr_t)bike;actor[0x78/4]=RD32(0x474d78);actor[0x80/4]=2;((signed char*)actor)[0x82]=-1;actor[0x84/4]=-1;((unsigned char*)actor)[0x88]=0;
+        for(int i=0;i<3;++i){rider_impulse[i]=(c%5-2)*(i+1)*137;bike_impulse[i]=(c%7-3)*(i+1)*211;}
+        RD32(0x4b7ecc)=100+c;
+#define CE_LOG(label,value) do{snprintf(key,sizeof key,"crash.entry.%d.%s",c,label);rr_log(key,value);}while(0)
+        CE_LOG("reason",c%8);CE_LOG("tick",RD32(0x4b7ecc));CE_LOG("rider_impulse",c%3!=0);CE_LOG("bike_impulse",c%4!=0);
+        for(int i=0;i<3;++i){snprintf(key,sizeof key,"crash.entry.%d.rider_impulse.%d",c,i);rr_log(key,rider_impulse[i]);snprintf(key,sizeof key,"crash.entry.%d.bike_impulse.%d",c,i);rr_log(key,bike_impulse[i]);}
+        for(size_t i=0;i<sizeof offsets/sizeof offsets[0];++i){snprintf(key,sizeof key,"crash.entry.%d.input.bike.%x",c,offsets[i]);rr_log(key,bike[offsets[i]/4]);snprintf(key,sizeof key,"crash.entry.%d.input.rider.%x",c,offsets[i]);rr_log(key,actor[offsets[i]/4]);}
+        ((void (__fastcall*)(int32_t*,int32_t*,int32_t*,int))0x403d60)(bike,c%3?rider_impulse:NULL,c%4?bike_impulse:NULL,c%8);
+        for(size_t i=0;i<sizeof offsets/sizeof offsets[0];++i){snprintf(key,sizeof key,"crash.entry.%d.output.bike.%x",c,offsets[i]);rr_log(key,bike[offsets[i]/4]);snprintf(key,sizeof key,"crash.entry.%d.output.rider.%x",c,offsets[i]);rr_log(key,actor[offsets[i]/4]);}
+        CE_LOG("animation",((signed char*)actor)[0x80]);CE_LOG("frame",((signed char*)actor)[0x81]);CE_LOG("queued",((signed char*)actor)[0x82]);CE_LOG("loops",((unsigned char*)actor)[0x88]);CE_LOG("deadline",(uint32_t)actor[0x84/4]);
+#undef CE_LOG
+    }
+    rr_log("crash.entry.count",64);RD32(0x4b6e58)=saved_landmark;RD32(0x4642dc)=saved_cop;RD32(0x4b7ecc)=saved_tick;RD8(0x4c5b00)=saved_net;RD8(0x4c5af9)=saved_net2;
+}
+static void capture_crash_rider_animation(void) {
+    const uint32_t saved_tick=RD32(0x4b7ecc),saved_mode=RD32(0x4753b0),saved_random=RD32(0x49bce8);
+    int32_t bike[256],actor[256];char key[128];const int8_t initial[]={33,35,34,29,28,30,31,32,36,37,2,-1};const int32_t speeds[]={0,100,2499,2500,7000,7001,8000,8001,16000};
+    RD32(0x4753b0)=3;
+    for(int c=0;c<64;++c) {
+        memset(bike,0,sizeof bike);memset(actor,0,sizeof actor);bike[0x324/4]=1;bike[0x2fc/4]=(int32_t)(uintptr_t)actor;bike[0x2f4/4]=c%4?1:2;actor[0x78/4]=RD32(0x474d78);((signed char*)actor)[0x80]=initial[c%12];((signed char*)actor)[0x82]=-1;actor[0x84/4]=-1;
+        snprintf(key,sizeof key,"actor.crash_rider.%d.initial",c);rr_log(key,initial[c%12]);snprintf(key,sizeof key,"actor.crash_rider.%d.initial_crash",c);rr_log(key,bike[0x2f4/4]);
+        for(int t=0;t<32;++t) {
+            RD32(0x4b7ecc)=100+t*3;RD32(0x49bce8)=(c+t)%4;actor[0xec/4]=speeds[(c+t)%9];actor[0x20/4]=c%3==0?4096:c%3==1?4095:0;
+#define CR_LOG(label,value) do{snprintf(key,sizeof key,"actor.crash_rider.%d.%d.%s",c,t,label);rr_log(key,value);}while(0)
+            CR_LOG("tick",RD32(0x4b7ecc));CR_LOG("speed",actor[0xec/4]);CR_LOG("height",actor[0x20/4]);CR_LOG("random",RD32(0x49bce8));
+            ((void (__fastcall*)(int32_t*))0x407f30)(bike);
+            CR_LOG("crash",bike[0x2f4/4]);CR_LOG("animation",((signed char*)actor)[0x80]);CR_LOG("frame",((signed char*)actor)[0x81]);CR_LOG("queued",((signed char*)actor)[0x82]);CR_LOG("loops",((unsigned char*)actor)[0x88]);CR_LOG("deadline",(uint32_t)actor[0x84/4]);
+            const unsigned char* selected=(unsigned char*)(uintptr_t)(uint32_t)actor[0x7c/4];for(int b=0;b<14;++b){snprintf(key,sizeof key,"actor.crash_rider.%d.%d.selected.%d",c,t,b);rr_log(key,selected?selected[b]:-1);}
+#undef CR_LOG
+        }
+    }
+    rr_log("actor.crash_rider.count",64);RD32(0x4b7ecc)=saved_tick;RD32(0x4753b0)=saved_mode;RD32(0x49bce8)=saved_random;
+}
+static void capture_crash_bike_animation(void) {
+    const uint32_t saved_tick=RD32(0x4b7ecc),saved_mode=RD32(0x4753b0),saved_random=RD32(0x49bce8);
+    int32_t bike[256];char key[128];const int8_t initial[]={-1,2,44,45,46,47,48,9};
+    RD32(0x4753b0)=3;
+    for(int c=0;c<32;++c) {
+        memset(bike,0,sizeof bike);bike[0x324/4]=0;bike[0x2f4/4]=c%2+1;bike[0x78/4]=RD32(0x474d78);((signed char*)bike)[0x80]=initial[c%8];((signed char*)bike)[0x82]=-1;bike[0x84/4]=-1;
+        snprintf(key,sizeof key,"actor.crash_bike.%d.initial",c);rr_log(key,initial[c%8]);
+        for(int t=0;t<32;++t) {
+            RD32(0x4b7ecc)=100+t*3;RD32(0x49bce8)=(c+t)%2;bike[0xec/4]=t>16 && c%3?0:2000-t*15;
+#define CB_LOG(label,value) do{snprintf(key,sizeof key,"actor.crash_bike.%d.%d.%s",c,t,label);rr_log(key,value);}while(0)
+            CB_LOG("tick",RD32(0x4b7ecc));CB_LOG("speed",bike[0xec/4]);CB_LOG("random",RD32(0x49bce8));
+            ((void (__fastcall*)(int32_t*))0x407a90)(bike);
+            CB_LOG("animation",((signed char*)bike)[0x80]);CB_LOG("frame",((signed char*)bike)[0x81]);CB_LOG("queued",((signed char*)bike)[0x82]);CB_LOG("loops",((unsigned char*)bike)[0x88]);CB_LOG("deadline",(uint32_t)bike[0x84/4]);
+            const unsigned char* selected=(unsigned char*)(uintptr_t)(uint32_t)bike[0x7c/4];for(int b=0;b<14;++b){snprintf(key,sizeof key,"actor.crash_bike.%d.%d.selected.%d",c,t,b);rr_log(key,selected?selected[b]:-1);}
+#undef CB_LOG
+        }
+    }
+    rr_log("actor.crash_bike.count",32);RD32(0x4b7ecc)=saved_tick;RD32(0x4753b0)=saved_mode;RD32(0x49bce8)=saved_random;
+}
 static void capture_riding_animation(void) {
     const uint32_t saved_player=RD32(0x4642d8),saved_tick=RD32(0x4b7ecc);const unsigned char saved_limit=RD8(0x4c7ff0);
     int32_t bike[256],actor[256];char key[128];const int8_t initial[]={-1,2,8,3,4,0,1,5,6,9};const int32_t speeds[]={-1,0,299,300,1799,1800,9499,9500,9501,30000};
@@ -912,6 +1039,12 @@ static void dump_groups(void) {
     capture_actor_views();
     capture_actor_projection();
     capture_riding_animation();
+    capture_crash_bike_animation();
+    capture_crash_rider_animation();
+    capture_crash_entry();
+    capture_actor_motion();
+    capture_crash_recovery();
+    capture_crash_remount();
     capture_vehicle_descriptors();
 }
 // Region records: {base, size} then bytes. Version 2 dumps all of .data/.bss and a two-level

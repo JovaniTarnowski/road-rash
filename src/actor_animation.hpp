@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <optional>
 #include <vector>
+#include <functional>
 namespace rr {
 // The runtime animation descriptors are separate from RRAN graphics frames.
 // 0x0040b200 builds each 20-byte entry from CANS and an imported EXE descriptor.
@@ -35,6 +36,11 @@ struct RidingAnimationInput {
 };
 // Normal riding portion of 0x00407f30. Crash dispatch and attacks are separate.
 const ActorAnimationFrame* advance_riding_animation(ActorAnimationState&,const ActorAnimationBank&,const std::vector<int8_t>& fallback,const RidingAnimationInput&,uint32_t tick);
+// Crash-bike animation branch of 0x00407a90 (states 1/2 only).
+const ActorAnimationFrame* advance_crash_bike_animation(ActorAnimationState&,const ActorAnimationBank&,const std::vector<int8_t>& fallback,int32_t speed,uint32_t tick,const std::function<uint32_t()>& random);
+struct CrashRiderAnimationInput {int32_t crash=1,speed=0,height_q8=0;};
+// Crash rider branch of 0x00407f30; a stopped rider moves state 1 to 2.
+const ActorAnimationFrame* advance_crash_rider_animation(ActorAnimationState&,const ActorAnimationBank&,const std::vector<int8_t>& fallback,CrashRiderAnimationInput&,uint32_t tick,const std::function<uint32_t()>& random);
 // 0x0043ae90: at most one transition per call; deadlines accumulate from the
 // previous deadline rather than restarting at the current simulation tick.
 const ActorAnimationFrame* advance_animation(ActorAnimationState&,const ActorAnimationBank&,uint32_t tick);

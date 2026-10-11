@@ -86,6 +86,11 @@ Race::Race(std::vector<RouteSample> a, std::vector<RouteSample> b, const Physics
     previous_camera_position_=camera_position();
 }
 
+void Race::set_crash_library(const ActorAnimationLibrary& library,const CrashConfig& config) {
+    crash_library_=&library;crash_config_=config;
+    for(auto& rider:riders_)init_crash_actor(rider.crash_actor,config);
+}
+
 SliceEdges Race::edges(const Rider& r, size_t i) const {
     const auto& s = route_of(r)[i];
     // Imported terrain is attached by the game; standalone physics fixtures keep their original synthetic sides.
@@ -318,7 +323,8 @@ void Race::walls(Rider& r) {
     b.i32(0x10c) = 0; b.i32(0x104) = 0; b.i32(0xf0) = 0; b.i32(0x288) = 0;
     if (b.i32(0xec) > 4000) {
         if (&r == &riders_[0]) sound(SoundEvent::grunt_c, b);   // 0x0043a610
-        crash(r);
+        if(b.i32(0xc4)==4)crash(r);
+        else b.i32(0xec)=b.i32(0xec)*3/4;
     } else b.i32(0xec) = b.i32(0xec) * 3 / 4;
 }
 
@@ -358,10 +364,12 @@ void Race::vertical(Rider& r) {
         b.i32(0x11c) = -b.i32(0x1b4);
     } else if (threshold < above_before && vy < b.i32(0x168)) {
         // Landing.
+        if(b.i32(0xc4)==4) {
         int32_t wobble = ((std::abs(vy) * b.i32(0x288)) >> 12) + 1;
         const int32_t lim = b.i32(0x29c) * 2;
         if (wobble > lim) wobble = lim; else if (wobble < -lim) wobble = -lim;
         b.i32(0x288) = wobble;
+        }
         const int32_t rebound = -div256(int64_t(b.i32(0x170)) * vy);
         const int32_t k = b.i32(0xec) < 0 ? -5 - rise_now : rise_now + 5;
         b.i32(0xf4) = k * (b.i32(0xec) >> 7) + rebound;
@@ -391,10 +399,46 @@ void Race::vertical(Rider& r) {
 }
 
 void Race::crash(Rider& r) {
+    if(crash_library_) {
+        if(r.crash_active)return;
+        // traction currently raises the crash flag directly; entry applies once.
+        r.bike.i32(0x2f4)=0;
+        begin_crash(r.bike,r.crash_actor,crash_config_,crash_library_->playback[0],crash_library_->fallback,uint32_t(ticks_),0);
+        r.crash_active=true;r.crash_timer=0;
+        r.crash_actor.route=r.route;r.crash_actor.sample=r.sample;r.crash_actor.previous_sample=r.previous_sample;
+        return;
+    }
     // Simplified stand-in for 0x00403d60: fall, slide to a stop, then remount on the road.
     r.bike.i32(0x2f4) = 1;
     r.bike.u8(0xc0) |= 0x10;
     r.crash_timer = 0;
+}
+
+void Race::step_crash(Rider& r,bool player) {
+    auto& bike=r.bike;auto& body=r.crash_actor;const auto& library=*crash_library_;
+    auto motion=[&](Rider& actor) {
+        auto& b=actor.bike;b.i32(0x18)=1;
+        if(!b.i32(0x160)){b.i32(0x114)=b.i32(0x118)=0;b.u8(0x164)=0;}
+        const int surface=surface_class(edges(actor,actor.sample),b.i32(0x28));
+        integrate_speed(b,tables_,surface);
+        advance_actor_motion(b,tables_,[&](int32_t distance){move_along(actor,distance);});
+        walls(actor);vertical(actor);
+    };
+    motion(r);
+    Rider detached;detached.bike=body.motion;detached.route=body.route;detached.sample=body.sample;detached.previous_sample=body.previous_sample;
+    motion(detached);body.motion=detached.bike;body.route=detached.route;body.sample=detached.sample;body.previous_sample=detached.previous_sample;
+    CrashRecoveryInput recovery;recovery.player=player;recovery.state_elapsed=r.crash_timer;
+    const auto action=recover_crash_actor(bike,body,library.playback[0],library.fallback,uint32_t(ticks_),recovery);
+    if(action==CrashRecoveryAction::remount) {
+        remount_crash_actor(bike,r.crash_bike_animation,body,crash_config_,library.playback[0],library.fallback,uint32_t(ticks_));
+        r.stamina.current=r.stamina.max;r.crash_active=false;return;
+    }
+    if(action==CrashRecoveryAction::wrecked)bike.i32(0x2f0)=0;
+    advance_crash_bike_animation(r.crash_bike_animation,library.playback[0],library.fallback,bike.i32(0xec),uint32_t(ticks_),[&]{return random();});
+    CrashRiderAnimationInput input;input.crash=bike.i32(0x2f4);input.speed=body.motion.i32(0xec);input.height_q8=body.motion.i32(0x20);
+    advance_crash_rider_animation(body.animation,library.playback[0],library.fallback,input,uint32_t(ticks_),[&]{return random();});
+    if(bike.i32(0x2f4)!=input.crash)r.crash_timer=0;
+    bike.i32(0x2f4)=input.crash;if(input.crash==2)++r.crash_timer;
 }
 
 int32_t Race::curvature(const Rider& r, size_t sample, int samples) const {
@@ -496,6 +540,7 @@ void Race::step_rider(Rider& r, uint32_t controls, bool player) {
         integrate_speed(b, tables_, 0);
         return;
     }
+    if(crash_library_ && b.i32(0x2f4)) {if(!r.crash_active)crash(r);step_crash(r,player);return;}
     fight(r, controls, size_t(&r - riders_.data()));
     if (b.i32(0x2f4) == 0) {
         if (r.ai) ai_think(r);
