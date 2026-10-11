@@ -46,6 +46,7 @@ static int g_input_exhausted_tick = -1;
 static uint32_t g_sim_frames;
 static int32_t g_first_tick = -1;
 static int g_solo;
+static int g_police_probe;
 
 /* Solo isolation (plan 10 task 5): freeze every scheduler node except
  * the player bike and the player rider-half. 0x00437e60 skips NULL
@@ -314,6 +315,28 @@ static void dump_sim_tick(void) {
     }
 }
 
+/* Explicit oracle scenario: exercise the original offline cop constructor on
+ * the live isolated race ring, preserving its ordinary allocation/AI setup. */
+static void capture_police_spawn(void) {
+    const uintptr_t player=(uint32_t)RD32(0x4642d8);char key[96];
+    if(!readable(player,0x32c) || RD32(0x4642dc))return;
+    g_police_probe=0;
+    const uintptr_t rider=(uint32_t)RD32(player+0x2fc),personality=(uint32_t)RD32(rider+0x1d8);
+    rr_log("police.spawn.level",RD8(0x4b8a12));rr_log("police.spawn.cycle",RD8(0x4642e0));
+    rr_log("police.spawn.player.position",RD32(player+0x1c));rr_log("police.spawn.player.place",RD32(rider+0x1fc));rr_log("police.spawn.player.personality",(signed char)RD8(personality+0x165));
+    const int ring=((int(__fastcall*)(int,int))0x449910)(RD32(player+0x2c),-0x2700);
+    ((void(__fastcall*)(int,int))0x406b80)(ring,-0x2700);
+    const uintptr_t cop=(uint32_t)RD32(0x4642dc);rr_log("police.spawn.present",cop!=0);
+    if(!readable(cop,0x32c))return;
+    const uintptr_t body=(uint32_t)RD32(cop+0x2fc),brain=(uint32_t)RD32(body+0x1d8),stats=(uint32_t)RD32(body+0x1e0);
+    const int fields[]={0x18,0x1c,0x20,0x24,0x28,0xc0,0xc4,0xdc,0xe0,0xe4,0xe8,0xec,0xf0,0xf4,0x148,0x14c,0x150,0x154,0x15c,0x160,0x168,0x16c,0x170,0x174,0x178,0x17c,0x180,0x184,0x188,0x18c,0x190,0x194,0x198,0x1a0,0x1a4,0x1a8,0x1ac,0x1b0,0x1b4,0x1b8,0x1d0,0x1e0,0x1f0,0x200,0x260,0x2ec,0x2f0,0x2f4,0x324,0x328};
+    for(size_t i=0;i<sizeof fields/sizeof fields[0];++i)for(int a=0;a<2;++a){snprintf(key,sizeof key,"police.spawn.%s.%x",a?"rider":"bike",fields[i]);rr_log(key,RD32((a?body:cop)+fields[i]));}
+    for(int i=0;i<0x204;i+=4){snprintf(key,sizeof key,"police.spawn.brain.%x",i);rr_log(key,RD32(brain+i));}
+    for(int i=0;i<0x40;i+=4){snprintf(key,sizeof key,"police.spawn.stats.%x",i);rr_log(key,RD32(stats+i));}
+    for(int a=0;a<2;++a){const uintptr_t obj=a?body:cop;const char* who=a?"rider":"bike";
+        snprintf(key,sizeof key,"police.spawn.%s.animation",who);rr_log(key,(signed char)RD8(obj+0x80));snprintf(key,sizeof key,"police.spawn.%s.queued",who);rr_log(key,(signed char)RD8(obj+0x82));}
+}
+
 /* Per-step hook at 0x0044b324 (call 0x0044b3b0). The tick counters increment
  * before the call, so the dump after the original sees the new tick. Steps
  * before the bootstrapped race entry (startup 0x0044b2e0(1) calls) are
@@ -340,6 +363,7 @@ static void __cdecl hook_step(void) {
             if (g_input_exhausted_tick < 0) g_input_exhausted_tick = RD32(0x004b7ecc);
         }
     }
+    if(g_police_probe && g_race_started && g_out)capture_police_spawn();
     ((void(__cdecl*)(void))0x0044b3b0)();
     if (!g_sim || !g_race_started || !g_out) return;
     dump_sim_tick();
@@ -679,6 +703,32 @@ static void capture_vehicle_descriptors(void) {
         }
         memcpy(ccb,saved,sizeof saved);
     }
+}
+static int32_t* arrest_probe_cop;
+static int __fastcall arrest_probe_search(int unused){(void)unused;return (int)(uintptr_t)arrest_probe_cop;}
+static void capture_police_arrest(void) {
+    unsigned char* search=(unsigned char*)0x407860;const unsigned char expected[5]={0x53,0x56,0x57,0x8b,0xf1};unsigned char saved[5];DWORD old;
+    if(memcmp(search,expected,5) || !VirtualProtect(search,5,PAGE_EXECUTE_READWRITE,&old)){rr_log("police.arrest.count",0);return;}
+    memcpy(saved,search,5);search[0]=0xe9;const int32_t jump=(int32_t)((uintptr_t)arrest_probe_search-(uintptr_t)(search+5));memcpy(search+1,&jump,4);FlushInstructionCache(GetCurrentProcess(),search,5);
+    const uint32_t tick=RD32(0x4b7ecc),timer=RD32(0x4753c4),mode=RD32(0x4c5d7c);const unsigned char ended=RD8(0x4753b4),net=RD8(0x4c5af9);
+    const int speeds[]={-1800,-1799,-1,0,299,300,1799,1800},positions[]={-512,-511,0,511,512},relative[]={-5000,-4999,0,4999,5000};
+    int32_t bike[256],rider[256],cop[256];char key[128];RD32(0x4b7ecc)=100;RD8(0x4c5af9)=0;
+    for(int c=0;c<1024;++c) {
+        memset(bike,0,sizeof bike);memset(rider,0,sizeof rider);memset(cop,0,sizeof cop);
+        bike[0x2fc/4]=(int32_t)(uintptr_t)rider;bike[0x324/4]=c%7==0?1:c%11==0?-1:0;
+        bike[0x2f4/4]=c%3==0?2:0;bike[0xec/4]=speeds[c%8];cop[0xec/4]=bike[0xec/4]+relative[c/8%5];rider[0x1c/4]=0x5000;cop[0x1c/4]=0x5000+positions[c/40%5];
+        ((unsigned char*)rider)[0xc0]=c%17==0?0x10:0;rider[0x78/4]=RD32(0x474d78);rider[0x80/4]=2;((signed char*)rider)[0x82]=-1;rider[0x84/4]=-1;
+        arrest_probe_cop=c%13==0?NULL:cop;RD32(0x4753c4)=0;RD8(0x4753b4)=0;RD32(0x4c5d7c)=1;
+#define PA_LOG(label,value) do{snprintf(key,sizeof key,"police.arrest.%d.%s",c,label);rr_log(key,value);}while(0)
+        PA_LOG("owner",bike[0x324/4]);PA_LOG("crash",bike[0x2f4/4]);PA_LOG("rider_flags",((unsigned char*)rider)[0xc0]);PA_LOG("found",arrest_probe_cop!=NULL);PA_LOG("bike_speed",bike[0xec/4]);PA_LOG("cop_speed",cop[0xec/4]);PA_LOG("rider_position",rider[0x1c/4]);PA_LOG("cop_position",cop[0x1c/4]);
+        fflush(g_out);
+        ((void(__fastcall*)(int32_t*))0x407f30)(bike);
+        PA_LOG("arrested",RD32(0x4c5d7c)==4);PA_LOG("delay",RD32(0x4753c4));
+#undef PA_LOG
+    }
+    rr_log("police.arrest.count",1024);fflush(g_out);RD32(0x4b7ecc)=tick;RD32(0x4753c4)=timer;RD32(0x4c5d7c)=mode;RD8(0x4753b4)=ended;RD8(0x4c5af9)=net;
+    rr_log("police.arrest.search_address",(uintptr_t)search);rr_log("police.arrest.saved_address",(uintptr_t)saved);fflush(g_out);
+    memcpy(search,saved,5);rr_log("police.arrest.bytes_restored",1);fflush(g_out);FlushInstructionCache(GetCurrentProcess(),search,5);rr_log("police.arrest.cache_flushed",1);fflush(g_out);DWORD ignored;VirtualProtect(search,5,old,&ignored);arrest_probe_cop=NULL;rr_log("police.arrest.restored",1);fflush(g_out);
 }
 static void capture_crash_remount(void) {
     const uint32_t saved_landmark=RD32(0x4b6e58),saved_cop=RD32(0x4642dc),saved_tick=RD32(0x4b7ecc);const unsigned char saved_net=RD8(0x4c5b00),saved_net2=RD8(0x4c5af9);
@@ -1045,6 +1095,7 @@ static void dump_groups(void) {
     capture_actor_motion();
     capture_crash_recovery();
     capture_crash_remount();
+    capture_police_arrest();
     capture_vehicle_descriptors();
 }
 // Region records: {base, size} then bytes. Version 2 dumps all of .data/.bss and a two-level
@@ -1612,6 +1663,7 @@ static int rr_install_hooks(void) {
     if (GetEnvironmentVariableA("RR_ORACLE_RANDCOUNT",buf,sizeof buf) && atoi(buf)) sim_patch_rand_entry();
     if (GetEnvironmentVariableA("RR_ORACLE_RANDTRACE",buf,sizeof buf)) g_randtrace_tick = atoi(buf);
     if (GetEnvironmentVariableA("RR_ORACLE_RANDLOG",buf,sizeof buf)) g_randlog_all = atoi(buf)!=0;
+    if (GetEnvironmentVariableA("RR_ORACLE_POLICE",buf,sizeof buf)) g_police_probe=atoi(buf)!=0;
     if (GetEnvironmentVariableA("RR_ORACLE_SOLO",buf,sizeof buf)) g_solo = atoi(buf)!=0;
     env("RR_ORACLE_RASTER",buf,sizeof buf,"0");g_raster=atoi(buf);
     if (GetEnvironmentVariableA("RR_ORACLE_SHOT_EVERY",buf,sizeof buf) && atoi(buf)>0) g_pixel_every=atoi(buf);
