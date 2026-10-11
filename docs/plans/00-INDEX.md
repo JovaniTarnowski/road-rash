@@ -1,53 +1,117 @@
 # Road Rash native port: plan index
 
-These plans take the port from its current state (a research viewer that renders original road geometry) to a complete, playable native game on macOS ARM64 and Android ARM64. Each plan covers one subsystem, can be executed by an agent with no prior context, and ends in working, tested software.
+These plans take the port from its current state to a complete native game on macOS ARM64 and Android ARM64. Read this file first. It holds the current status, the review findings, the order of the remaining plans, and the conventions every plan assumes.
 
-Read this file first. It defines the conventions, the verification method and the order that every plan assumes.
+Last reviewed: **October 11, 2026** (session 23 review). See [../PROGRESS.md](../PROGRESS.md) for the per-session timeline.
 
-## Where things stand
+## Where things stand (October 11, 2026)
 
-See [../PROGRESS.md](../PROGRESS.md) for the status table and [../REVERSE_ENGINEERING.md](../REVERSE_ENGINEERING.md) for all recovered formats and function addresses. In short:
-- **Implemented:** resource/course readers and road projection; bike physics, rider sprites, seven AI riders and combat; lifecycle and multi-touch; ISO/folder import; asset-free Android debug APK. The original numeric road oracle matches 600 CITY frames in a limited stretch.
-- **Still open:** deterministic/original pixel and gameplay verification; terrain/scenery/original raster; full traffic/police/crash behavior; menus, career/shop/saves; original audio triggers/music/MIDI and frontend cutscene hooks; owner-key/production distribution and hardware validation. Standalone macOS and local development release APK packaging are software-verified. See PROGRESS.md for approximations.
+`rr-game` is a playable game on macOS. The same code builds into an asset-free Android ARM64 APK.
+- **Front end:** the original menus, career, shop, Schmooze, results and saves lead into races.
+- **Napa:** draws with the original scene pipeline: road materials, hills, buildings, shoulders/curbs, static scenery, horizon scroll and the full dashboard.
+- **Other courses:** the other four still use the placeholder renderer.
+- **Race:** the original bike physics, AI racing state, rider contact and combat drive the race. Free traffic has just been added and is uncommitted.
+- **Audio/video:** all effects, the RRA soundtrack and all 59 videos decode and play.
+- **Tests:** native CTest passes 53/53 (this review). Android debug and release assemble.
 
-## Plans and order
+### Verified against the original (zero tolerance)
+- **Road projection:** 600 CITY frames, 901 moving Napa frames and one Napa start frame.
+- **Raster and render:** flat and textured raster, polygon normalisation, view mapping and the display-list renderer, tested on component fixtures.
+- **Scene construction:**
+  - lane panels and materials;
+  - hill strips, bands and projection;
+  - shoulders, building facades and curbs;
+  - roadside profiles and terrain grounding.
+- **Assets:** CEL/mip loading, family/cel-group selection (176 selections), and Napa CESR events (7,949 samples).
+- **Display-list replay:** natural Napa frames 0/150/300/750, every pixel. This replays original lists; it does not cover native list construction.
+- **Codecs:** all 59 AVIs against FFmpeg.
 
-| # | Plan | Depends on | Produces |
+### Ported but never compared with the original
+- Bike physics, AI racing, contact, combat, the rubber band, and traffic timers and spawning. All were translated from decompiled code, but none has been run against an original tick trace.
+- Natively built Napa scene lists. They are geometrically safe over 2,509 route views, but no complete natively built frame has been pixel-compared.
+- Front-end screens (no pixel comparison) and save files (no original round trip).
+
+### Not started or stand-ins
+- **Police:** no cops or arrests.
+- **Crashes and animation:**
+  - wall collision `0x0043a610` and the crash/remount sequence `0x00403d60` are stand-ins;
+  - RRAN-driven rider animation and shadows are not ported;
+  - AI overtaking `0x00408e40` and fight states 2–5 are not ported;
+  - attack timing is a stand-in.
+- **Courses:** CITY, HIWAY, CANYN and MEDLY have no original scene. Split stitching and building marking transitions are open on Napa too.
+- **Sound and front end:**
+  - race MIDI (`GRUNGE1..5.MID` + `.SBK`), sirens and car engines;
+  - the jukebox, sound mix and controls screens;
+  - the attract demo and the busted/wrecked cutscene selection.
+- **Android:** never observed running on hardware; renderer performance on the device is unknown.
+
+## Review findings (October 11, 2026)
+
+1. **The old plans 02–07 describe an architecture that was never built.** They assume a `World` / `Object` scheduler with `think/move/slice` behaviour dispatch, `GameEvent`, `scene.cpp` actor nodes and an `oracle_actors_test`. The real code is `rr::Race` (holding `Rider` values), `rr::CourseScene`, `rr::TrafficSystem` and `SoundEventRecord`. New plans target the real interfaces. The old plans stay as background on recovered addresses only.
+2. **Simulation fidelity has no oracle.** `oracle/run.sh` exports `RR_ORACLE_SEED`, `RR_ORACLE_INPUT` and `RR_ORACLE_RECORD`, but `oracle/aweman_proxy.c` never reads them. There is no per-tick rider/bike/car dump. Plan 01 Task 7 was never done, so plan 04's acceptance is unmet and "behaves like the original" cannot yet be claimed for any race system. **Plan 10 closes this, and every later behaviour task depends on it.**
+3. **Traffic is uncommitted:** `src/traffic.*` and `tests/traffic_test.cpp`, plus the `Race`/`game_main` hooks. It builds and passes its synthetic and corpus tests. Its random-call interleaving with the race RNG and its car/rider draw order are documented approximations. PROGRESS.md does not mention it yet.
+4. **The Napa-first scope** (user, October 10) is tracked in [../NAPA_IMPLEMENTATION.md](../NAPA_IMPLEMENTATION.md). Plan 11 is that milestone's remaining work; plans 12–15 extend it to the whole game.
+5. **Two Android approaches exist.** The port is `native-port/android` (native SDL3 APK, runtime disc import). `/Users/archit/Dev/rr/android` holds an earlier Wine-on-Android setup: a GameHub/Winlator controls profile `RoadRash-AirX.icp`, a `.desktop` launcher and a **patched** `ROADRASH.EXE` with a different hash. That setup is a stopgap, not part of the port. Never use it as a reference binary.
+6. **PROGRESS.md was stale.** Its header and status table said "no traffic", "road shading is a placeholder" and "race sound triggers open", and its "Next steps" still pointed at the start of plan 02. Refreshed in this review.
+
+## Plan status
+
+| # | Plan | Status (Oct 11) | Remaining work lives in |
 | --- | --- | --- | --- |
-| 01 | [Foundation and verification oracle](01-foundation-and-oracle.md) | — | git repo, module layout, 8-bit framebuffer, Wine oracle that dumps original game state, golden-test harness |
-| 02 | [Road and world rendering](02-road-and-world-rendering.md) | 01 | Original-accurate road raster: colours, terrain profiles, horizon, occlusion; oracle-matched |
-| 03 | [Sprites and scenery](03-sprites-and-scenery.md) | 01, 02 | Sprite/animation decoders, roadside objects, bikes/riders/cars drawn in world |
-| 04 | [Race simulation](04-race-simulation.md) | 01, 02 | Fixed-tick race loop, player bike physics, camera, deterministic replay tests |
-| 05 | [Opponents, traffic, police, combat](05-opponents-traffic-combat.md) | 03, 04 | AI riders, traffic, cops, weapons/attacks, crashes, race results |
-| 06 | [Front end, progression, saves](06-frontend-progression-saves.md) | 03, 04 | Menus, text, bike shop, levels/cash, save/load, full game flow |
-| 07 | [Audio and video](07-audio-and-video.md) | 01 | Sound effects, music (RRA + MIDI/SBK), engine audio, AVI cutscenes |
-| 08 | [Platform, input, packaging](08-platform-input-packaging.md) | 04–07 | Controls (keyboard, gamepad, touch), lifecycle, asset import, signed .app and release APK |
-| 09 | [Multiplayer (decision-gated)](09-multiplayer.md) | 05, 06, 08 | Network play, only if the owner decides to keep it |
+| 01 | [Foundation and oracle](01-foundation-and-oracle.md) | Tasks 1–6, 8 done (pixels via in-process capture, not cnc-ddraw). **Task 7 (deterministic runs) not done.** | Plan 10 |
+| 02 | [Road and world rendering](02-road-and-world-rendering.md) | Napa done except split stitching, marked terrain and building marking transitions; other courses not started | Plans 11, 12 |
+| 03 | [Sprites and scenery](03-sprites-and-scenery.md) | Decoders, families, RRAN, static scenery done; rider animation/shadows open | Plan 11 |
+| 04 | [Race simulation](04-race-simulation.md) | Physics/movement/camera ported (not in the planned `World` form); unverified; walls/crash stand-ins | Plans 10, 11 |
+| 05 | [Opponents, traffic, police, combat](05-opponents-traffic-combat.md) | AI racing, contact and combat partial; traffic in progress; police not started | Plans 10, 11, 12 |
+| 06 | [Front end, progression, saves](06-frontend-progression-saves.md) | Mostly done; 3 inert screens, attract demo, pixel and save verification open | Plan 13 |
+| 07 | [Audio and video](07-audio-and-video.md) | Codecs, mixer, effects, engines, RRA done; MIDI, sirens, car engines, cutscene selection open | Plans 11, 13 |
+| 08 | [Platform, input, packaging](08-platform-input-packaging.md) | Software complete for macOS; Android hardware validation open | Plans 14, 15 |
+| 09 | [Multiplayer](09-multiplayer.md) | Decision-gated, not started | Plan 15 Task 4 (decision only) |
+| **10** | [Simulation oracle and tick verification](10-simulation-oracle.md) | New | — |
+| **11** | [Opening Napa race completion](11-napa-race-completion.md) | New | — |
+| **12** | [All courses and levels](12-all-courses.md) | New | — |
+| **13** | [Race music and front-end completion](13-music-and-frontend-completion.md) | New | — |
+| **14** | [Android port on hardware](14-android-port.md) | New | — |
+| **15** | [Release and final acceptance](15-release-and-acceptance.md) | New | — |
 
-Plans 02 and 07 can run in parallel after 01. Plans 03 and 04 can run in parallel after 02. Plan 06 can start its text/menu tasks as soon as 03's sprite decoder exists.
+### Order and dependencies
 
-**Completion** means plans 01–08 are done and the definition of done below holds. Plan 09 is optional.
+```
+10 simulation oracle ──► 11 Napa race ──► 12 all courses ──► 15 release
+                            │                                  ▲
+13 music/front end ─────────┴──────────────────────────────────┤
+14 Android (Task 1 now; rest after 11) ────────────────────────┘
+```
+
+- **Plan 10 first.** Every behaviour change in 11 and 12 is accepted against its tick goldens.
+- **Plan 14 Task 1 (first device run and performance baseline) runs as soon as a device is attached.** It does not wait for the other plans. The renderer may need the original's low (320×240) mode on the device, and finding that out early changes plan 11's renderer integration.
+- **Plan 13** is independent of 10–12 except for its race-MIDI hook, which uses the race-start point that plan 11 touches.
+- **Plan 15** runs last.
 
 ## How these plans handle reverse engineering
 
-Most remaining work recovers behaviour from a stripped 1996 binary. The exact native code cannot be written in advance, because the semantics are not yet known. So these plans pin every such task down differently:
+Most remaining work recovers behaviour from a stripped 1996 binary, so the final native code cannot be written in advance. Each such task has:
 
-- **A named starting point:** the function addresses, globals and structure offsets already traced, and which decompiled files to read (`analysis/decompiled/<address>.c`, disassembly in `analysis/original-disassembly.txt`).
-- **An oracle test written first:** the original game runs under Wine with a hook DLL (plan 01) that dumps its real state. The task captures that ground truth into a golden file and writes a failing native test against it before porting anything.
-- **A port rule:** translate the named function(s) line by line into fixed-width integer C++, keeping original arithmetic (shifts, truncating divides, 32-bit wraparound) exactly. No "improvements" until the golden test passes.
-- **Acceptance:** the golden test passes with zero tolerance unless the task states a tolerance and why.
+- **A named starting point:** function addresses, globals and object offsets already traced (`analysis/decompiled/<address>.c`, `analysis/original-disassembly.txt`, [../REVERSE_ENGINEERING.md](../REVERSE_ENGINEERING.md)).
+- **An oracle test written first:** the original runs under Wine with `oracle/aweman_proxy.c`. Its dump becomes a golden in `analysis/oracle/`, and a failing native test is written before porting.
+- **A port rule:** translate the named functions line by line into fixed-width integer C++, keeping shifts, truncating divides, `sar` rounding and 32-bit wraparound. No improvements until the golden passes.
+- **Acceptance:** zero tolerance unless the task states a tolerance and why.
 
-Wherever interfaces and infrastructure are known, the plans give complete code.
+Where interfaces and infrastructure are known, the plans give complete code. Where a plan says "trace", the deliverable is a documented finding in REVERSE_ENGINEERING.md plus a test. **If a trace overruns its time box, stop and report rather than guess.**
 
 ## Conventions every agent must follow
 
 ### Environment
-- **Repo:** `/Users/archit/Dev/rr/native-port`. After plan 01 task 1 it is a git repository; before that it is not.
-- **Shell:** zsh in the current workspace (older sessions used fish).
-- **Original game data:** `../cdrom/ROADRASH` (mounted ISO). Mount it if missing: `hdiutil attach -readonly -nobrowse -mountpoint /Users/archit/Dev/rr/cdrom "/Users/archit/Dev/rr/Road Rash (USA) (En,Fr,De,Es,It) (Rerelease) (19970930).iso"`.
-- **Reference executable:** `../cdrom/ROADRASH/ROADRASH.EXE`, SHA-256 `73d7f9744b5b1a9482b3909950cdf3fe34119fe13d023b031e9c6739a60f18a2`. Never use the patched copy in `/Users/archit/Dev/rr/android/Download` (different hash).
-- **Wine:** `$HOME/Applications/Wine Staging.app/Contents/Resources/wine/bin/wine` (wine-11.18 Staging). Prefix: `/Users/archit/Dev/rr/prefix`; the game is installed at `prefix/drive_c/ElectronicArts/RoadRash` (hash verified identical).
-- **Android:** SDK in `.tools/android-sdk`; `export JAVA_HOME=/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home`. The device (MANGMI AIR X) is usually disconnected; check with `.tools/android-sdk/platform-tools/adb devices`.
+- **Repo:** `/Users/archit/Dev/rr/native-port` (git, branch `port/playable-napa`).
+- **Shell:** fish or zsh. There is no `timeout` command. Run oracle captures in the background; each takes about 4 minutes before the race starts.
+- **Original game data:** `../cdrom/ROADRASH`. Mount it if missing: `hdiutil attach -readonly -nobrowse -mountpoint /Users/archit/Dev/rr/cdrom "/Users/archit/Dev/rr/Road Rash (USA) (En,Fr,De,Es,It) (Rerelease) (19970930).iso"`.
+- **Reference executable:** `../cdrom/ROADRASH/ROADRASH.EXE`, SHA-256 `73d7f9744b5b1a9482b3909950cdf3fe34119fe13d023b031e9c6739a60f18a2`. Never use `/Users/archit/Dev/rr/android/Download/RoadRash/ROADRASH.EXE` (patched, different hash).
+- **Wine:** `$HOME/Applications/Wine Staging.app/Contents/Resources/wine/bin/wine`. Prefix `/Users/archit/Dev/rr/prefix`. The oracle install is `prefix/drive_c/ElectronicArts/RoadRashOracle` (`oracle/install.sh`).
+- **Original course order** (`0x0046df58`): 1 CITY, 2 HIWAY, 3 MEDLY, 4 NAPA, 5 CANYN. `rr-game`'s CLI order differs: NAPA, CITY, HIWAY, CANYN, MEDLY. Always convert explicitly.
+- **Android:**
+  - SDK in `.tools/android-sdk`;
+  - `JAVA_HOME=/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home`;
+  - device MANGMI AIR X, usually absent; check with `.tools/android-sdk/platform-tools/adb devices`.
 
 ### Build and test
 ```sh
@@ -56,49 +120,54 @@ cmake --build build --parallel
 ctest --test-dir build --output-on-failure
 ```
 
-After any change to shared code, all of these must still pass:
-- `ctest`
+The regression gate after any change to shared code:
+- `ctest` (Debug), plus the sanitizer tree `build-ubsan`
 - `build/rr-native --assets ../cdrom/ROADRASH --smoke`
 - `build/rr-course --exe ../cdrom/ROADRASH/ROADRASH.EXE ../cdrom/ROADRASH/DATA/COURSES/*.CRS`
+- `tools/ci.sh` before closing a plan, which includes the Android assemble and asset-exclusion checks
 
 ### Code rules
-- C++17, SDL3 only (plus the single-header libraries listed in the plans). No new dependency without the licence file in `third_party/`.
-- All original data parsing is bounds-checked and throws `std::runtime_error` on malformed input. Every parser gets a truncation/garbage test, like `tests/resource_test.cpp`.
-- Fixed-width integers for anything ported from the original. Emulate 32-bit wraparound with `uint32_t` arithmetic where the original can overflow.
-- Comments cite the original address a rule came from, e.g. `// 0x00444630`.
-- **Never embed original game data** (tables, images, text, audio) in source or tests. Read them at runtime from the user's files. Golden files derived from the game live in `analysis/oracle/` (git-ignored) and tests that need them skip cleanly (CTest `SKIP_RETURN_CODE 77`) when absent.
-- Tests using only synthetic data must always run.
+- C++17, SDL3 only, plus pinned single-header libraries already in `third_party/`. A new dependency needs its licence file in `third_party/` and a mention in the user guide.
+- All parsing of original data is bounds-checked and throws `std::runtime_error`. Every parser gets a truncation/garbage test.
+- Use fixed-width integers for anything ported, emulate wraparound with `uint32_t`, and cite original addresses in comments (`// 0x00444630`).
+- **Never embed original game data** (tables, images, text, audio) in source or tests. Read it at runtime from the user's files. Goldens live in git-ignored `analysis/oracle/`. Tests that need them exit 77 (`rr::golden::skip`) and are registered with `SKIP_RETURN_CODE 77`.
+- Tests that use only synthetic data must always run.
+- Simulation code has no wall clock, no floats and no allocation in the tick path. All randomness goes through `Race::random()` (the MSVC `rand` stream), in the original call order.
 
 ### Evidence and documentation
-Every task that recovers a format or behaviour must update, in the same commit:
-- `docs/REVERSE_ENGINEERING.md`: the finding, its evidence (addresses), and how it was validated
-- `docs/VERIFICATION.md`: what was run and what passed or failed
-- `docs/PROGRESS.md`: status table and timeline
+Every task that recovers a format or behaviour updates, in the same commit:
+- `docs/REVERSE_ENGINEERING.md`: the finding, the addresses, and how it was validated;
+- `docs/VERIFICATION.md`: what was run and the result;
+- `docs/PROGRESS.md`: the status table and the timeline;
+- `docs/NAPA_IMPLEMENTATION.md`, while plan 11 is active.
 
-Never claim a match with the original that was not measured. Write "not verified" where that applies.
+Never claim a match with the original that was not measured. Write "not verified" where it applies.
 
 ### Commits
-One commit per task, message `<area>: <what>` (for example `road: port terrain type 1 wall profiles`), ending with:
+One commit per task, message `<area>: <what>`, ending with:
 ```
 Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
 ```
+Never commit `analysis/frontend`, `analysis/oracle`, screenshots of original art, or anything from the disc.
 
 ## Definition of done for the whole port
 
 1. From a clean checkout plus the user's own Road Rash disc image, a documented import step produces a runnable game on:
-   - macOS ARM64 (standalone `.app`, no Homebrew dependency)
-   - Android ARM64 (installable APK; the disc data is imported at runtime and not bundled)
-2. All five courses and all five difficulty levels are playable in the single-player modes the original offers: the career ("Big Game") and single "Thrash" races.
-   - Opponents, traffic, police, weapons, crashes, cash, bike shop and saves all behave like the original.
-3. Oracle golden tests for road projection, simulation ticks, AI and combat pass for the recorded scenarios listed in each plan.
-4. Audio (effects, both music systems) and all cutscene videos play.
-5. Controls work with keyboard, gamepad (including the MANGMI AIR X built-in controls) and touch.
-6. Docs describe every recovered format and every known deviation from the original.
+   - macOS ARM64: a standalone `.app` with no Homebrew dependency;
+   - Android ARM64: an installable APK, with disc data imported at runtime and never bundled.
+2. All five courses at all five levels are playable in the original single-player modes: Big Game (career) and Thrash.
+   - Opponents, traffic, police, weapons, crashes, cash, the bike shop and saves behave like the original.
+3. Oracle tick goldens (plan 10 format) pass for the scenarios listed in plans 10–12, and natural-frame pixel goldens pass for the scenarios listed in plans 11–12.
+4. All audio plays: effects, the RRA soundtrack, race MIDI, engines and sirens. All cutscenes play at their original trigger points.
+5. Controls work with keyboard, gamepad (including the MANGMI AIR X built-in controls) and touch. Plan 14's hardware checklist has been run on the device.
+6. The docs describe every recovered format and every known deviation from the original.
 
-Codec milestone (October 2): all 59 AVI files (24,900 RGB frames and 67,840,002 audio samples) match FFmpeg exactly. Native playback and pause timing are implemented; this does not close plan 07’s original triggers, selection, music streaming or MIDI work.
+Plan 09 (multiplayer) is outside the definition of done unless the owner decides otherwise (plan 15 Task 4).
 
 ## Global risks
 
-- **The oracle may be hard to build** (mingw-w64 toolchain, Wine hook stability). Plan 01 has fallback paths (winedbg scripting, pure frame capture). Without an oracle, fidelity claims are limited to self-consistency and must be labelled as such.
-- **Unknown data formats:** sprite compression and `.SBK` banks are the largest unknowns. Each has a dedicated research task with a time box. If it overruns, stop and report rather than guess.
-- **Licensing:** the port may never ship original assets. Android must import from the user's disc rather than bundling (plan 08).
+- **Wine oracle stability:** long driven captures have faulted before (credits timer, fixed in session 22). Keep captures short and scenario-specific, and use the course-menu bootstrap.
+- **Random-stream interleaving:** every system shares one `rand()` stream. A single missing or extra call desynchronises all later ticks. Plan 10's per-tick RNG-state field exists to find the first divergence.
+- **Android performance:** the CPU indexed rasteriser at 640×480 has never been profiled on ARM64 phone hardware.
+- **MIDI/SBK:** `.SBK` is an EMU SoundFont 1 bank. Plan 13 Task 1 is time-boxed and has a fallback.
+- **Licensing:** original assets are never shipped. Android imports from the user's disc (plan 08).

@@ -1,5 +1,7 @@
 # Race Simulation Implementation Plan
 
+> **Status (October 11, 2026 review):** Physics, movement, AI racing and camera were ported directly into `rr::Race`. The `World`/`Object` design below was **not** built. Nothing is tick-verified yet; see [plan 10](10-simulation-oracle.md). Walls and crash/remount are in [plan 11](11-napa-race-completion.md) Task 4. This plan is kept as background for addresses and findings; follow the newer plans for remaining work.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking. Read [00-INDEX.md](00-INDEX.md) first. Requires plan 01 (oracle with deterministic replay) and plan 02 Tasks 4–5 (terrain and scene data used by collisions).
 
 **Goal:** Port the original fixed-tick race simulation for a single rider on an empty course: world object list and scheduler, player bike physics from its spec, controls, road-edge and scenery collisions, crash and remount, camera. Verified tick by tick against the original with recorded inputs.

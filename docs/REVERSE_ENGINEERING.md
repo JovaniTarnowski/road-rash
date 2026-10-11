@@ -578,3 +578,46 @@ The course screens share one item array; the sixth item is copied from `0x004691
 **Object lists.** `0x00438170(0)` walks a linked list from `DAT_0046dcc8[1]` (`+0x4` = next) and dispatches each due node through `0x00437e60(node, tick, …)`. Node words: `+0xc`/`+0x10` schedule ticks, `+0x1c` position, `+0x28` lateral, `+0x2c` flag, `+0xc4` flags, `+0xec` speed. Riders and cars share this list (traffic despawn parks the object back to the free pool, matching `TrafficSystem` pool size 16 from `0x00438b70(0x210, 0x10)`). Rider identity in the hook: node pointer equality with the player pointer `DAT_004642d8` marks the player; opponent grid-slot mapping is still open (native order is `riders_` with the player at index 0 — never assume the original list order matches). Slice pointers must be converted to ring indexes in the hook (process-specific addresses).
 
 **Field selection.** Bike words come from the existing `Bike::i32/u8` accessors (`src/bike.hpp:37`): `+0x1c` position, `+0x28` lateral, `+0xec` speed, `+0x23c` gear, `+0x2f0` condition, `+0x2f4` crash, `+0x140` slice, `+0xc0` flags, plus vertical height/velocity. Rider members map from `Rider` (`src/race.hpp:62`): stamina current/max, weapon `+0x1c8`, AI state words. Car fields map from `TrafficCar` (`src/traffic.hpp`): `+0x1c`, `+0x28`, `+0xec`, `+0x73` kind, `+0x7a` lane, `+0x7f` vehicle, `+0x71` phase.
+
+## Free traffic (October 11, 2026, plan 05 task 2)
+
+**Vehicle resources** (`0x004465f0`, see `docs/ACTORS.md` for the census):
+`DATA/CARS/<CourseName>.CAR` holds `ANIM` (RRAN) and `CANS` (SNAC wrapper)
+entries. `CANS` is **not** a flat cel: payload magic `SNAC`, size word +4,
+type word +8, an embedded sub-container at +size whose own size word leads
+(`0x0040b5f0` with index 0) to the cel block at `base + sub[+4] + 0xc`; the
+vehicle mask `0x004b8fe0[i]` is that block's CCB flags word at +4
+(`0x0040b620`). Mask bits `0x1c0000` are speed classes: `0x40000` slow,
+`0x80000` oncoming, `0x100000` same-direction. The RRAN frames carry their
+own indexed textures, so drawing does not need the CANS pixels.
+
+**Ring cursors** (`0x004552e0`): `DAT_004b6e50` = front (base + 0x5000),
+`DAT_0049f240` = back (base − 0x3000), `DAT_004b6e5c` = camera; both scroll
+by the camera delta in `0x00454120`. The `0x0044dc10` window test
+`[back, front)` applies only to objects with the knock-off flag `+0x1cc`
+(riders); free cars always think, and `0x00437e60`'s tail parks them once
+outside the window.
+
+**Spawn timers** (`0x0044dd00`/`0x0044dd90`, driven per step by
+`0x0044b3b0`): rate 2500 = 0x19·100, density default 6, reloads
+`(rate·density·60) >> 8` toward zero. Oncoming spawns kind 2 at front−1
+sample with lane `−1 − rand % left_lanes` (sub-slice +0x30); "behind"
+spawns kind 0 at front−1 with right lanes (+0x2c); "ahead" spawns kind 0 at
+back+1 while the rider is slow. Lane counts use the signed-char semantics
+`(int8_t)((value + (value < 0 ? 0xff : 0)) >> 8)`.
+
+**Placement** (`0x0044df60`): lateral `(road centre + lane·250 + 125)·256`;
+vehicle type filtered by mask (loop excludes the last vehicle) and picked
+with `rand() % accepted`; four random bytes (phase `+0x71` is a full int
+slot 192..319 — a byte truncation freezes the car); serial `DAT_004b7e98`.
+
+**Car think/move** (`0x0044e710`/`0x0043adc0`): speed accumulates through
+`0x004498c0` (`+0xec += dt·rate`, clamped) toward the phase-scaled cruise
+`((DAT_004b7e8c = 25) · phase >> 8) · 100` — note 25, not the timer rate
+2500; rate `phase·0x12 >> 8`; obstacle following/lane changes
+(`0x0044a070`/`0x00449e60`) not ported. Horn `0x0044efa0` → `0x00436830`
+(0x12) when the look-ahead target is the player and `rand()%10 == 1`.
+Native integration: `Race::set_traffic` steps the timers after the camera
+update with the per-step camera advance; drawing reuses the verified
+scenery projection with the depth-table scale at each car's Q8 depth.
+Frame cycling and car CCB world-size scaling are native stand-ins.

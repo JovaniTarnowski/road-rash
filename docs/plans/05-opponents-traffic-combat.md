@@ -1,5 +1,7 @@
 # Opponents, Traffic, Police and Combat Implementation Plan
 
+> **Status (October 11, 2026 review):** AI racing, contact and combat are partly ported in `rr::Race`. Free traffic is in `src/traffic.*` (uncommitted at review). Police are not started. The interfaces below (`World`, `Object`, `GameEvent`, `oracle_actors_test`) do not exist. Remaining work is in plans [10](10-simulation-oracle.md), [11](11-napa-race-completion.md) (Tasks 1, 4–6) and [12](12-all-courses.md). This plan is kept as background for addresses and findings; follow the newer plans for remaining work.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking. Read [00-INDEX.md](00-INDEX.md) first. Requires plan 03 (sprites, animations, families) and plan 04 (world, scheduler, rider physics, oracle object dumps).
 
 **Goal:** Complete a full race: AI opponent riders, oncoming and same-direction traffic, pedestrians if present, police and arrests, hand-to-hand and weapon combat, vehicle collisions, finishing order and results. All tick-accurate against the original for recorded scenarios, and drawn with the original sprites.

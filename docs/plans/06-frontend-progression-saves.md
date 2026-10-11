@@ -1,5 +1,7 @@
 # Front End, Progression and Saves Implementation Plan
 
+> **Status (October 11, 2026 review):** Tasks 1–7 are largely done (strings, fonts, front end, dashboard, career, saves, settings). The sound mix, controls and jukebox screens, the attract demo, the original save round trip and menu pixel checks are in [plan 13](13-music-and-frontend-completion.md). This plan is kept as background for addresses and findings; follow the newer plans for remaining work.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking. Read [00-INDEX.md](00-INDEX.md) first. Requires plan 03 (images and sprites) and plan 04 (race start and results interfaces). Tasks 5–8 also need plan 05's `RaceResult`.
 
 **Goal:** Everything outside a race, plus the in-race HUD:

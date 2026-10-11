@@ -1,5 +1,7 @@
 # Platform, Input and Packaging Implementation Plan
 
+> **Status (October 11, 2026 review):** Tasks 1–5 and 7 are software-complete; Task 8's guide reflects the development build. Task 6 hardware validation, performance and the touch overlay are in [plan 14](14-android-port.md). Final acceptance is in [plan 15](15-release-and-acceptance.md). This plan is kept as background for addresses and findings; follow the newer plans for remaining work.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking. Read [00-INDEX.md](00-INDEX.md) first. Tasks 1–2 can start after plan 01. Tasks 3–8 need the game executable `rr-game` from plans 04–07.
 
 **Goal:** Turn `rr-game` into shippable products:

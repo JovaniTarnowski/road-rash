@@ -1,5 +1,7 @@
 # Audio and Video Implementation Plan
 
+> **Status (October 11, 2026 review):** Tasks 1–5 are done except car engines and sirens ([plan 11](11-napa-race-completion.md) Tasks 6–7). Task 6 results videos are done; the full cutscene audit is in [plan 13](13-music-and-frontend-completion.md) Task 4. Task 7 MIDI is required, not optional: race music is MIDI in the original, see plan 13 Tasks 1–2. This plan is kept as background for addresses and findings; follow the newer plans for remaining work.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking. Read [00-INDEX.md](00-INDEX.md) first. Requires plan 01. Tasks 5–6 hook into plans 04–06 via `World::events` and `Frontend`; everything else is standalone.
 
 **Goal:** All original sound and video, natively:

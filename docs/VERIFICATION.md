@@ -321,3 +321,35 @@ fixtures: 1,024 samples match. These checks do not establish complete race parit
 Logs: `analysis/napa-scenery-native-tests.log`,
 `analysis/napa-scenery-sanitizer-tests.log`, `analysis/android-napa-scenery-build.log`,
 `analysis/napa-scenery-raster-sweep.log`.
+
+### Android traffic-module build check (October 11, 2026)
+
+- `src/traffic.cpp` (new, uncommitted) compiles cleanly for ARM64 under both
+  Gradle CMake configurations: `traffic.cpp.o` builds as ARM aarch64 in
+  `android/app/.cxx/Debug` and `android/app/.cxx/RelWithDebInfo`, with
+  `VehicleLibrary`/`TrafficSystem` symbols present in each object file.
+- The symbols are intentionally absent from `libmain.so`: nothing references
+  the traffic module yet (race/game integration is pending), so the static
+  archive member is dropped at link time. This is expected, not a missing
+  module.
+- `assembleDebug` and `assembleRelease -PreleaseDebugSigning=true` both
+  succeed with the module present. Debug APK (6.6 MB) and release APK
+  (4.4 MB) are arm64-v8a only, signed v1/v2, and contain no `assets/game/`
+  entries (`verifyDebugNoGameData`/`verifyReleaseNoGameData` pass).
+- The APK `libmain.so` matches the stripped intermediate (SHA-256 identical).
+  `adb devices` lists no device, so on-hardware rendering, import and input
+  remain unverified.
+- REA (`npx rea-agents@latest`) was used for environment checks: adb client
+  37.0.0 present with zero attached devices. REA's ELF layout provider covers
+  Linux x64 only, so ARM64 `.so` verification was done with local
+  `llvm-nm`/`apksigner`/`aapt` instead.
+
+## Session 23: free traffic (October 11, 2026)
+
+- `ctest` (Debug): **53/53 passed** including the new `traffic` suite (synthetic timer/lane/placement/pool/movement/horn checks always run; the CARS corpus part uses the mounted disc).
+- Sanitizer build (`-fsanitize=undefined,address -fno-sanitize-recover=undefined`): **53/53 passed** (`analysis/traffic-sanitizer-tests.log`).
+- `build/rr-native --assets ../cdrom/ROADRASH --smoke` and the five-course `rr-course --exe` sweep pass.
+- Live check: `rr-game --autopilot --ticks 2400 --screenshot analysis/napa-traffic.bmp` on Napa renders with traffic active; a byte-diff against the same run from an assets tree without `DATA/CARS` differs (436,231 pixels), confirming the traffic render path executes. The diff is not car-localised: traffic shares the race's rand stream, so rider AI also shifts — expected, since the original uses one CRT stream.
+- Geometry probe (headless, real NAPA.CAR + NAPA route): after 2400 autopilot-style steps, 14 active cars with phases 192..319, speeds ramping to the 1,800..3,100 targets, kinds 0/2 mixed, depths spanning the 128-sample ring; visible cars produce textured display nodes within the depth-table span.
+- Android: `assembleDebug` and `assembleRelease -PreleaseDebugSigning=true` succeed; the debug APK contains no `assets/game/` entries and `lib/arm64-v8a/libmain.so` includes the traffic code (`analysis/traffic-android-build.log`).
+- Not verified: tick-level equality with the original (no traffic oracle capture exists), car animation timing/CCB scaling, rider-car collisions. No Android device was connected.

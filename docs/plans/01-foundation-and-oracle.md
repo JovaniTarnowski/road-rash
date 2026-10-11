@@ -1,5 +1,7 @@
 # Foundation and Verification Oracle Implementation Plan
 
+> **Status (October 11, 2026 review):** Tasks 1–6 and 8 done; pixels come from in-process capture at `0x004439f5`, not cnc-ddraw. **Task 7 (deterministic runs) was never implemented**: `run.sh` exports `RR_ORACLE_SEED/INPUT/RECORD` but the DLL ignores them. Replaced by [plan 10](10-simulation-oracle.md). This plan is kept as background for addresses and findings; follow the newer plans for remaining work.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking. Read [00-INDEX.md](00-INDEX.md) first; its conventions apply to every task.
 
 **Goal:** Put the project under version control, add the shared runtime pieces every later plan needs (asset access, 8-bit framebuffer, golden-file reader), and build a Wine-based oracle that dumps the original game's internal state so native code can be tested against ground truth.

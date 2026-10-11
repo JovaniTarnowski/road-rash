@@ -1,5 +1,7 @@
 # Multiplayer Implementation Plan (decision-gated)
 
+> **Status (October 11, 2026 review):** Not started. The owner decision is scheduled in [plan 15](15-release-and-acceptance.md) Task 4. This plan is kept as background for addresses and findings; follow the newer plans for remaining work.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking. Read [00-INDEX.md](00-INDEX.md) first. **Do not start Task 2 or later until Task 1's decision is recorded by the project owner.** Requires plans 04–06 and 08.
 
 **Goal:** Recover the original's two-player modes (modem via TAPI, serial via the Win32 Comm API, network via Winsock). Then either port them as internet/LAN play over UDP using the deterministic simulation, or formally drop them with the reason documented.

@@ -16,11 +16,15 @@ verification. Approximations cannot be silently described as original matches.
 - The playable Napa renderer uses imported indexed road, hills, horizon, static
   scenery, player sprite and full dashboard. Both branch routes pass 2,509
   raster views, and all 6,471 scenery objects resolve imported frames.
+- Free traffic is live on Napa (session 23): the original spawn timers,
+  placement and vehicle library from `DATA/CARS/NAPA.CAR`, with movement,
+  honking and drawing as documented approximations. See `docs/ACTORS.md`.
 - Animation decoding covers 1,663 family animations and 6,503 frames. Roadside
   placement matches 1,024 direct original-function samples.
-- The 50-test native and sanitizer suites pass, and both Android variants build.
-- Buildings/marked terrain, split stitching, horizon motion, terrain grounding,
-  full rider animation/shadows, traffic/police and race soundtrack remain open.
+- The 53-test native and sanitizer suites pass, and both Android variants build.
+- Rider-car collisions, DZHR scripted vehicles and police, the original car
+  animation/scaling laws, split stitching, full rider animation/shadows,
+  traffic/police behaviour parity and the race soundtrack remain open.
   Random-call ordering, billboard ground interpolation, native fonts and needle
   rasterization still have known parity limitations.
 

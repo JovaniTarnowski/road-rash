@@ -34,7 +34,7 @@ Detailed evidence is in [REVERSE_ENGINEERING.md](REVERSE_ENGINEERING.md) and tes
 | Front end (menus, Thrash/Big Game flow, shop, Schmooze, restroom, results, credits) | Ported from the EXE screen tables and handlers; mano-a-mano, jukebox, sound mix and controls screens not ported; not pixel-compared | `src/frontend.cpp` |
 | Career rules and save files | Prize, fines, repairs, shop, level-up and the original 0xa0-byte save format; no original save round-tripped yet | `src/career.cpp` |
 | Settings | Registry values as a preference file | `src/settings.cpp` |
-| Traffic, police | Not started | — |
+| Traffic, police | Traffic spawning/placement ported with the original timers and vehicle library (not oracle-verified); movement/honk/drawing are documented approximations; collisions, DZHR scripted vehicles and police not started | `src/traffic.cpp`, `docs/ACTORS.md` |
 | macOS build | Standalone ARM64 `.app`/ZIP with static pinned SDL, system-only dependencies, ad-hoc signature; 35 release tests pass | `tools/build_macos_app.sh` |
 | Android build | Debug and optimized development release APKs build/sign; runtime rendering/import/controls still unverified on hardware | `android/` |
 | Platform lifecycle and timing | Pause on background/focus loss/controller removal, explicit resume, texture reset recovery, rational fixed-step clock | `src/session.cpp`, `src/game_main.cpp` |
@@ -377,3 +377,14 @@ Napa buildings and ground continuation:
 
 - Terrain grounding matches all 2,048 direct original samples, including hill-band interpolation, signed slopes, shoulder boundaries, absent buildings and marked flat ground. Both Napa branches still rasterize all 2,509 views after integration (642,765 emitted nodes).
 - Added original camera heading accumulation and signed horizon scroll formulas to the live race. The horizon now moves as the course bends; original page-copy scroll direction is preserved. Integrated trajectory comparison remains open.
+
+### Session 23: free traffic on Napa (October 11, 2026)
+
+- Plan 05 task 2 (traffic): actor census in `docs/ACTORS.md` and the traffic foundation ported in `src/traffic.hpp/.cpp`:
+  - `VehicleLibrary` loads the course's `DATA/CARS/<name>.CAR` exactly as `0x004465f0` does (ANIM/CANS pairing, sequential CANS, mask from the SNAC cel block). NAPA decodes 10 vehicles with 12 textured RRAN frames each; masks measured from the real cel flags.
+  - Spawn timers `0x0044dd00`/`0x0044dd90` with the original integer arithmetic (rate 2500, density 6, reload 3515), ring cursors front/back (camera ±0x5000/0x3000), signed-char lane counts, exact placement `0x0044df60` (lateral, mask filter with the last-vehicle exclusion, four random bytes, serial) and the 16-object pool `0x00438b70(0x210,0x10)`.
+  - Movement is a documented approximation of `0x0044e710`: cruise target `((25·phase)>>8)·100`, rate `phase·0x12>>8`, backward kind 2, lane-centre steering with the per-kind drift table, despawn outside `[back, front)`; honk `0x12` when the player blocks the car's path (`0x0044efa0` approximation). Obstacle following/lane changes are not ported.
+  - Two original-arithmetic bugs found and fixed during verification: the cruise constant is 25 (`DAT_004b7e8c`), not the timer rate 2500, and the phase byte is a full int slot (192..319) whose uint8 truncation froze cars.
+  - `Race::set_traffic` steps traffic inside the tick with the per-step camera advance; `rr-game` draws cars through the verified scenery projection between the composed scene and the rider sprites. Traffic runs on every course with a CARS container; composed drawing only on Napa.
+- Verification: 53/53 native tests (`traffic` suite added: exact timer/lane/placement math, pool limit, movement, horn, corpus decode of the real NAPA.CAR and live spawn/draw on the Napa route) and 53/53 address/undefined-sanitizer tests pass. Autopilot screenshot `analysis/napa-traffic.bmp`; a frame diff against a CARS-less assets tree confirms the traffic path changes the render (the shared rand stream also shifts rider AI, as in the original). Android debug and optimized development release APKs build asset-free. No Android device is connected; hardware checks remain open.
+- Traffic is **not** oracle-verified (no tick-level object dump exists yet); the census is static. Rider-car collisions, DZHR scripted vehicles/police, and the original car animation/scaling laws remain open.

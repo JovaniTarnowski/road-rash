@@ -1,5 +1,7 @@
 # Sprites and Scenery Implementation Plan
 
+> **Status (October 11, 2026 review):** Decoders, families, CLGP, RRAN/RRFD and static scenery are done. Rider/car animation playback, shadows and merged actor nodes are in [plan 11](11-napa-race-completion.md) Task 2. This plan is kept as background for addresses and findings; follow the newer plans for remaining work.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking. Read [00-INDEX.md](00-INDEX.md) first. Requires plan 01 and plan 02 Tasks 1–3 (oracle pixel dumps, view mapping, rasteriser).
 
 **Goal:** Decode every sprite and animation format in the game (3DO-style cels, palette lookup tables, animation sets, rider families, bike bobs, shadows), place roadside scenery from course data, and draw scaled sprites into the world exactly as the original does.

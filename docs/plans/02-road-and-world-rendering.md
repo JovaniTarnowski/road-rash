@@ -1,5 +1,7 @@
 # Road and World Rendering Implementation Plan
 
+> **Status (October 11, 2026 review):** Napa scene construction is done and verified piecewise. Remaining Napa items (split stitching, marked terrain, building marking transitions, random order) are in [plan 11](11-napa-race-completion.md) Task 3; the other courses are in [plan 12](12-all-courses.md). This plan is kept as background for addresses and findings; follow the newer plans for remaining work.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking. Read [00-INDEX.md](00-INDEX.md) first. This plan requires plan 01 to be complete: git, `rr::Framebuffer`, the golden reader and the oracle.
 
 **Goal:** Replace the viewer's placeholder flat-shaded road with a pixel-accurate port of the original 3D world renderer (road surface and markings, shoulders, terrain walls/hills/buildings, sky and horizon), drawn into an 8-bit framebuffer and matched against the original's own frames.

@@ -8,6 +8,7 @@
 #include "importer.hpp"
 #include "import_ui.hpp"
 #include "race.hpp"
+#include "traffic.hpp"
 #include "road_draw.hpp"
 #include "session.hpp"
 #include "video_player.hpp"
@@ -46,6 +47,8 @@ struct Game {
     rr::Course course;
     std::unique_ptr<rr::CourseScene> scene;
     std::unique_ptr<rr::Hud> hud;
+    std::unique_ptr<rr::VehicleLibrary> vehicles;
+    std::unique_ptr<rr::TrafficSystem> traffic;
     bool metric=false;
     std::string player_name="Player";
     std::vector<std::string> rider_names;
@@ -73,12 +76,24 @@ struct Game {
             scene=std::make_unique<rr::CourseScene>(assets,exe,course,course_name,1,level);
             hud=std::make_unique<rr::Hud>(assets,exe,bike,metric);
         }
+        // Free traffic from the course's own vehicle container (0x0044db80 /
+        // 0x004465f0). A malformed container disables traffic rather than the
+        // race; the importer has already hash-verified the files.
+        traffic.reset();
+        if(assets.exists("DATA/CARS/"+course_name+".CAR")) {
+            try {
+                vehicles=std::make_unique<rr::VehicleLibrary>(assets.read("DATA/CARS/"+course_name+".CAR"));
+                traffic=std::make_unique<rr::TrafficSystem>(*vehicles,exe);
+                traffic->configure(6);
+            } catch(const std::exception&) {traffic.reset();}
+        }
     }
 
     void restart() {
         race = std::make_unique<rr::Race>(rr::make_route(course, false), rr::make_route(course, true),
                                           physics, specs.at(size_t(bike)), rider_value, opponents, level);
         if(scene)race->set_terrain_source([this](const rr::RouteSample& sample)->const rr::TerrainSlice&{return scene->terrain(sample.section,sample.local);});
+        if(traffic)race->set_traffic(traffic.get());
         countdown = countdown_ticks;
     }
     void tick(uint32_t controls) {
@@ -86,6 +101,7 @@ struct Game {
         else race->step(controls);
         if (sound) {
             for (const auto& e : race->take_sound_events()) sound->post(e);
+            if (traffic) for (const auto& e : traffic->take_sound_events()) sound->post(e);
             sound->update(*race);
         }
     }
@@ -178,6 +194,12 @@ struct CourseCanvas {
     void draw(SDL_Renderer* renderer,const Game& game,const std::vector<rr::RoadSlice>& slices) {
         game.scene->draw_horizon(frame,game.race->horizon_scroll());
         rr::render_nodes(frame,game.scene->draw_nodes(game.race->route(),slices,game.race->camera(),game.depth),rr::view_mode(true),16);
+        // Traffic between the composed scene and the rider sprites; car/rider
+        // overlap order is a native approximation until the original's
+        // per-object dispatch order is ported.
+        if(game.traffic)
+            rr::render_nodes(frame,rr::traffic_draw_nodes(*game.traffic,game.race->route(),slices,
+                game.race->camera(),game.depth,int32_t(game.race->camera_position()),uint32_t(game.race->ticks())),rr::view_mode(true),16);
         frame.to_rgba(game.palette,rgba.data(),640*4);
         if(!texture) {
             texture=SDL_CreateTexture(renderer,SDL_PIXELFORMAT_RGBA32,SDL_TEXTUREACCESS_STREAMING,640,480);
