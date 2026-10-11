@@ -99,7 +99,7 @@ void CourseScene::draw_horizon(Framebuffer& fb,int32_t scroll) const {
     for(int y=0;y<320;++y)for(int x=0;x<fb.width();++x)fb.row(y)[x]=horizon_[size_t(y)*720+(x+start)%720];
 }
 std::vector<DrawNode> CourseScene::draw_nodes(const std::vector<RouteSample>& route,
-    const std::vector<RoadSlice>& slices,const Camera& camera,const DepthTable& depths) const {
+    const std::vector<RoadSlice>& slices,const Camera& camera,const DepthTable& depths,ActorEmitter actors) const {
     struct Road {const PathSample* path;const TerrainSlice* terrain;uint32_t section,local;HillRoad hill[2];BuildingRoad building[2];int32_t ceiling;};
     std::vector<std::array<Road,2>> roads(slices.size());
     int32_t ceiling=240*65536;
@@ -195,6 +195,7 @@ std::vector<DrawNode> CourseScene::draw_nodes(const std::vector<RouteSample>& ro
                 BuildingPanelInput building{road.building[side],old.building[side],uint8_t(side)};
                 append(building_draw_nodes(building,[&](bool use_far,int32_t w,int32_t h){const auto& source=use_far?old:road;return material(source.section,source.local,source.terrain->selectors[side],1,std::nullopt,w,h);}));
             }
+            if(actors)append(actors(near,far,r,road.ceiling,true));
             if(near.depth>146)for(const auto& object:objects(road.section,road.local)) {
                 const auto* frame=object_frame(road.section,road.local,object);if(!frame || !frame->texture)continue;
                 int32_t ground=terrain_height(*road.terrain,path,*old.terrain,*old.path,object.lateral*256,128,a.road_x-b.road_x);
@@ -202,6 +203,7 @@ std::vector<DrawNode> CourseScene::draw_nodes(const std::vector<RouteSample>& ro
                 auto draw=scenery_node(*frame,object,(a.road_x+b.road_x)/2+camera.x,(a.world_y+b.world_y)/2,ground,near.depth,camera,depths);
                 if(draw.view_points[0].y<road.ceiling)result.push_back(draw);
             }
+            if(actors)append(actors(near,far,r,road.ceiling,false));
         }
     }
     return result;

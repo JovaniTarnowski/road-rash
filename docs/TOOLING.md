@@ -118,3 +118,11 @@ Two agent sessions have worked in this repository concurrently (October 11,
   interleaving instead (see the session 23 entries in [PROGRESS.md](PROGRESS.md)).
 - Before building or running `ctest`, expect the working tree to contain the
   other session's mid-edit code; a red build may be theirs, not yours.
+
+REA actor animation analysis (October 11 continuation):
+`npx --yes rea-agents@6.4.0 function ../cdrom/ROADRASH/ROADRASH.EXE
+0x0043ae90 --format json` with the environment above produced canonical
+evidence in `analysis/oracle/rea-actor-animation.json`. The pseudocode agrees with
+the repository's Ghidra export. The playback port was separately validated
+against 2,048 calls to the original function; REA output alone was not treated
+as runtime proof.

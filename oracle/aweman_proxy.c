@@ -653,6 +653,139 @@ static void capture_building_panels(void) {
     }
     rr_log("building.count",128);for(int i=0;i<5;++i)RD32(addresses[i])=saved[i];
 }
+static void capture_riding_animation(void) {
+    const uint32_t saved_player=RD32(0x4642d8),saved_tick=RD32(0x4b7ecc);const unsigned char saved_limit=RD8(0x4c7ff0);
+    int32_t bike[256],actor[256];char key[128];const int8_t initial[]={-1,2,8,3,4,0,1,5,6,9};const int32_t speeds[]={-1,0,299,300,1799,1800,9499,9500,9501,30000};
+    RD8(0x4c7ff0)=0;
+    for(int c=0;c<64;++c) {
+        memset(bike,0,sizeof bike);memset(actor,0,sizeof actor);bike[0x2fc/4]=(int32_t)(uintptr_t)actor;bike[0x324/4]=1;RD32(0x4642d8)=(uint32_t)(uintptr_t)bike;
+        actor[0x78/4]=RD32(0x474d78);((signed char*)actor)[0x80]=initial[c%10];((signed char*)actor)[0x82]=-1;actor[0x84/4]=-1;
+        snprintf(key,sizeof key,"actor.riding.%d.initial",c);rr_log(key,initial[c%10]);
+        for(int t=0;t<16;++t) {
+            RD32(0x4b7ecc)=100+t;bike[0xec/4]=speeds[(c+t)%10];bike[0x114/4]=(c%3)*30+t;bike[0x100/4]=(c%3-1)*4096-(t%2);bike[0xf4/4]=c%2?99:100;((unsigned char*)bike)[0x278]=c%4?0:0x20;((unsigned char*)bike)[0xc0]=c%7==0 && t>8?0x10:0;
+#define RA_LOG(label,value) do{snprintf(key,sizeof key,"actor.riding.%d.%d.%s",c,t,label);rr_log(key,value);}while(0)
+            RA_LOG("tick",RD32(0x4b7ecc));RA_LOG("speed",bike[0xec/4]);RA_LOG("throttle",bike[0x114/4]);RA_LOG("lateral_speed",bike[0x100/4]);RA_LOG("boost",bike[0xf4/4]);RA_LOG("flags",((unsigned char*)bike)[0x278]);RA_LOG("wrecked",((unsigned char*)bike)[0xc0]&0x10);
+            ((void (__fastcall*)(int32_t*))0x407f30)(bike);
+            RA_LOG("animation",((signed char*)actor)[0x80]);RA_LOG("frame",((signed char*)actor)[0x81]);RA_LOG("queued",((signed char*)actor)[0x82]);RA_LOG("loops",((unsigned char*)actor)[0x88]);RA_LOG("deadline",(uint32_t)actor[0x84/4]);
+            const unsigned char* selected=(unsigned char*)(uintptr_t)(uint32_t)actor[0x7c/4];
+            for(int i=0;i<14;++i){snprintf(key,sizeof key,"actor.riding.%d.%d.selected.%d",c,t,i);rr_log(key,selected?selected[i]:-1);}
+#undef RA_LOG
+        }
+    }
+    rr_log("actor.riding.count",64);RD32(0x4642d8)=saved_player;RD32(0x4b7ecc)=saved_tick;RD8(0x4c7ff0)=saved_limit;
+}
+static void capture_actor_projection(void) {
+    const uint32_t addresses[]={0x49e660,0x49e668,0x46667c,0x4bc7d8,0x4bc7dc,0x475618};
+    int32_t saved[6];for(int i=0;i<6;++i)saved[i]=RD32(addresses[i]);
+    int32_t output[2][42],ccb[20],pixel[16],current[16],following[16],sub[32],entry[8],params[6],actor[64],angles[3];char key[128];
+    for(int c=0;c<256;++c) {
+        memset(output,0,sizeof output);memset(ccb,0,sizeof ccb);memset(pixel,0,sizeof pixel);memset(current,0,sizeof current);memset(following,0,sizeof following);memset(sub,0,sizeof sub);memset(entry,0,sizeof entry);memset(params,0,sizeof params);
+        const int width=c%3?320:640;RD32(0x46667c)=width;RD32(0x475618)=width/2;RD32(0x4bc7d8)=c%5*20-40;RD32(0x4bc7dc)=150;
+        ccb[2]=(int32_t)(uintptr_t)pixel;ccb[15]=24;ccb[16]=64;
+        current[0]=(int32_t)(uintptr_t)following;current[2]=(int32_t)(uintptr_t)entry;current[3]=(int32_t)(uintptr_t)sub;following[3]=(int32_t)(uintptr_t)sub;
+        current[4]=c%7*40-120;following[4]=current[4]+c%5*17;current[5]=c%9*10-40;following[5]=current[5]+c%3*7;
+        current[6]=256+(c%16)*256;entry[4]=(c%5?240:90)*65536;
+        params[0]=(int32_t)(uintptr_t)ccb;params[2]=c%4==0?0:c%4==1?24:c%4==2?12:40;params[3]=c%4==0?0:c%4==1?64:c%4==2?48:80;
+        params[4]=(c%2?1:0)|(c%5==1?0x10000:0)|(c%7==1?0x20000:0);
+        const int size=c%7?512:0,lateral=c%11*70-350,ground=c%8*9,fraction=c%256,clip=c%3!=0;
+#define AP_LOG(label,value) do{snprintf(key,sizeof key,"actor.projection.%d.%s",c,label);rr_log(key,value);}while(0)
+        AP_LOG("width",width);AP_LOG("road_x",current[4]);AP_LOG("far_x",following[4]);AP_LOG("road_y",current[5]);AP_LOG("far_y",following[5]);AP_LOG("depth",current[6]);AP_LOG("occlusion",entry[4]);AP_LOG("hotspot_x",params[2]);AP_LOG("hotspot_y",params[3]);AP_LOG("flags",params[4]);AP_LOG("size",size);AP_LOG("lateral",lateral);AP_LOG("ground",ground);AP_LOG("fraction",fraction);AP_LOG("clip",clip);AP_LOG("camera_x",RD32(0x4bc7d8));AP_LOG("camera_height",RD32(0x4bc7dc));
+        memset(actor,0,sizeof actor);actor[0x44/4]=fraction;actor[0x50/4]=lateral*256+(c%3?127:-127);actor[0x68/4]=(c%9-4)*0x300000;actor[0x6c/4]=(c%7-3)*0x200000;actor[0xc4/4]=c%2?8:4;current[0x1c/4]=(c%8)*0x200000;
+        ((void (__fastcall*)(int32_t*,int32_t*,int32_t*))0x413ae0)(actor,angles,current);
+        AP_LOG("orientation_lateral",actor[0x50/4]);AP_LOG("orientation_heading",actor[0x68/4]);AP_LOG("orientation_roll",actor[0x6c/4]);AP_LOG("orientation_road_heading",current[0x1c/4]);AP_LOG("orientation_rider",actor[0xc4/4]==8);AP_LOG("orientation_yaw",angles[1]);AP_LOG("orientation_view",actor[0xd0/4]);
+        RD32(0x49e660)=(int32_t)(uintptr_t)output;RD32(0x49e668)=(int32_t)(uintptr_t)(output+1);
+        ((void (__fastcall*)(int32_t*,int32_t*,int,int,int,uint32_t,char))0x44ba40)(current,params,size,lateral,ground,fraction,(char)clip);
+        const int count=((uintptr_t)RD32(0x49e660)-(uintptr_t)output)/168;AP_LOG("count",count);
+        for(int n=0;n<count && n<2;++n)for(int i=0;i<8;++i){snprintf(key,sizeof key,"actor.projection.%d.%d.point.%d",c,n,i);rr_log(key,output[n][17+i]);}
+#undef AP_LOG
+    }
+    rr_log("actor.projection.count",256);for(int i=0;i<6;++i)RD32(addresses[i])=saved[i];
+}
+static void capture_actor_selection(uint32_t* descriptor,int bank,int binding,int frame) {
+    int32_t actor[128],projection[16],angles[3];char key[128];
+    uint32_t* pair=(uint32_t*)(0x4b9220+bank*8);
+    uint32_t* ccb=(uint32_t*)(uintptr_t)RD32(pair[1]+12);uint32_t saved[20];memcpy(saved,ccb,sizeof saved);
+    const int32_t yaw[]={-0xff0000,-0x800000,-0x400000,-1,0,1,0x400000,0x7effff,0x7f0000,0x800000,0xff0000,0x1000000};
+    for(int c=0;c<48;++c) {
+        memset(actor,0,sizeof actor);memset(projection,0,sizeof projection);
+        actor[0x8c/4]=pair[0];actor[0x90/4]=pair[1];actor[0x98/4]=(int32_t)(uintptr_t)descriptor;
+        actor[0x68/4]=yaw[c%12];actor[0x6c/4]=yaw[(c/12)*3];
+        projection[0x18/4]=256;projection[0x10/4]=RD32(0x4bc7d8);
+        ((void (__fastcall*)(int32_t*,int32_t*,int32_t*))0x413ae0)(actor,angles,projection);
+#define AS_LOG(label,value) do{snprintf(key,sizeof key,"actor.selection.%d.%d.%d.%s",binding,frame,c,label);rr_log(key,value);}while(0)
+        AS_LOG("yaw",angles[1]);AS_LOG("roll",angles[2]);AS_LOG("heading",actor[0x68/4]);AS_LOG("view_angle",actor[0xd0/4]);
+        ((void (__fastcall*)(int32_t*,int32_t*))0x43af60)(actor,projection);
+        AS_LOG("frame",ccb[0x40/4]);AS_LOG("flags",actor[0xb8/4]);AS_LOG("selected_roll",actor[0xbc/4]);
+        AS_LOG("hotspot_x",actor[0xb0/4]);AS_LOG("hotspot_y",actor[0xb4/4]);
+#undef AS_LOG
+    }
+    memcpy(ccb,saved,sizeof saved);
+}
+static void capture_actor_descriptors(void) {
+    const uint32_t bindings[][3]={{0,0x004746c0,1},{0,0x004746c8,1},{0,0x004746d0,1},{0,0x004746d8,1},{0,0x004746e0,1},{0,0x004746e8,2},{0,0x004746f8,2},{0,0x00474708,1},{0,0x00474710,1},{0,0x00474718,2},{0,0x00474728,5},{0,0x00474750,5},{0,0x00474778,5},{0,0x004747a0,5},{0,0x004747c8,2},{0,0x004747d8,2},{0,0x004747e8,3},{0,0x00474800,3},{0,0x00474818,3},{0,0x00474830,3},{0,0x00474868,3},{0,0x00474880,3},{0,0x00474898,3},{0,0x004748b0,3},{0,0x004748c8,2},{0,0x004748d8,2},{0,0x004748e8,7},{0,0x00474920,8},{0,0x00474960,4},{0,0x00474980,4},{0,0x004749a0,4},{0,0x004749c0,5},{0,0x004749e8,4},{0,0x00474a08,2},{0,0x00474a18,5},{0,0x00474a40,4},{0,0x00474a60,6},{0,0x00474a90,5},{0,0x00474ab8,5},{0,0x00474ae0,5},{0,0x00474b08,5},{0,0x00474b30,5},{0,0x00474b58,4},{0,0x00474b78,4},{0,0x00474b98,3},{0,0x00474bb0,3},{0,0x00474bc8,1},{0,0x00474bd0,1},{1,0x004746d0,1},{1,0x00474710,1},{1,0x00474718,2},{1,0x004747e8,3},{1,0x00474800,3},{1,0x004748e8,7},{1,0x004749c0,5},{1,0x00474b30,5},{1,0x00474bc8,1},{1,0x00474b98,3},{1,0x00474a40,4}};
+    uint32_t output[5];char key[128];
+    for(size_t c=0;c<sizeof bindings/sizeof bindings[0];++c) {
+        snprintf(key,sizeof key,"actor.descriptor.%u.bank",(unsigned)c);rr_log(key,bindings[c][0]);snprintf(key,sizeof key,"actor.descriptor.%u.source",(unsigned)c);rr_log(key,bindings[c][1]);snprintf(key,sizeof key,"actor.descriptor.%u.count",(unsigned)c);rr_log(key,bindings[c][2]);
+        for(unsigned f=0;f<bindings[c][2];++f) {
+            memset(output,0,sizeof output);
+            const uint32_t result=((uint32_t (__fastcall*)(uint32_t*,int*,uint32_t*))0x40b200)((uint32_t*)(0x4b9220+bindings[c][0]*8),(int*)(uintptr_t)(bindings[c][1]+f*8),output)&255;
+            snprintf(key,sizeof key,"actor.descriptor.%u.%u.available",(unsigned)c,f);rr_log(key,result);
+            for(int b=0;b<16;++b){snprintf(key,sizeof key,"actor.descriptor.%u.%u.byte.%d",(unsigned)c,f,b);rr_log(key,((unsigned char*)output)[b]);}
+            if(!result)break;
+            capture_actor_selection(output,bindings[c][0],(int)c,(int)f);
+        }
+    }
+    rr_log("actor.descriptor.count",sizeof bindings/sizeof bindings[0]);
+}
+static void capture_actor_views(void) {
+    char key[128];
+    for(int bank=0;bank<2;++bank) {
+        uint32_t* pair=(uint32_t*)(0x4b9220+bank*8);
+        uint32_t* snac=(uint32_t*)(uintptr_t)pair[0];
+        const uint32_t count=snac[snac[2]==1?11:3];
+        uint32_t* ccb=(uint32_t*)(uintptr_t)RD32(pair[1]+12);uint32_t saved[20];memcpy(saved,ccb,sizeof saved);
+        snprintf(key,sizeof key,"actor.views.%d.count",bank);rr_log(key,count);
+        for(uint32_t group=0;group<count;++group) {
+            uint32_t* metadata=((uint32_t* (__fastcall*)(uint32_t*,int))0x40b5a0)(pair,group);
+            snprintf(key,sizeof key,"actor.views.%d.%u.count",bank,group);rr_log(key,metadata[1]);
+            for(uint32_t frame=0;frame<metadata[1];++frame) {
+                uint32_t flags=0;
+                uint32_t* selected=((uint32_t* (__fastcall*)(uint32_t*,int,int,uint32_t*))0x40b6f0)(pair,group,frame,&flags);
+                snprintf(key,sizeof key,"actor.views.%d.%u.%u.frame",bank,group,frame);rr_log(key,((uintptr_t)selected-pair[1]-28)/28);
+                snprintf(key,sizeof key,"actor.views.%d.%u.%u.flags",bank,group,frame);rr_log(key,flags);
+            }
+        }
+        memcpy(ccb,saved,sizeof saved);
+    }
+}
+static void capture_actor_animation(void) {
+    const uint32_t saved_tick=RD32(0x4b7ecc);char key[128];
+    unsigned char state[32],sequence[3][80];uint32_t bank[4];
+    for(int c=0;c<64;++c) {
+        memset(state,0,sizeof state);memset(sequence,0,sizeof sequence);
+        for(int k=0;k<3;++k){bank[k]=(uint32_t)(uintptr_t)sequence[k];for(int f=0;f<4;++f){sequence[k][f*20+12]=(unsigned char)(f==0?c%4:(f==1?1:(f==2?3:0)));sequence[k][f*20+13]=f==3?2:(f==2?0x11:0);*(uint32_t*)(sequence[k]+f*20+16)=1;}}
+        sequence[0][13]=1;sequence[1][2*20+13]=c%3==0?2:0x11;sequence[2][12]=c%7==0?255:0;sequence[2][13]=c%4==0?1:0;
+        bank[3]=0;*(uint32_t*)(state+8)=(uint32_t)(uintptr_t)bank;state[16]=255;state[18]=255;
+#define AA_LOG(label,value) do{snprintf(key,sizeof key,"actor.animation.%d.%s",c,label);rr_log(key,value);}while(0)
+        for(int k=0;k<3;++k)for(int f=0;f<4;++f){snprintf(key,sizeof key,"actor.animation.%d.sequence.%d.%d.duration",c,k,f);rr_log(key,(int)(signed char)sequence[k][f*20+12]);snprintf(key,sizeof key,"actor.animation.%d.sequence.%d.%d.control",c,k,f);rr_log(key,sequence[k][f*20+13]);}
+        for(int t=0;t<32;++t) {
+            const uint32_t tick=(c%8==0?0xffffff00u:100u)+t*(c%5+1);RD32(0x4b7ecc)=tick;
+            const int code=t==0?(c%5==4?-1:c%4):-2,queued=t==4?(c%4==3?-1:c%3):-2;
+            int set=-1,queue=-1;
+            if(code!=-2)set=((uint32_t (__fastcall*)(unsigned char*,char))0x40ac70)(state,(char)code)&255;
+            if(queued!=-2)queue=((uint32_t (__fastcall*)(unsigned char*,char))0x43ae60)(state,(char)queued)&255;
+            ((void (__fastcall*)(unsigned char*))0x43ae90)(state);
+#define AA_TLOG(label,value) do{snprintf(key,sizeof key,"actor.animation.%d.%d.%s",c,t,label);rr_log(key,value);}while(0)
+            AA_TLOG("tick",tick);AA_TLOG("set_code",code);AA_TLOG("queue_code",queued);AA_TLOG("set_result",set);AA_TLOG("queue_result",queue);AA_TLOG("animation",(int)(signed char)state[16]);AA_TLOG("frame",(int)(signed char)state[17]);AA_TLOG("queued",(int)(signed char)state[18]);AA_TLOG("deadline",*(uint32_t*)(state+20));AA_TLOG("loops",state[24]);
+            const uintptr_t selected=*(uint32_t*)(state+12);int selected_sequence=-1,selected_frame=-1;
+            for(int k=0;k<3;++k)if(selected>=(uintptr_t)sequence[k] && selected<(uintptr_t)sequence[k]+80){selected_sequence=k;selected_frame=(selected-(uintptr_t)sequence[k])/20;}
+            AA_TLOG("selected_sequence",selected_sequence);AA_TLOG("selected_frame",selected_frame);
+#undef AA_TLOG
+        }
+#undef AA_LOG
+    }
+    rr_log("actor.animation.count",64);RD32(0x4b7ecc)=saved_tick;
+}
 static void capture_terrain_ground(void) {
     int current[96],next[96];char key[128];
     for(int c=0;c<32;++c) {
@@ -747,6 +880,11 @@ static void dump_groups(void) {
     capture_scenery();
     capture_building_panels();
     capture_terrain_ground();
+    capture_actor_animation();
+    capture_actor_descriptors();
+    capture_actor_views();
+    capture_actor_projection();
+    capture_riding_animation();
 }
 // Region records: {base, size} then bytes. Version 2 dumps all of .data/.bss and a two-level
 // closure of heap blocks referenced from the course ring, projected slices and scratch blocks.

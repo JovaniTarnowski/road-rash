@@ -6,6 +6,7 @@
 #include "terrain_panels.hpp"
 #include "scenery.hpp"
 #include "building_panels.hpp"
+#include <functional>
 
 namespace rr {
 // Owned imported resources and generated course terrain. Construction never
@@ -19,8 +20,9 @@ public:
         uint8_t category,std::optional<uint32_t> frame,int32_t width,int32_t height) const;
     // Emits imported road, shoulder, hill, building and scenery geometry.
     // Marked transitions and split stitching remain integration work.
+    using ActorEmitter=std::function<std::vector<DrawNode>(const RoadSlice&,const RoadSlice&,int,int32_t,bool)>;
     std::vector<DrawNode> draw_nodes(const std::vector<RouteSample>& route,
-        const std::vector<RoadSlice>& slices,const Camera&,const DepthTable&) const;
+        const std::vector<RoadSlice>& slices,const Camera&,const DepthTable&,ActorEmitter actors={}) const;
     void draw_horizon(Framebuffer&,int32_t scroll) const;
     const std::vector<SceneryObject>& objects(uint32_t section,uint32_t local) const;
     const AnimationFrame* object_frame(uint32_t section,uint32_t local,const SceneryObject&) const;

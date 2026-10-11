@@ -26,6 +26,7 @@ struct RoadSurface {
     // Outer shoulder edges: sub-slice [0x3a]/[0x3b] = road edges -/+ RSLD widths (0x00454240).
     int32_t shoulder_left, shoulder_right;
     int32_t world_y=0; // accumulated rise, needed by terrain/scenery projection
+    int32_t heading=0; // 0x00444630 view-relative tangent angle
 };
 
 struct RoadSlice {

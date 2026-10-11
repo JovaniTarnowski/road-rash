@@ -621,3 +621,23 @@ Native integration: `Race::set_traffic` steps the timers after the camera
 update with the per-step camera advance; drawing reuses the verified
 scenery projection with the depth-table scale at each car's Q8 depth.
 Frame cycling and car CCB world-size scaling are native stand-ins.
+
+Actor animation playback and descriptor recovery (October 11 continuation):
+
+- REA (`rea-agents` 6.4.0, Ghidra provider) agrees with the exported
+  `0x0043ae90` pseudocode. Original-function fixtures verify 2,048 playback
+  steps independently. The selected draw-frame pointer is resolved before
+  advancing; keeping only the post-advance frame changes the displayed frame.
+- Duration is a signed byte, deadline comparisons are unsigned, and one call
+  takes at most one transition. Deadlines accumulate from the old deadline.
+- CANS runtime descriptors are 20 bytes, separate from RRAN graphics. The
+  bounded `actor_descriptors` decoder reproduces all 194 descriptors built by
+  `0x00445a60` (59 bindings). Metadata comes from CANS and 8-byte imported EXE
+  source descriptors; only the initializer's relocation schema is native code.
+- Rider/cop banks at `0x00474d78` each have 52 code slots, with 59 populated
+  sequences total. Rider codes 20/21 refer to BSS records not initialized by
+  the loader; direct selection rejects their zero draw pointers.
+
+Owned actor graphics selection: CANS SNAC group records use signed high-16-bit one-based RRAN indices in their first word. The following attribute block supplies per-cell flags. `0x0040b6f0` combines `0x0040b730` and `0x0040b620`, then selects the RRAN frame through `0x0040b750`. All 672 cells match runtime helper calls. `select_actor_view` implements the angle-dependent portion of `0x0043af60`, including its unusual 0xff0000 wrap, signed-byte counts, yaw reversal flag 8, low-resolution span and full-circle formulas, elevation clamp, and roll correction limited to ±7. Across 9,312 original calls the selected RRAN index, flags, roll and imported hotspots match. Orientation calculation `0x00413ae0`, live animation triggers, shadow remaps and depth dispatch are separate remaining work.
+
+Actor billboard dimensions: the RRAN frame width/height are logical view units. HI Bob images commonly double those dimensions, with odd dimensions rounded down (e.g. logical 14×33 maps to HI 27×65). `actor_node` therefore projects RRAN dimensions and samples the owned HI texture, preserving its own bounds. Empty shadow frames may have RRAN 1×1 dimensions but zero-size Bob pages, so they contribute no pixels. `ActorNodes` preserves shadow/body ordering and ground versus vertical Q8 displacement. Normal player riding animation `0x00407f30` has 1,024 matching captured steps; distance-based AI selection accepts a caller-supplied original distance, while crash-specific dispatch remains separate.

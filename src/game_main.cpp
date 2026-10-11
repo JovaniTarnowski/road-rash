@@ -14,6 +14,7 @@
 #include "video_player.hpp"
 #include "career.hpp"
 #include "course_scene.hpp"
+#include "actor_nodes.hpp"
 #include "hud.hpp"
 #include "exe_tables.hpp"
 #include "frontend.hpp"
@@ -47,6 +48,10 @@ struct Game {
     rr::Course course;
     std::unique_ptr<rr::CourseScene> scene;
     std::unique_ptr<rr::Hud> hud;
+    std::unique_ptr<rr::ActorNodes> actors;
+    std::vector<rr::ActorAnimationState> actor_states;
+    std::vector<int> previous_attacks;
+    std::array<std::array<std::array<int8_t,4>,2>,2> attack_codes{};
     std::unique_ptr<rr::VehicleLibrary> vehicles;
     std::unique_ptr<rr::TrafficSystem> traffic;
     bool metric=false;
@@ -71,10 +76,16 @@ struct Game {
     void load_course(const rr::Assets& assets,const std::vector<uint8_t>& exe) {
         scene.reset();
         hud.reset();
+        actors.reset();
         course=rr::read_course(assets.read("DATA/COURSES/"+course_name+".CRS"));
         if(course_name=="NAPA") {
             scene=std::make_unique<rr::CourseScene>(assets,exe,course,course_name,1,level);
             hud=std::make_unique<rr::Hud>(assets,exe,bike,metric);
+            actors=std::make_unique<rr::ActorNodes>(assets,exe,true);
+            for(int side=0;side<2;++side) {
+                const auto bytes=rr::read_exe_data(exe,side?0x464518:0x4644f8,32);
+                for(int kind=0;kind<2;++kind)for(int weapon=0;weapon<4;++weapon)attack_codes[side][kind][weapon]=int8_t(bytes[(kind*4+weapon)*4]);
+            }
         }
         // Free traffic from the course's own vehicle container (0x0044db80 /
         // 0x004465f0). A malformed container disables traffic rather than the
@@ -94,11 +105,53 @@ struct Game {
                                           physics, specs.at(size_t(bike)), rider_value, opponents, level);
         if(scene)race->set_terrain_source([this](const rr::RouteSample& sample)->const rr::TerrainSlice&{return scene->terrain(sample.section,sample.local);});
         if(traffic)race->set_traffic(traffic.get());
+        actor_states.assign(race->riders().size(),{});
+        previous_attacks.assign(race->riders().size(),0);
+        if(actors)for(auto& state:actor_states) {
+            rr::set_animation_with_fallback(state,actors->library().playback[0],2,0,actors->library().fallback);
+            rr::queue_animation(state,actors->library().playback[0],2); // 0x00446060 initializes current and queued riding
+            rr::advance_animation(state,actors->library().playback[0],0);
+        }
         countdown = countdown_ticks;
+    }
+    std::vector<rr::DrawNode> rider_nodes(const rr::RoadSlice& near,const rr::RoadSlice& far,int road,int32_t ceiling,bool back)const {
+        std::vector<size_t> visible;
+        for(size_t i=0;i<race->riders().size();++i) {
+            const auto& rd=race->riders()[i];const auto pos=uint32_t(rd.bike.i32(0x1c));
+            if(rd.bike.i32(0x2f4) || (pos>>8)!=near.sample || ((pos&255)>=128)!=back || !actor_states[i].selected)continue;
+            if(near.count==2 && rd.route!=road)continue;
+            visible.push_back(i);
+        }
+        std::stable_sort(visible.begin(),visible.end(),[&](size_t a,size_t b){return race->riders()[a].bike.i32(0x1c)>race->riders()[b].bike.i32(0x1c);});
+        std::vector<rr::DrawNode> output;
+        for(size_t i:visible) {
+            const auto& rd=race->riders()[i];const auto& bike=rd.bike;const auto& sample=race->route_of(rd).at(near.sample);
+            const auto& a=near.road[road];const auto& b=far.road[road];const auto camera=race->camera();
+            rr::ActorOrientation orientation;orientation.depth=near.depth;orientation.position=bike.i32(0x1c);orientation.road_x=a.road_x+camera.x;orientation.lateral_q8=bike.i32(0x28)-sample.offset*256;orientation.road_heading=a.heading;orientation.heading=bike.i32(0x5c);orientation.roll=bike.i32(0x60);orientation.rider=true;
+            rr::ActorProjection projection;projection.road_x=orientation.road_x;projection.far_x=b.road_x+camera.x;projection.road_y=a.world_y;projection.far_y=b.world_y;projection.lateral=orientation.lateral_q8/256;projection.ground=bike.i32(0x24);projection.depth=near.depth;projection.fraction=uint8_t(orientation.position);projection.occlusion=ceiling;
+            const auto selected=*actor_states[i].selected;const auto& descriptor=actors->library().playback[0].at(size_t(selected[0]))->at(size_t(selected[1]));
+            const auto nodes=actors->rider(descriptor,0,rd.colour,orientation,projection,camera,depth,bike.i32(0x20));output.insert(output.end(),nodes.begin(),nodes.end());
+        }
+        return output;
     }
     void tick(uint32_t controls) {
         if (countdown > 0) --countdown;   // race clock starts after the countdown
-        else race->step(controls);
+        else {
+            race->step(controls);
+            if(actors)for(size_t i=0;i<actor_states.size();++i) {
+                const auto& rider=race->riders()[i];const auto& b=rider.bike;auto& state=actor_states[i];
+                const auto& library=actors->library();
+                if(b.i32(0x2f4))continue; // crash actor dispatch is ported separately
+                // Race still uses its documented combat timer. Bridge its
+                // completion to the original queued-animation mechanism until
+                // original hit/event scheduling replaces that timer.
+                if(!rider.attack.timer && previous_attacks[i])rr::queue_animation_with_fallback(state,library.playback[0],2,library.fallback);
+                previous_attacks[i]=rider.attack.timer;
+                if(rider.attack.timer==1)rr::set_animation_with_fallback(state,library.playback[0],attack_codes[rider.attack.right][rider.attack.backhand][rider.attack.weapon],uint32_t(race->ticks()),library.fallback);
+                rr::RidingAnimationInput input;input.speed=b.i32(0xec);input.throttle=b.i32(0x114);input.lateral_speed=b.i32(0x100);input.boost=b.i32(0xf4);input.flags=b.u8(0x278);input.player=i==0;input.wrecked=(b.u8(0xc0)&0x10)!=0;input.camera_distance=std::abs(b.i32(0x1c)-int32_t(race->camera_position()));
+                rr::advance_riding_animation(state,library.playback[0],library.fallback,input,uint32_t(race->ticks()));
+            }
+        }
         if (sound) {
             for (const auto& e : race->take_sound_events()) sound->post(e);
             if (traffic) for (const auto& e : traffic->take_sound_events()) sound->post(e);
@@ -193,7 +246,7 @@ struct CourseCanvas {
     }
     void draw(SDL_Renderer* renderer,const Game& game,const std::vector<rr::RoadSlice>& slices) {
         game.scene->draw_horizon(frame,game.race->horizon_scroll());
-        rr::render_nodes(frame,game.scene->draw_nodes(game.race->route(),slices,game.race->camera(),game.depth),rr::view_mode(true),16);
+        rr::render_nodes(frame,game.scene->draw_nodes(game.race->route(),slices,game.race->camera(),game.depth,[&](const rr::RoadSlice& near,const rr::RoadSlice& far,int road,int32_t ceiling,bool back){return game.rider_nodes(near,far,road,ceiling,back);}),rr::view_mode(true),16);
         // Traffic between the composed scene and the rider sprites; car/rider
         // overlap order is a native approximation until the original's
         // per-object dispatch order is ported.
@@ -216,6 +269,7 @@ struct CourseCanvas {
 void draw_bike(SDL_Renderer* r, const Game& g, SpriteCache& cache,const std::vector<rr::RoadSlice>& slices) {
     const rr::Race& race = *g.race;
     const auto& me = race.riders()[0];
+    if(g.actors && !race.crashed())return;
     const int frame = race.crashed() ? 21 : me.attack.timer ? attack_frame(me) : riding_frame(race.bike());
     SDL_Texture* t = cache.get(r, g, frame, 0);
     if (!t) return;
@@ -243,6 +297,7 @@ void draw_opponents(SDL_Renderer* r, const Game& g, SpriteCache& cache, const st
     std::vector<Item> items;
     for (size_t i = 1; i < race.riders().size(); ++i) {
         const rr::Rider& rd = race.riders()[i];
+        if(g.actors && !rd.bike.i32(0x2f4))continue;
         const uint32_t pos = uint32_t(rd.bike.i32(0x1c));
         if (pos >> 8 < slices.front().sample || pos >> 8 >= slices.back().sample) continue;
         const size_t n = (pos >> 8) - slices.front().sample;

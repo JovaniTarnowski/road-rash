@@ -380,3 +380,11 @@ Logs: `analysis/napa-scenery-native-tests.log`,
   divergence. Current result: diverges at tick 1 on `rng` (original seeded
   stream includes race-setup consumption; native construction consumes
   none yet — plan 10 task 6 item 1). Marked `WILL_FAIL` until then.
+
+Actor animation playback: `build/actor_animation-test` matches all 2,048
+original-function steps in `napa-actor-animation-fixtures.tsv`. This validates
+selection/queue/timing/loops/retained-frame state, not actor graphics descriptor
+construction or live merged actor drawing. REA static evidence is retained in
+`analysis/oracle/rea-actor-animation.json`.
+
+Actor graphics fixtures (`analysis/oracle/napa-actor-animation-fixtures.tsv`): 672 CANS/RRAN view cells, 9,312 descriptor view selections, and 256 orientation/projection cases (235 accepted billboards) match original private calls. `actor_descriptors-test` checks selected frame, flags, roll and hotspots; `actor_render-test` checks visibility and all Q16 corners. `actor_nodes-test` exercises owned HI Bob/copy/shadow pages and their stable ownership. Runtime fixture capture restores modified graphics CCBs and projection globals. These module checks do not establish live race ordering or animation-trigger parity.
