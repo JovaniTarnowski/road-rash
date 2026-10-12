@@ -231,7 +231,18 @@ Names here describe observed behavior; they are not recovered original symbols.
 | `0x00405ea0` | Apply bike spec to runtime bike fields | Ported (`apply_spec`) |
 | `0x0043a580` | Per-tick bike physics | Ported except wall collision `0x0043a610` |
 | `0x00437c30` | Chase camera | Ported (single road) |
-| `0x00434660` | Player rider think (controls) | Riding part ported |
+| `0x00434660` | Player rider think (controls) | Riding part ported; demo/mode AI branch ported (`Race::set_demo_hold`) |
+
+Demo-player finding (October 11, 2026, commit `ca57525`): oracle captures launched
+through menu course entry run the `0x00434660` head's AI branch (hold or
+race-not-started mode), so the recorded control words are never read. Evidence:
+the spare rider-half node keeps think `0x00434660` while bike `+0x288`/`+0xf0`
+sit at 0 for 120 ticks under controls=5. The demo rider is character 1's rider 8
+(bike SPEC id 2 by condition 142, value 91, weapon 2, stats 7/3000, base speed 95
+= personality 8 level-0). Lane shortlist {0,1} (lane 2 diverges at frame 72);
+bias = slot-0 grid word 16384. Remaining: lane final fit, and the tick-184 AI
+state transition (replan ~179; state machine `0x00408ad0`/`0x00408df0`/table
+`0x00465980` and overtake gate `0x00408e40` unported).
 | `0x00414ca0` | Open resource container and load table | Native directory reader |
 | `0x00415360` | Iterate table and optionally preload | Layout recovered |
 | `0x004153a0` | Find/load/cache resource payload | Not ported |
