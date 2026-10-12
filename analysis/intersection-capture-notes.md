@@ -128,3 +128,11 @@ has succeeded since ~08:00. The oracle pipeline is unusable right now
 (menu bootstrap or prefix/wineserver state). Step-5 and Task 2/3
 captures wait on pipeline recovery, not on new proxy code (car/ring
 dumps are committed and the DLL is installed).
+
+## napa-cars-smoke2 (October 12, 2026): menus never enter a race
+
+No `RR_ORACLE_COURSE` (default path that produced Napa v6 at 07:52).
+600 s timeout, exit 124. Trace has 2 frames with course 0 / level 0 —
+the game never entered a race. Menu-to-race bootstrap is down even on
+the default path; not scenario-specific. Standing down on captures
+until the bootstrap is diagnosed (hook_menu_enter / menu video path).
