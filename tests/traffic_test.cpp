@@ -528,6 +528,37 @@ static void test_signal_phase() {
     if(system.signal_phase_at(100*256-0x801)!=-1)throw std::runtime_error("phase before 0x801");
 }
 
+static void test_intersections_all_courses() {
+    // Plan 24 Task 5 intersections counterpart: every course with
+    // type-1..3 zone ends places controllers through a full run, and the
+    // pools never exceed the original sizes (10 controllers, 40 signals).
+    const std::string root=RR_SOURCE_DIR "/../cdrom/ROADRASH";
+    if(!std::filesystem::exists(root+"/ROADRASH.EXE")){std::cout<<"No disc for course sweep\n";return;}
+    rr::Assets assets(root);
+    const auto exe=assets.read("ROADRASH.EXE");
+    for(const char* name:{"CITY","HIWAY","MEDLY","NAPA","CANYN"}) {
+        const std::string course_name(name);
+        const rr::Course course=rr::read_course(assets.read("DATA/COURSES/"+course_name+".CRS"));
+        const auto route=rr::make_route(course,false);
+        rr::VehicleLibrary library(assets.read("DATA/CARS/"+course_name+".CAR"));
+        rr::TrafficSystem system(library,exe);
+        system.configure(6);
+        uint32_t seed=1;
+        auto random=[&]()->uint32_t{seed=seed*214013u+2531011u;return (seed>>16)&0x7fffu;};
+        bool ever_placed=false;
+        uint32_t tick=0;
+        for(int32_t camera=0x3100;((camera+0x5100)>>8)+1<int32_t(route.size());camera+=0x60) {
+            system.step(route,camera+0x100,camera+0x5100,0x60,camera,0,random,tick++);
+            size_t bc=0,bs=0;
+            for(const auto& c:system.controllers())if(c.active){++bc;ever_placed=true;}
+            for(const auto& s:system.signals())if(s.active)++bs;
+            if(bc>rr::TrafficSystem::controller_pool || bs>rr::TrafficSystem::signal_pool)
+                throw std::runtime_error(std::string("pool overflow on ")+name);
+        }
+        if(!ever_placed)throw std::runtime_error(std::string("no intersections on ")+name);
+        std::cout<<name<<": intersections occur within pool caps\n";
+    }
+}
 int main() {
     try {
         test_configure();
@@ -537,6 +568,7 @@ int main() {
         test_zone_events();
         test_intersections();
         test_signal_phase();
+        test_intersections_all_courses();
         test_corpus();
         test_zone_corpus();
         test_car_contact_synthetic();
