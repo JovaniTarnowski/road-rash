@@ -49,13 +49,13 @@ namespace {
 void actor_sincos(const std::vector<int32_t>& table,int32_t index,int32_t& cos_out,int32_t& sin_out) {
     const uint32_t k = uint32_t(index) & 0x3ff;
     const uint32_t q = (uint32_t(index) & 0xfff) >> 10;
-    // Quadrant 3 (angles in [270, 360)) is fixture-verified against dump
-    // nodes: cos = +2*tab[k], sin = -2*tab[(1024-k)&0x3ff]. The other arms
-    // follow the decompiled switch; no golden covers them yet.
+    // 0x0044f510 case 3: param_2 = iVar2 * -2 (i.e. -2*tab[1023-k]),
+    // param_3 = iVar1 * 2 (2*tab[k]).
+    // (Port names: cos_out holds local_3c, sin_out holds local_34[0].)
     if (q == 3) {
-        cos_out = add(table.at(size_t(k)),table.at(size_t(k)));
-        const int32_t back = table.at(size_t((1024 - k) & 0x3ff));
-        sin_out = sub(0,add(back,back));
+        const int32_t back = table.at(size_t(1023 - k));
+        cos_out = sub(0,add(back,back));
+        sin_out = add(table.at(size_t(k)),table.at(size_t(k)));
         return;
     }
     const int32_t forward = table.at(size_t(k)), backward = table.at(size_t((1023 - k) & 0x3ff));
@@ -69,10 +69,11 @@ int32_t decoded_dim(int32_t v) {
     if (v < 0) return bits(1u << (uint32_t(uint8_t(v)) & 31));
     return v & 0x1ff;
 }
-// 64-bit truncating divide of a sign-extended masked 32-bit value (0x00450ad0 idivl).
+// 0x00450ad0 idivl: (val & 0xffff00ff) with an arithmetic >>8 (CONCAT44
+// sign-extends), 64-bit truncating divide by the decoded dim.
 int32_t masked_div(int32_t value,int32_t divisor) {
-    const int64_t num = int64_t(bits(uint32_t(value & 0xffff00ff) >> 8));
-    return int32_t(num / int64_t(divisor));
+    const int32_t lo = bits(uint32_t(value) & 0xffff00ffu);
+    return int32_t(int64_t(lo >> 8) / int64_t(divisor));
 }
 }   // namespace
 std::optional<DrawNode> actor_node_rotated(const AnimationFrame& frame,const CelTexture* texture,
@@ -130,8 +131,11 @@ std::optional<DrawNode> actor_node_rotated(const AnimationFrame& frame,const Cel
     const int32_t t_qw=qw,t_qh=qh;
     const int32_t i5b=sub(x0,mul(mul(t_qw,cosf)>>8,res_h));
     const int32_t i9=add(mul(mul(t_qh,sinv)>>8,res_h),y0);
-    const int32_t o2=mul(mul(t_qh,cosf)>>8,res_w);
-    const int32_t o3=mul(mul(t_qw,sinv)>>8,res_w);
+    // 0x00450ad0 final block: P1 = P0 + (qw*C>>8)*W,(qh*S>>8)*W and
+    // P2 = that offset + (i5b,i9). o2 holds the X offset, o3 the Y offset
+    // (C is local_34[0], S the flip-negated local_3c).
+    const int32_t o2=mul(mul(t_qw,sinv)>>8,res_w);
+    const int32_t o3=mul(mul(t_qh,cosf)>>8,res_w);
     const int32_t x1=add(x0,o2),y1=add(y0,o3),x2=add(o2,i5b),y2=add(o3,i9);
     return DrawNode{{{{x0,y0},{x1,y1},{x2,y2},{i5b,i9}}},texture,std::nullopt,bool(actor.flags&1),false};
 }

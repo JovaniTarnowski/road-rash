@@ -150,29 +150,31 @@ int native_actors(const std::string& tsv, const rr::Assets& assets) {
                 if (sel >= nsel) { usable = false; diff = "no sel for half pos " + std::to_string(pos); break; }
                 const std::string sp = "actor.sel." + std::to_string(sel) + ".";
                 // (1) Descriptor import parity: sel 20B vs native bank bytes.
-                const int8_t anim = half->bike[0x80], index = half->bike[0x81];
-                if (anim < 0 || size_t(anim) >= bank.size() || !bank[size_t(anim)] || index < 0 ||
-                    size_t(index) >= bank[size_t(anim)]->size()) {
+                // The dump's +0x80/+0x81 is post-draw and may lag dispatch by
+                // a frame advance (0x0043ae90 runs for RRAN halves), so find
+                // the bank entry whose bytes equal the sel record exactly
+                // (unique match required); the anim still comes from the dump.
+                const int8_t anim = half->bike[0x80];
+                if (anim < 0 || size_t(anim) >= bank.size() || !bank[size_t(anim)]) {
                     usable = false;
                     diff = "half anim out of range pos " + std::to_string(pos);
                     break;
                 }
-                const auto& descriptor = bank[size_t(anim)]->at(size_t(index));
-                const uint8_t* rb = descriptor.render.data();
-                bool desc_ok = key(frame, sp + "d0") == (int64_t(uint32_t(rb[0]) | uint32_t(rb[1]) << 8 | uint32_t(rb[2]) << 16 | uint32_t(rb[3]) << 24)) &&
-                               key(frame, sp + "d1") == (int64_t(uint32_t(rb[4]) | uint32_t(rb[5]) << 8 | uint32_t(rb[6]) << 16 | uint32_t(rb[7]) << 24)) &&
-                               key(frame, sp + "d2") == (int64_t(uint32_t(rb[8]) | uint32_t(rb[9]) << 8 | uint32_t(0) << 16 | uint32_t(0) << 24) & 0xffff) &&
-                               key(frame, sp + "d3") == int64_t(descriptor.duration) + (int64_t(descriptor.control) << 8);
-                // d2 holds render[8..9] in low half; d3 holds duration/control in low half. Compare exactly.
+                const int64_t d0 = key(frame, sp + "d0"), d1 = key(frame, sp + "d1");
                 const int64_t d2 = key(frame, sp + "d2"), d3 = key(frame, sp + "d3");
-                desc_ok = (d2 & 0xffff) == (int64_t(rb[8]) | (int64_t(rb[9]) << 8)) &&
-                          (d3 & 0xff) == int64_t(descriptor.duration) && ((d3 >> 8) & 0xff) == int64_t(descriptor.control);
-                {
-                    const int64_t d0 = key(frame, sp + "d0"), d1 = key(frame, sp + "d1");
-                    desc_ok = desc_ok && d0 == (int64_t(uint32_t(rb[0]) | uint32_t(rb[1]) << 8 | uint32_t(rb[2]) << 16 | uint32_t(rb[3]) << 24)) &&
-                              d1 == (int64_t(uint32_t(rb[4]) | uint32_t(rb[5]) << 8 | uint32_t(rb[6]) << 16 | uint32_t(rb[7]) << 24));
+                const auto& seq = bank[size_t(anim)];
+                int found = -1, hits = 0;
+                for (size_t di = 0; di < seq->size(); ++di) {
+                    const uint8_t* cb = seq->at(di).render.data();
+                    if (d0 == (int64_t(uint32_t(cb[0]) | uint32_t(cb[1]) << 8 | uint32_t(cb[2]) << 16 | uint32_t(cb[3]) << 24)) &&
+                        d1 == (int64_t(uint32_t(cb[4]) | uint32_t(cb[5]) << 8 | uint32_t(cb[6]) << 16 | uint32_t(cb[7]) << 24)) &&
+                        (d2 & 0xffff) == (int64_t(cb[8]) | (int64_t(cb[9]) << 8)) &&
+                        (d3 & 0xff) == int64_t(seq->at(di).duration) && ((d3 >> 8) & 0xff) == int64_t(seq->at(di).control)) {
+                        found = int(di); ++hits;
+                    }
                 }
-                if (!desc_ok) { usable = false; diff = "descriptor import pos " + std::to_string(pos); break; }
+                if (hits != 1) { usable = false; diff = "descriptor import pos " + std::to_string(pos); break; }
+                const auto& descriptor = seq->at(size_t(found));
                 // (2) Input consistency: bb lateral == (sel f50 + sign-rounding) >> 8.
                 const int32_t f50 = int32_t(key(frame, sp + "f50"));
                 const int32_t want_lat = (f50 + ((f50 >> 31) & 0xff)) >> 8;
@@ -221,8 +223,11 @@ int native_actors(const std::string& tsv, const rr::Assets& assets) {
                 projection.depth = near.depth;
                 projection.fraction = uint8_t(uint32_t(pos));
                 projection.occlusion = int32_t(key(frame, "actor.bb." + std::to_string(b) + ".occ_row"));
+                // Body roll is the dispatch +0xbc (sel key), already yaw-
+                // clamped by 0x004463e0 — not the +0x60-derived view roll.
+                const int32_t sel_roll = int32_t(key(frame, sp + "bc"));
                 const auto made = actors.rider(descriptor, 0, colour, orientation, projection, camera, depths,
-                                               blob_i32(half->bike, 0x20));
+                                               blob_i32(half->bike, 0x20), &sel_roll);
                 const bool is_shadow = clip == 0;
                 if (made.size() != 2) { usable = false; diff = "dispatch node count pos " + std::to_string(pos); break; }
                 const auto& node = made[is_shadow ? 0 : 1];
