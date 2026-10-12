@@ -95,6 +95,12 @@ RaceSetup make_race_setup(const Assets& assets, const std::vector<uint8_t>& exe,
         return scene->terrain(sample.section, sample.local);
     });
     if (setup.traffic) setup.race->set_traffic(setup.traffic.get());
+    // DZHR pedestrians (plan 24 Task 4), same sources as the game wires in
+    // game_main: actor records + category-2 looks from the course scene.
+    setup.pedestrians = std::make_unique<PedestrianSystem>(
+        [scene = setup.scene.get()](const RouteSample& s)->const std::vector<DzhrActor>&{return scene->dzhr_actors(s.section,s.local);},
+        [scene = setup.scene.get()](const RouteSample& s,uint8_t selector){return scene->pedestrian_look(s.section,s.local,selector);},exe);
+    setup.race->set_pedestrians(setup.pedestrians.get());
     setup.race->set_crash_library(setup.actors->library(), setup.crash);
     return setup;
 }

@@ -15,6 +15,7 @@
 #include "crash.hpp"
 #include "hud.hpp"
 #include "police.hpp"
+#include "pedestrians.hpp"
 #include "race.hpp"
 #include "traffic.hpp"
 #include <cstdint>
@@ -48,6 +49,7 @@ struct RaceSetup {
     std::unique_ptr<ActorNodes> actors;
     std::unique_ptr<VehicleLibrary> vehicles;
     std::unique_ptr<TrafficSystem> traffic;
+    std::unique_ptr<PedestrianSystem> pedestrians;   // DZHR walkers (plan 24 Task 4)
     CrashConfig crash;
     PoliceConfig police;
     RaceBounds bounds;
