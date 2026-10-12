@@ -107,3 +107,13 @@ no green light, 0 sim dumps). The v1 recipe (07:17) and the sibling's
 Napa v6 (07:52) both succeeded, so the pipeline works; the CITY menu
 bootstrap is flaky (prefix state or menu timing). Step 5 replay validation
 waits on a successful recapture; no tree changes for this attempt.
+
+## Environment note (October 12, 2026): orphaned Wine processes
+
+After the failed captures, stale Wine processes linger (wineserver +
+winedevices ~30 min old, a winedbg, and a 2-min-old ROADRASH.EXE with no
+registered claim found). A stuck wineserver can break subsequent runs'
+menu timing, and a system-wide fd spike ("Too many open files") killed
+one capture instantly. Before the next Step-5 attempt: verify no live
+session owns the prefix processes, kill orphans, and re-check fd counts.
+Left untouched this turn for lack of ownership proof.
