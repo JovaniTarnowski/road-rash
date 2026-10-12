@@ -24,7 +24,7 @@ int32_t sar4(int32_t x) { return (x + ((x >> 31) & 0xf)) >> 4; }
 int32_t div256(int64_t x) { return int32_t((x + ((x >> 63) & 0xff)) >> 8); }
 int32_t magnitude(int32_t v) { const uint32_t s = uint32_t(v >> 31); return int32_t((uint32_t(v) ^ s) - s); }
 constexpr int32_t crossing_heading[4] = {0, 0x400000, -0x800000, -0x400000};   // 0x0046df30 by +0x1ec
-constexpr int32_t car_half_width = 16384, car_half_length = 64, car_half_height = 8960;   // 0x00475698 via 0x004387a0
+constexpr int32_t car_half_length = 64, car_half_height = 8960;   // 0x00475700 + kind * 0x18 via 0x004387a0
 constexpr int32_t car_mass = 1800;
 }
 
@@ -201,9 +201,11 @@ void Race::think_pedestrian(Pedestrian& p) {
     auto queue = [&](int8_t code) { if (p.look) queue_animation(p.animation, p.look->bank, code); };
     auto rest = [&] { p.state = 0; set(1); queue(-1); p.pace = 0; };          // LAB_004413ea
     auto resume = [&] { p.state = 1; p.pace = 4; set(0); queue(-1); };
-    // 0x004415b0: nearest signal phase within 0x801, or -1. Phase 2 walks
-    // without a road check; other phases hold; no signal checks the road.
-    const int signal=traffic_?traffic_->signal_phase_at(b.i32(0x1c)):-1;
+    // 0x004415b0: on a crosswalk edge slice, the phase of the index-0/2
+    // signal for this side of the road, or -1. Phase 2 walks without a road
+    // check; other phases hold; no signal checks the road.
+    const int signal=traffic_?traffic_->pedestrian_signal(route_of(p.body)[p.body.sample].path.marking_flags,
+                                                           b.i32(0x1c),pedestrian_lane(p)):-1;
     p.pace = 0;
     if (p.state != 2) {
         p.heading = crossing_heading[p.side & 3];
@@ -245,7 +247,7 @@ void Race::think_pedestrian(Pedestrian& p) {
                             p.state = 0; queue(1); p.pace = 0;
                             p.trigger = player + 0xa0;
                             p.side = (p.side + 2) & 3;
-                        }
+                        } else if (signal >= 0 && signal != 2 && p.has(5)) queue(5);   // red mid-crossing: hurry
                     } else {
                         // Traffic too close mid-crossing: hesitate.
                         p.state = 3;
@@ -437,7 +439,8 @@ void Race::collide_pedestrians() {
         }
         if (!traffic_) continue;
         for (auto& car : traffic_->cars_mut()) {
-            if (!car.active) continue;
+            if (!car.active || !car.collides) continue;
+            const int32_t car_half_width = TrafficSystem::car_half_width(car);
             if (std::abs(car.position - q.i32(0x1c)) > car_half_length + q.i32(0x178)) continue;
             if (std::abs(car.lateral - q.i32(0x28)) > car_half_width + q.i32(0x174)) continue;
             if (std::abs(q.i32(0x20)) > car_half_height + q.i32(0x17c)) continue;
@@ -448,5 +451,8 @@ void Race::collide_pedestrians() {
             hit_pedestrian(p, car.kind == 2 ? -car.speed : car.speed, false, false);
         }
     }
+}
+void Race::attach_terrain_type() {
+    if (traffic_ && terrain_source_) traffic_->set_terrain_type([this](const RouteSample& s) { return int(terrain_source_(s).type); });
 }
 }

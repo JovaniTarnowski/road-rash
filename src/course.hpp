@@ -22,6 +22,9 @@ struct PathSample {
     // for types 1..3 (0x0041eca0) and traffic density event_parameters[1]
     // (0x0044dd00; 0 = default 6, negative = spawn rate and cruise speed).
     bool zone_end=false;
+    // Section-local interval of the event record this sample sits in (0x00452710's
+    // record +0/+4); 0x0041eca0 builds the intersection from its start.
+    int32_t event_start=0,event_end=0;
 };
 struct CourseEvent {
     int32_t start=0,end=0; // CESR interval, section-local samples (0x00452690)

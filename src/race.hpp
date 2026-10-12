@@ -197,11 +197,11 @@ public:
          int level = 0, int32_t road_base_q8 = 0,
          const std::vector<Personality>& personalities = {},
          const std::vector<uint8_t>& exe_image = {});   // level 0..4 (0x004b8a12)
-    void set_terrain_source(std::function<const TerrainSlice&(const RouteSample&)> source) { terrain_source_=std::move(source); }
+    void set_terrain_source(std::function<const TerrainSlice&(const RouteSample&)> source) { terrain_source_=std::move(source); attach_terrain_type(); }
     // Free traffic steps with the race on the player's route (0x0044b3b0 calls
     // 0x0044dd90 with the per-step camera advance). The random-call
     // interleaving against the original's scheduler is not verified.
-    void set_traffic(TrafficSystem* t) { traffic_ = t; }
+    void set_traffic(TrafficSystem* t) { traffic_ = t; attach_terrain_type(); }
     // Pedestrians (plan 24 Task 4, src/race_pedestrians.cpp): spawned as the
     // ring builds their slice, thought/moved on the scheduler cadence of
     // 0x00437e60, and hit by riders and cars through the 0x004368f0 pass.
@@ -330,6 +330,7 @@ private:
     // are stored per route sample at course load; no allocation runs in the
     // tick path. Runs after collide_traffic, before advance_ride_animation.
     void collide_hazards(Rider&);
+    void attach_terrain_type();   // traffic's 0x0041eca0 short-phase test reads the terrain type
     // Pedestrians (src/race_pedestrians.cpp).
     void build_pedestrian_slices();                                   // 0x00454120/0x004552e0 ring builds -> 0x004520d0
     void spawn_pedestrian(const RouteSample&, size_t sample, const DzhrActor&);  // 0x004520d0 actor record -> 0x004409e0

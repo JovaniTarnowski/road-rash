@@ -1168,6 +1168,12 @@ int main(int argc, char** argv) {
                 }
                 std::printf("end tick %ld pos %u of %zu finished %d place %d\n", t, g.race->position() >> 8,
                             g.race->route().size(), int(g.race->finished()), g.race->place(0));
+                if (g.traffic) {
+                    int cars = 0, crossing = 0, controllers = 0;
+                    for (const auto& car : g.traffic->cars()) if (car.active) { ++cars; crossing += car.kind & 1; }
+                    for (const auto& c : g.traffic->controllers()) controllers += c.active;
+                    std::printf("traffic cars %d crossing %d intersections %d\n", cars, crossing, controllers);
+                }
                 if (g.pedestrians) {
                     int active = 0, crossing = 0, down = 0;
                     for (const auto& p : g.pedestrians->pool()) if (p.active) { ++active; crossing += p.state == 1; down += p.state == 2; }

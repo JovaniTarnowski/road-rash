@@ -136,6 +136,7 @@ Course read_course(const std::vector<uint8_t>& bytes) {
                 auto& sample=section.samples[j];
                 for(int v=0;v<3;++v)sample.event_parameters[v]=uint8_t(segments.byte(p+9+v));
                 if(j<start || j>end)continue;
+                sample.event_start=int32_t(start);sample.event_end=int32_t(end);
                 if(j)sample.event_type=uint8_t(segments.byte(p+8)+1);
                 sample.zone_end=j==end && sample.event_type!=4 && sample.event_type!=5 && sample.event_type!=7;
                 if(sample.event_type==4)sample.marking_flags=0x40;

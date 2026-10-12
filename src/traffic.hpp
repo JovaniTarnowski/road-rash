@@ -68,7 +68,6 @@ struct TrafficCar {
     int8_t lane = 0;           // +0x7a
     int32_t position = 0;      // +0x1c: Q8 samples along the route
     int32_t lateral = 0;       // +0x28: Q8 world lateral
-    int32_t lateral_vel = 0;   // crossing cars (kind bit 0): +-0x78000/tick
     int32_t speed = 0;         // +0xec
     int32_t phase = 0;           // +0x71: (rand & 0x7f) + 0xc0, 192..319
     uint8_t jitter_a = 0;      // +0x72
@@ -76,30 +75,43 @@ struct TrafficCar {
     uint8_t jitter_c = 0;      // +0x1ca
     uint32_t serial = 0;       // +0x82 (DAT_004b7e98)
     bool active = false;
+    int32_t heading = 0;       // +0x5c: 0 ahead, -0x800000 oncoming, +-0x400000 crossing (0x00449880)
+    int signal = -1;           // +0x1ec: latched signal (signals() index), -1 none
+    int32_t zone_start = 0, zone_end = 0;   // +0x1d0/+0x1d4: controller +0x108/+0x10c (crossing cars)
+    int zone_lanes = 0;        // +0x1d9: controller +0x111
+    bool collides = true;      // +0xc0 & 3: crossing cars only near the ring camera (0x0044e710)
 };
-// Intersection controller (0x0041eca0 object, pool 0x00468ee4, 10 x 0x114,
-// type 0x400, think 0x0041f040) and signal (pool 0x00468ee0, 40 x 0x108,
-// type 0x40, draw 0x0041f220). Field comments name the original offsets.
-// Durations live on the controller (+0xfc/+0x100/+0x104); phase state,
-// accumulator and spawn index live per signal (+0xf0/+0xf4/+0xf8).
+// A non-car scheduler object for the 0x0044a070 lane scans (mask 0x3f):
+// bikes (4), rider halves on foot (8) and pedestrians (0x20). Race supplies
+// these each tick; positions/laterals are Q8, velocities +0x108/+0x10c.
+struct TrafficObstacle {
+    int32_t position = 0, lateral = 0, velocity = 0, lateral_velocity = 0;
+    uint32_t type = 4;
+};
+// Intersection controller (0x0041eca0; pool 0x00468ee4, 10 x 0x114, type
+// 0x400, think 0x0041f040 every 0x1e ticks, teardown 0x0041f1f0) and its
+// signals (0x0041ef60; pool 0x00468ee0, 40 x 0x108, type 0x40 << index,
+// no think). Field comments name the original offsets.
 struct IntersectionSignal {
     bool active = false;
-    int32_t phase = 0;            // +0xf0: 0..2, init (~index & 1) * 2
-    int32_t accum = 0x30c;        // +0xf4: phase accumulator seed
-    int index = 0;                // +0xf8: signal index; odd indices spawn
-    int lane = 0;                 // +0xfc [0x3f]: lane byte (cVar2/cVar3)
-    int32_t lateral_q8 = 0x50;    // ef60 param_3: 0x50 or 0xb0
-    int32_t position_q8 = 0;      // +0x1c: signal sample position
-    int controller = -1;
+    int index = 0;                // +0xf8: 0..3; odd indices spawn crossing cars; type 0x40 << index
+    int side = 0;                 // 0x0041ef60 param_2: 0 left shoulder, 1 right
+    int32_t phase = 0;            // +0xf0: 0..2, starts (~index & 1) * 2
+    int32_t accum = 0x30c;        // +0xf4
+    int lane = 0;                 // +0xfc byte: zone length - 2 (indices 0/2) or start lanes (1/3)
+    int32_t position_q8 = 0;      // +0x1c: corner slice * 0x100 + 0x50 / 0xb0
+    int32_t lateral_q8 = 0;       // +0x28: middle of that side's shoulder
+    int controller = -1;          // +0xec
 };
 struct IntersectionController {
     bool active = false;
-    int32_t durations[3] = {600, 180, 780};   // +0xfc..: {600,0xb4,0x30c},
-    int32_t base_q8 = 0;          // +0x108: event word0 * 0x100 + sample delta
-    int sample = 0;               // ring sample of the zone end
-    int kind_mode = 0;            // +0x110: 1 -> kind 1 narrow, 2 -> kind 3
-    int lane_range = 1;           // +0x111: spawn lane range (rand % range)
-    int signals[4] = {-1, -1, -1, -1};   // +0xec/+0xf0/+0xf4/+0xf8 slots
+    int32_t durations[3] = {600, 180, 780};   // +0xfc..+0x104; {75, 0, 240} on a dual type-4 slice with flag byte 0
+    int32_t start_q8 = 0, end_q8 = 0;          // +0x108 / +0x10c: event start / end on the route
+    int variant = 1;              // +0x110: event type 1..3
+    int lanes = 0;                // +0x111: record byte +9, the cross road's lane span
+    int32_t position_q8 = 0;      // +0x1c: zone-end slice, clamped into the ring window
+    int32_t last_tick = 0, next_tick = 0;      // +0x10 / +0xc scheduler words (interval 0x1e)
+    int signals[4] = {-1, -1, -1, -1};         // +0xec/+0xf0/+0xf4/+0xf8: signal index 0, 1, 2, 3
 };
 class TrafficSystem {
 public:
@@ -143,8 +155,19 @@ public:
     // 0x004415b0: phase of the nearest active signal within 0x801 Q8 of a
     // position (0x00449ce0 ring scan for signal nodes), or -1. Pedestrians
     // cross on phase 2 without a road check; other phases hold them.
-    int signal_phase_at(int32_t position_q8) const;
+    // 0x004415b0 for a pedestrian at position on a slice with these marking
+    // flags in this lane: only on crosswalk edge slices (flags & 0x18), the
+    // nearer of the index-0 (lane >= 0) or index-2 (lane < 0) signals within
+    // 0x1e0 ahead/behind (behind wins ties), when within 0x801; else -1.
+    int pedestrian_signal(uint8_t marking_flags, int32_t position_q8, int lane) const;
+    // Non-car obstacles for this tick's lane scans (set by Race before step).
+    std::vector<TrafficObstacle>& obstacles() { return obstacles_; }
+    // Terrain type of a route sample (0x00454240 +0x3c), for 0x0041eca0's
+    // short-phase test; without it the long table is always used.
+    void set_terrain_type(std::function<int(const RouteSample&)> source) { terrain_type_ = std::move(source); }
     const VehicleLibrary& library() const { return library_; }
+    // Contact half-width +0x174 by kind (0x00475700: 0x4000, crossing 0xa000).
+    static int32_t car_half_width(const TrafficCar&);
     std::vector<SoundEventRecord> take_sound_events() { auto e = std::move(events_); events_.clear(); return e; }
     // Sprite size class from the car template (0x00475698 +0x28).
     uint8_t sprite_size() const { return sprite_size_; }
@@ -154,8 +177,12 @@ public:
     void append_snapshot(std::vector<FieldValue>& out) const;
 private:
     bool place(uint8_t kind, int8_t lane, const RouteSample& at, int32_t spawn_q8, const std::function<uint32_t()>& random);
-    void move(TrafficCar&, const std::vector<RouteSample>& route, int32_t front_q8, int32_t back_q8,
+    void move(TrafficCar&, const std::vector<RouteSample>& route, int32_t camera_q8, int32_t front_q8, int32_t back_q8,
               int32_t player_q8, int32_t player_lateral, const std::function<uint32_t()>& random);
+    // 0x0044e710 speed target before the move: obstacle following, signal
+    // latch and stop line. Returns the 0x00449880 target speed (x100) and
+    // acceleration.
+    std::pair<int32_t,int32_t> plan_speed(TrafficCar&, const std::vector<RouteSample>& route);
     const VehicleLibrary& library_;
     TrafficTimers timers_;
     std::array<int32_t, 4> drift_rates_{};      // 0x00475694[kind] low byte * 800
@@ -166,19 +193,21 @@ private:
     bool filled_ = false;                       // initial ring fill replayed
     int32_t built_end_ = 0;                     // ring front sample (exclusive) already built
     int32_t zone_events_ = 0;
-    void build_slice(const std::vector<RouteSample>& route, int32_t sample);
-    // 0x0041eca0 placement from a type-1..3 zone end: one controller and up
-    // to four signals (variant = event word 2 + 1 selects the 3rd/4th).
-    // Short phases {75,0,240} need the cross-node type-2 + flag data the
-    // port does not import yet; the long table is used (capture check open).
-    void place_intersection(int32_t sample, int variant, int lanes);
-    // 0x0041f040 think over controllers in creation order, signals 0..3.
+    void build_slice(const std::vector<RouteSample>& route, int32_t sample, int32_t back_q8, int32_t front_q8, uint32_t tick);
+    // 0x0041eca0 placement from a type-1..3 zone end at route sample s.
+    void place_intersection(const std::vector<RouteSample>& route, int32_t s, const PathSample& path,
+                            int32_t back_q8, int32_t front_q8, uint32_t tick);
+    int place_signal(const std::vector<RouteSample>& route, int controller, int index, int side,
+                     int32_t fraction, int32_t slice, int lane);   // 0x0041ef60; -1 when the pool is out
+    // 0x0041f040 every 0x1e ticks, then the scheduler's ring-window teardown.
     void think_intersections(int32_t back_q8, int32_t front_q8, uint32_t tick,
                              const std::vector<RouteSample>& route, const std::function<uint32_t()>& random);
-    bool place_crossing(IntersectionController& c, int lane, const std::vector<RouteSample>& route,
-                        const std::function<uint32_t()>& random);
+    void place_crossing(const IntersectionController& c, int signal, int kind, int lane,
+                        const std::vector<RouteSample>& route, const std::function<uint32_t()>& random);
     std::vector<IntersectionController> controllers_{controller_pool};
     std::vector<IntersectionSignal> signals_{signal_pool};
+    std::vector<TrafficObstacle> obstacles_;
+    std::function<int(const RouteSample&)> terrain_type_;
     uint8_t sprite_size_ = 10;
 };
 

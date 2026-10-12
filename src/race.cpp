@@ -1,6 +1,7 @@
 #include "race.hpp"
 #include "terrain_ground.hpp"
 #include "traffic.hpp"
+#include "pedestrians.hpp"
 #include <algorithm>
 #include <cstdlib>
 #include <stdexcept>
@@ -389,7 +390,6 @@ void Race::collide(Rider& ra, Rider& rb) {
 void Race::collide_traffic(Rider& r) {
     if (!traffic_ || r.finished) return;
     if (r.bike.i32(0x2f4) != 0) return;   // crashed riders: 0x004049c0 rejects
-    constexpr int32_t car_half_width = 16384;    // 0x00475698 +0x44 via 0x004387a0
     constexpr int32_t car_half_length = 64;      // 0x00475698 +0x48
     constexpr int32_t car_half_height = 8960;    // 0x00475698 +0x4c
     Bike& s = r.bike;
@@ -398,7 +398,8 @@ void Race::collide_traffic(Rider& r) {
     const auto& route = route_of(r);
     const auto& sample = route[r.sample];
     for (auto& car : traffic_->cars_mut()) {
-        if (!car.active) continue;
+        if (!car.active || !car.collides) continue;
+        const int32_t car_half_width = TrafficSystem::car_half_width(car);   // 0x00475700 + kind * 0x18
         // Split-roadway exclusion (0x004368f0 +0x36 & 3 shared-half test).
         if (sample.dual) {
             // Cars run on the player's route; riders on the other branch pass by.
@@ -1936,6 +1937,22 @@ void Race::step(uint32_t controls) {
     camera_heading_=advance_heading(camera_heading_,previous_camera_position_,camera_position(),road[player.previous_sample].path.bend,road[player.sample].path.bend,(player.bike.u8(0xc0)&16)!=0);
     build_pedestrian_slices();   // 0x00454120 ring builds walk DZHR (0x004520d0) before 0x0044dd90
     if (traffic_) {
+        // Lane-scan obstacles for 0x0044a070 (mask 0x3f): bikes, riders on
+        // foot and pedestrians on the cars' (camera) roadway.
+        auto& obstacles = traffic_->obstacles();
+        obstacles.clear();
+        for (const auto& r : riders_) {
+            if (route_of(r)[r.sample].dual && r.route != riders_[0].route) continue;
+            const Bike& b = r.bike;
+            obstacles.push_back({b.i32(0x1c), b.i32(0x28), b.i32(0x108), b.i32(0x10c), 4});
+            if (r.crash_active) { const Bike& f = r.crash_actor.motion; obstacles.push_back({f.i32(0x1c), f.i32(0x28), f.i32(0x108), f.i32(0x10c), 8}); }
+        }
+        if (pedestrians_) for (const auto& p : pedestrians_->pool()) {
+            if (!p.active) continue;
+            const Bike& b = p.body.bike;
+            obstacles.push_back({b.i32(0x1c), b.i32(0x28), b.i32(0x108), b.i32(0x10c), 0x20});
+        }
+
         // 0x0044b3b0: distance moved this step feeds the spawn timers; the
         // ring front rides 0x5000 ahead of the ring camera, which runs
         // 0x100 ahead of the view camera (0x0044b250: 0x3200 vs 0x3100).
