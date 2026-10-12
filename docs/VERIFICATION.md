@@ -632,3 +632,18 @@ Police configuration gate: `build/police-test` compares imported pursuit/relatio
   view/subframe selection base (`read_actor_sequence` stores a descriptor
   index where the original resolves a CANS group id). Fix + Step 4 open:
   dispatch-entry hooks, recapture, `select_actor_view` fix, mid-jump frame.
+
+## Native determinism and soak (plan 16 Task 7, October 12, 2026)
+
+`race-soak` (`tests/race_soak_test.cpp`): seed 1, seven opponents,
+accelerate held, 108,000 ticks or finish; FNV-1a over every tick
+snapshot; same setup twice must hash equal. Rider positions monotonic
+within one sample outside crashes (contact separation shoves back a few
+Q8 units); pools never exceed 16 cars / 10 controllers / 40 signals.
+Default gate runs Napa L0 twice (~30 s Debug). `RR_SOAK_FULL=1` runs all
+25 course x level combos (deterministic; ~13 min Debug):
+
+- CITY L0–L4: 108000 ticks each (no finish on accelerate-only)
+- HIWAY/MEDLY/NAPA/CANYN L0–L4: 108000 ticks each
+- NAPA L0 hash `dec5230d1d4adf99` (representative; per-run hashes printed
+  by the test, not pinned — any sim change re-baselines them)
