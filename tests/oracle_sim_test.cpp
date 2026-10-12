@@ -8,11 +8,22 @@
 #include <filesystem>
 #include <iostream>
 
-// Plan 10 task 4: replay a sim golden through rr::Race and report the first
-// divergent tick and field. Exit 0 on full match, 1 on divergence, 77 when
-// the golden is missing. Car/node comparison is plan 10 task 7 work.
+// Plan 10 task 5 step 2a: DEFAULT is a single RNG anchor at the green light
+// (set_rng_state once from the golden header, free-run after) so missing or
+// extra rand() calls surface as rng divergence. --reanchor keeps the older
+// per-tick re-anchoring as a diagnostic mode for localising field
+// divergences; it MUST NOT be used for acceptance.
+// Exit 0 on full match, 1 on divergence (first tick/field + last-8 RNG both
+// sides), 77 when the golden is missing. Car/node comparison is task 7 work.
 int main(int argc, char** argv) {
-    const std::string file = argc > 1 ? argv[1] : rr::golden::oracle_dir() + "/sim-napa-solo.tsv";
+    bool reanchor = false;
+    std::vector<std::string> args;
+    for (int i = 1; i < argc; ++i) {
+        const std::string a = argv[i];
+        if (a == "--reanchor") reanchor = true;
+        else args.push_back(a);
+    }
+    const std::string file = args.size() > 0 ? args[0] : rr::golden::oracle_dir() + "/sim-napa-solo.tsv";
     if (!std::filesystem::exists(file)) { std::cout << "SKIP missing " << file << '\n'; return rr::golden::skip; }
     const auto g = rr::golden::load(file);
     if (g.exe != "73d7f9744b5b1a9482b3909950cdf3fe34119fe13d023b031e9c6739a60f18a2") throw std::runtime_error("different executable");
@@ -23,7 +34,7 @@ int main(int argc, char** argv) {
     const int course_entry = int(get("course"));
     if (course_entry < 1 || course_entry > 5) throw std::runtime_error("course out of range");
     const int level = int(get("level"));
-    const std::string assets_root = argc > 2 ? argv[2] : std::string(RR_SOURCE_DIR) + "/../cdrom/ROADRASH";
+    const std::string assets_root = args.size() > 1 ? args[1] : std::string(RR_SOURCE_DIR) + "/../cdrom/ROADRASH";
     if (!std::filesystem::exists(assets_root + "/ROADRASH.EXE")) { std::cout << "SKIP no disc\n"; return rr::golden::skip; }
     // Same construction as Game::load_course/restart in src/game_main.cpp:
     // default bike/character, seven opponents, traffic density 6.
@@ -44,22 +55,32 @@ int main(int argc, char** argv) {
     const int32_t road_base = course_name == "NAPA" ? 7 * 256 : 0;
     // Rider 8 (+0xc/2 = 91) rides SPEC id 2 with its row stats/weapon.
     const int32_t demo_value = solo ? 91 : 90;
+    // AI brains are copies of the 0x00464558 personality rows (0x00407990):
+    // the replan (0x004082f0) resets speeds from them every 60 ticks, so the
+    // harness must load the same rows or every replay diverges at the first
+    // reset with zeroed tables (tick-120 gap on the solo goldens).
+    const auto personalities = rr::read_personalities(exe);
     rr::Race race(rr::make_route(course, false), rr::make_route(course, true),
-                  physics, specs.at(1), demo_value, opponents, level, road_base);
-    // Demo captures (DAT_004753c8=1 or race-not-started mode, per the 0x00434660
-    // head): the "player" is AI-driven (rider 8 params: bike 1, value 91, base 95) and
-    // ignores the recorded control words. Career defaults match Game.
+                  physics, specs.at(1), demo_value, opponents, level, road_base,
+                  personalities, exe);
+    // Demo goldens (DAT_004753c8=1 path through menu course entry, per the
+    // 0x00434660 head): the "player" is AI-driven (rider 8 params: bike 1,
+    // value 91, base 95) and ignores the recorded control words. Human-input
+    // goldens (DAT_004753c8=0, e.g. sim-napa-solo-human) leave demo hold
+    // clear so race.step consumes the control words via apply_controls.
+    // Career defaults match Game.
     if (solo) race.set_demo_hold(true, 95, 1, 16384, 2, {7, 3000, 3000, 3000});   // Rider-8 base/weapon/stats; lane 1 of shortlist {0,1} (lane 2 diverges frame 72); bias = slot-0 grid word
     race.set_terrain_source([&](const rr::RouteSample& s) -> const rr::TerrainSlice& { return scene.terrain(s.section, s.local); });
     // The golden rng is the live CRT state AFTER each tick's step (the hook
     // dumps after 0x0044b3b0). The race-setup stream (menu entry through grid
-    // build, 11,461 calls) is not reproduced.
+    // build, 11,461 calls) is not reproduced: a single anchor at green covers
+    // it (known limitation until the setup consumers are ported).
     const int64_t tick0 = get("tick");
     // Start-hold: the golden's leading frames run during the original's
     // pre-green countdown (menu-layer, wall-clock); rider state is frozen and
     // rng unconsumed. The port holds its countdown outside Race (game_main),
     // so replay begins at the first frame where player state moves (green),
-    // with RNG re-anchored there. Hold frames are asserted frozen below.
+    // with RNG anchored once there. Hold frames are asserted frozen below.
     size_t green = 1;
     {
         const auto& f0 = g.frames.at(0);
@@ -72,19 +93,21 @@ int main(int argc, char** argv) {
         }
         const auto& fg = g.frames.at(green);
         auto frg = fg.find("rng"); if (frg != fg.end()) race.set_rng_state(uint32_t(frg->second));
-        std::cout << "start-hold: " << green << " frozen frames, green at tick " << (tick0 + int64_t(green)) << '\n';
+        std::cout << (reanchor ? "[reanchor] " : "[single-anchor] ") << "start-hold: " << green << " frozen frames, green at tick " << (tick0 + int64_t(green)) << '\n';
     }
-    // RNG is re-anchored to the golden state before every tick: scenery
-    // (0x451xxx), combat (0x404bxx) and horn/traffic (0x44dexx) consumers run
-    // in the original tick but are not ported yet (plan 11 scene/combat
-    // work), so stream-position equality is not expected. Field comparison
-    // is the signal; the last-8 rng history is kept for diagnosis.
+    // Default: free-run from the single green anchor, so any missing or
+    // extra Race::random() call shows up as rng divergence. --reanchor
+    // restores per-tick re-anchoring (diagnostic only): scenery (0x451xxx),
+    // combat (0x404bxx) and horn/traffic (0x44dexx) consumers run in the
+    // original tick but are not ported yet, so stream-position equality is
+    // not expected there; field comparison is the signal. The last-8 rng
+    // history is kept for diagnosis in both modes.
     std::vector<std::pair<int64_t, uint64_t>> rng_history;  // (golden, native)
     for (size_t i = green; i < g.frames.size(); ++i) {
         const auto& frame = g.frames[i];
         auto fc = frame.find("controls");
         if (fc == frame.end()) throw std::runtime_error("frame lacks controls");
-        if (i > green) { auto fp = g.frames[i - 1].find("rng"); if (fp != g.frames[i - 1].end()) race.set_rng_state(uint32_t(fp->second)); }
+        if (reanchor && i > green) { auto fp = g.frames[i - 1].find("rng"); if (fp != g.frames[i - 1].end()) race.set_rng_state(uint32_t(fp->second)); }
         // Demo goldens ignore control words (AI branch never reads them).
         race.step(solo ? 0 : uint32_t(fc->second));
         const auto snap = race.snapshot();
@@ -97,11 +120,24 @@ int main(int argc, char** argv) {
             std::cout << "tick not contiguous at frame " << i << '\n';
             return 1;
         }
+        // RNG is compared first every tick (plan 10 review focus 1): a
+        // stream-position break is reported before any field, with the
+        // last-8-ticks history for both sides.
+        if (want_rng != snap.rng) {
+            std::cout << "first divergence at frame " << i << " (tick " << tick0 + int64_t(i) << "): rng original " << want_rng << " native " << snap.rng << '\n';
+            std::cout << "rng history (last " << rng_history.size() << " ticks, golden vs native):";
+            for (const auto& e : rng_history) std::cout << " (" << e.first << "," << e.second << ")";
+            std::cout << '\n';
+            return 1;
+        }
         for (const auto& f : snap.fields) {
             auto it = frame.find(f.name);
             if (it == frame.end()) continue;  // node-mapped fields are task 6/7 work
             if (it->second != f.value) {
                 std::cout << "first divergence at frame " << i << " (tick " << tick0 + int64_t(i) << "): " << f.name << " original " << it->second << " native " << f.value << '\n';
+                std::cout << "rng history (last " << rng_history.size() << " ticks, golden vs native):";
+                for (const auto& e : rng_history) std::cout << " (" << e.first << "," << e.second << ")";
+                std::cout << '\n';
                 return 1;
             }
         }
