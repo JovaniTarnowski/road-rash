@@ -180,7 +180,7 @@ Native port: `src/bike.cpp`, `src/race.cpp`.
   - Target point: `+0x194` lateral, `+0x198` = position + `0x3c0`, `+0x19c` speed.
   - Speed compare: `(v>>12)+(v>>7)+(v>>9)` against the target.
   - Curvature: `0x00449b40` averages sub-slice `+0xb4` (atan(bend) << 14).
-  - Re-plan `0x004082f0` (full body recovered October 12, 2026; native port still the old approximation): while `+0x188` > 0x3b, ease the 10-entry brain table (`+0x0..+0x78` toward `+0x78..+0xf0` by steps `+300/+0x130/+0x134`) and decrement 0x3c; pick neighbours `+0x16c/+0x170` via `0x00408cd0` ring scans (self-exclusion only when sharing the player's rider-half); rate overtake steps `+0x178/+0x17c` 0–3 from the rating table against `(0x10−iVar7)·1000/2000 − level·0x5dc/3000`; keep the nearer target in `+0x168/+0x174`; clear the target when it is a live chaser (`0x00432500` = move-nonnull, unless network state matches); reset `+0x1a4` from `+0x1bc[level]` and `+0x1a0` from `+0x1a8[level]`; speed cases on neighbour nullness vs the player (rubber-band table `0x004659d4` only when a neighbour IS the player; fixed ±fractions otherwise); halve (or ×3/2 at level 3) when the player is crashed and >0xa00 away (`0x00449c20` = absolute gap). Helpers: `0x00449ce0`/`0x00449e60` walk ring links `[0]/[1]` filtered by slice/think-flags, `0x00449e90` scores by closing rate, `0x00449da0` picks nearest by slice each side, `0x00441750` is CRT rand.
+  - Overtake `0x00408e40` + scan `0x00449e90` (REA-confirmed October 12, 2026; plan 10 Task 6 port input — native `ai_overtake` is still a stub): `0x00408e40` walks scheduler objects ahead in position order via `0x00449e90` (mask `0x3f`: bikes, halves, pedestrians, cars; window `0x960`; lateral gate at `0x140/0x144` edges, `999` = wall), latches the first in-window object at brain `+0x180`, writes targets `+0x198 = target pos + 0x3c0` and `+0x194 = target lateral ± (|self|+|target|)/2 + 0x5000` (sign flips when the target is left, or off-road against `+0x2c/+0x30` edges), then picks speed `+0x19c` from `0x00409020` by range (`local_4`: <0x4b quarter-rate, else full; <0xf half when closing). Pinned REA 6.4.0 pseudocode for both functions is whitespace-identical to the project exports (`analysis/oracle/rea-408e40-overtake.md`, `rea-449e90-scan.md`; disc-derived, git-ignored). Port order per sibling findings: `0x00449e90` over all scheduler objects (needs per-rider half lateral), then `0x00408ad0` step-2 fix, then state handlers.
 - **Rider table** `0x00463c78` (`0x40` bytes per rider):
   - word 3 = rider value × 2
   - word 5 = bike/colour data
@@ -941,3 +941,35 @@ fix `read_actor_sequence`/`select_actor_view` against ground truth.
 BONUS: opponent colour is the 1-based grid slot in `DAT_004c7f74` (frame 750
 shows colour 0xa = slot 10); player colour is the live rider-table row
 byte+5 (writer unidentified).
+
+### Playtest audio and AI corrections (October 12, 2026)
+
+Reference `../cdrom/ROADRASH/ROADRASH.EXE` SHA-256
+`73d7f9744b5b1a9482b3909950cdf3fe34119fe13d023b031e9c6739a60f18a2`
+matches `analysis/inventory.json`. No legacy Android executable was used.
+
+- Listener: `0x00437c30` refreshes `DAT_004b7ef4` and derives camera speed
+  from the previous position before `0x00434db0` attenuates vehicle sounds.
+  Native `SoundSystem::update` previously calculated speed but never assigned
+  the new listener position; the player left the 0x1e00 hearing radius.
+- Overtake gate: assembly `0x00408fe7` uses `xor al,al`, including when the
+  scan is null or equals brain+0x168. Caller `0x00409000` tests **AL**, not
+  the other bytes returned by the decompiler. Native incorrectly returned
+  true whenever a replan target existed, leaving the racing point stale.
+  The distinct-candidate path `0x00408e90..0x00408fdd` writes brain+0x194
+  (lateral), +0x198 (position) and conditionally +0x19c (speed). Those writes
+  now exist natively: compare lateral +0x28 to lateral, apply half-node width
+  0x3000 plus 0x5000, signed-byte lane bounds/side flip, then the far/close
+  speed cases. This is an assembly-backed translation, not full-field oracle
+  parity: scheduler scan order, target size assumptions, AI states and shared
+  RNG acceptance remain open.
+- Scalar-only `set_demo_hold` fixtures had all-zero per-level speed arrays;
+  the sixty-tick replan replaced their scalar speed with zero. They now use
+  the opponent-style fallback when the speed table is absent. Existing
+  imported personality speed tables remain authoritative.
+- Visual audit: `draw_hud` still adds SDL debug text `WIPEOUT!` during crashes;
+  `draw_pause` draws a translucent full-screen shade and SDL debug text.
+  Neither is a pixel-exact original screen. The original pause message uses
+  `MessageBoxA` in `0x00443120`; see the options/pause trace above. Native
+  crash actor playback exists, but this audit did not capture original crash
+  frames or establish complete crash-frame parity.
