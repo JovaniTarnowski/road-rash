@@ -128,6 +128,7 @@ public:
                        int weapon = 0, RiderStats stats = {});
     void step(uint32_t controls);      // one simulation tick
     const std::vector<Rider>& riders() const { return riders_; }
+    std::vector<Rider>& riders() { return riders_; }
     const Bike& bike() const { return riders_[0].bike; }
     uint32_t position() const { return uint32_t(bike().i32(0x1c)); }
     int32_t lateral() const { return bike().i32(0x28) >> 8; }

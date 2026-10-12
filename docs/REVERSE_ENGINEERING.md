@@ -695,3 +695,51 @@ Police scope for opening Napa: `0x00407f30` invokes `0x00406b80` when owner is 0
 Local arrest after `0x00407860` locates a non-crashed nearby cop: owner 0, rider/bike flag 0x10 clear, bike speed <300 normally or absolute bike speed <1800 in crash state 2, absolute cop-to-rider longitudinal difference <512 and absolute relative bike speed <5000. Owner -1 runs proximity logic but skips deciding local outcome. Original outcome is 4 with delay 180; native threshold tests cover the strict boundaries. Full cop lookup, AI pursuit and tick integration remain separate.
 
 Cop actor allocation: `0x00405470` allocates 0x32c-byte bikes; `0x00405490` allocates 0x208-byte riders. Constructor capture must not apply bike-only offsets >=0x208 to the rider. Native `make_police_actor` retains imported virtual callback addresses only as opaque numeric metadata; native code never executes them. It imports cop-bank playback (bank 1), applies per-level bike selection/throttle percentages and reduced AI gears, initializes condition/stamina/weapon and pursuit relations, with ground/road target supplied by the caller. Captured level-1 numeric fields match; route/scheduler ownership, dynamic AI replanning and display-list integration remain open.
+
+## Napa playtest fixes (October 11, 2026, plan 11a)
+
+### Engine rpm (tachometer) call chain
+
+`0x004349c0` updates the bike's rpm field `+0x2dc` — the value the dashboard
+needle reads — from the gear ratio and speed. `+0x2e8` caches the speed and
+`+0x2e0` is the fixed volume `0x9ffe`. It is an engine-update routine, not a
+bike-think routine, and is called once per tick from:
+
+- `0x00434ce0` — the player's engine (after the distance/doppler `0x00434db0`);
+- `0x00434fd0` — each of the two nearest audible vehicles, bikes only
+  (`+0xc4 == 4`) and only when the doppler volume `+0xcc` is nonzero;
+- `0x00434980` — the not-racing branch, for the player bike only (`DAT_004642d8`).
+
+The `+0x2e8` cache means the needle is recomputed only when the speed changes,
+is zero, or the bike is airborne (`+0x20 >= 0x65`, which instead adds `+0x1000`
+capped at `0xffff` and does **not** refresh `+0x2e8`). The earlier port kept
+this arithmetic privately in `sound.cpp` (`rpm_`/`rpm_speed_`), so the bike's
+`+0x2dc` stayed at its initial `0x2000` and the dashboard needle was frozen.
+The fix ports `0x004349c0` literally as `update_engine_rpm(Bike&)` in
+`bike.cpp` and calls it from `SoundSystem::update` (the native equivalent of
+`0x00434980`/`0x00434c40`), so the needle and the engine pitch read the same
+`+0x2dc`.
+
+### Dashboard distance readout (layout entry 30)
+
+The centre distance is **not** bike `+0x44` (nothing native writes it, which is
+why it showed a constant `25.5`). The dashboard draw `0x00446c30` prints it
+from the global `DAT_004b8a34` with the `%d%c%03d` format (i.e. "d.mmm"),
+recomputed each tick by `0x00438550` as the signed distance to the nearest
+opponent:
+
+- For each opponent, `d = player.+0x1f8 − opponent.+0x1f8`; `+0x1f8` is the
+  cumulative distance along the route written by `0x00407410` (walked node
+  lengths, `+0x1e0` node, `·0x100`).
+- `d < 0` is an opponent ahead; the minimum ahead distance is kept, otherwise
+  the minimum behind distance. If the nearest-ahead is less than half the
+  nearest-behind, the ahead opponent is the target and the value stays
+  positive; otherwise the behind opponent becomes the target and the value is
+  negated.
+- Display is `(|value| × 1000) / (metric ? 3279 : 5280)` — 3279 feet/km and
+  5280 feet/mile, so `+0x1f8` is in feet.
+
+Porting this needs `0x00407410`'s cumulative-distance walk (the native tracks
+`+0x1c` in Q8 samples, a different scale) and an oracle pixel capture to
+confirm the calibration; the readout is not yet ported. The sign (ahead/behind)
+also drives a separate indicator colour/string (`0x00446c30`), not yet ported.

@@ -9,6 +9,10 @@ int main(){
         const auto course=rr::read_course(assets.read("DATA/COURSES/NAPA.CRS"));
         const auto specs=rr::read_bike_specs(assets.read("DATA/BIKESPEC.RSC"));
         rr::Race race(rr::make_route(course,false),rr::make_route(course,true),physics,specs[0],90,{},0);
+        // 11a Task 2: the tachometer needle angle follows bike +0x2dc.
+        race.riders()[0].bike.i32(0x2dc) = 0x3000;
+        const auto needle = rr::Hud(assets,exe,0,false).state(race,"Player","Sledge");
+        if(needle.rpm_angle != 0x3000/44 - 1024 + 4096)throw std::runtime_error("RPM needle does not follow +0x2dc");
         size_t variants=0;
         for(bool metric:{false,true})for(int bike:{0,5,10}) {
             rr::Hud hud(assets,exe,bike,metric);auto state=hud.state(race,"Player","Sledge");

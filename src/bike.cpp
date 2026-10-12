@@ -373,4 +373,32 @@ void traction(Bike& b, const PhysicsTables& t, int surface, bool player) {
     else if (b.i32(0xec) > 8000) hv += div_pow2(hv, 3);
     b.i32(0x60) = wrap_angle(approx_atan2(t.contact_base, div256(hv)) * 0x10000);
 }
+
+void update_engine_rpm(Bike& b) {
+    // 0x004349c0: engine rpm (+0x2dc) from the gear ratio and speed, at most
+    // +-0x2000 per update; +0x1000 while airborne (height +0x20 >= 0x65), -0x1000
+    // after a crash. +0x2e8 caches the speed; +0x2e0 is the fixed volume 0x9ffe.
+    const int32_t speed = b.i32(0xec);
+    if (b.i32(0x2e8) == speed && speed != 0) return;
+    int32_t next;
+    if (b.i32(0x20) < 0x65 || speed == 0) {
+        b.i32(0x2e8) = speed;
+        const int32_t ratio = b.i32(0x1cc + b.i32(0x23c) * 0x10);
+        int32_t target = int32_t(uint32_t(ratio) * uint32_t(speed));       // 32-bit wrap as the original imul
+        target = ((target + ((target >> 31) & 0xff)) >> 8) + 0x2000;      // sar rounding toward zero
+        const int32_t current = b.i32(0x2dc);
+        if (b.i32(0x2f4) == 0 || current < 0x2001) {
+            next = current + 0x2000;
+            if (target <= next) { next = target; if (target < current - 0x2000) next = current - 0x2000; }
+        } else {
+            next = current - 0x1000;
+        }
+    } else {
+        // Airborne: the original does not refresh +0x2e8 here.
+        next = b.i32(0x2dc) + 0x1000;
+        if (next > 0xffff) next = 0xffff;
+    }
+    b.i32(0x2e0) = 0x9ffe;
+    b.i32(0x2dc) = next;
+}
 }

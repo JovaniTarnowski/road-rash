@@ -51,6 +51,7 @@ void apply_controls(Bike&, const PhysicsTables&, uint32_t controls);       // pl
 void shift_gears(Bike&);                                        // 0x004391d0
 void integrate_speed(Bike&, const PhysicsTables&, int surface = 0);        // 0x004390c0
 void traction(Bike&, const PhysicsTables&, int surface, bool player);      // 0x00438c70
+void update_engine_rpm(Bike&);                                  // 0x004349c0: engine rpm needle +0x2dc
 
 // Sub-slice edges in world units (0x00454240 fields [0x38],[0x39],[0x3a],[0x3b]).
 struct SliceEdges { int32_t left, right, left_shoulder, right_shoulder; uint8_t flags, type; };

@@ -39,7 +39,7 @@ public:
     void start_race(int bike, int character);
     void stop_race();
     void post(const SoundEventRecord&);           // 0x00436830: at most 10 pending
-    void update(const Race&);                     // once per simulation tick
+    void update(Race&);                          // once per simulation tick
     static const char* effect_name(int slot);     // AUDIO/EFFECTS/<name>.WAV
 private:
     struct Slot { PcmSound pcm; int voice = -1; bool looping = false; };
@@ -60,7 +60,6 @@ private:
     bool nitro_ = false, tunnel_ = false, finish_yell_ = false, sliding_ = false;
     int32_t slide_volume_ = 0;
     int32_t listener_position_ = 0, listener_lateral_ = 0, listener_speed_ = 0;
-    std::array<int32_t, 8> rpm_{}, rpm_speed_{};
     bool racing_ = false;
     int skid_limit_ = 2;
     uint32_t seed_ = 0x1234;

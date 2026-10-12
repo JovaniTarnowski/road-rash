@@ -187,7 +187,6 @@ void SoundSystem::start_race(int bike, int character) {
     queue_.clear();
     nitro_ = tunnel_ = finish_yell_ = sliding_ = false;
     listener_position_ = 0x3100; listener_lateral_ = 0; listener_speed_ = 0;     // 0x0044b250
-    rpm_.fill(0x2000); rpm_speed_.fill(-1);
     racing_ = true;
 }
 
@@ -223,35 +222,25 @@ void SoundSystem::distance(int32_t position, int32_t lateral, int32_t speed, int
     volume = v * v / 256;
 }
 
-void SoundSystem::update(const Race& race) {
+void SoundSystem::update(Race& race) {
     if (!racing_) return;
-    const auto& riders = race.riders();
-    const Bike& player = riders[0].bike;
+    auto& riders = race.riders();
+    Bike& player = riders[0].bike;
     // Listener: the camera (0x00437c30).
     const int32_t camera_position = int32_t(race.camera_position());
     listener_speed_ = (camera_position - listener_position_) * 0x100;
     listener_position_ = camera_position;
     listener_lateral_ = race.camera_x();
     tunnel_ = false;   // sub-slice terrain type 3 (0x00434a80): type 2/3 assignment (0x00454240) not ported
-    // 0x004349c0: engine rpm from the gear ratio and speed, limited to +-0x2000 per update.
-    auto rpm = [&](size_t i, const Bike& b) {
-        const int32_t speed = b.i32(0xec);
-        if (rpm_speed_[i] == speed && speed != 0) return rpm_[i];
-        rpm_speed_[i] = speed;
-        int32_t r = rpm_[i];
-        if (b.i32(0x20) < 0x65 || speed == 0) {
-            const int32_t product = int32_t(uint32_t(b.i32(0x1cc + b.i32(0x23c) * 0x10)) * uint32_t(speed));
-            const int32_t target = product / 256 + 0x2000;
-            if (b.i32(0x2f4) == 0 || r < 0x2001) r = std::clamp(target, r - 0x2000, r + 0x2000);
-            else r -= 0x1000;
-        } else r = std::min(0xffff, r + 0x1000);
-        return rpm_[i] = r;
-    };
+    // 0x004349c0: the engine rpm lives on the bike (+0x2dc), updated by the
+    // sound tick, so the dashboard needle and the engine pitch read the same
+    // field (0x00434ce0/0x00434fd0). The player's rpm is always refreshed.
+    update_engine_rpm(player);
     // 0x00434ce0: the player's engine (nitro and tunnel variants replace it).
     if (!engine_off_) {
         int32_t doppler, vol, pan;
         distance(player.i32(0x1c), player.i32(0x28) >> 8, player.i32(0x108), doppler, vol, pan);
-        const int32_t r = rpm(0, player);
+        const int32_t r = player.i32(0x2dc);
         const int32_t frequency = (doppler * r) / 512;
         const int32_t volume = (0x9ffe * vol / 0xef10) * engine_;
         const int slot = nitro_ ? 1 : tunnel_ ? 2 : 0;
@@ -270,10 +259,11 @@ void SoundSystem::update(const Race& race) {
             const int base = k == 0 ? 3 : 5;
             if (size_t(k) >= near.size()) { stop(base); stop(base + 1); continue; }
             const size_t i = near[size_t(k)].second;
-            const Bike& b = riders[i].bike;
+            Bike& b = riders[i].bike;
+            update_engine_rpm(b);
             int32_t doppler, vol, pan;
             distance(b.i32(0x1c), b.i32(0x28) >> 8, b.i32(0x108), doppler, vol, pan);
-            const int32_t r = rpm(std::min<size_t>(i, 7), b);
+            const int32_t r = b.i32(0x2dc);
             stop(base + 1);   // bikes use the EngOther slot; cars (plan 05) use the next
             play_loop(base, (doppler * r) / 512, (vol * 0x9ffe / 0xef10) * others_, pan);
         }

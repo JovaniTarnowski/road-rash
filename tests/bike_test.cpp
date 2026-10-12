@@ -72,6 +72,67 @@ int main() {
     for (int i = 0; i < 10; ++i) rr::traction(fresh, rr::PhysicsTables::synthetic(), 0, true);
     check(fresh.i32(0x2f4) == 0, "skid counter is per bike (no crash after 10 ticks)");
 
+    // 0x004349c0 update_engine_rpm: needle +0x2dc from gear ratio and speed.
+    auto rpm_bike = [&](int32_t speed, int32_t gear, int32_t ratio, int32_t rpm,
+                        int32_t cached, int32_t height, int32_t crash) {
+        rr::Bike b;
+        b.i32(0xec) = speed; b.i32(0x23c) = gear;
+        b.i32(0x1cc + gear * 0x10) = ratio;
+        b.i32(0x2dc) = rpm; b.i32(0x2e8) = cached;
+        b.i32(0x20) = height; b.i32(0x2f4) = crash;
+        return b;
+    };
+    {
+        auto b = rpm_bike(0, 0, 256, 0x2000, 0, 0, 0);
+        rr::update_engine_rpm(b);
+        check(b.i32(0x2dc) == 0x2000 && b.i32(0x2e0) == 0x9ffe && b.i32(0x2e8) == 0, "rpm stationary stays at 0x2000");
+    }
+    {
+        auto b = rpm_bike(0x400, 0, 0x100, 0x2000, 0, 0, 0);
+        rr::update_engine_rpm(b);
+        check(b.i32(0x2dc) == 0x2400, "rpm accelerates toward gear ratio target");
+    }
+    {
+        auto b = rpm_bike(0x400, 1, 0x200, 0x2400, 0x300, 0, 0);
+        rr::update_engine_rpm(b);
+        check(b.i32(0x2dc) == 0x2800, "rpm gear change at constant speed");
+    }
+    {
+        auto b = rpm_bike(0x400, 0, 0x100, 0x2000, 0, 0x65, 0);
+        rr::update_engine_rpm(b);
+        check(b.i32(0x2dc) == 0x3000 && b.i32(0x2e8) == 0, "rpm airborne +0x1000, no cache refresh");
+    }
+    {
+        auto b = rpm_bike(0x400, 0, 0x100, 0xffff, 0, 0x65, 0);
+        rr::update_engine_rpm(b);
+        check(b.i32(0x2dc) == 0xffff, "rpm airborne capped at 0xffff");
+    }
+    {
+        auto b = rpm_bike(0x400, 0, 0x100, 0x3000, 0, 0, 1);
+        rr::update_engine_rpm(b);
+        check(b.i32(0x2dc) == 0x2000, "rpm crashed above 0x2001 drops -0x1000");
+    }
+    {
+        auto b = rpm_bike(0x400, 0, 0x100, 0x2000, 0, 0, 1);
+        rr::update_engine_rpm(b);
+        check(b.i32(0x2dc) == 0x2400, "rpm crashed at or below 0x2001 still clamps");
+    }
+    {
+        auto b = rpm_bike(0x400, 0, 0x100, 0x2000, 0x400, 0, 0);
+        rr::update_engine_rpm(b);
+        check(b.i32(0x2dc) == 0x2000 && b.i32(0x2e0) == 0, "rpm speed unchanged skips update");
+    }
+    {
+        auto b = rpm_bike(0x10000, 0, 0x100, 0x2000, 0, 0, 0);
+        rr::update_engine_rpm(b);
+        check(b.i32(0x2dc) == 0x4000, "rpm rate-limited to +0x2000 per update");
+    }
+    {
+        auto b = rpm_bike(0x10000, 0, 1, 0x8000, 0, 0, 0);
+        rr::update_engine_rpm(b);
+        check(b.i32(0x2dc) == 0x6000, "rpm rate-limited to -0x2000 per update");
+    }
+
     std::cout << failures << " failures\n";
     return failures ? 1 : 0;
 }
