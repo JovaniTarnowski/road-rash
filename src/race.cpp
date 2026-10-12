@@ -442,24 +442,48 @@ void Race::contact_car(Rider& self, TrafficCar& car) {
     s.i32(0x188) = div256(int64_t(s.i32(0x188)) * elasticity);
     s.i32(0x184) = div256(int64_t(s.i32(0x184)) * elasticity);
     const int32_t hit = std::abs(s.i32(0x184));
+    // Player sounds (shared with the bike-bike head): silent below both
+    // thresholds (0x004049c0 jumps to LAB_00404c2d with iVar9 = 6).
+    bool silent = false;
     if (&self == &riders_[0]) {
-        // 0x004049c0 player sounds (shared with the bike-bike head).
         if (hit < 0x1771) {
             if (hit >= 0x7d1 || std::abs(s.i32(0x188)) >= 0x3e9) {
                 sound(SoundEvent((random() & 1) + 3), s);
                 sound(SoundEvent(random() & 1), s);
+            } else {
+                silent = true;
             }
         } else {
             sound(SoundEvent((random() & 1) + 4), s);
             sound(SoundEvent((random() & 1) + 1), s);
         }
+    } else if (hit < 0x7d1 && std::abs(s.i32(0x188)) < 0x3e9) {
+        // The scratch-bike fixture path: the original's silent goto fires
+        // regardless of player identity (the player gate only guards the
+        // sound draws, not the branch).
+        silent = true;
     }
     const int32_t old_steer_rate = s.i32(0xf0);
     const bool contained = (s.u8(0x19c) & 0x40) != 0;
     const int32_t magnitude = (std::abs(s.i32(0x184)) + std::abs(s.i32(0x188)) +
                                std::abs(s.i32(0x18c))) >> 10;
-    if (!contained) {
+    // Silent hits (iVar9 = 6): the knock-off decision zeroes its params
+    // (0x004052c0 default case: no damage, returns false) and the handler
+    // runs the lateral branch below with local_20 = steer rate.
+    if (silent) {
+        if (car.lateral < s.i32(0x28)) {
+            if (s.i32(0xf0) < 0) s.i32(0xf0) = 0;
+            s.i32(0xf0) += hit / 2;
+            s.i32(0xec) = std::max(0, s.i32(0xec) - div_pow2(hit, 2));
+        } else {
+            if (s.i32(0xf0) > 0) s.i32(0xf0) = 0;
+            s.i32(0xf0) -= hit / 2;
+            s.i32(0xec) = std::max(0, s.i32(0xec) - div_pow2(hit, 2));
+        }
+    } else if (!contained) {
         // Class 3: glance off the car's side, with the 0x004052c0 decision.
+        // 0x004049c0: other lateral < self lateral shoves +f0 (away from the
+        // car), else -f0; speed loses |184|/4 either way.
         const bool down = knock_off(magnitude / 8);
         if (down) {
             s.i32(0xf4) += div_pow2(hit, 8);
@@ -485,6 +509,12 @@ void Race::contact_car(Rider& self, TrafficCar& car) {
         return;
     }
     if (s.i32(0x2f4) != 0) return;
+    // Scenery-marking block (0x004049c0 iVar9 == 0 path): when local_18[3]
+    // (speed at entry) exceeds 1000 and the rider's sample differs from the
+    // car's +0x1ec sample, mark +0x298 by the car's +0x124 sub-kind, record
+    // the sample/time/flags, zero the steer rate and grow +0x288 by half.
+    // Cars never take this path in the golden (iVar9 is 2/3/6: the
+    // else-if/else ladder above), so it is documented, not executed.
     // Nudge apart sideways (0x00404f4d).
     const int32_t push = div_pow2(s.i32(0x174) + 16384, 4) * s.i32(0x18);
     s.i32(0x28) += car.lateral < s.i32(0x28) ? push : -push;
