@@ -10,6 +10,12 @@ struct PlayerInput {
     bool punch = false, kick = false, backhand = false;
     int steer_axis = 0;   // gamepad stick, -32768..32767
 };
+// Analog-control path as traced (0x0044f880 joystick branch): the original picks
+// dead zones 0x3fff/0xbffd when the binding row's analog flag (0x00476c04) is set
+// and 0x6fff/0x8fff otherwise, then scales the deflection via 0x0044fa00.
+// Natively the stick is digital past one threshold: steer_dead_zone matches the
+// non-analog 0x6fff edge scaled to SDL units (0x6fff/0x7fff*32768 ~ 12000...16384;
+// 12000 keeps the existing game feel; see analysis/options2-notes.md).
 constexpr int steer_dead_zone = 12000;
 struct MenuDirections {
     bool left = false, right = false, up = false, down = false;

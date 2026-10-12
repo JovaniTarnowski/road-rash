@@ -99,6 +99,16 @@ public:
     std::string player_name() const;               // 0x0041c140
     bool editing_text() const { return editing_name_; }
     const std::string& string_slot(int slot) const { return str(slot); }
+    // In-race toggles (rebind/in-race toggles only): F10 cycles MiniDash
+    // 0->1->2->0 (0x004431d0 pump); the menu opponent key turns the list ON
+    // only, 0->1, never back (0x00423777). Returns the new value.
+    int cycle_mini_dash();
+    bool enable_opponent_list();
+    // Key rebinding storage (Configure Input 0x12): validates via
+    // apply_rebind (0x0040fbf0 conflict rule: unbind, never swap/refuse),
+    // marks settings custom, and refreshes the 0x12 current-key labels.
+    void rebind_key(size_t action, uint16_t code);
+    void reset_keys(bool joystick);   // 0x0040fdf0: copy a default table in
 
 private:
     struct Dialog { std::string text; std::vector<std::pair<int, int>> buttons; int focus = 0; int kind = 0; };

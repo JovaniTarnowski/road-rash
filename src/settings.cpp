@@ -1,8 +1,8 @@
 #include "settings.hpp"
+#include "exe_tables.hpp"
 #include <SDL3/SDL.h>
 #include <fstream>
 #include <sstream>
-
 namespace rr {
 namespace {
 bool imperial_country(const char* c) {
@@ -50,8 +50,21 @@ Settings parse_settings(const std::string& text) {
         else if (k == "hires_bikers") flag(s.high_res_bikers);
         else if (k == "video_mode") { if (parse_int(v, 0, 2, x)) s.video_mode = x; }
         else if (k == "alternate_artwork") flag(s.alternate_artwork);
-        else if (k == "mini_dash") flag(s.mini_dash);
-        else if (k == "opponent_list") flag(s.opponent_list);
+        else if (k == "mini_dash") { if (parse_int(v, 0, 2, x)) s.mini_dash = x; }
+        else if (k == "controls") {
+            // 0x16-byte "Controls" block as 22 hex chars; malformed input ignored.
+            if (v.size() == 22) {
+                bool ok = true;
+                std::array<uint16_t, 11> t{};
+                auto hex = [](char c) { return c >= '0' && c <= '9' ? c - '0' : c >= 'a' && c <= 'f' ? c - 'a' + 10 : c >= 'A' && c <= 'F' ? c - 'A' + 10 : -1; };
+                for (size_t i = 0; i < 11 && ok; ++i) {
+                    int hi = hex(v[2 * i]), lo = hex(v[2 * i + 1]);
+                    if (hi < 0 || lo < 0) ok = false;
+                    else t[i] = uint16_t(hi * 16 + lo);
+                }
+                if (ok) { s.controls = t; s.custom_controls = true; }
+            }
+        }
         else if (k == "music_group") { if (parse_int(v, 0, 31, x)) s.music_group = x; }
         else if (k == "music_track") { if (parse_int(v, 0, 31, x)) s.music_track = x; }
         else if (k == "master_volume") { if (parse_int(v, 0, 100, x)) s.master_volume = x; }
@@ -72,12 +85,46 @@ std::string format_settings(const Settings& s) {
     std::ostringstream o;
     o << "language=" << int(s.language) << "\nmetric=" << s.metric << "\nhires=" << s.high_resolution << "\ninset=" << s.inset
       << "\nhires_bikers=" << s.high_res_bikers << "\nvideo_mode=" << s.video_mode << "\nalternate_artwork=" << s.alternate_artwork
-      << "\nmini_dash=" << s.mini_dash << "\nopponent_list=" << s.opponent_list << "\nmusic_group=" << s.music_group
-      << "\nmusic_track=" << s.music_track << "\nmaster_volume=" << s.master_volume << "\nmusic_volume=" << s.music_volume
+      << "\nmini_dash=" << s.mini_dash << "\nopponent_list=" << s.opponent_list << "\nmusic_group=" << s.music_group;
+    if (s.custom_controls) {
+        o << "\ncontrols=";
+        for (uint16_t c : s.controls) o << "0123456789abcdef"[c >> 4] << "0123456789abcdef"[c & 15];
+    }
+    o << "\nmusic_track=" << s.music_track << "\nmaster_volume=" << s.master_volume << "\nmusic_volume=" << s.music_volume
       << "\neffects_volume=" << s.effects_volume << "\nengine_volume=" << s.engine_volume << "\nothers_volume=" << s.others_volume
       << "\nsiren_volume=" << s.siren_volume << "\ninterface_volume=" << s.interface_volume << "\nmute=" << s.mute
       << "\nswap_speakers=" << s.swap_speakers << "\nalias=" << s.alias << "\n";
     return o.str();
+}
+
+std::array<uint16_t, 11> default_keyboard_controls() {
+    // 0x00466618 in the reference EXE, little-endian u16 words.
+    return {0x9400, 0x9600, 0x9300, 0x8400, 0x6e00, 0x8500, 0x0d00, 0x2000, 0x6400, 0x9500, 0x8100};
+}
+
+std::array<uint16_t, 11> default_joystick_controls() {
+    // 0x00466630 in the reference EXE (POV/axis codes 0x25-0x28, buttons 0x01/0x02).
+    return {0x0025, 0x0027, 0x0028, 0x9300, 0x6e00, 0x0001, 0x0002, 0x2000, 0x9400, 0x0026, 0x9500};
+}
+
+void apply_rebind(std::array<uint16_t, 11>& table, size_t action, uint16_t code) {
+    // 0x0040fbf0 scans all 11 rows; any other row holding the same 2-byte code
+    // is zeroed (unbound, NOT swapped), then the new code is stored. Rows 9-10
+    // and 2-3 get extra label-refresh side effects only; bindings behave the same.
+    if (action >= table.size()) throw std::runtime_error("Rebind action out of range");
+    for (size_t i = 0; i < table.size(); ++i)
+        if (i != action && table[i] == code) table[i] = 0;
+    table[action] = code;
+}
+
+void read_control_tables(const std::vector<uint8_t>& exe, std::array<uint16_t, 11>& keyboard,
+                         std::array<uint16_t, 11>& joystick) {
+    const auto kb = read_exe_data(exe, 0x00466618, 22);
+    const auto joy = read_exe_data(exe, 0x00466630, 22);
+    for (size_t i = 0; i < 11; ++i) {
+        keyboard[i] = uint16_t(kb[2 * i] | kb[2 * i + 1] << 8);
+        joystick[i] = uint16_t(joy[2 * i] | joy[2 * i + 1] << 8);
+    }
 }
 
 Settings load_settings(const std::string& path) {

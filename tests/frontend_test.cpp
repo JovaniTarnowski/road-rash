@@ -99,6 +99,11 @@ int main(int argc, char** argv) {
     key("select");
     check(fe.screen() == screen_id::race_loading && event_video("VIDEO/START"), "start video and loading screen");
     snap("loading");
+    {   // 0x0041e240: the 397-wide course postcard is composited right of the "Postcard" strip.
+        size_t black = 0;
+        for (int y = 0; y < 480; ++y) for (int x = 400; x < 640; ++x) black += img.at(x, y) == 0;
+        check(black < 240 * 480 / 10, "loading postcard fills the right side");
+    }
     key("select");
     FrontendEvent e;
     bool started = false;
@@ -206,7 +211,23 @@ int main(int argc, char** argv) {
     key("right");
     key("select");   // No
     check(event(FrontendEvent::Kind::quit), "go home quits");
-    std::filesystem::remove_all(saves);
+    // Key rebinding storage + conflict rule (0x0040fbf0: same-code rows unbound).
+    check(default_keyboard_controls()[0] == 0x9400 && default_joystick_controls()[0] == 0x0025, "control defaults match EXE");
+    { std::array<uint16_t, 11> kb, joy; read_control_tables(exe, kb, joy); check(kb == default_keyboard_controls() && joy == default_joystick_controls(), "control tables read from EXE"); }
+    { std::array<uint16_t, 11> t{}; bool threw = false; try { apply_rebind(t, 11, 1); } catch (const std::runtime_error&) { threw = true; } check(threw, "rebind range checked"); }
+    fe.reset_keys(false);
+    check(settings.controls == default_keyboard_controls() && settings.custom_controls, "keyboard defaults restore");
+    fe.rebind_key(0, 0x001e);
+    check(settings.controls[0] == 0x001e, "rebind stores code");
+    fe.rebind_key(1, 0x001e);   // conflict: action 0 unbound, not swapped
+    check(settings.controls[1] == 0x001e && settings.controls[0] == 0, "rebind conflict unbinds");
+    fe.reset_keys(true);
+    check(settings.controls == default_joystick_controls(), "joystick defaults restore");
+    // In-race toggles: F10 cycles MiniDash 0->1->2->0; opponent key is ON-only.
+    settings.mini_dash = 0;
+    check(fe.cycle_mini_dash() == 1 && fe.cycle_mini_dash() == 2 && fe.cycle_mini_dash() == 0, "minidash F10 cycle");
+    settings.opponent_list = false;
+    check(fe.enable_opponent_list() && settings.opponent_list && fe.enable_opponent_list(), "opponent list ON-only");
     std::cout << failures << " failures\n";
     return failures ? 1 : 0;
 }

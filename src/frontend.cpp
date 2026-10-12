@@ -234,7 +234,21 @@ void Frontend::set_background(const std::string& name) {
     if (name.empty() || name == background_name_ || !menu_image_exists(assets_, name)) return;
     RgbImage img = load_menu_image(assets_, name);
     background_ = RgbImage(640, 480, 0);
-    fill_from(background_, img, 0, 0, 640, 480);
+    // 0x0041e240: a "Postcard/" or "Street/" picture starts from a copy of its
+    // base picture and is decoded over it. The insets are partial: 397x480
+    // postcards sit right of the 243-wide "Postcard" strip, 258x250 street
+    // views at (146,230). Offsets are fixed by artwork continuity (seam and
+    // pixel match against the base); the decoder's placement is not yet traced.
+    int x = 0, y = 0;
+    const bool postcard = name.rfind("Postcard/", 0) == 0, street = name.rfind("Street/", 0) == 0;
+    if ((postcard || street) && menu_image_exists(assets_, postcard ? "Postcard" : "Street")) {
+        const RgbImage base = load_menu_image(assets_, postcard ? "Postcard" : "Street");
+        fill_from(background_, base, 0, 0, base.width, base.height);
+        if (postcard) x = 640 - img.width; else { x = 146; y = 230; }
+    }
+    for (int row = 0; row < img.height; ++row)
+        for (int col = 0; col < img.width; ++col)
+            if (background_.contains(x + col, y + row)) background_.at(x + col, y + row) = img.at(col, row);
     dark_ = background_;
     for (auto& p : dark_.pixels) p = darken555(p);
     background_name_ = name;
@@ -778,6 +792,29 @@ int Frontend::run_handler(size_t index) {
     }
     default: return m.target;
     }
+}
+int Frontend::cycle_mini_dash() {
+    // F10 key-up in the 0x004431d0 modal pump: 0->1->2->0 (full/mini/off).
+    settings_.mini_dash = (settings_.mini_dash + 1) % 3;
+    return settings_.mini_dash;
+}
+bool Frontend::enable_opponent_list() {
+    // Menu dispatch 0x00423777: 0->1, else stays 1 (ON only, no in-race toggle).
+    settings_.opponent_list = true;
+    return true;
+}
+void Frontend::rebind_key(size_t action, uint16_t code) {
+    // 0x0040fbf0 conflict rule via apply_rebind: same-code rows are cleared.
+    if (!settings_.custom_controls) {
+        settings_.controls = default_keyboard_controls();
+        settings_.custom_controls = true;
+    }
+    apply_rebind(settings_.controls, action, code);
+}
+void Frontend::reset_keys(bool joystick) {
+    // 0x0040fdf0 copies one of the 0x00466618/0x00466630 default tables in.
+    settings_.controls = joystick ? default_joystick_controls() : default_keyboard_controls();
+    settings_.custom_controls = true;
 }
 
 void Frontend::activate(size_t index) {
