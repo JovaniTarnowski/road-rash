@@ -211,8 +211,8 @@ The plans to finish the port are indexed in [plans/00-INDEX.md](plans/00-INDEX.m
 | --- | --- |
 | `./run-macos.sh` | Build and launch the viewer on macOS |
 | `ctest --test-dir build --output-on-failure` | `resource-bounds` and `road-projection` tests |
-| `build/rr-native --assets ../cdrom/ROADRASH --smoke` | Decode and render every screen once |
-| `build/rr-native --screen 9 --position 960 --screenshot out.bmp` | Capture one course frame (screens 9–13: NAPA, CITY, HIWAY, CANYN, MEDLY) |
+| `build/rr-viewer --assets ../cdrom/ROADRASH --smoke` | Decode and render every screen once |
+| `build/rr-viewer --screen 9 --position 960 --screenshot out.bmp` | Capture one course frame (screens 9–13: NAPA, CITY, HIWAY, CANYN, MEDLY) |
 | `build/rr-course --exe ../cdrom/ROADRASH/ROADRASH.EXE ../cdrom/ROADRASH/DATA/COURSES/*.CRS` | Course graph, split/merge windows and positions, full projection sweep |
 | `build/rr-inspect FILE.RSC` | Dump a resource directory |
 | `python3 tools/check_corpus.py ../cdrom/ROADRASH` | Validate all resource containers |
@@ -479,3 +479,71 @@ The police actor full native gate found a stale synthetic grid assertion from th
 Police local actor/player walking checkpoint gate completed: 62/62 native and ASAN/UBSAN tests pass; imported-asset CI passes; asset-free Android debug/release assemble. Logs: `analysis/napa-police-walking-ci.log`, `analysis/napa-police-walking-sanitizer-tests.log`, `analysis/android-napa-police-walking-release.log`. The native integration test still separates/remounts after 434 ticks. These gates include compatible in-flight simulation/demo changes in the workspace; those changes are kept outside this checkpoint's commit. Next: original combat animation event timing and remaining cop/race integration.
 
 Build fix (October 11, 2026): `src/game_main.cpp` called `Race::set_traffic` but the `TrafficSystem*` setter was missing from `src/race.hpp` (only the `traffic_` member and its use in `race.cpp` remained). Restored the one-line setter. Verified: full `build/rr-game` links, `race`/`traffic`/`crash`/`police`/`actor_traffic` ctests pass, `--ticks 120 --screenshot` headless race renders (Napa GET READY frame), `--menu-frames 120 --screenshot` renders the menu disclaimer. Game left running via nohup (`./build/rr-game --assets /Users/archit/Dev/rr/cdrom/ROADRASH`).
+
+UI cleanup (October 11, 2026): removed the bottom keyboard-instructions overlay from the race HUD in `src/game_main.cpp` (`draw_hud`). The two `SDL_RenderDebugText` lines at the bottom of the view ("Up/Down throttle/brake, Left/Right steer, Z punch, X kick, C backhand" and "P/Esc/Back/Start pauses. Enter/Start/tap resumes. Q quits") are no longer drawn.
+
+### Session 24: Napa playtest review and replanning (October 11, 2026)
+
+- The owner played the Napa race and reported:
+  - no traffic collision;
+  - the right dashboard meter glitching;
+  - bike graphical glitches;
+  - an apparent split between the "Napa demo" and `rr-native`.
+- Root causes:
+  - `Race` has no rider–car contact pass.
+  - The tachometer reads bike `+0x2dc`, which only `bike.cpp` initialises; the original `0x004349c0` updates it, but the port keeps that logic privately in `sound.cpp`. The distance readout reads an unmaintained `+0x44` (shown as a constant `25.5` in screenshots 1,500 ticks apart).
+  - Native rider/bike/shadow nodes have not been compared with original display lists. Autopilot screenshots show offset or doubled bike parts and dithered blocks.
+  - `./run-macos.sh` launches the research viewer (`rr-native`), not `rr-game`, and `build-release/Road Rash Native.app` was built October 10, before the Napa scene and actor work.
+- Review of newly landed work: plan 10's replay currently re-anchors the RNG every tick and replays the attract-demo AI branch for the player. This localises divergences but is not acceptance; plan 10 Task 5 now requires a single anchor and one human-control scenario.
+- Added [plans/11a-napa-playtest-fixes.md](plans/11a-napa-playtest-fixes.md). Updated the [plans/00-INDEX.md](plans/00-INDEX.md) status table, order and findings, plan 10 Task 5's acceptance rule and plan 11's status. Added `analysis/playtest/` to `.gitignore`. No source code was changed in this session. A parallel session has uncommitted edits in `src/game_main.cpp` and `src/race.cpp`; they were left untouched.
+
+### Session 25: Napa playtest fixes — launch paths and tachometer (October 11, 2026)
+
+- Reviewed [plans/11a-napa-playtest-fixes.md](plans/11a-napa-playtest-fixes.md) and began executing it.
+- **Task 4 (one game, every launch path)** done: `run-macos.sh` now builds and
+  launches `rr-game` (with `--assets` when the disc is mounted, else the
+  first-run import); new `run-viewer.sh` launches the research viewer, which is
+  renamed `rr-native` → `rr-viewer` in CMake, the viewer usage string,
+  `tools/ci.sh`, README/RUN_NATIVE and plans 00/01/04/08/15. `tools/build_macos_app.sh`
+  stamps `RRBuildCommit` (from `git rev-parse --short HEAD`) into the bundle
+  plist and re-signs; `tools/verify_macos_app.py` fails a bundle whose stamp
+  differs from HEAD, and `tools/ci.sh` fails a stale `build-release` bundle
+  (or rebuilds it under `RR_STANDALONE_APP=1`). Rebuilt the standalone bundle
+  and confirmed the verifier passes; the stale October 10 bundle fails as
+  expected.
+- **Task 2 (tachometer)** rpm part done: `update_engine_rpm(Bike&)` is a
+  literal port of `0x004349c0` (gear-ratio/speed → `+0x2dc`, `±0x2000` slew,
+  `+0x1000` airborne capped at `0xffff`, `−0x1000` after a crash, `+0x2e8`
+  speed cache, `+0x2e0 = 0x9ffe`). `SoundSystem::update` now takes `Race&`,
+  calls it for the player and the two nearest opponents, and reads `+0x2dc`
+  for the engine pitch, deleting the private `rpm_`/`rpm_speed_`. `bike_test`
+  and `hud_test` cover the port and the needle-vs-`+0x2dc` relationship; the
+  native CTest suite is 62/62.
+- The distance readout is traced to the global `DAT_004b8a34`
+  (target-opponent distance, `0x00438550`, in feet) but not yet ported (needs
+  the `0x00407410` cumulative-distance walk and oracle calibration). Details in
+  REVERSE_ENGINEERING.md and VERIFICATION.md.
+- Tasks 1 (rider–car collision) and 3 (bike/shadow nodes) remain: both need
+  new original captures/fixtures.
+
+### Session 26: replan for Napa completion, all courses and settings screens (October 11, 2026)
+
+- The owner asked for plans to: finish Napa, then port all remaining courses; complete AI, physics, collisions, animation and graphics; and add game-style settings screens (resolution, sound, etc.).
+- Reviewed the code and plans against that request. Findings:
+  - Napa's remaining work was spread over plans 10, 11 and 11a with no single view per system. Several gaps had no owner: the knock-off decision `0x004052c0`, rider–cop contact, roadside-object collision, the weapon lifecycle, off-road drag and reverse riding, per-tick animation verification, the original needle pen and opponent list, and a native determinism/soak gate.
+  - Plan 12 (all courses) was too thin: it missed per-level race start/finish (the course-length table `0x00468f58` differs by level, but the port runs the whole route), the `make_race_setup` extraction that plan 10 Task 4 specified but never landed (`src/race_setup.*` does not exist), and per-course trackers.
+  - Settings: `Settings` already stores the original registry values and the Graphics Options popups work, but the sound mix, controls and jukebox handlers are stubs (`frontend.cpp`, `return 0`), the race ignores `HiRes`/`Inset`/`HiResBikers`, the window is fixed (960×760, letterbox, vsync on), and the pause screen is SDL debug text.
+- Added [plans/16-gameplay-systems.md](plans/16-gameplay-systems.md) (completion matrix, Napa critical path, 7 new tasks), [plans/17-all-courses-port.md](plans/17-all-courses-port.md) (supersedes plan 12; all maps playable early via `make_race_setup`, then CITY → HIWAY → nitro → MEDLY → CANYN parity) and [plans/18-settings-and-options.md](plans/18-settings-and-options.md) (original options screens plus native Display/Sound/Pause screens built from original menu geometry, fonts and colours; fullscreen, scaling, filtering, vsync; low/inset race views).
+- Updated [plans/00-INDEX.md](plans/00-INDEX.md) (status table, order, definition of done), and added pointers in plans 11, 12 (superseded), 13 (Task 3 moved to plan 18) and 14 (Task 2 Step 3 moved to plan 18).
+- No source code changed. Uncommitted work from a parallel session (`src/race.*`, `src/game_main.cpp`, `oracle/aweman_proxy.c`) was left untouched.
+- Follow-up in the same session: the owner clarified that "graphic settings" means the game itself must render at higher resolutions, and asked for plans for the recommended upscaling approach. Finding: the scene pipeline emits resolution-independent Q16 view coordinates (`DrawNode`), and only `ViewMode::map` fixes the 640×480 surface (shift 15, bit 0 cleared), so higher render scales need a scaled final mapping plus surface-size fixes (`TextureEdge` rows fixed at 480, `int16_t` vertices, horizon/HUD/menu images) rather than a new renderer. Added [plans/19-high-resolution-rendering.md](plans/19-high-resolution-rendering.md) (render scale 1–4× and match-display, 640×480 kept bit-identical, band-threaded raster, widescreen decision-gated) and [plans/20-asset-upscaling.md](plans/20-asset-upscaling.md) (local upscale cache, MMPX for indexed textures and sprites, Real-ESRGAN for menu artwork via a script, GPU screen filters, AI for in-race art experimental). Plan 18's "non-goal" section now points to them; the index lists both.
+
+### Session 27: enhanced visuals and toolchain plans (October 12, 2026)
+
+- The owner asked whether C++ was the right language (answer: yes; keep C++, harden the toolchain instead of a Rust rewrite) and for plans for the graphics enhancements and the hardening steps discussed.
+- Code facts used: the race loop is fixed-step (`TickClock`, 60 ticks/s) and redraws from live `Race` state, so interpolation needs a captured per-tick view state; `DrawNode` carries no depth, so perspective texturing and fog add per-vertex depth from the slice projection; textures are affine (`TextureVertex` has no depth term); the draw distance is the constant `view_slices = 33`. Homebrew LLVM 22 is installed with libFuzzer and clang-tidy; Apple clang has neither. Threads today: the import worker, the SDL audio callback and SDL event watches.
+- Added [plans/21-enhanced-visuals.md](plans/21-enhanced-visuals.md) and [plans/22-toolchain-hardening.md](plans/22-toolchain-hardening.md). Plan 19 Task 9 (widescreen) now hands implementation to plan 21 Task 8. The index lists both plans and their order.
+
+## Makefile
+
+`native-port/Makefile` wraps the README workflows: `make build|run|viewer|video|test|smoke|app|apk|apk-release|ci|clean`. `make help` lists targets; `COURSE=`, `BIKE=`, `ASSETS=`, `BUILD_TYPE=` override defaults. `run` omits `--course/--bike` unless set, since those flags force quick-race mode.

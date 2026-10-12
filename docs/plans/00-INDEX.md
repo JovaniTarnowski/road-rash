@@ -2,7 +2,7 @@
 
 These plans take the port from its current state to a complete native game on macOS ARM64 and Android ARM64. Read this file first. It holds the current status, the review findings, the order of the remaining plans, and the conventions every plan assumes.
 
-Last reviewed: **October 11, 2026** (session 23 review). See [../PROGRESS.md](../PROGRESS.md) for the per-session timeline.
+Last reviewed: **October 11, 2026**, three times: the session 23 review, an update after the owner's Napa playtest (plan 11a), and the session 26 replan that added plans 16–20 (gameplay systems, all courses, settings screens, higher resolutions, asset upscaling); plans 21–22 (enhanced visuals, toolchain hardening) were added on October 12. See [../PROGRESS.md](../PROGRESS.md) for the per-session timeline.
 
 ## Where things stand (October 11, 2026)
 
@@ -54,6 +54,27 @@ Last reviewed: **October 11, 2026** (session 23 review). See [../PROGRESS.md](..
 5. **Two Android approaches exist.** The port is `native-port/android` (native SDL3 APK, runtime disc import). `/Users/archit/Dev/rr/android` holds an earlier Wine-on-Android setup: a GameHub/Winlator controls profile `RoadRash-AirX.icp`, a `.desktop` launcher and a **patched** `ROADRASH.EXE` with a different hash. That setup is a stopgap, not part of the port. Never use it as a reference binary.
 6. **PROGRESS.md was stale.** Its header and status table said "no traffic", "road shading is a placeholder" and "race sound triggers open", and its "Next steps" still pointed at the start of plan 02. Refreshed in this review.
 
+## Playtest update (October 11, 2026, evening)
+
+The owner played the Napa race and reported:
+- traffic collision missing;
+- the right-hand dashboard meter glitching;
+- graphical glitches on bikes;
+- two apparent versions ("Napa demo" and `rr-native`).
+
+Root causes found:
+- **Collision:** `Race` never tests riders against cars.
+- **Meter:** the tachometer reads bike `+0x2dc`, which the original's `0x004349c0` updates, but the port only updates a private copy in `sound.cpp`. The centre distance readout reads an unmaintained `+0x44`.
+- **Bikes:** native rider, bike and shadow nodes have never been compared with an original display list.
+- **Versions:** `run-macos.sh` launches the research viewer `rr-native`, not the game, and the release `.app` dates from October 10.
+
+[Plan 11a](11a-napa-playtest-fixes.md) fixes all four and runs before the rest of plan 11.
+
+Additional review findings from the code that landed since session 23:
+- **Plan 10's replay was weakened.** `oracle-sim-test` re-anchors the RNG to the golden on every tick, and the "solo" golden actually runs the player through the attract-demo AI branch (`set_demo_hold`). That is useful for localising divergences, but it **cannot** detect missing or extra `rand()` calls, and it does not exercise player-control physics. Plan 10 Task 5 is complete only when a golden with human-style controls replays with **one** RNG anchor at the green light. Per-tick re-anchoring stays as a diagnostic mode (`--reanchor`), never as acceptance.
+- **The race-setup RNG stream** (11,461 calls before the green light) is not reproduced natively. That is acceptable only while setup is anchored once at green; record it as a known limitation until the setup consumers are ported.
+- **Police** arrest decisions and actor setup are verified offline, but cops are not yet spawned in the live race.
+
 ## Plan status
 
 | # | Plan | Status (Oct 11) | Remaining work lives in |
@@ -67,24 +88,42 @@ Last reviewed: **October 11, 2026** (session 23 review). See [../PROGRESS.md](..
 | 07 | [Audio and video](07-audio-and-video.md) | Codecs, mixer, effects, engines, RRA done; MIDI, sirens, car engines, cutscene selection open | Plans 11, 13 |
 | 08 | [Platform, input, packaging](08-platform-input-packaging.md) | Software complete for macOS; Android hardware validation open | Plans 14, 15 |
 | 09 | [Multiplayer](09-multiplayer.md) | Decision-gated, not started | Plan 15 Task 4 (decision only) |
-| **10** | [Simulation oracle and tick verification](10-simulation-oracle.md) | New | — |
-| **11** | [Opening Napa race completion](11-napa-race-completion.md) | New | — |
-| **12** | [All courses and levels](12-all-courses.md) | New | — |
-| **13** | [Race music and front-end completion](13-music-and-frontend-completion.md) | New | — |
-| **14** | [Android port on hardware](14-android-port.md) | New | — |
+| **10** | [Simulation oracle and tick verification](10-simulation-oracle.md) | Tasks 1–4 done (`ab8cc79`, `37c4597`, `d3294fa`, `6b2ce6d`). Task 5 in progress: demo-hold replay matches 124 ticks with per-tick RNG re-anchoring (not yet acceptance; see the playtest update) | — |
+| **11a** | [Napa playtest fixes](11a-napa-playtest-fixes.md) | Task 4 done (`633522f`). Task 2 tachometer done (`e3136a3`); distance readout traced, not ported. Tasks 1 (car collision) and 3 (bike/shadow nodes) open | — |
+| **11** | [Opening Napa race completion](11-napa-race-completion.md) | Task 1 done (`51cb898`). Task 2 partly done: playback, live rider and car nodes (`fda8b2a`, `586169a`); node comparison open (11a Task 3). Task 4 partly done: crash entry/motion/recovery/remount verified offline (`63ad4ad`, `be31cdc`); car contact open (11a Task 1). Task 6 partly done: arrest decisions and cop setup (`397691a`, `be31cdc`); live spawning open. Tasks 3, 5, 7, 8 open | — |
+| 12 | [All courses and levels](12-all-courses.md) | **Superseded by plan 17** (October 11) | Plan 17 |
+| **13** | [Race music and front-end completion](13-music-and-frontend-completion.md) | New. Task 3 (sound mix, controls) moved to plan 18 Tasks 6–7 | — |
+| **14** | [Android port on hardware](14-android-port.md) | New. Task 2 Step 3 (low-resolution view) moved to plan 18 Task 4 | — |
 | **15** | [Release and final acceptance](15-release-and-acceptance.md) | New | — |
+| **16** | [Gameplay systems: AI, physics, collisions, animation, graphics](16-gameplay-systems.md) | New (session 26). Completion matrix over plans 10/11/11a, the Napa critical path, and new tasks: knock-off and cop contact, roadside objects, weapons, off-road/reverse/finish, per-tick animation fields, dashboard pen/opponent list, determinism soak | — |
+| **17** | [All courses port](17-all-courses-port.md) | New (session 26), supersedes 12. Per-level race bounds, one `make_race_setup` (all maps playable early), sweep, then CITY → HIWAY → nitro → MEDLY → CANYN parity, 25-race soak, career, placeholder removal | — |
+| **18** | [Settings and options screens](18-settings-and-options.md) | New (session 26). Original Graphics Options/Configure Input/sound mix plus native Display, Sound and Pause screens in the original menu style; fullscreen, scaling, filtering, vsync; low/inset race views | — |
+| **19** | [High-resolution rendering](19-high-resolution-rendering.md) | New (session 26). Render scale 1–4× (up to 2560×1920) and match-display for race, dashboard and menus; 640×480 stays bit-identical; band-threaded raster; widescreen decision-gated | — |
+| **20** | [Asset upscaling](20-asset-upscaling.md) | New (session 26). Local upscale cache; MMPX 2×/4× for indexed textures/sprites (palette-preserving); Real-ESRGAN for menu artwork via a script; GPU screen filters; AI for in-race art experimental | — |
+| **21** | [Enhanced visuals](21-enhanced-visuals.md) | New (October 12). Optional, default-off: high-refresh interpolation, perspective-correct textures, full-colour raster with bilinear/trilinear filtering, fog and colour grading, 48/64-slice draw distance, bloom/vignette/motion blur, Hor+ widescreen; Original/Enhanced/Custom presets | — |
+| **22** | [Toolchain hardening](22-toolchain-hardening.md) | New (October 12). C++20, libFuzzer targets for every parser (in CI), ThreadSanitizer tree, warnings as errors with a ratchet, clang-tidy bounds/lifetime checks. Chosen instead of a Rust rewrite | — |
 
 ### Order and dependencies
 
 ```
-10 simulation oracle ──► 11 Napa race ──► 12 all courses ──► 15 release
-                            │                                  ▲
-13 music/front end ─────────┴──────────────────────────────────┤
-14 Android (Task 1 now; rest after 11) ────────────────────────┘
+11a playtest fixes ─┐
+10 simulation oracle ──► 11 + 16 Napa race ──► 17 all courses ──► 15 release
+                            │                                       ▲
+13 music/front end ─────────┤                                       │
+18 settings ──► 19 high resolution ──► 20 upscaling ────────────────┤
+                                    └──► 21 enhanced visuals ───────┤
+22 toolchain hardening (any time; before 19 Task 6) ───────────────┤
+14 Android (Task 1 now; rest after 11) ─────────────────────────────┘
 ```
 
-- **Plan 10 first.** Every behaviour change in 11 and 12 is accepted against its tick goldens.
-- **Plan 14 Task 1 (first device run and performance baseline) runs as soon as a device is attached.** It does not wait for the other plans. The renderer may need the original's low (320×240) mode on the device, and finding that out early changes plan 11's renderer integration.
+- **Plan 11a now.** The owner-visible defects come first: Tasks 1 (car collision) and 3 (bike/shadow nodes) remain.
+- **Plan 10 next.** Every behaviour change in 11, 16 and 17 is accepted against its tick goldens. Task 5 needs a single-anchor, human-control golden before anything else is called verified.
+- **Plans 11 and 16 together finish Napa.** Plan 16's "Napa critical path" gives the exact interleaving of plan 10/11/11a/16 tasks. Plan 11 Task 8 (`napa-acceptance`) closes Napa.
+- **Plan 17** (all courses) Tasks 1–3 may start once plan 11 Task 3 (Napa scene construction) lands; Task 2 makes every course playable early (marked unverified). Tasks 4–9 run after `napa-acceptance`, so remaining divergences are course data, not shared bugs.
+- **Plan 18** (settings) is independent of the simulation plans and can run in parallel at any time. Its Task 4 (low/inset views) is needed by plan 14 Task 2 on the device.
+- **Plan 19** (higher resolutions) needs plan 18 Tasks 2–3 and 5 only for its settings UI; its renderer tasks can start at once, because they change only the final coordinate mapping and keep the 640×480 path bit-identical. **Plan 20** (upscaling) follows plan 19 Task 3. **Plan 21** (enhanced visuals) follows plan 19 Tasks 1–3 and 7.
+- **Plan 22** (toolchain hardening) is independent and can run now; its ThreadSanitizer task should land before plan 19's threaded rasteriser.
+- **Plan 14 Task 1 (first device run and performance baseline) runs as soon as a device is attached.** It does not wait for the other plans.
 - **Plan 13** is independent of 10–12 except for its race-MIDI hook, which uses the race-start point that plan 11 touches.
 - **Plan 15** runs last.
 
@@ -122,7 +161,7 @@ ctest --test-dir build --output-on-failure
 
 The regression gate after any change to shared code:
 - `ctest` (Debug), plus the sanitizer tree `build-ubsan`
-- `build/rr-native --assets ../cdrom/ROADRASH --smoke`
+- `build/rr-viewer --assets ../cdrom/ROADRASH --smoke`
 - `build/rr-course --exe ../cdrom/ROADRASH/ROADRASH.EXE ../cdrom/ROADRASH/DATA/COURSES/*.CRS`
 - `tools/ci.sh` before closing a plan, which includes the Android assemble and asset-exclusion checks
 
@@ -155,12 +194,13 @@ Never commit `analysis/frontend`, `analysis/oracle`, screenshots of original art
 1. From a clean checkout plus the user's own Road Rash disc image, a documented import step produces a runnable game on:
    - macOS ARM64: a standalone `.app` with no Homebrew dependency;
    - Android ARM64: an installable APK, with disc data imported at runtime and never bundled.
-2. All five courses at all five levels are playable in the original single-player modes: Big Game (career) and Thrash.
+2. All five courses at all five levels are playable in the original single-player modes: Big Game (career) and Thrash (plan 17).
    - Opponents, traffic, police, weapons, crashes, cash, the bike shop and saves behave like the original.
-3. Oracle tick goldens (plan 10 format) pass for the scenarios listed in plans 10–12, and natural-frame pixel goldens pass for the scenarios listed in plans 11–12.
+3. Oracle tick goldens (plan 10 format) pass for the scenarios listed in plans 10, 11, 16 and 17, and natural-frame pixel goldens pass for the scenarios listed in plans 11, 16, 17 and 18.
 4. All audio plays: effects, the RRA soundtrack, race MIDI, engines and sirens. All cutscenes play at their original trigger points.
 5. Controls work with keyboard, gamepad (including the MANGMI AIR X built-in controls) and touch. Plan 14's hardware checklist has been run on the device.
-6. The docs describe every recovered format and every known deviation from the original.
+6. Every original options screen works, and the native Display, Sound and Pause screens (plan 18) are usable with a controller only. The game renders at up to 2560×1920 (plan 19), with optional upscaled textures and artwork generated locally (plan 20).
+7. The docs describe every recovered format and every known deviation from the original.
 
 Plan 09 (multiplayer) is outside the definition of done unless the owner decides otherwise (plan 15 Task 4).
 

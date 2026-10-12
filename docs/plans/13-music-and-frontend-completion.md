@@ -110,6 +110,8 @@
 
 ### Task 3: Sound mix and controls screens; original bindings
 
+> **Moved (October 11, 2026):** this task is now [plan 18](18-settings-and-options.md) Tasks 6 (sound mix) and 7 (Configure Input), which also add the native options screens. Do not execute it here.
+
 **Files:**
 - Modify: `src/frontend.cpp`, `src/frontend.hpp`, `src/input.cpp`, `src/input.hpp`, `src/settings.cpp`, `tests/frontend_test.cpp`, `tests/input_test.cpp`, `tests/settings_test.cpp`
 

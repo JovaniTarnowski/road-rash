@@ -28,6 +28,18 @@ verification. Approximations cannot be silently described as original matches.
   Random-call ordering, billboard ground interpolation, native fonts and needle
   rasterization still have known parity limitations.
 
+## Owner playtest (October 11, 2026)
+
+The owner played Napa and reported missing traffic collision, a glitching right-hand dashboard meter (tachometer), and graphical glitches on bikes. Root causes and fixes are in [plans/11a-napa-playtest-fixes.md](plans/11a-napa-playtest-fixes.md). The owner also found that `./run-macos.sh` launches the old research viewer and that the release `.app` is stale (October 10); 11a Task 4 fixes both.
+
+October 11 (session 25) progress: Task 4 (one game, every launch path) is done —
+`run-macos.sh` launches `rr-game`, the research viewer is renamed `rr-viewer`
+with its own `run-viewer.sh`, and the release bundle is stamped with its build
+commit and verified against HEAD. Task 2's tachometer is fixed: `0x004349c0` is
+ported as `update_engine_rpm` and the engine pitch and dashboard needle now
+read the same `+0x2dc`. The distance readout is traced but not yet ported.
+Tasks 1 (rider–car collision) and 3 (bike/shadow nodes) remain.
+
 ## Acceptance tracking
 
 - [ ] Native scene construction and terrain/road/sky composition.

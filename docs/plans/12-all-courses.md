@@ -2,6 +2,8 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking. Read [00-INDEX.md](00-INDEX.md) first. Requires plans 10 and 11.
 
+> **Superseded (October 11, 2026, session 26):** use [17-all-courses-port.md](17-all-courses-port.md). Every task below is folded into plan 17 (Task 1 → 17 Tasks 1–2, Task 2 → 17 Task 3, Task 3 → 17 Tasks 4–7, Task 4 → 17 Tasks 4–7 and nitro in 17 Task 6, Task 5 → 17 Task 9). Kept as history only.
+
 **Goal:** Extend the verified Napa pipeline to CITY, HIWAY (Sierra Nevada), MEDLY (Peninsula) and CANYN (Pacific Coast Highway) at all five levels, and delete the placeholder race renderer.
 
 **Architecture:** `rr::CourseScene` is already parameterised by course name and level, but `game_main.cpp` only constructs it for `NAPA`. This plan:

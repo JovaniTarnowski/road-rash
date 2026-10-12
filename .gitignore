@@ -18,3 +18,8 @@ oracle/build/
 
 analysis/native-video.png
 analysis/frontend/
+analysis/playtest/
+
+# Agent-tooling receipts and local evidence index (no transcripts/assets committed).
+analysis/agent-gates/
+analysis/agent-tools/

@@ -296,6 +296,7 @@ To isolate the player, opponents and traffic must be off in these captures. Trac
   - `uint32_t` position wrap;
   - the order of `move_along` versus `vertical`;
   - the camera update order (`0x00437c30`) relative to the bike step.
+- [ ] **Step 2a: RNG acceptance rule (added October 11).** Scenarios pass only when replayed with a single RNG anchor at the green light. The current per-tick re-anchoring hides missing and extra `rand()` calls, so keep it only as `oracle-sim-test --reanchor` for localising a divergence. At least one scenario must use recorded human-style controls rather than the attract-demo AI branch (`set_demo_hold`), so that `0x00434660`'s player-control path is exercised.
 - [ ] **Step 3:** When all five scenarios pass, remove the `WILL_FAIL` markers and run the full regression gate, including `build-ubsan`.
 - [ ] **Step 4:** Commit: `sim: player physics matches original tick traces`.
 

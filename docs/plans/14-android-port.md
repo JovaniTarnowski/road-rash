@@ -158,7 +158,7 @@ int main() {
 ```
 
 - [ ] **Step 2:** Run the test and confirm it fails (missing header). Implement `FrameStats` (store samples, sort a copy for percentiles), then run it and confirm it passes.
-- [ ] **Step 3: Honour `HiRes`.** The race canvas currently calls `rr::view_mode(true)` and a fixed 640×480 framebuffer. Make it use `settings.high_resolution`:
+- [ ] **Step 3: Honour `HiRes`.** *(Moved October 11, 2026 to [plan 18](18-settings-and-options.md) Task 4; here, only measure low and high mode once that lands.)* The race canvas currently calls `rr::view_mode(true)` and a fixed 640×480 framebuffer. Make it use `settings.high_resolution`:
   - low mode renders 320×240 through `view_mode(false)`;
   - the HUD uses the low-resolution dashboard path from `0x00416310`. Trace it if `hud.cpp` lacks it, and add `hud_test` cases.
 

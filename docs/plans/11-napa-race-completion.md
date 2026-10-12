@@ -2,6 +2,8 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking. Read [00-INDEX.md](00-INDEX.md) first. Requires plan 10 Tasks 1–4. Tasks 4–7 use plan 10's tick goldens for acceptance.
 
+> **Status (October 11, evening):** run [11a-napa-playtest-fixes.md](11a-napa-playtest-fixes.md) first. Done so far: Task 1; parts of Tasks 2, 4 and 6 (see the [00-INDEX.md](00-INDEX.md) status table). Task 4's rider–car contact moved to 11a Task 1. Task 2's node comparison against original lists moved to 11a Task 3. **Session 26:** [plan 16](16-gameplay-systems.md) adds the gameplay completion matrix, the Napa critical path (the order to run plan 10/11/11a/16 tasks) and new Napa tasks (knock-off, roadside objects, weapons, off-road/reverse, animation fields, dashboard, soak). The Napa acceptance run (Task 8 here) waits for those too.
+
 **Goal:** Finish the opening Napa race (level 1, Big Game start) so that every system in [../NAPA_IMPLEMENTATION.md](../NAPA_IMPLEMENTATION.md) is ported and measured against the original. That covers scene, scenery, riders, traffic, police, combat, crashes, sound and music, dashboard and results. The work is done in the shared native game for macOS and Android.
 
 **Architecture:** The race keeps its current structure:
