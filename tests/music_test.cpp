@@ -1,12 +1,14 @@
-// Race music: RIFF MIDS + SoundFont 1 parsers, corpus checks, player hooks.
+#include <algorithm>
 #include <cmath>
+#include <cstdint>
 #include <cstdio>
 #include <iostream>
+#include <string>
+#include <vector>
 
 #include "assets.hpp"
 #include "mixer.hpp"
 #include "race_music.hpp"
-
 namespace {
 int failures = 0;
 void check(bool v, const char* what) {
@@ -64,6 +66,22 @@ std::vector<uint8_t> minimal_mids() {
     u32(0);
     u32(0x00002180u);  // delta 480, kind 0, vel 0 key 0x21 status 0x80
     return b;
+}
+
+// Factory-preset probe: a synthetic bank with exactly one zone (program 30),
+// so note events on program 18 are "unmapped" exactly like the research notes
+// describe for SbkGrng1 ch5 (factory program 18 absent from GRUNGE1.SBK).
+// The factory table must render those notes audibly instead of dropping them.
+struct FactoryProbe {
+    rr::MidsSong song;
+    std::string why;
+};
+static FactoryProbe factory_probe_song() {
+    rr::MidsSong s;
+    s.division = 480;
+    s.tempo.emplace_back(0, 500000);
+    s.events = {{0, 0xC5, 18, 0}, {0, 0x95, 72, 100}, {480, 0x85, 72, 0}};
+    return {s, "SbkGrng1 ch5 program 18"};
 }
 
 // Minimal valid SF1: one melodic preset (program 30, bank 0), one zone, one
@@ -279,6 +297,122 @@ int main(int argc, char** argv) {
         }
     }
     expect_throw({1, 2, 3, 4, 5}, false, "garbage SF1 throws");
+    // Factory presets (research: music.md "The disc banks are not a complete
+    // GM set"). SbkGrng1 ch5 sounds program 18, absent from GRUNGE1.SBK;
+    // Klown sounds programs 35/56/12/71/11/21 against GRUNGE5.SBK. Notes on
+    // those programs must render through the factory table, not go silent.
+    {
+        auto bank = rr::read_sf1(sf1, true);
+        auto kit = rr::read_sf1(minimal_sf1(128), false);
+        const FactoryProbe probe = factory_probe_song();
+        std::vector<int16_t> silent;
+        // Fully-unmapped probe with nullptr factory: no notes, empty render.
+        check(!rr::render_race_song(probe.song, *bank, *kit, silent, nullptr),
+              "probe song silent without factory presets");
+        check(silent.empty(), "unmapped probe renders nothing");
+        std::vector<int16_t> mono;
+        check(rr::render_race_song(probe.song, *bank, *kit, mono, &rr::factory_bank()),
+              "probe song renders with factory presets");
+        double energy = 0;
+        for (int16_t v : mono) energy += double(v) * v;
+        check(energy > 0, "program-18 note audible through factory presets");
+        for (uint8_t p : {18, 35, 56, 12, 71, 11, 21})
+            check(rr::factory_covers(p), "factory covers program");
+        check(rr::factory_covers(33), "factory covers GRUNGE1 program 33");
+    }
+
+    // Streaming PCM queue (research: music.md "Mixer integration needs one
+    // extra interface"). The race sequencer renders on the game thread into
+    // a bounded ring; the audio callback consumes frames and emits silence
+    // on underrun. Stop uses a generation handshake: stale frames from the
+    // previous song must never leak into the next one.
+    {
+        rr::Mixer mixer(4);
+        rr::MusicStream stream(1 << 14);
+        check(stream.capacity() >= 4096, "stream ring capacity");
+        check(stream.available() == 0, "stream starts empty");
+        std::vector<int16_t> frames(2048, 1000);
+        check(stream.push(frames.data(), 1024), "stream push accepts frames");
+        check(stream.available() == 1024, "stream reports pushed frames");
+        std::vector<int16_t> out(2048, 0);
+        stream.pull(out.data(), 512);
+        check(out[0] == 1000 && out[1022] == 1000, "stream pull returns pushed PCM");
+        check(out[1024] == 0 && out[2046] == 0, "stream underrun emits silence");
+        const uint64_t gen = stream.generation();
+        stream.stop();
+        check(stream.available() == 0, "stop drains queued frames");
+        check(stream.generation() != gen, "stop bumps the generation");
+        size_t pushed = 0;
+        std::vector<int16_t> fill(1024, 7);
+        while (stream.push(fill.data(), 1024)) {
+            if (++pushed > 64) break;
+        }
+        check(stream.available() <= stream.capacity(), "ring never overflows");
+        std::vector<int16_t> keep(2048, 0);
+        stream.pull(keep.data(), 1024);
+        check(keep[0] == 7, "ring preserves oldest frames under pressure");
+        stream.stop();
+        int voice = mixer.play_stream(&stream, 127);
+        check(voice >= 0, "mixer accepts a stream voice");
+        stream.push(frames.data(), 1024);
+        std::vector<int16_t> mixed(4);
+        mixer.render(mixed.data(), 2);
+        check(mixed[0] != 0 || mixed[1] != 0, "stream voice is audible");
+        mixer.stop(voice);
+        mixer.render(mixed.data(), 2);
+    }
+
+    // Live sequencer (open question 3 in analysis/music-notes.md): play_race
+    // must sequence into the mixer, not only parse. After update() calls the
+    // mixer renders audible frames; pause holds position; stop silences.
+    {
+        rr::Mixer mixer(8);
+        rr::Assets empty("/nonexistent-rr-disc-root");
+        rr::RaceMusicPlayer silent(empty, mixer);
+        silent.play_race(4, "");
+        check(!silent.active(), "player silent without assets");
+        rr::Mixer live(8);
+        rr::RaceMusicPlayer player(empty, live);
+        rr::MidsSong s;
+        s.division = 480;
+        s.tempo.emplace_back(0, 500000);
+        s.events = {{0, 0xC1, 30, 0}, {0, 0x91, 33, 100}, {480, 0x81, 33, 0}};
+        auto bank = rr::read_sf1(sf1, true);
+        auto kit = rr::read_sf1(minimal_sf1(128), false);
+        player.test_play(s, bank, kit);
+        check(player.active() && player.loaded(), "test sequencer starts");
+        for (int i = 0; i < 8; ++i) player.update();
+        std::vector<int16_t> out(2 * 2048, 0);
+        live.render(out.data(), 2048);
+        double energy = 0;
+        for (int16_t v : out) energy += double(v) * v;
+        check(energy > 0, "sequenced music audible through mixer");
+        player.pause(true);
+        const uint64_t held = player.position_frames();
+        player.update();
+        check(player.position_frames() == held, "pause holds song position");
+        player.pause(false);
+        player.set_music_level(64);
+        player.update();
+        player.stop();
+        // Drain any frames already queued before stop (ring holds up to one
+        // block per update); after the drain the voice is silent.
+        for (int i = 0; i < 40; ++i) live.render(out.data(), 2048);
+        live.render(out.data(), 64);
+        bool quiet = std::all_of(out.begin(), out.end(), [](int16_t v) { return v == 0; });
+        check(quiet, "stop silences after drain");
+    }
+
+    // Jukebox video triggers (research: options-and-hud.md 59-video audit):
+    // JESSIE/DUEL are jukebox music videos (table 0x00473f98), not
+    // duel-race outcomes. The trigger helper resolves the exact disc paths.
+    {
+        check(rr::jukebox_video_path(0) == "VIDEO/JESSIE.AVI", "jukebox slot 0 is JESSIE");
+        check(rr::jukebox_video_path(1) == "VIDEO/DUEL.AVI", "jukebox slot 1 is DUEL");
+        check(rr::jukebox_video_path(2).empty(), "jukebox slot out of range empty");
+        check(rr::jukebox_video_count() == 2, "jukebox video count matches 0x00473f98");
+    }
+
 
     // Player with no assets: silent no-op, never throws.
     {
@@ -299,7 +433,11 @@ int main(int argc, char** argv) {
         std::cout << "skip: no disc\n";
         return failures ? 1 : 77;
     }
-    const char* songs[] = {"SBKGRNG1", "SBKGRNG2", "SBKGRNG3",
+    // All eleven disc songs (research music.md: corpus acceptance is eleven
+    // files, not five): five generic GRUNGE mixes + five AWE SBKGRNG mixes +
+    // KLOWN. Generic mixes parse with the same reader but never play.
+    const char* songs[] = {"GRUNGE1", "GRUNGE2", "GRUNGE3", "GRUNGE4", "GRUNGE5",
+                           "SBKGRNG1", "SBKGRNG2", "SBKGRNG3",
                            "SBKGRNG4", "SBKGRNG5", "KLOWN"};
     for (const char* name : songs) {
         const std::string path = std::string("AUDIO/MUSIC/") + name + ".MID";
@@ -312,6 +450,15 @@ int main(int argc, char** argv) {
         std::cout << name << ": " << s.events.size() << " events, division " << s.division
                   << ", tempos " << s.tempo.size() << "\n";
     }
+    // Research spot values: Klown division 120 with 112 tempos; Grunge
+    // divisions 480 with a single tempo each.
+    {
+        rr::MidsSong klown = rr::read_mids(assets.read("AUDIO/MUSIC/KLOWN.MID"));
+        check(klown.division == 120, "KLOWN division 120");
+        check(klown.tempo.size() == 112, "KLOWN tempo count 112");
+        rr::MidsSong g2 = rr::read_mids(assets.read("AUDIO/MUSIC/SBKGRNG2.MID"));
+        check(g2.division == 480 && g2.tempo.size() == 1, "SBKGRNG2 single tempo");
+    }
     for (int n = 1; n <= 5; ++n) {
         auto b = rr::read_sf1(
             assets.read("AUDIO/MUSIC/GRUNGE" + std::to_string(n) + ".SBK"), true);
@@ -322,6 +469,45 @@ int main(int argc, char** argv) {
     {
         auto kit = rr::read_sf1(assets.read("AUDIO/MUSIC/RRDRUMS.SBK"), false);
         check(kit->zones.size() >= 12, "drum kit zone count");
+        // Factory-note audit per AWE song: sounding (program,key) notes with
+        // no disc zone. SbkGrng1 must show program 18 (research census).
+        const char* awe[] = {"SBKGRNG1", "SBKGRNG2", "SBKGRNG3", "SBKGRNG4", "SBKGRNG5"};
+        for (int n = 1; n <= 5; ++n) {
+            rr::MidsSong s = rr::read_mids(
+                assets.read(std::string("AUDIO/MUSIC/") + awe[n - 1] + ".MID"));
+            auto mel = rr::read_sf1(
+                assets.read("AUDIO/MUSIC/GRUNGE" + std::to_string(n) + ".SBK"), true);
+            const size_t missing = rr::count_factory_notes(s, *mel, *kit);
+            std::vector<int16_t> mono;
+            check(rr::render_race_song(s, *mel, *kit, mono), "AWE song renders");
+            double energy = 0;
+            for (size_t i = 0; i < mono.size(); i += 7) energy += double(mono[i]) * mono[i];
+            std::cout << awe[n - 1] << ": factory notes " << missing << ", frames "
+                      << mono.size() << "\n";
+            check(energy > 0, "AWE render audible with factory presets");
+            if (n == 1) check(missing > 0, "SBKGRNG1 has factory notes (program 18)");
+        }
+        // Klown against the merged five-bank best effort: factory programs
+        // from the census must still need the factory table.
+        rr::MidsSong klown = rr::read_mids(assets.read("AUDIO/MUSIC/KLOWN.MID"));
+        auto merged = std::make_shared<rr::Sf1Bank>();
+        for (int n = 1; n <= 5; ++n) {
+            auto b = rr::read_sf1(
+                assets.read("AUDIO/MUSIC/GRUNGE" + std::to_string(n) + ".SBK"), true);
+            merged->samples.insert(merged->samples.end(), b->samples.begin(), b->samples.end());
+            const uint32_t off = uint32_t(merged->samples.size() - b->samples.size());
+            for (const rr::Sf1Zone& z : b->zones) {
+                rr::Sf1Zone shifted = z;
+                shifted.sample_start += off;
+                shifted.sample_end += off;
+                shifted.loop_start += off;
+                shifted.loop_end += off;
+                merged->zones.push_back(shifted);
+            }
+        }
+        const size_t klown_missing = rr::count_factory_notes(klown, *merged, *kit);
+        std::cout << "KLOWN: factory notes " << klown_missing << "\n";
+        check(klown_missing > 0, "KLOWN has factory notes (35/56/12/71/11/21)");
         // Full corpus render of the Napa song: must be audible.
         rr::MidsSong s =
             rr::read_mids(assets.read(std::string("AUDIO/MUSIC/") + "SBKGRNG4.MID"));
@@ -332,13 +518,20 @@ int main(int argc, char** argv) {
         for (size_t i = 0; i < mono.size(); i += 7) energy += double(mono[i]) * mono[i];
         std::cout << "SBKGRNG4 render: " << mono.size() << " frames\n";
         check(energy > 0, "corpus render is audible");
-        // Player loads the race song behind the same interface.
+        // Player loads the race song behind the same interface, and the live
+        // sequencer now streams it into the mixer (not parse-only).
         rr::Mixer mixer(8);
         rr::RaceMusicPlayer player(assets, mixer);
         player.play_race(4, "");
         check(player.active() && player.loaded() && player.song() == "SBKGRNG4",
               "play_race(4) loads SBKGRNG4");
         check(player.event_count() == s.events.size(), "player event count matches parser");
+        for (int i = 0; i < 4; ++i) player.update();
+        std::vector<int16_t> out(2 * 2048, 0);
+        mixer.render(out.data(), 2048);
+        double live_energy = 0;
+        for (int16_t v : out) live_energy += double(v) * v;
+        check(live_energy > 0, "play_race(4) streams audible frames");
         player.stop();
         check(!player.active(), "stop silences");
         player.play_race(1, "krusty");

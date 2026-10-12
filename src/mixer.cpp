@@ -4,9 +4,56 @@
 #include <limits>
 #include <stdexcept>
 namespace rr {
+MusicStream::MusicStream(size_t capacity_frames) {
+    if (capacity_frames < 64 || capacity_frames > (1u << 20))
+        throw std::runtime_error("Invalid stream capacity");
+    capacity_ = capacity_frames;
+    ring_.assign(capacity_ * 2, 0);
+}
+size_t MusicStream::available() const {
+    const size_t head = head_.load(std::memory_order_acquire);
+    const size_t tail = tail_.load(std::memory_order_acquire);
+    return head - tail > capacity_ ? capacity_ : head - tail;
+}
+uint64_t MusicStream::generation() const { return generation_.load(std::memory_order_acquire); }
+bool MusicStream::push(const int16_t* stereo, size_t frames) {
+    if (frames == 0) return true;
+    if (!stereo || frames > capacity_) return false;
+    const size_t head = head_.load(std::memory_order_relaxed);
+    const size_t tail = tail_.load(std::memory_order_acquire);
+    if (head - tail + frames > capacity_) return false;  // refuse, never overwrite
+    for (size_t i = 0; i < frames; ++i) {
+        const size_t slot = (head + i) % capacity_;
+        ring_[slot * 2] = stereo[i * 2];
+        ring_[slot * 2 + 1] = stereo[i * 2 + 1];
+    }
+    head_.store(head + frames, std::memory_order_release);
+    return true;
+}
+void MusicStream::pull(int16_t* out, size_t frames) noexcept {
+    if (!out) return;
+    size_t tail = tail_.load(std::memory_order_relaxed);
+    const size_t head = head_.load(std::memory_order_acquire);
+    for (size_t i = 0; i < frames; ++i) {
+        if (tail < head) {
+            const size_t slot = tail % capacity_;
+            out[i * 2] = ring_[slot * 2];
+            out[i * 2 + 1] = ring_[slot * 2 + 1];
+            ++tail;
+        } else {
+            out[i * 2] = 0;
+            out[i * 2 + 1] = 0;
+        }
+    }
+    tail_.store(tail, std::memory_order_release);
+}
+void MusicStream::stop() noexcept {
+    tail_.store(head_.load(std::memory_order_relaxed), std::memory_order_release);
+    generation_.fetch_add(1, std::memory_order_release);
+}
 Mixer::Mixer(int count) {
-    if (count<1 || count>256) throw std::runtime_error("Invalid mixer voice limit");
-    voices_.resize(size_t(count));
+     if (count<1 || count>256) throw std::runtime_error("Invalid mixer voice limit");
+     voices_.resize(size_t(count));
 }
 Mixer::~Mixer() { close_device(); }
 bool Mixer::push(const Command& command) {
@@ -21,6 +68,12 @@ int Mixer::play(const PcmSound* sound,int volume,int pan,int pitch,bool loop) {
         sound->samples.empty() || sound->samples.size()%size_t(sound->channels) ||
         sound->samples.size()/size_t(sound->channels)>UINT32_MAX || next_id_==INT_MAX) return -1;
     Command command{1,next_id_,std::clamp(volume,0,127),std::clamp(pan,-64,63),std::clamp(pitch,1,4096),sound,loop};
+    if (!push(command)) return -1;
+    return next_id_++;
+}
+int Mixer::play_stream(MusicStream* stream,int volume) {
+    if (!stream || next_id_==INT_MAX) return -1;
+    Command command{1,next_id_,std::clamp(volume,0,127),0,256,nullptr,false,stream};
     if (!push(command)) return -1;
     return next_id_++;
 }
@@ -52,7 +105,7 @@ int Mixer::queued_frames() const {
 void Mixer::retire(const PcmSound* sound) noexcept {
     if (stream_ && !SDL_LockAudioStream(stream_)) close_device();
     consume();
-    for (size_t i=0;i<voices_.size();++i) if (voices_[i].sound==sound) { voices_[i].sound=nullptr; cursors_[i].active.store(false,std::memory_order_release); }
+    for (size_t i=0;i<voices_.size();++i) if (voices_[i].sound==sound) { voices_[i].sound=nullptr; voices_[i].stream=nullptr; cursors_[i].active.store(false,std::memory_order_release); }
     if (stream_) SDL_UnlockAudioStream(stream_);
 }
 void Mixer::consume() {
@@ -60,19 +113,18 @@ void Mixer::consume() {
     while (tail!=head_.load(std::memory_order_acquire)) {
         const Command command=queue_[tail];
         if (command.kind==1) {
-            auto slot=std::find_if(voices_.begin(),voices_.end(),[](const Voice& v) { return !v.sound; });
+            auto slot=std::find_if(voices_.begin(),voices_.end(),[](const Voice& v) { return !v.sound && !v.stream; });
             if (slot==voices_.end()) slot=std::min_element(voices_.begin(),voices_.end(),[](const Voice& a,const Voice& b) { return a.id<b.id; });
             auto& cursor=cursors_[size_t(slot-voices_.begin())];
             cursor.id.store(-1,std::memory_order_release);
             cursor.frame.store(0,std::memory_order_release);
-            *slot={command.sound,0,command.id,command.volume,command.pan,command.pitch,command.loop};
+            *slot={command.sound,0,command.id,command.volume,command.pan,command.pitch,command.loop,command.stream};
             cursor.active.store(true,std::memory_order_release);
             cursor.id.store(command.id,std::memory_order_release);
-            consumed_id_.store(command.id,std::memory_order_release);
         } else {
             const auto slot=std::find_if(voices_.begin(),voices_.end(),[&](const Voice& v) { return v.id==command.id; });
             if (slot!=voices_.end()) {
-                if (command.kind==3) { slot->sound=nullptr; cursors_[size_t(slot-voices_.begin())].active.store(false,std::memory_order_release); }
+                if (command.kind==3) { slot->sound=nullptr; slot->stream=nullptr; cursors_[size_t(slot-voices_.begin())].active.store(false,std::memory_order_release); }
                 else { slot->volume=command.volume;slot->pan=command.pan;slot->pitch=command.pitch; }
             }
         }
@@ -86,6 +138,14 @@ void Mixer::render(int16_t* out,int frames) {
     for (int frame=0;frame<frames;++frame) {
         int64_t mixed[2]{};
         if (!paused_.load(std::memory_order_relaxed)) for (auto& voice:voices_) {
+            if (voice.stream) {
+                int16_t stereo[2]{0, 0};
+                voice.stream->pull(stereo, 1);
+                mixed[0]+=int64_t(stereo[0])*voice.volume/127;
+                mixed[1]+=int64_t(stereo[1])*voice.volume/127;
+                voice.position+=1;
+                continue;
+            }
             if (!voice.sound) continue;
             const auto& sound=*voice.sound;
             const uint64_t count=sound.samples.size()/size_t(sound.channels);
@@ -119,7 +179,7 @@ void Mixer::render(int16_t* out,int frames) {
     }
     for (size_t i=0;i<voices_.size();++i) {
         cursors_[i].frame.store(voices_[i].position>>32,std::memory_order_release);
-        if (!voices_[i].sound) cursors_[i].active.store(false,std::memory_order_release);
+        if (!voices_[i].sound && !voices_[i].stream) cursors_[i].active.store(false,std::memory_order_release);
     }
 }
 void SDLCALL Mixer::callback(void* data,SDL_AudioStream* stream,int additional,int) {

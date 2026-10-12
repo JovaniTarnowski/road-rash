@@ -3,10 +3,33 @@
 #include <SDL3/SDL.h>
 #include <array>
 #include <atomic>
-#include <vector>
 namespace rr {
-// One game-thread producer, one audio-thread consumer. Sounds must remain alive
-// until the mixer closes. No allocation or locks occur in render().
+ // Bounded streaming PCM ring (research music.md "Mixer integration needs one
+// extra interface"): the game-thread race sequencer renders stereo int16
+// frames with push(); the audio callback (via Mixer::render) consumes them
+// with pull(), emitting silence on underrun. Storage is reserved once at
+// construction; no allocation or locks occur in pull(). stop() drains queued
+// frames and bumps the generation so stale samples from a previous song can
+// never leak into the next one. Single producer, single consumer.
+class MusicStream {
+public:
+    explicit MusicStream(size_t capacity_frames);
+    size_t capacity() const { return capacity_; }
+    size_t available() const;
+    uint64_t generation() const;
+    // Push up to `frames` stereo frames; returns false when the ring is full
+    // (oldest frames are preserved, newest are refused — never overwritten).
+    bool push(const int16_t* stereo, size_t frames);
+    // Consume exactly `frames` stereo frames into `out` (silence on
+    // underrun). Lock-free; safe from the audio thread.
+    void pull(int16_t* out, size_t frames) noexcept;
+    void stop() noexcept;  // drain + generation handshake
+private:
+    size_t capacity_ = 0;
+    std::vector<int16_t> ring_;  // interleaved stereo, capacity_*2
+    std::atomic<size_t> head_{0}, tail_{0};  // frame cursors (monotonic)
+    std::atomic<uint64_t> generation_{0};
+};
 class Mixer {
 public:
     static constexpr int rate=22050;
@@ -15,6 +38,10 @@ public:
     Mixer(const Mixer&)=delete;
     Mixer& operator=(const Mixer&)=delete;
     int play(const PcmSound*,int volume,int pan,int pitch_q8,bool loop);
+    // Streaming voice: mixes `stream`'s ring (owned by the caller, must
+    // outlive the voice) at `volume` 0..127, centre-panned. The stream
+    // pointer is read lock-free in render(); stop(id) detaches it.
+    int play_stream(MusicStream* stream,int volume);
     bool set(int voice,int volume,int pan,int pitch_q8);
     bool stop(int voice);
     bool cursor(int voice,uint64_t& source_frame) const;
@@ -31,8 +58,8 @@ public:
     bool handle(const SDL_Event&);
     bool device_open() const { return stream_!=nullptr; }
 private:
-    struct Command { int kind=0,id=0,volume=0,pan=0,pitch=256; const PcmSound* sound=nullptr; bool loop=false; };
-    struct Voice { const PcmSound* sound=nullptr; uint64_t position=0; int id=-1,volume=0,pan=0,pitch=256; bool loop=false; };
+    struct Command { int kind=0,id=0,volume=0,pan=0,pitch=256; const PcmSound* sound=nullptr; bool loop=false; MusicStream* stream=nullptr; };
+    struct Voice { const PcmSound* sound=nullptr; uint64_t position=0; int id=-1,volume=0,pan=0,pitch=256; bool loop=false; MusicStream* stream=nullptr; };
     std::array<Command,256> queue_{};
     std::atomic<unsigned> head_{0},tail_{0};
     std::atomic<bool> paused_{false};

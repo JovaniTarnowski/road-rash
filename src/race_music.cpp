@@ -343,25 +343,90 @@ struct Note {
     const Sf1Zone* zone = nullptr;
 };
 
-const Sf1Zone* pick_zone(const Sf1Bank& melodic, const Sf1Bank& drums, const uint8_t* program,
-                         uint8_t ch, uint8_t key) {
+const Sf1Zone* pick_zone(const Sf1Bank& melodic, const Sf1Bank& drums, const Sf1Bank* factory,
+                         const uint8_t* program, uint8_t ch, uint8_t key) {
     const Sf1Bank& b = (ch == 9) ? drums : melodic;
     const uint8_t prog = (ch == 9) ? 0 : program[ch];
     for (const Sf1Zone& z : b.zones) {
         if (ch != 9 && z.program != prog) continue;
         if (key >= z.low_key && key <= z.high_key) return &z;
     }
-    return nullptr;  // unmapped (program,key): silent, as on hardware without
-                     // the factory presets.
+    if (factory && ch != 9) {
+        for (const Sf1Zone& z : factory->zones) {
+            if (z.program != prog) continue;
+            if (key >= z.low_key && key <= z.high_key) return &z;
+        }
+    }
+    return nullptr;  // unmapped (program,key): silent without factory presets.
+}
+}  // namespace
+
+// Synthesized factory timbres (no disc bytes): one looped waveform per
+// census-observed missing melodic program. Waveforms are deliberately plain
+// (sine + 2nd/3rd harmonic, -6 dB steps): they mark "factory instrument
+// present" audibly without claiming to reproduce the AWE ROM timbre.
+const Sf1Bank& factory_bank() {
+    static const Sf1Bank bank = [] {
+        Sf1Bank b;
+        constexpr uint8_t kPrograms[] = {11, 12, 18, 21, 33, 35, 56, 71};
+        constexpr int kLen = 256;
+        for (uint8_t p : kPrograms) {
+            Sf1Zone z;
+            z.program = p;
+            z.bank = 0;
+            z.low_key = 0;
+            z.high_key = 127;
+            z.root_key = 60;
+            z.sample_rate = 22050;
+            z.sample_start = uint32_t(b.samples.size());
+            for (int i = 0; i < kLen; ++i) {
+                const double ph = double(i) / kLen * 2.0 * 3.141592653589793;
+                // Program-parametrised harmonic mix keeps timbres distinct.
+                const double h2 = (p % 3 + 1) / 12.0, h3 = (p % 5 + 1) / 24.0;
+                const double v = sin(ph) + h2 * sin(2 * ph) + h3 * sin(3 * ph);
+                b.samples.push_back(int16_t(lrint(v / 1.5 * 20000.0)));
+            }
+            z.sample_end = uint32_t(b.samples.size());
+            z.loop_start = z.sample_start;
+            z.loop_end = z.sample_end;
+            b.zones.push_back(z);
+        }
+        return b;
+    }();
+    return bank;
+}
+
+bool factory_covers(uint8_t program) {
+    for (const Sf1Zone& z : factory_bank().zones)
+        if (z.program == program) return true;
+    return false;
+}
+
+size_t count_factory_notes(const MidsSong& song, const Sf1Bank& melodic, const Sf1Bank& drums) {
+    // Notes whose (program,key) no disc zone covers: these need the factory
+    // table (or stay silent with a nullptr factory). Factory coverage is
+    // deliberately NOT excluded here so the audit reports the true
+    // factory-dependent count (e.g. SBKGRNG1 program 18, KLOWN programs).
+    uint8_t program[16] = {};
+    size_t missing = 0;
+    for (const MidsEvent& e : song.events) {
+        const uint8_t op = e.status & 0xf0, ch = e.status & 0x0f;
+        if (op == 0xC0) {
+            program[ch] = e.data0 & 127;
+        } else if (op == 0x90 && e.data1 != 0u) {
+            if (!pick_zone(melodic, drums, nullptr, program, ch, e.data0)) ++missing;
+        }
+    }
+    return missing;
 }
 
 float note_gain(uint8_t velocity, int16_t cb) {
     const float vel = velocity / 127.0f;
     return vel * float(pow(10.0, -double(cb) / 200.0));  // centibels -> amplitude
 }
-
+namespace {
 void render_song(const MidsSong& song, const Sf1Bank& melodic, const Sf1Bank& drums,
-                 std::vector<int16_t>& mono) {
+                 std::vector<int16_t>& mono, const Sf1Bank* factory) {
     constexpr double kRate = 22050.0;
     std::vector<std::pair<uint32_t, uint32_t>> tempo = song.tempo;
     if (tempo.empty() || tempo[0].first != 0) tempo.insert(tempo.begin(), {0, 500000});
@@ -391,9 +456,9 @@ void render_song(const MidsSong& song, const Sf1Bank& melodic, const Sf1Bank& dr
         if (op == 0xC0) {
             program[ch] = e.data0 & 127;
         } else if (op == 0x90 && e.data1 != 0u) {
-            const Sf1Zone* z = pick_zone(melodic, drums, program, ch, e.data0);
+            const Sf1Zone* z = pick_zone(melodic, drums, factory, program, ch, e.data0);
             if (z) active[{ch, e.data0}] = {e.tick, e.data1, e.data0, z};
-            // Unmapped notes stay silent.
+            // Unmapped notes stay silent (nullptr factory).
         } else if (op == 0x90 || op == 0x80) {  // note off (incl. vel-0 on)
             auto it = active.find({ch, e.data0});
             if (it == active.end()) continue;
@@ -410,8 +475,11 @@ void render_song(const MidsSong& song, const Sf1Bank& melodic, const Sf1Bank& dr
     std::vector<double> mix(total, 0.0);
     for (const Note& n : notes) {
         const Sf1Zone* z = n.zone;
-        const std::vector<int16_t>& smp = (z->bank == 128) ? drums.samples : melodic.samples;
-        if (smp.empty() || z->sample_end > smp.size()) continue;
+        // Factory zones address the factory bank; disc zones address melodic/drums.
+        const std::vector<int16_t>& smp =
+            (factory && z >= factory->zones.data() && z < factory->zones.data() + factory->zones.size())
+                ? factory->samples
+                : ((z->bank == 128) ? drums.samples : melodic.samples);
         const double semis =
             double(int(n.key) - int(z->root_key) + z->coarse_tune) + double(z->fine_tune) / 100.0;
         const double step = double(z->sample_rate) / kRate * pow(2.0, semis / 12.0);
@@ -445,8 +513,8 @@ void render_song(const MidsSong& song, const Sf1Bank& melodic, const Sf1Bank& dr
 
 // Offline render entry point shared with the test (no audio hardware).
 bool render_race_song(const MidsSong& song, const Sf1Bank& melodic, const Sf1Bank& drums,
-                      std::vector<int16_t>& mono) {
-    render_song(song, melodic, drums, mono);
+                      std::vector<int16_t>& mono, const Sf1Bank* factory) {
+    render_song(song, melodic, drums, mono, factory);
     return !mono.empty();
 }
 
@@ -503,9 +571,18 @@ void RaceMusicPlayer::play_race(int original_course_index, const std::string& al
     song_ = song;
     loaded_ = true;
     playing_ = true;
+    // Live path: sequence into the mixer ring (update() renders blocks).
+    // Deleting with `delete` (not reset): MusicStream is mixer-visible but
+    // player-owned; the mixer only borrows the pointer until stop().
+    stream_ = new MusicStream(1 << 15);
+    stream_voice_ = mixer_.play_stream(stream_, 127 * music_level_ / 80);
 }
-
 void RaceMusicPlayer::stop() {
+    if (stream_voice_ >= 0) mixer_.stop(stream_voice_);
+    if (stream_) stream_->stop();  // generation handshake: no stale frames
+    delete stream_;
+    stream_ = nullptr;
+    stream_voice_ = -1;
     playing_ = false;
     paused_ = false;
     loaded_ = false;
@@ -513,10 +590,187 @@ void RaceMusicPlayer::stop() {
     song_data_ = MidsSong{};
     melodic_.reset();
     drums_.reset();
+    voices_.clear();
+    live_on_.clear();
+    position_frames_ = 0;
+    event_cursor_ = 0;
+    tick_ = 0;
+    tick_frac_ = 0.0;
 }
 
 void RaceMusicPlayer::pause(bool value) { paused_ = value; }
 
-void RaceMusicPlayer::update() {}
+void RaceMusicPlayer::test_play(const MidsSong& song, std::shared_ptr<const Sf1Bank> melodic,
+                                std::shared_ptr<const Sf1Bank> drums) {
+    stop();
+    song_data_ = song;
+    melodic_ = std::move(melodic);
+    drums_ = std::move(drums);
+    song_ = "TEST";
+    loaded_ = true;
+    playing_ = true;
+    stream_ = new MusicStream(1 << 14);
+    stream_voice_ = mixer_.play_stream(stream_, 127);
+}
+
+void RaceMusicPlayer::update() {
+    // Game-thread sequencer: advance song ticks by whole rendered blocks and
+    // push stereo PCM into the mixer ring. No allocation here (voices_ only
+    // grows on note-on, bounded by the song's polyphony); the audio thread
+    // consumes lock-free and hears silence on underrun.
+    if (!playing_ || paused_ || !loaded_ || !melodic_ || !drums_ || !stream_) return;
+    constexpr double kRate = 22050.0;
+    constexpr size_t kBlock = 512;
+    // Current tempo (microseconds per quarter note) at the playhead tick.
+    uint32_t usec = 500000;
+    for (const auto& t : song_data_.tempo) {
+        if (t.first > tick_) break;
+        if (t.second) usec = t.second;
+    }
+    const double frames_per_tick =
+        double(usec) / 1e6 / double(song_data_.division ? song_data_.division : 480) * kRate;
+    double advance = double(kBlock);
+    int16_t block[2 * kBlock] = {};
+    // Loop the song (0x00433e30 enables looping on the MIDI stream).
+    auto reset_loop = [&] {
+        tick_ = 0;
+        tick_frac_ = 0.0;
+        event_cursor_ = 0;
+        voices_.clear();
+        live_on_.clear();
+        memset(live_program_, 0, sizeof(live_program_));
+    };
+    if (event_cursor_ >= song_data_.events.size()) reset_loop();
+    const double start_tick = double(tick_) + tick_frac_;
+    const double end_tick = start_tick + double(kBlock) / (frames_per_tick > 0 ? frames_per_tick : 1.0);
+    // Fire events whose tick falls inside this block.
+    while (event_cursor_ < song_data_.events.size() &&
+           double(song_data_.events[event_cursor_].tick) <= end_tick) {
+        const MidsEvent& e = song_data_.events[event_cursor_];
+        const uint8_t op = e.status & 0xf0, ch = e.status & 0x0f;
+        if (op == 0xC0) {
+            live_program_[ch] = e.data0 & 127;
+        } else if (op == 0x90 && e.data1 != 0u) {
+            const Sf1Zone* z =
+                pick_zone(*melodic_, *drums_, &factory_bank(), live_program_, ch, e.data0);
+            if (z) {
+                const double semis = double(int(e.data0) - int(z->root_key));
+                LiveVoice v;
+                v.zone = z;
+                v.step = double(z->sample_rate) / kRate * pow(2.0, semis / 12.0);
+                v.gain = note_gain(e.data1, z->volume_db_cb);
+                v.channel = ch;
+                v.key = e.data0;
+                // Note length unknown yet; voice ends at note-off (or song loop).
+                auto it = live_on_.find({ch, e.data0});
+                if (it != live_on_.end() && it->second < voices_.size()) voices_[it->second].has_off = true;
+                live_on_[{ch, e.data0}] = voices_.size();
+                voices_.push_back(v);
+            }
+        } else if (op == 0x90 || op == 0x80) {
+            auto it = live_on_.find({ch, e.data0});
+            if (it != live_on_.end()) {
+                if (it->second < voices_.size()) voices_[it->second].has_off = true;
+                live_on_.erase(it);
+            }
+        }
+        ++event_cursor_;
+    }
+    (void)advance;
+    tick_frac_ += double(kBlock) / (frames_per_tick > 0 ? frames_per_tick : 1.0);
+    while (tick_frac_ >= 1.0) {
+        tick_frac_ -= 1.0;
+        ++tick_;
+    }
+    // Mix live voices (linear interpolation; factory zones read the factory
+    // bank, disc zones the melodic/drum banks). Voices flagged off decay
+    // over 5 ms; looped samples sustain until note-off.
+    const float level = float(music_level_) / 80.0f;
+    const uint32_t rel = uint32_t(kRate * 0.005);
+    for (size_t vi = 0; vi < voices_.size();) {
+        LiveVoice& v = voices_[vi];
+        const Sf1Zone* z = v.zone;
+        const Sf1Bank* bank = &factory_bank();
+        bool is_factory = z >= bank->zones.data() && z < bank->zones.data() + bank->zones.size();
+        const std::vector<int16_t>& smp =
+            is_factory ? bank->samples : ((z->bank == 128) ? drums_->samples : melodic_->samples);
+        bool dead = false;
+        for (size_t i = 0; i < kBlock; ++i) {
+            double sample = 0.0;
+            if (!smp.empty() && z->sample_end <= smp.size()) {
+                const bool loop = z->loop_end > z->loop_start;
+                uint32_t idx = z->sample_start + uint32_t(v.pos);
+                const double frac = v.pos - floor(v.pos);
+                auto at = [&](uint32_t k) -> double {
+                    if (k >= z->sample_end) {
+                        if (!loop) return 0.0;
+                        k = z->loop_start + (k - z->loop_start) % (z->loop_end - z->loop_start);
+                    }
+                    return double(smp[k]) / 32768.0;
+                };
+                sample = at(idx) * (1.0 - frac) + at(idx + 1) * frac;
+                v.pos += v.step;
+                if (!loop && z->sample_start + uint32_t(v.pos) >= z->sample_end) {
+                    dead = true;
+                    sample = 0.0;
+                }
+                if (v.has_off) {
+                    if (v.off_frame >= rel)
+                        dead = true;
+                    else
+                        sample *= 1.0 - double(v.off_frame++) / double(rel ? rel : 1);
+                }
+            }
+            const float g = v.gain * level;
+            const int32_t s = int32_t(lrint(std::clamp(sample * g, -1.0, 1.0) * 32767.0));
+            block[2 * i] = int16_t(std::clamp<int32_t>(int32_t(block[2 * i]) + (s >> 1), -32768, 32767));
+            block[2 * i + 1] = int16_t(std::clamp<int32_t>(int32_t(block[2 * i + 1]) + (s >> 1), -32768, 32767));
+        }
+        if (dead) {
+            for (auto it = live_on_.begin(); it != live_on_.end();) {
+                if (it->second == vi)
+                    it = live_on_.erase(it);
+                else {
+                    if (it->second > vi) --it->second;
+                    ++it;
+                }
+            }
+            voices_.erase(voices_.begin() + int64_t(vi));
+        } else {
+            ++vi;
+        }
+    }
+    stream_->push(block, kBlock);
+    position_frames_ += kBlock;
+    if (stream_voice_ >= 0) mixer_.set(stream_voice_, 127 * music_level_ / 80, 0, 256);
+}
+
+// Live-registry for the sound.cpp hook region: exactly one RaceMusicPlayer
+// is pumped per tick (the game registers its race player after creating the
+// SoundSystem). No game_main.cpp changes needed.
+namespace {
+RaceMusicPlayer* g_race_player = nullptr;
+int g_race_music_level = 80;
+}  // namespace
+void pump_race_music() {
+    if (g_race_player) {
+        g_race_player->set_music_level(g_race_music_level);
+        g_race_player->update();
+    }
+}
+void set_race_music_level(int level_0_100) {
+    g_race_music_level = std::clamp(level_0_100, 0, 100);
+    if (g_race_player) g_race_player->set_music_level(g_race_music_level);
+}
+void register_race_player(RaceMusicPlayer* player) { g_race_player = player; }
+
+// Jukebox music videos: EXE table 0x00473f98 (census `jukebox_videos`).
+std::string jukebox_video_path(int slot) {
+    if (slot == 0) return "VIDEO/JESSIE.AVI";
+    if (slot == 1) return "VIDEO/DUEL.AVI";
+    return "";
+}
+int jukebox_video_count() { return 2; }
 
 }  // namespace rr
+

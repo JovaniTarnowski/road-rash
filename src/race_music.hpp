@@ -64,10 +64,36 @@ struct Sf1Bank {
 // `melodic=true` keeps bank-0 presets, `melodic=false` keeps the bank-128 kit.
 std::shared_ptr<const Sf1Bank> read_sf1(const std::vector<uint8_t>& bytes, bool melodic);
 
+// Factory presets for notes the disc banks cannot play (research music.md:
+// "The disc banks are not a complete GM set"). SbkGrng1 ch5 sounds program
+// 18, absent from GRUNGE1.SBK; Klown sounds programs 35/56/12/71/11/21
+// against GRUNGE5.SBK (drums: channel 9 via RRDRUMS); GRUNGE1 ch1 also
+// sounds program 33, absent from its GRUNGE1.SBK. The original AWE32 fell
+// back to its factory ROM for these; the native bank is a small synthesized
+// GM-timbre set (no disc bytes), used only when no disc zone covers the
+// (program,key). `factory_covers(p)` reports the covered melodic programs.
+const Sf1Bank& factory_bank();
+bool factory_covers(uint8_t program);
+// Count note-on events in `song` whose (program,key) is covered by neither
+// `melodic`/`drums` nor the factory table (`factory_prog_key` lists the
+// census-observed soundings as (bank,program) for the report).
+size_t count_factory_notes(const MidsSong& song, const Sf1Bank& melodic,
+                           const Sf1Bank& drums);
+
 // Offline render of a parsed song against melodic + drum banks (no audio
-// hardware). Returns true when at least one sample was rendered.
+// hardware). Returns true when at least one sample was rendered. Unmapped
+// notes fall back to `factory` (default: the factory table, so SbkGrng/Klown
+// corpus renders are audible like the original AWE path); pass nullptr
+// explicitly for the exact hardware-silence audit.
 bool render_race_song(const MidsSong&, const Sf1Bank&, const Sf1Bank&,
-                      std::vector<int16_t>& mono);
+                      std::vector<int16_t>& mono, const Sf1Bank* factory = &factory_bank());
+// Live-registry pump for the sound.cpp hook region: SoundSystem::update
+// (already called once per race tick) forwards here so the sequencer runs
+// without touching game_main.cpp, which the live session owns.
+void pump_race_music();
+void set_race_music_level(int level_0_100);
+class RaceMusicPlayer;
+void register_race_player(RaceMusicPlayer* player);
 
 // Song/bank selection (0x00433bb0): Grunge1..5 by original course 1..5 using
 // the SbkGrng AWE mix; the Klown song when the player alias is "krusty" or
@@ -84,12 +110,19 @@ public:
     void play_race(int original_course_index, const std::string& alias);
     void stop();
     void pause(bool);
-    void update();  // game thread: advance the sequencer, queue audio
+    void update();  // game thread: render the next block into the mixer ring
     bool active() const { return playing_; }
     std::string song() const { return song_; }
     // Test hook: parse + render without audio hardware.
     bool loaded() const { return loaded_; }
     size_t event_count() const { return song_data_.events.size(); }
+    // Live-sequencer hooks: buffered frame position, music level (0..100,
+    // 0x004362e0 curve channel, default 80), and a synthetic-song entry
+    // point for tests (bypasses asset loading, same render path).
+    uint64_t position_frames() const { return position_frames_; }
+    void set_music_level(int level) { music_level_ = level < 0 ? 0 : level > 100 ? 100 : level; }
+    void test_play(const MidsSong& song, std::shared_ptr<const Sf1Bank> melodic,
+                   std::shared_ptr<const Sf1Bank> drums);
 private:
     const Assets& assets_;
     Mixer& mixer_;
@@ -97,5 +130,27 @@ private:
     std::string song_;
     MidsSong song_data_;
     std::shared_ptr<const Sf1Bank> melodic_, drums_;
+    class MusicStream* stream_ = nullptr;  // owned; mixer only borrows during play
+    int stream_voice_ = -1;
+    uint64_t position_frames_ = 0;
+    uint32_t event_cursor_ = 0;
+    uint32_t tick_ = 0;
+    double tick_frac_ = 0.0;
+    int music_level_ = 80;  // 0x004362e0 music channel default
+    struct LiveVoice {
+        const Sf1Zone* zone = nullptr;
+        double pos = 0.0, step = 1.0;
+        float gain = 0.0f;
+        uint32_t off_frame = 0;
+        bool has_off = false;
+        uint8_t channel = 0, key = 0;
+    };
+    std::vector<LiveVoice> voices_;
+    uint8_t live_program_[16] = {};
+    std::map<std::pair<uint8_t, uint8_t>, size_t> live_on_;
 };
+// Jukebox music videos (options-and-hud.md 59-video audit): table 0x00473f98
+// holds JESSIE/DUEL, shown by the jukebox popup 0x00445730.
+std::string jukebox_video_path(int slot);
+int jukebox_video_count();
 }  // namespace rr

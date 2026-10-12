@@ -35,7 +35,12 @@ public:
     SoundSystem(const Assets&, Mixer&, std::array<int32_t, 101> curve, int skid_limit);
     ~SoundSystem();
     void set_levels(const SoundLevels&);
-    // 0x00435da0: load slot 0 for the bike, pick male/female grunts for the character.
+    // Race-music hook region (plan 13 remainder, 0x00433bb0/0x00434500): the
+    // game owns exactly one RaceMusicPlayer and registers it here; update()
+    // pumps it once per tick so the sequencer runs without touching
+    // game_main.cpp (live-session owned). Levels forward the music channel.
+    void set_race_music(void* player);
+    void set_race_music_level(int level_0_100);
     void start_race(int bike, int character);
     void stop_race();
     void post(const SoundEventRecord&);           // 0x00436830: at most 10 pending
@@ -63,6 +68,8 @@ private:
     bool racing_ = false;
     int skid_limit_ = 2;
     uint32_t seed_ = 0x1234;
+    void* race_music_ = nullptr;  // borrowed RaceMusicPlayer (hook region)
+    int race_music_level_ = 80;
 };
 
 // The licensed soundtrack (0x00403040): AUDIO/MUSIC/<track>.RRA from the saved track index,

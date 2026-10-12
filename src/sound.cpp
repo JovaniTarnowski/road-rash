@@ -2,6 +2,7 @@
 #include "assets.hpp"
 #include "exe_tables.hpp"
 #include "race.hpp"
+#include "race_music.hpp"
 #include <algorithm>
 #include <cmath>
 #include <climits>
@@ -140,8 +141,17 @@ void SoundSystem::set_levels(const SoundLevels& l) {
     engine_off_ = l.master == 0 || l.engine == 0 || l.mute;
     others_off_ = l.master == 0 || l.others == 0 || l.mute;
     swap_ = l.swap_speakers;
+    // Plan 13 remainder hook region: forward the music channel to the
+    // registered race player (pumped in update()).
+    race_music_level_ = std::clamp(l.music, 0, 100);
+    if (race_music_) set_race_music_level(race_music_level_);
 }
 
+void SoundSystem::set_race_music(void* player) { race_music_ = player; }
+void SoundSystem::set_race_music_level(int level_0_100) {
+    race_music_level_ = std::clamp(level_0_100, 0, 100);
+    if (race_music_) ::rr::set_race_music_level(race_music_level_);
+}
 uint32_t SoundSystem::random() {
     seed_ = seed_ * 214013u + 2531011u;
     return (seed_ >> 16) & 0x7fff;
@@ -223,13 +233,15 @@ void SoundSystem::distance(int32_t position, int32_t lateral, int32_t speed, int
 }
 
 void SoundSystem::update(Race& race) {
+    // Plan 13 remainder hook region: pump the registered race sequencer even
+    // when the effect channels are off (music has its own channel/mute).
+    if (race_music_) ::rr::pump_race_music();
     if (!racing_) return;
     auto& riders = race.riders();
     Bike& player = riders[0].bike;
     // Listener: the camera (0x00437c30).
     const int32_t camera_position = int32_t(race.camera_position());
     listener_speed_ = (camera_position - listener_position_) * 0x100;
-    listener_position_ = camera_position;
     listener_lateral_ = race.camera_x();
     tunnel_ = false;   // sub-slice terrain type 3 (0x00434a80): type 2/3 assignment (0x00454240) not ported
     // 0x004349c0: the engine rpm lives on the bike (+0x2dc), updated by the
