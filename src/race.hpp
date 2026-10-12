@@ -106,6 +106,7 @@ public:
     // Free traffic steps with the race on the player's route (0x0044b3b0 calls
     // 0x0044dd90 with the per-step camera advance). The random-call
     // interleaving against the original's scheduler is not verified.
+    void set_traffic(TrafficSystem* t) { traffic_ = t; }
     void set_crash_library(const ActorAnimationLibrary&,const CrashConfig&);
     // Demo hold (DAT_004753c8): attract/demo races and oracle captures run
     // with this set; the player rider think takes the AI branch (0x00434660
