@@ -50,6 +50,28 @@ Detailed evidence is in [REVERSE_ENGINEERING.md](REVERSE_ENGINEERING.md) and tes
 
 ## Timeline
 
+### October 12, 2026: traffic lights and crossing traffic, second pass (plan 24 Task 1, `6eaab29`)
+
+A review of the first intersection port against the decompile found it placed crossing cars past the intersection (end-based base), always used kind 1 with the wrong lane range, thought every tick, and moved crossing cars 0x78000 per tick.
+
+The port now follows `0x0041eca0`/`0x0041ef60`/`0x0041f040`/`0x0044df60`/`0x0044e710`:
+- **Controllers:** placed from the event start, with the type and lane-span bytes and the short phase table on dual hill slices.
+- **Signals:** slots 0..3 by index, at the corner slice + 0x50/0xb0 on the shoulder middle, with type `0x40 << index`.
+- **Controller think:** every 30 ticks.
+- **Crossing cars:** start 1920 units to the side and drive across at ±90°. They stop at the road edge on red, follow each other, and are parked off intersection slices.
+- **Free traffic:** cars latch the index-0/2 signal, stop at the line on red (hurrying when already past it) and follow any obstacle in their lane: riders, riders on foot, pedestrians, cars.
+- **Pedestrians:** consult a signal only on crosswalk edge slices.
+- **Collisions:** crossing cars are 0xa000 wide and collide only near the camera.
+
+Still open:
+- kind-0 lane changes around non-car obstacles;
+- the split-roadway parks;
+- the sub-slice link for signal laterals;
+- the capture golden.
+
+A road car and a crossing car can block each other inside a zone (both follow at 0); the original has no lane change against car obstacles either, so this may be faithful (capture check open).
+
+
 ### October 12, 2026: pedestrians (plan 24 Task 4)
 
 Pedestrians are live on every course.

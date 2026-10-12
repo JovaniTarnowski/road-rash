@@ -179,3 +179,18 @@ is always NULL and the head draw is always skipped; the lamp array
 `DAT_00468ef0` was already censused read-only the same way. The port
 draws no signal heads, matching the original. Plan 24 Task 1 Step 5's
 pixel frame is unaffected by signals.
+
+## Corrections (October 12, 2026, second pass)
+
+Re-checked against `0041eca0.c`, `0041ef60.c`, `0041f040.c`, `0044df60.c`,
+`0044e710.c`, `0044dc10.c`, `00449a80.c`, `00449da0.c` and `004415b0.c`:
+
+- **Slots.** `+0xec/+0xf0/+0xf4/+0xf8` hold signal indices 0/1/2/3. Creation order is 0, 2, 3, 1; `piVar8[0x3c]` is `+0xf0` and receives index 1. The think walks slots 0..3, so the `rand()` order follows the index.
+- **`cVar2`** is `end − start − 2` (zone length), not a lane count.
+- **`0x50/0xb0`** are position fractions passed to `0x00438930`. The lateral is the shoulder middle.
+- **Controller `+0x108`** is the event START sample (·0x100 + node delta); `+0x10c` is the end. Crossing cars spawn at start + (lane+1) samples. The first port used the end.
+- **`+0x110`/`+0x111`** are the event type and record byte +9. They select the crossing kind and lane range; they were not a fixed kind 1.
+- **Controller cadence.** Template word +8 = 0x1e, so the controller thinks every 30 ticks with dt 30, not every tick.
+- **`±0x78000`** in `0x0044df60` is the crossing car's starting lateral relative to the slice centre. The car drives at its 0x00449880 speed toward a ±0x32000 target. The first port added 0x78000 every tick.
+- **Signal type** is `0x40 << index` (`0x00468f30+4` rewritten from `0x00468f00`). Kind-0 cars stop at index-0 signals, kind-2 cars at index-2.
+- **Observed in the port:** a road car inside the zone and a crossing car can be each other's lane obstacle. Both follow at speed 0, and kind-0 lane changes skip car obstacles (`0x0044e710`: `(type & 0x10) == 0`), so this can hold until the ring drops them. It is unconfirmed against a capture.

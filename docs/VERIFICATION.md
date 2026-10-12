@@ -1,5 +1,16 @@
 # Verification log (all sessions September 28, 2026)
 
+## Intersections second pass (October 12, 2026, plan 24 Task 1)
+
+- `cmake --build build-fixes --parallel`: pass, no warnings.
+- `traffic-test`: pass. The rewritten `test_intersections` and `test_signal_phase` (see plan 24 Step 3) and the five-course sweep all pass. The Napa density check now reads 123 against 727 at fixed density 6: cars follow obstacles now, so the stream shifts.
+- `pedestrian-test`: pass. A natural CITY race shows only rider knock-downs (temporary instrumentation, reverted); cars brake for pedestrians.
+- `rr-game --course N --ticks 90000 --autopilot`: all five courses finish (NAPA 46296, CITY 80920, HIWAY 44206, CANYN 46177, MEDLY 44574 ticks).
+- `ctest --test-dir build-fixes --output-on-failure`: **69/69 pass**.
+- Scratch CITY render (demo-hold player, traffic and pedestrians, not committed) shows crossing cars side-on on the cross road at an intersection, with a jogger on the crosswalk.
+- The same harness over 20,000 ticks held up to 13 cars at one CITY intersection: a road car and two crossing cars blocking each other. This is recorded as an open capture question.
+- Not run: original capture (pipeline down per `analysis/intersection-capture-notes.md`), sanitizers, Android.
+
 ## Pedestrians (October 12, 2026, plan 24 Task 4)
 
 - `cmake --build build-fixes --parallel`: pass, no warnings.

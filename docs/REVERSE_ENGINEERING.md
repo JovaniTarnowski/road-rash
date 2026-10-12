@@ -762,11 +762,36 @@ Correction to the section above: layout entry 30 prints `DAT_0049e115`, the rout
 - `0x00454240`'s third argument is the traversal's byte +10: 1 for the forward traversal `0x0049ee30` and 0 for the backward one. With it set, an event whose `0x00452710` flag is `0x80000000` (the end sample, types other than 4, 5 and 7) calls `0x0041ec70(record)`. That function calls `0x0041eca0` and then, in single player, `0x0044dd00(record byte +10)`.
 - `0x0044dd00`: a negative value sets cruise `DAT_004b7e8c = −d` and rate `DAT_004b7e84 = DAT_004b7ea4 = −d·100`. Otherwise density is d (0 → 6, ×4 in multiplayer), both reloads become `(rate·d·60) >> 8`, and the oncoming timer restarts. Behind/ahead timers are untouched.
 - Race start order (`0x0044b250`): `0x0044db80` (density 6), then `0x004552e0` with ring camera 0x3200, which builds slices back to front from 0x200 for 0x8000 with the forward traversal, so zones in the first window apply at the grid. The view camera starts at 0x3100 and `0x0044b3b0` moves both by the same delta, so the ring front is view camera + 0x5100.
-- `0x0041eca0` (types 1–3 only) places an intersection controller (pool `0x00468ee4`, 10 × 0x114, template `0x00468f10`, type 0x400, think `0x0041f040`) with up to four signals (`0x0041ef60`, pool `0x00468ee0`, 40 × 0x108, template `0x00468f30`, type 0x40, draw `0x0041f220`). Phase durations are {600, 180, 780}, or {75, 0, 240} for a type-2 slice with flag byte +11 = 0.
-- Signal slots `+0xec/+0xf0/+0xf4/+0xf8` take indices 0/2/3/1 with laterals 0x50/0xb0/0x50/0xb0; phase inits `(~index & 1) * 2`, accumulators seed `0x30c`. A failed slot skips every later slot (NULL-`goto`; the `+0xf8` call is unchecked). Full trace in `analysis/intersections-notes.md`.
-- `0x0041f040` advances every accumulator by the controller `+0x18` tick, then wraps phases 0..2 inside `[back+0x100, front-0x200]` with multi-phase catch-up. Crossing spawn iff the wrap lands on 0 with an odd signal index and tick bit 3 set: kind 1 (`-0x78000`) or 3 (`+0x78000`) by `+0x110`, lane `rand()` over `+0x111`, one `rand()` call. Crossing cars collide with riders identically to traffic (`0x004046b0` `& 0x15` branch, type `0x10`).
-- `0x0041f220` is dead: `DAT_00468ee8`/`ef0` have no writer anywhere in the executable (REA xrefs show only the draw's own reads), so the head/lamp draws are always skipped. The port draws no signals.
-- Ported October 12 (`src/traffic.*`, plan 24 Task 1 Steps 3–4); capture acceptance (Step 5) open.
+- `0x0041eca0` (types 1–3 only) places an intersection controller: pool `0x00468ee4` (10 × 0x114), template `0x00468f10`, type 0x400, think `0x0041f040`, interval 0x1e, teardown `0x0041f1f0`. Its position is the zone-end slice clamped into the ring window.
+  - Controller words: `+0x108` = event start ·0x100 and `+0x10c` = end ·0x100 (route position via the node delta); `+0x110` = event type (1..3); `+0x111` = record byte +9, the cross road's lane span.
+  - Phases: {600, 180, 780}, or {75, 0, 240} when the zone-end slice is dual (ring slice `+0x1c` = 2) on terrain type 4 and the flag byte +11 is 0.
+- Signals (`0x0041ef60`): pool `0x00468ee0` (40 × 0x108), template `0x00468f30`, whose type word is rewritten to `0x40 << index` (`0x00468f00[index]` → `0x00468f34`).
+  - Each sits at the corner slice + fraction 0x50/0xb0. Laterally it is in the middle of its side's shoulder (side 0: `(+0xe0 + +0xe8)/2`, side 1: `(+0xe4 + +0xec)/2`), interpolated by the same fraction toward the linked sub-slice.
+  - Creation order and NULL-`goto` (the last call is unchecked):
+
+    | Index | Side | Fraction | Slice | Condition | Lane byte | Slot |
+    | --- | --- | --- | --- | --- | --- | --- |
+    | 0 | 1 | 0x50 | end − 1 | start right lanes > 0 | zone length − 2 | `+0xec` |
+    | 2 | 0 | 0xb0 | start | end − 1 left lanes > 0 | zone length − 2 | `+0xf4` |
+    | 3 | 0 | 0x50 | end − 1 | not the short case; variant 1/2 | start lanes | `+0xf8` |
+    | 1 | 1 | 0xb0 | start | not the short case; variant 1/3 | start lanes | `+0xf0` |
+
+    (An earlier version of this note had the slots as 0/2/3/1, the fractions as laterals, and the lane byte as a lane count.)
+  - Phase starts `(~index & 1)·2`; accumulator 0x30c.
+- **Controller think** `0x0041f040`, every 0x1e ticks with dt `+0x18`. Slots run in order 0..3; each accumulator gains dt. Inside `[back+0x100, front−0x200]` the phases wrap 0 → 1 → 2 with catch-up.
+- **Crossing spawn**, when an odd signal wraps to 0 on a tick with bit 3 set:
+  - variant 1: kind = signal index, range = lanes/2 (offset by range for index 3);
+  - variant 2: kind 3; variant 3: kind 1, range = lanes;
+  - lane = offset + `rand() % range`;
+  - slice = start + (lane+1)·0x100.
+- **`0x0044df60` for odd kinds:** lateral = ±0x78000 + the slice centre (world units, added raw); this is an offset, not a speed. Fraction 0x80; vehicle class 0x40000. Copies the controller start/end/lanes to `+0x1d0..+0x1d8` and the signal to `+0x1ec`. Per-kind template words `0x00475700 + kind·0x18` give kinds 1/3 half-width 0xa000.
+- **Car think `0x0044e710`.** Kind 0/2 cars latch the nearest signal of type `0x00468f00[kind]` (index 0 / 2) within `(iVar15+0x80)·16` in the driving direction.
+  - Every car follows its nearest lane obstacle (`0x0044a070`, mask 0x3f, within `iVar7 << 5`; odd kinds look across the same sample) through `0x00449a80`.
+  - Stop line: kind 0 at start + 0xa0, kind 2 at end − 0xa0, crossing cars at the road edge ∓0x60.
+  - Red (phase 2) and close-enough yellow brake to 0 at the line; a car already past the line hurries (double speed, accel 0x24).
+  - Crossing cars aim at (±0x32000, 0), giving a heading of ±90°. `0x0044dc10` parks them off intersection slices (marking & 0x20 = 0). They collide only within [−0x400, 0x2400] of the ring camera.
+- **Pedestrian signal `0x004415b0`.** Only on slices marked 8/0x10. Signal index 0 (lane ≥ 0) or 2, the nearer of ahead/behind within 0x1e0 (behind wins ties), when within 0x801.
+- Ported October 12 (`src/traffic.*`, plan 24 Task 1 Steps 3–4) and corrected the same day: start-based placement, slot order, signal types per index, the 30-tick think, crossing-car start offset and drive, signal stops and obstacle following for all cars. Lane changes around non-car obstacles are not ported. Capture acceptance (Step 5) is open.
 
 ### Actor census (October 12, 2026, static)
 

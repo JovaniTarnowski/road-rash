@@ -24,8 +24,8 @@ Plans before this one covered police (plan 11 Task 6, plan 16 Task 1) and walls,
 | --- | --- | --- |
 | Free traffic | Car pool `0x0049e654` (16 × 0x210, template `0x00475698`, type `0x10`) | Ported (`traffic.*`) |
 | Per-zone traffic density | CESR events of types 1–3 call `0x0041ec70` → `0x0044dd00(byte +10)` when their end sample enters the ring front | **Ported October 12** (see "Done") |
-| Traffic lights | Controller pool `0x00468ee4` (10 × 0x114, template `0x00468f10`, type `0x400`, think `0x0041f040`); signal pool `0x00468ee0` (40 × 0x108, template `0x00468f30`, type `0x40`, draw `0x0041f220`) | **Ported October 12** (Task 1 Steps 3–4; draw dead — no DAT writer, port draws nothing) |
-| Crossing traffic | `0x0041f040` spawns kinds 1/3 through `0x0044df60` on the cross road's phase | **Ported October 12** (lateral +-0x78000 drive; car-field golden open, Step 5) |
+| Traffic lights | Controller pool `0x00468ee4` (10 × 0x114, template `0x00468f10`, type `0x400`, think `0x0041f040` every 0x1e ticks); signal pool `0x00468ee0` (40 × 0x108, template `0x00468f30`, type `0x40 << index`) | **Ported** (v2 `6eaab29`): event-start placement, slots 0..3, 30-tick think, short phases; free cars stop at red. Signal heads are never drawn (`0x0041f220` is dead in the original) |
+| Crossing traffic | `0x0041f040` spawns kinds 1/3 through `0x0044df60` on the cross road's phase | **Ported** (v2): start ±0x78000 to the side, drive across at ±90°, stop on red, follow obstacles; car-field golden open (Step 5) |
 | Police | Police bikes are riders built by `0x00406b80`, spawned by DZHR actor events of type ≥ 0xb (`0x004520d0` → `0x004409e0` else-branch, placed 0x2000–0x2800 Q8 from the player by two `rand()` draws). CITY 12, HIWAY 11, MEDLY 17, NAPA 20, CANYN 12 events | Arrest decisions and cop setup offline only; never spawned (Task 2) |
 | In-road solid objects | BORR pool `0x00476ce8` (20 × 0xec, template `0x00476cb8`, type 1, no draw callback) | Collision spans ported (plan 16 Task 2) |
 | Rider on foot | Rider half type 8; contact `0x004046b0`; recovery `0x0040a600` | Recovery ported; bounds wreck, police owner and traffic-on-foot open (Task 3) |
@@ -53,7 +53,7 @@ Plans before this one covered police (plan 11 Task 6, plan 16 Task 1) and walls,
 
 **Files:** Modify `src/traffic.hpp/.cpp`, `src/race.cpp` (call point only), `src/actor_nodes.cpp` or `traffic_draw_nodes` (signal heads), `tests/traffic_test.cpp`, docs.
 
-- [ ] **Step 1: Trace.**
+- [x] **Step 1: Trace.** (Second-pass corrections in `analysis/intersections-notes.md`: slots 0..3 by index, `cVar2` = zone length − 2, 0x50/0xb0 are fractions, ±0x78000 is a start offset.)
   - `0x0041eca0`: controller placement, phase table `{600, 180, 780}` or `{75, 0, 240}` (the second when the slice is type 2 and the CESR flag byte +11 is 0), the four signal objects and which roadways get them.
   - `0x0041ef60`: signal position, kind, `+0xf0` phase and `+0xf8` flags.
   - `0x0041f040`: phase advance by the controller's `+0x18` tick, the window test `[back+0x100, front-0x200]`, the every-8-ticks crossing spawn through `0x0044df60` kinds 1 and 3 with lateral speed ±0x78000, and its `rand()` position.
@@ -62,8 +62,11 @@ Plans before this one covered police (plan 11 Task 6, plan 16 Task 1) and walls,
   - Find where `DAT_00468ee8`/`DAT_00468ef0` are loaded. Find how crossing cars (kind bit 0 set) move in `0x0044e710` and whether riders collide with them.
   - Record everything in REVERSE_ENGINEERING.md "Intersections".
 - [ ] **Step 2: Capture** `city-intersection`: the CITY attract demo or a human run through the first type-1 CESR zone, with car fields (`car.<i>.*`) and the ring cursors `DAT_004b6e50`/`DAT_0049f240`/`DAT_004b6e5c` dumped every tick. This also checks the +0x5100 ring offset and the zone density timing. Confirm the native replay fails.
-- [x] **Step 3: Failing tests (done).** In synthetic `traffic_test` (`test_intersections`): type-1 zone end creates one controller and four signals (indices 0/2/3/1, laterals 0x50/0xb0); durations 600/180/780; gated-spawn scenarios (placing tick 8 spawns, 16 does not — seed-780 phase-2 wraps); pools never exceed 10/40 with back-drop teardown; repeated placement.
-- [x] **Step 4: Port (done).** `TrafficSystem` with fixed pools (10 controllers, 40 signals; cars share the 16-slot pool). Think `0x0041f040` literal (accum always advances; wrap loop; spawn iff phase-0 wrap + odd index + tick bit 3; one lane rand). Crossing movement integrates +-0x78000 laterally. Known approximations (capture check open): controller tick +0x18 assumed 1/tick; short phase table unused (cross-node data unimported); signal positions at the zone sample; teardown when behind the ring back (trigger untraced); no edge turnaround (unported move tail). Signal draw: none — `0x0041f220` is dead (DAT writer does not exist, REA-xref confirmed).
+- [x] **Step 3: Tests (done, rewritten for v2).** `traffic_test`:
+  - `test_intersections`: layout (start/end, variant, lanes, slot order, fractions, lane bytes, shoulders), the first think and the 0x1e cadence, the crossing-car spawn shape and bit-3 gate, crossing cars drive across, a kind-0 car holds at the stop line on red and goes on green, pool caps and teardown;
+  - `test_signal_phase`: the crosswalk-edge pedestrian lookup;
+  - the all-course sweep.
+- [x] **Step 4: Port (done; first version superseded by 4b).**
 - [x] **Step 4b: Intersection v2 (done: `6eaab29`).** Supersedes the first port with event-start placement (new course `event_start/event_end`), heading-model crossing (`+0x5c`, signal latch `+0x1ec`, zone span `+0x1d0/+0x1d4/+0x111`, near-camera `collides`), obstacle scans for lane logic, think-cadence/teardown findings, and a stricter pedestrian-signal query (crosswalk marking flags + lane + 0x1e0 window).
 - [ ] **Step 5: Accept.** `city-intersection` replays car fields with zero divergence. One CITY intersection frame matches pixels in `oracle-scene`. Commit `sim: intersection signals and crossing traffic`.
 
