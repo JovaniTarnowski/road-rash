@@ -68,6 +68,7 @@ struct TrafficCar {
     int8_t lane = 0;           // +0x7a
     int32_t position = 0;      // +0x1c: Q8 samples along the route
     int32_t lateral = 0;       // +0x28: Q8 world lateral
+    int32_t lateral_vel = 0;   // crossing cars (kind bit 0): +-0x78000/tick
     int32_t speed = 0;         // +0xec
     int32_t phase = 0;           // +0x71: (rand & 0x7f) + 0xc0, 192..319
     uint8_t jitter_a = 0;      // +0x72
@@ -76,10 +77,35 @@ struct TrafficCar {
     uint32_t serial = 0;       // +0x82 (DAT_004b7e98)
     bool active = false;
 };
-
+// Intersection controller (0x0041eca0 object, pool 0x00468ee4, 10 x 0x114,
+// type 0x400, think 0x0041f040) and signal (pool 0x00468ee0, 40 x 0x108,
+// type 0x40, draw 0x0041f220). Field comments name the original offsets.
+// Durations live on the controller (+0xfc/+0x100/+0x104); phase state,
+// accumulator and spawn index live per signal (+0xf0/+0xf4/+0xf8).
+struct IntersectionSignal {
+    bool active = false;
+    int32_t phase = 0;            // +0xf0: 0..2, init (~index & 1) * 2
+    int32_t accum = 0x30c;        // +0xf4: phase accumulator seed
+    int index = 0;                // +0xf8: signal index; odd indices spawn
+    int lane = 0;                 // +0xfc [0x3f]: lane byte (cVar2/cVar3)
+    int32_t lateral_q8 = 0x50;    // ef60 param_3: 0x50 or 0xb0
+    int32_t position_q8 = 0;      // +0x1c: signal sample position
+    int controller = -1;
+};
+struct IntersectionController {
+    bool active = false;
+    int32_t durations[3] = {600, 180, 780};   // +0xfc..: {600,0xb4,0x30c},
+    int32_t base_q8 = 0;          // +0x108: event word0 * 0x100 + sample delta
+    int sample = 0;               // ring sample of the zone end
+    int kind_mode = 0;            // +0x110: 1 -> kind 1 narrow, 2 -> kind 3
+    int lane_range = 1;           // +0x111: spawn lane range (rand % range)
+    int signals[4] = {-1, -1, -1, -1};   // +0xec/+0xf0/+0xf4/+0xf8 slots
+};
 class TrafficSystem {
 public:
     static constexpr size_t pool_size = 16;   // 0x00438b70(0x210, 0x10): 16 objects
+    static constexpr size_t controller_pool = 10;   // 0x00468ee4: 10 x 0x114
+    static constexpr size_t signal_pool = 40;       // 0x00468ee0: 40 x 0x108
     TrafficSystem(const VehicleLibrary&, std::vector<uint8_t> exe);
     void configure(int density) { traffic_configure(timers_, density); }
     // One simulation tick on the player's route. camera/front are the ring
@@ -91,12 +117,20 @@ public:
     // PathSample::zone_end) before the spawn timers run, as 0x00454120
     // precedes 0x0044dd90; the first step also replays the initial ring
     // fill (0x004552e0, back to front over 128 samples).
-    // 0x0041eca0 crossing traffic at intersections is not ported.
+    // 0x0041eca0 crossing traffic at intersections: controllers are placed
+    // from type-1..3 zone ends in build_slice; think_intersections advances
+    // phases and spawns crossing cars (kinds 1/3) before the car move pass,
+    // as the 0x00438170 scheduler runs after 0x0044dd90. Signal heads are
+    // never drawn: DAT_00468ee8/ef0 have no writer anywhere in the
+    // executable (REA xrefs: only the 0x0041f220 reads), so 0x0041f220's
+    // draws are skipped and the port draws nothing, matching the original.
     // distance_moved is the per-step camera advance (0x0044b3b0). player_q8
-    // and player_lateral feed the horn rule (0x0044efa0). random is the
+    // and player_lateral feed the horn rule (0x0044efa0). tick is the global
+    // tick (DAT_004b7ecc bit 3 gates crossing spawns). random is the
     // shared CRT rand stream; the original call order is preserved.
     void step(const std::vector<RouteSample>& route, int32_t camera_q8, int32_t front_q8,
-              int32_t distance_moved, int32_t player_q8, int32_t player_lateral, const std::function<uint32_t()>& random);
+              int32_t distance_moved, int32_t player_q8, int32_t player_lateral, const std::function<uint32_t()>& random,
+              uint32_t tick);
     const std::vector<TrafficCar>& cars() const { return cars_; }
     // 0x004368f0 car pass: the contact response writes the car's share of
     // the separation (lateral push; the original also runs 0x00436a40 on the
@@ -104,6 +138,8 @@ public:
     std::vector<TrafficCar>& cars_mut() { return cars_; }
     const TrafficTimers& timers() const { return timers_; }
     int32_t zone_events() const { return zone_events_; }   // density changes applied so far
+    const std::vector<IntersectionController>& controllers() const { return controllers_; }
+    const std::vector<IntersectionSignal>& signals() const { return signals_; }
     const VehicleLibrary& library() const { return library_; }
     std::vector<SoundEventRecord> take_sound_events() { auto e = std::move(events_); events_.clear(); return e; }
     // Sprite size class from the car template (0x00475698 +0x28).
@@ -127,6 +163,18 @@ private:
     int32_t built_end_ = 0;                     // ring front sample (exclusive) already built
     int32_t zone_events_ = 0;
     void build_slice(const std::vector<RouteSample>& route, int32_t sample);
+    // 0x0041eca0 placement from a type-1..3 zone end: one controller and up
+    // to four signals (variant = event word 2 + 1 selects the 3rd/4th).
+    // Short phases {75,0,240} need the cross-node type-2 + flag data the
+    // port does not import yet; the long table is used (capture check open).
+    void place_intersection(int32_t sample, int variant, int lanes);
+    // 0x0041f040 think over controllers in creation order, signals 0..3.
+    void think_intersections(int32_t back_q8, int32_t front_q8, uint32_t tick,
+                             const std::vector<RouteSample>& route, const std::function<uint32_t()>& random);
+    bool place_crossing(IntersectionController& c, int lane, const std::vector<RouteSample>& route,
+                        const std::function<uint32_t()>& random);
+    std::vector<IntersectionController> controllers_{controller_pool};
+    std::vector<IntersectionSignal> signals_{signal_pool};
     uint8_t sprite_size_ = 10;
 };
 

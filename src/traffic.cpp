@@ -140,6 +140,15 @@ void TrafficSystem::move(TrafficCar& car,const std::vector<RouteSample>& route,i
     // Despawn outside the ring window [back, front): 0x00437e60 parks the
     // object, which returns it to the free pool.
     if(car.position>=front_q8 || car.position<back_q8) {car.active=false;return;}
+    // Crossing cars (kind bit 0: kinds 1/3 from 0x0041f040): lateral drive
+    // at +-0x78000/tick instead of the longitudinal follow logic
+    // (0x0044e710 kind-odd arms use the +0xe0/+0xe4 cross-road edges).
+    // The port integrates laterally and keeps the ring-window despawn;
+    // edge turnaround from the unported move tail is open.
+    if(car.kind&1) {
+        car.lateral=wrap(int64_t(car.lateral)+car.lateral_vel);
+        return;
+    }
     // 0x0044e710 no-obstacle branch: the speed target is the phase-scaled
     // cruise value (DAT_004b7e8c = 25 times +0x71 >> 8, times 100 through
     // 0x00449880), reached at the phase-scaled rate (+0x71 * 0x12 >> 8).
@@ -176,13 +185,136 @@ void TrafficSystem::build_slice(const std::vector<RouteSample>& route,int32_t sa
         if(!path.zone_end)return;
         traffic_set_density(timers_,int8_t(path.event_parameters[1]));
         ++zone_events_;
+        // 0x0041ec70 calls 0x0041eca0 first (types 1..3 only): an
+        // intersection controller at this sample. Variant and lane counts
+        // come from the event record; the port reads event_type (raw + 1).
+        if(path.event_type>=1 && path.event_type<=3) {
+            const auto& rs=route[size_t(sample)];
+            const int lanes=std::max(0,traffic_lane_count(rs.path.left_q8))+
+                            std::max(0,traffic_lane_count(rs.path.right_q8));
+            place_intersection(sample,int(path.event_type),lanes);
+        }
     };
     zone(at.path);
     if(at.dual)zone(at.other);
 }
+void TrafficSystem::place_intersection(int32_t sample,int variant,int lanes) {
+    // 0x0041eca0: one controller (pool 10 x 0x114) or nothing when the pool
+    // is exhausted (0x00438930 returns null -> early return).
+    int ci=-1;
+    for(size_t i=0;i<controllers_.size();++i)if(!controllers_[i].active){ci=int(i);break;}
+    if(ci<0)return;
+    // Signal ef60 indices per slot (+0xec/+0xf0/+0xf4/+0xf8 take 0/2/3/1);
+    // laterals alternate 0x50/0xb0 (ef60 param_3). The 3rd/4th signals need
+    // variant 1/2 and 1/3 respectively (!bVar1: no cross road with a type-2
+    // slice; the port always builds the full set the variant allows).
+    static constexpr int kIndex[4]={0,2,3,1};
+    static constexpr int32_t kLat[4]={0x50,0xb0,0x50,0xb0};
+    const int rear=std::max(0,lanes-2);   // cVar2: rearward lanes minus 2
+    // 0x0041ef60 order with the original's NULL-goto partial build: a
+    // failed slot skips every later slot (the +0xf8 call is unchecked and
+    // always attempted when the variant selects it).
+    int made[4]={-1,-1,-1,-1};
+    auto alloc=[&]()->int {
+        for(size_t i=0;i<signals_.size();++i)if(!signals_[i].active)return int(i);
+        return -1;
+    };
+    bool exhaust=false;
+    for(int slot=0;slot<3;++slot) {
+        const bool want=(slot<2)||(slot==2 && (variant==1||variant==2));
+        if(!want)continue;
+        if(exhaust)continue;   // skipped by the NULL-goto
+        const int si=alloc();
+        if(si<0){exhaust=true;continue;}
+        auto& s=signals_[size_t(si)];
+        s.active=true;s.index=kIndex[slot];s.phase=(~kIndex[slot]&1)*2;s.accum=0x30c;
+        s.lane=(slot<2)?rear:lanes;s.lateral_q8=kLat[slot];
+        s.position_q8=sample*256;s.controller=ci;
+        made[slot]=si;
+    }
+    if(variant==1||variant==3) {
+        const int si=alloc();   // unchecked: kept even when the pool is out
+        if(si>=0) {
+            auto& s=signals_[size_t(si)];
+            s.active=true;s.index=1;s.phase=2;s.accum=0x30c;
+            s.lane=lanes;s.lateral_q8=0xb0;s.position_q8=sample*256;s.controller=ci;
+            made[3]=si;
+        }
+    }
+    auto& c=controllers_[size_t(ci)];
+    c.active=true;c.base_q8=sample*256;c.sample=sample;
+    c.kind_mode=0;c.lane_range=std::max(1,lanes);
+    for(int k=0;k<4;++k)c.signals[k]=made[k];
+}
+void TrafficSystem::think_intersections(int32_t back_q8,int32_t front_q8,uint32_t tick,
+                                        const std::vector<RouteSample>& route,
+                                        const std::function<uint32_t()>& random) {
+    // 0x0041f040: per controller in creation order, signals slot 0..3.
+    // Teardown (0x0041f1f0) trigger is not traced; controllers behind the
+    // ring back are dropped (heuristic, capture check open).
+    for(auto& c:controllers_) {
+        if(!c.active)continue;
+        if(c.base_q8<back_q8) {
+            for(int k=0;k<4;++k)if(c.signals[k]>=0)signals_[size_t(c.signals[k])]=IntersectionSignal{};
+            c=IntersectionController{};
+            continue;
+        }
+        for(int k=0;k<4;++k) {
+            if(c.signals[k]<0)continue;
+            auto& s=signals_[size_t(c.signals[k])];
+            s.accum+=1;   // controller +0x18 per think (assumed 1/tick)
+            if(back_q8+0x100<=s.position_q8 && s.position_q8<=front_q8-0x200 &&
+               c.durations[size_t(s.phase)]<s.accum) {
+                do {
+                    s.accum-=c.durations[size_t(s.phase)];
+                    s.phase=(s.phase+1)%3;
+                    // Crossing spawn: phase wrapped to 0, odd signal index,
+                    // global tick bit 3 set. One rand() for the lane.
+                    if(s.phase==0 && (s.index&1) && (tick&8)) {
+                        int kind=1,range=c.lane_range;
+                        if(c.kind_mode==1)range=std::max(1,range/2);
+                        else if(c.kind_mode==2)kind=3;
+                        if(range>=1) {
+                            const int lane=int(random()%uint32_t(range));
+                            place_crossing(c,lane,route,random);
+                        }
+                    }
+                } while(c.durations[size_t(s.phase)]<s.accum);
+            }
+        }
+    }
+}
+bool TrafficSystem::place_crossing(IntersectionController& c,int lane,const std::vector<RouteSample>& route,
+                                   const std::function<uint32_t()>& random) {
+    // 0x0044df60 with kind bit 0 set: lateral speed -0x78000 (kind 1) or
+    // +0x78000 (kind 3). Position is (lane+1) samples past the controller
+    // base; the car shares the 16-slot pool with free traffic.
+    const int kind=(c.kind_mode==2)?3:1;
+    const int32_t spawn_q8=c.base_q8+(lane+1)*0x100;
+    const size_t index=size_t(std::clamp(spawn_q8,int32_t(0),int32_t((route.size()-1)*256))>>8);
+    const auto& at=route.at(index);
+    const int vehicle=library_.choose(uint8_t(kind),random());
+    if(vehicle<0)return false;
+    for(auto& car:cars_) {
+        if(car.active)continue;
+        car.lateral=wrap(int64_t(at.offset)*256);
+        car.lateral_vel=(kind==3)?0x78000:-0x78000;
+        car.position=spawn_q8;
+        car.kind=uint8_t(kind);car.vehicle=uint8_t(vehicle);car.lane=int8_t(lane);car.speed=0;
+        car.phase=(random()&0x7f)+0xc0;
+        car.jitter_a=int8_t(random());
+        car.jitter_b=int8_t(random());
+        car.jitter_c=int8_t(random());
+        car.serial=++serial_;
+        car.active=true;
+        return true;
+    }
+    return false;   // pool exhausted
+}
 
 void TrafficSystem::step(const std::vector<RouteSample>& route,int32_t camera_q8,int32_t front_q8,
-                        int32_t distance_moved,int32_t player_q8,int32_t player_lateral,const std::function<uint32_t()>& random) {
+                        int32_t distance_moved,int32_t player_q8,int32_t player_lateral,const std::function<uint32_t()>& random,
+                        uint32_t tick) {
     const int32_t back_q8=front_q8-0x8000;    // ring span 0x8000 (0x004552e0)
     // Ring slices built this step (0x00454120 runs before 0x0044dd90).
     const int32_t front_sample=front_q8>>8;
@@ -229,6 +361,9 @@ void TrafficSystem::step(const std::vector<RouteSample>& route,int32_t camera_q8
         const int32_t cap=-timers_.other_reload*2;
         if(cap-timers_.ahead!=0 && timers_.ahead<=cap)timers_.ahead=cap;
     }
+    // 0x0041f040 intersection think runs in the 0x00438170 scheduler pass,
+    // after the 0x0044dd90 spawns and before the 0x0044e710 car moves.
+    think_intersections(back_q8,front_q8,tick,route,random);
     for(auto& car:cars_)if(car.active)move(car,route,front_q8,back_q8,player_q8,player_lateral,random);
 }
 

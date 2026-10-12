@@ -1941,7 +1941,7 @@ void Race::step(uint32_t controls) {
         // 0x100 ahead of the view camera (0x0044b250: 0x3200 vs 0x3100).
         const int32_t camera=int32_t(camera_position());
         traffic_->step(road,camera+0x100,camera+0x5100,camera-int32_t(previous_camera_position_),
-            player.bike.i32(0x1c),player.bike.i32(0x28),[this]{return random();});
+            player.bike.i32(0x1c),player.bike.i32(0x28),[this]{return random();},uint32_t(ticks_));
     }
     previous_camera_position_=camera_position();
 }

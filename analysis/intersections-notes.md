@@ -169,3 +169,13 @@ road node, param_5, param_6 = controller)`:
 4. `0x0044df60` odd-kind path already exists for normal spawns; crossing
    passes `param_4 = signal` (non-NULL → copies signal `+0x108/+0x10c/
    +0x110` into car `+0x74/0x75/0x76`).
+
+## 0x0041f220 draw is dead (October 12, 2026, REA xref)
+
+`DAT_00468ee8` (signal head sprite) has exactly two xrefs in the
+executable, `0x41f233`/`0x41f250` — both the reads inside `0x0041f220`
+itself. No writer exists, and the DAT is zero in the file, so `+0xa8`
+is always NULL and the head draw is always skipped; the lamp array
+`DAT_00468ef0` was already censused read-only the same way. The port
+draws no signal heads, matching the original. Plan 24 Task 1 Step 5's
+pixel frame is unaffected by signals.

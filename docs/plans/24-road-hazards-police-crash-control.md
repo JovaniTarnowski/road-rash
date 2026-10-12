@@ -62,12 +62,8 @@ Plans before this one covered police (plan 11 Task 6, plan 16 Task 1) and walls,
   - Find where `DAT_00468ee8`/`DAT_00468ef0` are loaded. Find how crossing cars (kind bit 0 set) move in `0x0044e710` and whether riders collide with them.
   - Record everything in REVERSE_ENGINEERING.md "Intersections".
 - [ ] **Step 2: Capture** `city-intersection`: the CITY attract demo or a human run through the first type-1 CESR zone, with car fields (`car.<i>.*`) and the ring cursors `DAT_004b6e50`/`DAT_0049f240`/`DAT_004b6e5c` dumped every tick. This also checks the +0x5100 ring offset and the zone density timing. Confirm the native replay fails.
-- [ ] **Step 3: Failing tests.** In synthetic `traffic_test`:
-  - a type-1 zone end creates one controller and four signals;
-  - phases advance at 600/180/780;
-  - a crossing car spawns only in phase 0 on ticks with bit 3 set;
-  - pools cap at 10 and 40.
-- [ ] **Step 4: Port** into `TrafficSystem` with fixed pools. Spawning, crossing movement and the signal draw node come from the traced data, not invented sprites.
+- [x] **Step 3: Failing tests (done).** In synthetic `traffic_test` (`test_intersections`): type-1 zone end creates one controller and four signals (indices 0/2/3/1, laterals 0x50/0xb0); durations 600/180/780; gated-spawn scenarios (placing tick 8 spawns, 16 does not — seed-780 phase-2 wraps); pools never exceed 10/40 with back-drop teardown; repeated placement.
+- [x] **Step 4: Port (done).** `TrafficSystem` with fixed pools (10 controllers, 40 signals; cars share the 16-slot pool). Think `0x0041f040` literal (accum always advances; wrap loop; spawn iff phase-0 wrap + odd index + tick bit 3; one lane rand). Crossing movement integrates +-0x78000 laterally. Known approximations (capture check open): controller tick +0x18 assumed 1/tick; short phase table unused (cross-node data unimported); signal positions at the zone sample; teardown when behind the ring back (trigger untraced); no edge turnaround (unported move tail). Signal draw: none — `0x0041f220` is dead (DAT writer does not exist, REA-xref confirmed).
 - [ ] **Step 5: Accept.** `city-intersection` replays car fields with zero divergence. One CITY intersection frame matches pixels in `oracle-scene`. Commit `sim: intersection signals and crossing traffic`.
 
 ## Task 2: Police on every course

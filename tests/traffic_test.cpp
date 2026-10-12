@@ -124,8 +124,8 @@ static void test_zone_events() {
     zone(20,40);zone(200,-45);zone(260,15);
     uint32_t seed=1;
     auto random=[&]()->uint32_t{seed=seed*214013u+2531011u;return (seed>>16)&0x7fffu;};
-    int32_t camera=0x3100;
-    auto step=[&](int32_t moved){camera+=moved;system.step(route,camera+0x100,camera+0x5100,moved,camera,0,random);};
+    int32_t camera=0x3100;uint32_t tick=0;
+    auto step=[&](int32_t moved){camera+=moved;system.step(route,camera+0x100,camera+0x5100,moved,camera,0,random,tick++);};
     step(0);   // fill [front-128, front): sample 20 is inside
     if(system.zone_events()!=1 || system.timers().density!=40)throw std::runtime_error("initial fill zone");
     while(((camera+0x5100)>>8)<=200)step(0x80);
@@ -152,7 +152,7 @@ static void test_spawn_and_move() {
     // tick (their reloads are equal).
     const int32_t reload=system.timers().oncoming_reload;
     const int steps=reload/9+1;
-    for(int i=0;i<steps;++i)system.step(route,camera,front,0,camera,0,random);
+    for(int i=0;i<steps;++i)system.step(route,camera,front,0,camera,0,random,uint32_t(i));
     size_t oncoming=0,active=0;
     const rr::TrafficCar* spawned=nullptr;
     for(const auto& car:system.cars()) {
@@ -174,7 +174,7 @@ static void test_spawn_and_move() {
     // window and parks at the back cursor.
     int horns=0;
     for(int i=0;i<6000;++i) {
-        system.step(route,camera,front,0,camera,lane_centre,random);
+        system.step(route,camera,front,0,camera,lane_centre,random,uint32_t(i));
         for(const auto& e:system.take_sound_events()) {
             if(e.code!=rr::SoundEvent::horn)throw std::runtime_error("unexpected traffic event");
             ++horns;
@@ -201,10 +201,10 @@ static void test_zone_corpus() {
         if(!zones)for(auto& s:route){s.path.zone_end=false;s.other.zone_end=false;}
         rr::TrafficSystem system(library,exe);
         system.configure(6);
-        uint32_t seed=1,spawned=0,last=0;
+        uint32_t seed=1,spawned=0,last=0,tick=0;
         auto random=[&]()->uint32_t{seed=seed*214013u+2531011u;return (seed>>16)&0x7fffu;};
         for(int32_t camera=0x3100;((camera+0x5100)>>8)+1<int32_t(route.size());camera+=0x60) {
-            system.step(route,camera+0x100,camera+0x5100,0x60,camera,0,random);
+            system.step(route,camera+0x100,camera+0x5100,0x60,camera,0,random,tick++);
             for(const auto& car:system.cars())if(car.active && car.serial>last){++spawned;last=std::max(last,car.serial);}
         }
         events=system.zone_events();
@@ -244,7 +244,7 @@ static void test_corpus() {
     uint32_t seed=1;
     auto random=[&]()->uint32_t{seed=seed*214013u+2531011u;return (seed>>16)&0x7fffu;};
     const int32_t camera=12544,front=camera+0x5000;
-    for(int i=0;i<2000;++i)system.step(route,camera,front,i<100?300:0,camera,0,random);
+    for(int i=0;i<2000;++i)system.step(route,camera,front,i<100?300:0,camera,0,random,uint32_t(i));
     size_t active=0;
     for(const auto& car:system.cars())if(car.active)++active;
     if(active==0)throw std::runtime_error("no corpus traffic spawned");
@@ -411,6 +411,103 @@ static void test_car_contact_synthetic() {
     std::cout << "car contact synthetic boundaries pass\n";
 }
 
+static void test_intersections() {
+    // Plan 24 Task 1 Step 3 (0x0041eca0/0x0041f040): a type-1 zone end
+    // creates one controller and four signals; phases advance at
+    // 600/180/780; crossing cars spawn only in phase 0 on ticks with bit
+    // 3 set; pools cap at 10 controllers and 40 signals.
+    rr::VehicleLibrary library(synthetic_container(0));
+    auto make_route=[]() {
+        std::vector<rr::RouteSample> route(400);
+        for(auto& s:route)s=lane_sample(0x300,0x300);   // 3+3 lanes
+        route[100].path.zone_end=true;route[100].path.event_type=1;
+        route[100].path.event_parameters[1]=6;
+        return route;
+    };
+    auto count_crossing=[](rr::TrafficSystem& system) {
+        size_t n=0;
+        for(const auto& car:system.cars())
+            if(car.active && (car.kind&1)) {
+                ++n;
+                if(car.lateral_vel!=0x78000 && car.lateral_vel!=-0x78000)
+                    throw std::runtime_error("crossing lateral speed");
+                if(car.kind!=1)throw std::runtime_error("default crossing kind");
+            }
+        return n;
+    };
+    // Gated spawn scenario: static camera (no window/teardown drift, no
+    // regular-spawn pool pressure for 390 steps). Sample 100 sits inside
+    // the initial 128-slice fill, so the placing step is step 0 and the
+    // seed-780 phase-2 signals wrap to 0 exactly there — gated only by
+    // the placing tick's bit 3. No further phase-0 wrap fits in 390 steps.
+    auto gated=[&](uint32_t first_tick) {
+        auto route=make_route();
+        rr::TrafficSystem system(library,synthetic_exe());
+        system.configure(6);
+        uint32_t seed=1;
+        auto random=[&]()->uint32_t{seed=seed*214013u+2531011u;return (seed>>16)&0x7fffu;};
+        const int32_t camera=0x3100;
+        uint32_t tick=first_tick;
+        for(int i=0;i<390;++i)
+            system.step(route,camera+0x100,camera+0x5100,0,camera,0,random,tick++);
+        return count_crossing(system);
+    };
+    if(gated(8)==0)throw std::runtime_error("no crossing spawn on gated tick");
+    if(gated(16)!=0)throw std::runtime_error("crossing spawn on ungated tick");
+    // Layout: one controller, four signals, durations, indices, laterals.
+    {
+        auto route=make_route();
+        rr::TrafficSystem system(library,synthetic_exe());
+        system.configure(6);
+        uint32_t seed=1;
+        auto random=[&]()->uint32_t{seed=seed*214013u+2531011u;return (seed>>16)&0x7fffu;};
+        system.step(route,0x3100+0x100,0x3100+0x5100,0,0x3100,0,random,16);
+        size_t controllers=0,signals=0;
+        for(const auto& c:system.controllers())if(c.active)++controllers;
+        for(const auto& s:system.signals())if(s.active)++signals;
+        if(controllers!=1)throw std::runtime_error("type-1 zone creates one controller");
+        if(signals!=4)throw std::runtime_error("type-1 zone creates four signals");
+        const auto& c0=system.controllers()[0];
+        if(c0.durations[0]!=600 || c0.durations[1]!=180 || c0.durations[2]!=780)
+            throw std::runtime_error("phase table 600/180/780");
+        for(int k=0;k<4;++k) {
+            const auto& s=system.signals()[size_t(c0.signals[k])];
+            const int want_index=(k==0)?0:(k==1)?2:(k==2)?3:1;
+            const int32_t want_lat=(k%2==0)?0x50:0xb0;
+            if(s.index!=want_index || s.lateral_q8!=want_lat)throw std::runtime_error("signal layout");
+        }
+    }
+    // Pool caps: controllers and signals never exceed the original pool
+    // sizes (10 and 40) across many zone ends; freed behind the ring back.
+    {
+        auto route=make_route();
+        rr::TrafficSystem big(library,synthetic_exe());
+        big.configure(6);
+        for(int z=0;z<15;++z){route[50+z*20].path.zone_end=true;route[50+z*20].path.event_type=1;}
+        uint32_t seed=9;
+        auto random=[&]()->uint32_t{seed=seed*214013u+2531011u;return (seed>>16)&0x7fffu;};
+        int32_t cam2=0x3100;uint32_t tick2=0;
+        while(((cam2+0x5100)>>8)<50+14*20+10){cam2+=0x100;big.step(route,cam2+0x100,cam2+0x5100,0x100,cam2,0,random,tick2++);}
+        size_t bc=0,bs=0;
+        for(const auto& c:big.controllers())if(c.active)++bc;
+        for(const auto& s:big.signals())if(s.active)++bs;
+        if(bc>10 || bs>40)throw std::runtime_error("intersection pool caps");
+    }
+    // Repeated placement: two zone ends make two controllers.
+    {
+        auto route=make_route();
+        route[120].path.zone_end=true;route[120].path.event_type=2;
+        rr::TrafficSystem two(library,synthetic_exe());
+        two.configure(6);
+        uint32_t seed=7;
+        auto random=[&]()->uint32_t{seed=seed*214013u+2531011u;return (seed>>16)&0x7fffu;};
+        two.step(route,0x3100+0x100,0x3100+0x5100,0,0x3100,0,random,16);
+        size_t bc=0;
+        for(const auto& c:two.controllers())if(c.active)++bc;
+        if(bc!=2)throw std::runtime_error("repeated placement");
+    }
+}
+
 int main() {
     try {
         test_configure();
@@ -418,6 +515,7 @@ int main() {
         test_library_choose();
         test_spawn_and_move();
         test_zone_events();
+        test_intersections();
         test_corpus();
         test_zone_corpus();
         test_car_contact_synthetic();
