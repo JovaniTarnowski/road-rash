@@ -136,3 +136,19 @@ No `RR_ORACLE_COURSE` (default path that produced Napa v6 at 07:52).
 the game never entered a race. Menu-to-race bootstrap is down even on
 the default path; not scenario-specific. Standing down on captures
 until the bootstrap is diagnosed (hook_menu_enter / menu video path).
+
+## Bootstrap root cause (October 12, 2026): menu re-entry poisons the race
+
+Comparing the stuck CITY partial (2 frames, tick frozen at 2) against
+the mechanism: `hook_menu_enter` sets `g_race_started = 1` on the FIRST
+menu entry and it is never cleared. `hook_step` dumps every
+`0x0044b3b0` call once the flag is set — including menu-background
+ticks. The 2-frame trace with frozen tick/ring/rng is the game sitting
+in menus after entering+abandoning a race (28 enter/exit cycles per the
+earlier fault report): each re-entry re-fires the hook, but the dump
+keeps appending menu ticks, not a race. The failure is game-side menu
+flow (attract demo looping back to menus on CITY), not the proxy: v1
+got lucky with a run that stayed in-race. Fixes for a later turn: clear
+`g_race_started` on menu re-entry (or gate dumps on выдача race-active
+state), and/or drive menu choices deterministically instead of relying
+on attract flow. No tree changes for this diagnosis.
