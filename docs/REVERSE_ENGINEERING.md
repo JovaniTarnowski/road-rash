@@ -181,7 +181,7 @@ Native port: `src/bike.cpp`, `src/race.cpp`.
   - Target point: `+0x194` lateral, `+0x198` = position + `0x3c0`, `+0x19c` speed.
   - Speed compare: `(v>>12)+(v>>7)+(v>>9)` against the target.
   - Curvature: `0x00449b40` averages sub-slice `+0xb4` (atan(bend) << 14).
-  - Re-plan `0x004082f0`: resets `+0x1a4` from the level speed, then adjusts it by the rubber band (when the player is the next rider in race order) or by fixed factors.
+  - Re-plan `0x004082f0` (full body recovered October 12, 2026; native port still the old approximation): while `+0x188` > 0x3b, ease the 10-entry brain table (`+0x0..+0x78` toward `+0x78..+0xf0` by steps `+300/+0x130/+0x134`) and decrement 0x3c; pick neighbours `+0x16c/+0x170` via `0x00408cd0` ring scans (self-exclusion only when sharing the player's rider-half); rate overtake steps `+0x178/+0x17c` 0–3 from the rating table against `(0x10−iVar7)·1000/2000 − level·0x5dc/3000`; keep the nearer target in `+0x168/+0x174`; clear the target when it is a live chaser (`0x00432500` = move-nonnull, unless network state matches); reset `+0x1a4` from `+0x1bc[level]` and `+0x1a0` from `+0x1a8[level]`; speed cases on neighbour nullness vs the player (rubber-band table `0x004659d4` only when a neighbour IS the player; fixed ±fractions otherwise); halve (or ×3/2 at level 3) when the player is crashed and >0xa00 away (`0x00449c20` = absolute gap). Helpers: `0x00449ce0`/`0x00449e60` walk ring links `[0]/[1]` filtered by slice/think-flags, `0x00449e90` scores by closing rate, `0x00449da0` picks nearest by slice each side, `0x00441750` is CRT rand.
 - **Rider table** `0x00463c78` (`0x40` bytes per rider):
   - word 3 = rider value × 2
   - word 5 = bike/colour data

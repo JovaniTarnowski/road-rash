@@ -494,3 +494,21 @@ Police configuration gate: `build/police-test` compares imported pursuit/relatio
 - Native `grid_position`/`grid_lateral` (two rows at 0x3200/0x3300 with four
   fixed offsets) does not match this construction; the replay harness must use
   per-slot table positions/laterals (open).
+
+## Field composition and replan helpers (October 12, 2026)
+
+- `sim-field-probe2.tsv` (full field, solo=0, ticks 1–220) header ring map:
+  11 racing opponent pairs (bike think `0x00407a90`, half think `0x00407bd0`,
+  bike `net`(+0x324) 1) at 13056–25088; 3 parked pairs (think 0, same net/kind)
+  at 27648/30208/31488; player pair (net 0) at 12800; live traffic pool
+  (type 32, think `0x00440dd0`) and scenery. Native races 7 opponents; the
+  original builds 14 (11 racing + 3 parked). Park mechanism is open.
+- Dead end recorded: `rider_half+0x78` reads `0x474bd8` identically for every
+  bike, so it is not the per-rider stats row in this path; the stats-dump hunk
+  was removed again. Rider identity per node remains open (not needed for the
+  solo frozen harness: only position/lateral/scan flags matter).
+- Replan helpers fully traced, no oracle needed: `0x00432500` = move-nonnull
+  test (+0xe4); `0x00449c20` = absolute position gap; `0x00441750` = CRT rand
+  (or fixed `0x0049bce8` in mode 3); `0x00449da0` = nearest ring node by slice
+  on each side. Full `0x004082f0` body recovered (replan easing of the 10-entry
+  brain table, neighbour pick, overtake-step rating, speed cases).
