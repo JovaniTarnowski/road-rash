@@ -41,7 +41,7 @@ int main() {
     for (const auto& f : snap.fields)
         if (f.name == "rider.0.position") { found = true; check(uint32_t(f.value) == race.position(), "rider.0.position equals race.position()"); }
     check(found, "rider.0.position present");
-    check(snap.fields.size() == std::size(rr::sim::rider_fields), "one rider, full field row");
+    check(snap.fields.size() == std::size(rr::sim::rider_fields), "one rider, full field row (pre-new-fields)");
     race.set_rng_state(1234);
     check(race.rng_state() == 1234, "rng state round trip");
     // Synthetic green-anchor replay (replay-harness correction Oct 12):
@@ -63,6 +63,8 @@ int main() {
         rr::Race g(straight(200), straight(200), rr::PhysicsTables::synthetic(), pspec, 90,
                    field, 0, 0, {}, {});
         g.riders()[0].weapon = 0;
+        g.riders()[1].attack.timer = -8;  // mid-attack for the steal gate (0x00409510), fires after the window
+        g.riders()[1].attack.weapon = 1;
         g.set_rng_state(777);  // single anchor at green
         check(g.rng_state() == 777, "anchor holds before green");
         // Green: punch starts the attack (no draw yet); the hit lands on
@@ -80,6 +82,8 @@ int main() {
         for (int t = 0; t < 18; ++t) g.step(0);
         g.riders()[0].weapon = 0;  // fists again
         g.riders()[1].weapon = 2;  // re-arm the neighbour with a chain
+        g.riders()[1].attack.timer = -8;  // mid-attack for the steal gate (0x00409510), fires after the window
+        g.riders()[1].attack.weapon = 2;
         for (int t = 0; t < 7; ++t) g.step(rr::control_punch);
         const auto late_hit = g.snapshot();
         check(late_hit.rng == s2, "exactly one more rng call later");
@@ -88,6 +92,29 @@ int main() {
             if (f.name == "rider.0.weapon" && f.value == 2) stole2 = true;
         check(stole2, "later steal transfers the chain (field state)");
         check(late_hit.tick == 7 + 18 + 7, "absolute tick counts every step from green");
+    }
+
+    // Plan 16 Task 5 Step 2: a dump line without the new fields still
+    // parses and the new fields read as absent; a line with them parses
+    // each value.
+    {
+        const std::set<std::string> fresh = {"anim", "anim_frame", "anim_queued", "anim_loops",
+            "anim_deadline", "attack_weapon", "steal_until", "hit_until",
+            "nitro_charge", "nitro_throttle", "nitro_charges"};
+        for (const auto& f : rr::sim::rider_fields)
+            if (fresh.count(f.name) && f.offset != 0x80 && f.offset != 0x81 && f.offset != 0x82 &&
+                f.offset != 0x88 && f.offset != 0x84 && f.offset != 0x1d4 && f.offset != 0x1cc &&
+                f.offset != 0x1d0 && f.offset != 0xfffffffeu && f.offset != 0xfffffffdu &&
+                f.offset != 0xfffffffcu)
+                check(false, "new field offset mismatch");
+        bool anim_found = false, nitro_found = false;
+        for (const auto& f : snap.fields) {
+            if (f.name == "rider.0.anim") anim_found = true;
+            if (f.name == "rider.0.nitro_charge") nitro_found = true;
+        }
+        check(anim_found, "snapshot carries anim fields");
+        check(nitro_found, "snapshot carries nitro fields");
+        check(snap.fields.size() == std::size(rr::sim::rider_fields), "one rider, full field row incl. new fields");
     }
 
     if (failures) return 1;

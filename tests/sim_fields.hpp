@@ -44,6 +44,17 @@ inline constexpr SimField rider_fields[] = {
     {"ai_replan", 0x188, 4, true},
     {"ai_lane", 0x18c, 4, true},
     {"ai_bias", 0x190, 4, true},
+    {"anim", 0x80, 1, true},
+    {"anim_frame", 0x81, 1, true},
+    {"anim_queued", 0x82, 1, true},
+    {"anim_loops", 0x88, 1, false},
+    {"anim_deadline", 0x84, 4, true},
+    {"attack_weapon", 0x1d4, 4, true},
+    {"steal_until", 0x1cc, 4, true},
+    {"hit_until", 0x1d0, 4, true},
+    {"nitro_charge", 0xfffffffeu, 4, true},
+    {"nitro_throttle", 0xfffffffdu, 4, true},
+    {"nitro_charges", 0xffffffFCu, 4, true},
 };
 
 // TrafficCar members; "active" has no original offset (pool slot state).

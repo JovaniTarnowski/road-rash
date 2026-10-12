@@ -17,6 +17,11 @@ struct TrafficCar;
 // at most 0x14 steps per frame.
 constexpr int ticks_per_second = 60;
 constexpr int max_steps_per_frame = 20;
+// Nitro configuration: six words the setup copies from the player's bike
+// spec at +0x14c (0x0040b0e0: recharge, boost Q8 multiplier, max charge,
+// charges, minimum activation, tail-rate seed). The EXE defaults at
+// 0x00465a28 are {0x11, 0x180, 0x78, 0x64, 0x1e, 0xf}.
+struct NitroConfig { int32_t recharge = 0x11, boost = 0x180, max = 0x78, charges = 0x64, minimum = 0x1e, tail = 0xf; };
 
 // Rider fight stats: rider table 0x00463c78 words 12..15 (+0x30 strength, +0x34 base stamina,
 // +0x38 maximum, +0x3c current). Hits lower maximum by damage*4 (not below base/2) and current
@@ -33,8 +38,11 @@ struct Attack {
     int weapon = 0;
     bool right = false; // toward larger lateral (0x004095a0)
     bool backhand = false;
+    bool fired = false; // descriptor frame-2 hit event consumed this swing (0x004096f0)
 };
-constexpr int attack_hit_tick = 7, attack_ticks = 18;   // animation timing stand-in
+constexpr int attack_legacy_hit_tick = 7;   // pre-descriptor stand-in, used only with no animation bank
+constexpr int attack_hit_tick = attack_legacy_hit_tick;  // compat alias (game_main attack frames)
+constexpr int attack_ticks = 18;             // swing length cap without descriptor completion
 
 // An AI opponent (bike + rider pair built by 0x00405990 with the AI tables).
 struct Opponent {
@@ -116,11 +124,18 @@ struct Rider {
     int colour = 0;                         // rider colour remap index (0x0046e158)
     RiderStats stamina;
     int weapon = 0;                         // carried weapon (+0x1c8)
-    Attack attack;
+    int32_t steal_until = 0;                // +0x1cc: no steal before this tick (0x004096f0)
+    int32_t hit_until = 0;                  // +0x1d0: no hit damage before this tick (0x004096f0)
+    ActorAnimationState ride_animation;     // riding/attack block +0x70, advanced in Race::step (0x0043ae90)
+    Attack attack;                          // attack.weapon latches +0x1d4 at swing start (0x00434660)
     // Riding animation selected by contact 0x004052c0 reason 4 without a crash
-    // (0x0040ac70 with animation 9); -1 when no contact animation is pending.
-    int8_t contact_animation = -1;          // bike +0x80/+0x81 update, original-side only
-    int32_t invulnerable_until = 0;         // +0x1d0: no further hits before this tick
+    // (+0x80/+0x81 via 0x0040ac70); -1 when none pending.
+    int8_t contact_animation = -1;
+    int32_t invulnerable_until = 0;         // legacy alias of hit_until (+0x1d0)
+    // Nitro (player-global 0x0040b110/0x0040b170/0x0040b1a0/0x0040adb0):
+    // per-rider copies of the charge accumulator (Q8) and throttle force.
+    int32_t nitro_charge = 0;               // accumulator Q8 (DAT_004c5f10)
+    int32_t nitro_throttle = 0;             // +0x240 throttle force holding 0x0040adb0 output
 };
 
 // Per-tick snapshot for the simulation oracle (plan 10). Rider fields are
@@ -151,6 +166,16 @@ public:
     // interleaving against the original's scheduler is not verified.
     void set_traffic(TrafficSystem* t) { traffic_ = t; }
     void set_crash_library(const ActorAnimationLibrary&,const CrashConfig&);
+    void set_ride_library(const ActorAnimationLibrary* library,
+                          const std::array<std::array<std::array<int8_t,4>,2>,2>* attacks) {
+        ride_library_ = library; attack_codes_ = attacks; }
+    // Nitro setup 0x0040b0e0: copy six words from the player spec at +0x14c
+    // and start the accumulator at maximum<<8. Call once after construction
+    // (the game calls it from 0x00405600 right after the player build).
+    void set_nitro(const NitroConfig& c) { nitro_ = c; nitro_charges_ = c.charges;
+        for (auto& r : riders_) r.nitro_charge = c.max << 8; }
+    const NitroConfig& nitro() const { return nitro_; }
+    int32_t nitro_charges() const { return nitro_charges_; }
     // Demo hold (DAT_004753c8): attract/demo races and oracle captures run
     // with this set; the player rider think takes the AI branch (0x00434660
     // head: stamina regen, then 0x00407bd0) and ignores the control word.
@@ -243,19 +268,28 @@ private:
     void crash_car(Rider&);   // 0x00403d60 reason 2 (car contact, animation 29)
     void crash_reason(Rider&, int32_t reason, std::array<int32_t,3> rider_impulse,
                       std::array<int32_t,3> bike_impulse);   // reason-tagged crash entry
-    // (Private implementation notes for the shared helper live on the public
-    // declaration above; crash entry preserves the assembly's argument order:
-    // rider impulse first, bike impulse second.)
     void contact(Rider& self, Rider& other);
     void update_camera();
     void fight(Rider&, uint32_t controls, size_t index);
+    bool fight_hit_frame(const Rider&) const;  // descriptor flags + frame-2 gate (0x004096f0 head)
+    bool fight_reach(const Rider&, const Rider&, bool side) const;  // 0x00409c10
     void resolve_hit(Rider& attacker, size_t index);
+    void nitro_think(Rider&, uint32_t controls, bool player);  // 0x0040b110/0x0040b170 (player, 0x00434660)
+    void nitro_think_activate(Rider&);  // 0x0040b110 body
+    void nitro_think_stop(Rider&);      // 0x0040b170 body
+    void nitro_charge_tick(Rider&);                            // 0x0040b1a0 (player, 0x00407a90)
+    int32_t nitro_throttle_force(Rider&, int32_t target);      // 0x0040adb0 boost branch
+    void advance_ride_animation(Rider&, bool player);          // riding block in Race::step (0x00407a90/0x00407f30/0x0043ae90)
     uint32_t random();
 
     std::function<const TerrainSlice&(const RouteSample&)> terrain_source_;
     TrafficSystem* traffic_ = nullptr;
-    const ActorAnimationLibrary* crash_library_=nullptr;
+    const ActorAnimationLibrary* crash_library_ = nullptr;
+    const ActorAnimationLibrary* ride_library_ = nullptr;
+    const std::array<std::array<std::array<int8_t,4>,2>,2>* attack_codes_ = nullptr;
     CrashConfig crash_config_;
+    NitroConfig nitro_;
+    int32_t nitro_charges_ = 0;
     std::vector<RouteSample> routes_[2];
     PhysicsTables tables_;
     std::vector<Rider> riders_;

@@ -163,6 +163,21 @@ Race::Race(std::vector<RouteSample> a, std::vector<RouteSample> b, const Physics
         r.weapon = o.weapon;
         riders_.push_back(r);
     }
+    // Nitro setup (0x0040b0e0): copy the six words from the player spec
+    // at +0x14c when the spec carries them, else keep EXE defaults; the
+    // accumulator starts at maximum<<8. Synthetic specs are zero there, so
+    // the zero-guard keeps tests on the documented defaults.
+    {
+        bool spec_nitro = false;
+        for (int k = 0; k < 6; ++k)
+            if (spec.d[size_t(77 + k)] != 0) spec_nitro = true;
+        if (spec_nitro) {
+            nitro_.recharge = spec.d[77]; nitro_.boost = spec.d[78]; nitro_.max = spec.d[79];
+            nitro_.charges = spec.d[80]; nitro_.minimum = spec.d[81]; nitro_.tail = spec.d[82];
+        }
+        nitro_charges_ = nitro_.charges;
+        for (auto& rider : riders_) rider.nitro_charge = nitro_.max << 8;
+    }
     update_camera();
     previous_camera_position_=camera_position();
 }
@@ -667,9 +682,23 @@ void Race::contact(Rider& self, Rider& other) {
     }
     const bool contained = (o.i32(0x28) - o.i32(0x174) < s.i32(0x28) - s.i32(0x174) / 2) &&
                            (s.i32(0x28) + s.i32(0x174) / 2 < o.i32(0x28) + o.i32(0x174));
+    // 0x004049c0 class routing for two bikes: contained hits run the 0x004052c0
+    // decision (same reason ladder as cars: class 1 short-other hits use the
+    // reason-1 branch), glancing hits run the lateral branch. Bikes are tall
+    // (>= 0x2000), so class 1 needs the other bike short: never fires here,
+    // and contained bike hits take the class-2 path below.
+    const int32_t magnitude = (std::abs(s.i32(0x184)) + std::abs(s.i32(0x188)) +
+                               std::abs(s.i32(0x18c))) >> 10;
     if (contained) {
-        if (s.i32(0xec) - o.i32(0x108) < 0x1771) s.i32(0xec) += s.i32(0x184);
-        else crash(self);
+        const bool down = knock_off(self, magnitude, magnitude, 2);
+        if (down) {
+            s.i32(0xec) += s.i32(0x184);
+        } else if (s.i32(0xec) - o.i32(0x108) < 0x1771) {
+            s.i32(0xec) += s.i32(0x184);
+        } else {
+            crash_reason(self, 2, {-256, 0, 1792}, {0, 0, 1024});
+            return;
+        }
     } else if (o.i32(0x28) < s.i32(0x28)) {
         if (s.i32(0xf0) < 0) s.i32(0xf0) = 0;
         s.i32(0xf0) += hit / 2;
@@ -1056,8 +1085,8 @@ bool Race::ai_behind_target(const Rider& r) const {
 bool Race::ai_can_overtake(Rider& r) {
     if (r.brain.target_rider < 0) return false;
     const Rider& t = riders_[size_t(r.brain.target_rider)];
-    if (!(uint32_t(r.invulnerable_until) < uint32_t(ticks_) &&
-          uint32_t(t.invulnerable_until) < uint32_t(ticks_)))
+    if (!(uint32_t(r.hit_until) < uint32_t(ticks_) &&
+          uint32_t(t.hit_until) < uint32_t(ticks_)))
         return false;
     const int32_t reach = r.brain.reach;
     const int32_t dpos = ((r.bike.i32(0xec) - t.bike.i32(0xec)) >> 4) - t.bike.i32(0x1c) + r.bike.i32(0x1c);
@@ -1367,9 +1396,31 @@ void Race::step_rider(Rider& r, uint32_t controls, bool player) {
     // branch's stamina regen with no attacks started.
     const bool demo_player = demo_hold_ && player;
     fight(r, demo_player ? 0 : controls, size_t(&r - riders_.data()));
+    nitro_charge_tick(r);
     if (b.i32(0x2f4) == 0) {
         if (r.ai || demo_player) ai_think(r);
-        else apply_controls(b, tables_, controls);
+        else {
+            // 0x00434660: nitro activate/stop, then drive (0x0040acd0) and
+            // steer (0x0040ad30). Boost multiplies the throttle force
+            // (0x0040adb0); nitro_throttle records the post-boost force.
+            nitro_think(r, controls, player);
+            if ((b.u8(0xc0) & 0x10) == 0) {
+                if (controls & control_accelerate) drive_mode(b, 1);
+                if (controls & control_brake) drive_mode(b, 2);
+                else if (!(controls & control_accelerate)) drive_mode(b, 0);
+            } else {
+                drive_mode(b, 2);
+            }
+            if ((b.u8(0xc0) & 0x20) != 0) {
+                b.i32(0x114) = nitro_throttle_force(r, b.i32(0x114));
+                r.nitro_throttle = b.i32(0x114);
+            } else {
+                r.nitro_throttle = b.i32(0x114);
+            }
+            const int32_t lean = (controls & control_lean_up) ? 1 : ((controls & control_lean_down) ? -1 : 0);
+            const int mode = (controls & control_left) ? 1 : ((controls & control_right) ? 2 : 0);
+            steer_input(b, tables_, mode, lean);
+        }
     } else {
         // Crashed: slide to a stop, wait one second, remount at the nearest lane.
         b.i32(0x114) = 0; b.i32(0xf0) = 0; b.i32(0x288) = 0;
@@ -1436,6 +1487,17 @@ RaceSnapshot Race::snapshot() const {
         out.fields.push_back({p + "ai_replan", r.brain.replan_ticks});
         out.fields.push_back({p + "ai_lane", r.brain.lane});
         out.fields.push_back({p + "ai_bias", r.brain.bias});
+        out.fields.push_back({p + "anim", int64_t(r.ride_animation.animation)});
+        out.fields.push_back({p + "anim_frame", int64_t(r.ride_animation.frame)});
+        out.fields.push_back({p + "anim_queued", int64_t(r.ride_animation.queued)});
+        out.fields.push_back({p + "anim_loops", int64_t(r.ride_animation.loops)});
+        out.fields.push_back({p + "anim_deadline", int64_t(r.ride_animation.deadline)});
+        out.fields.push_back({p + "attack_weapon", int64_t(r.attack.weapon)});
+        out.fields.push_back({p + "steal_until", int64_t(r.steal_until)});
+        out.fields.push_back({p + "hit_until", int64_t(r.hit_until)});
+        out.fields.push_back({p + "nitro_charge", int64_t(r.nitro_charge)});
+        out.fields.push_back({p + "nitro_throttle", int64_t(r.nitro_throttle)});
+        out.fields.push_back({p + "nitro_charges", int64_t(nitro_charges_)});
     }
     return out;
 }
@@ -1445,6 +1507,11 @@ void Race::fight(Rider& r, uint32_t controls, size_t index) {
     if (b.i32(0x2f4) != 0) { r.attack.timer = 0; return; }
     if (r.stamina.current < r.stamina.max)
         r.stamina.current = std::min(r.stamina.max, r.stamina.current + b.i32(0x18));
+    // 0x00434660: latch the attack weapon from the control word, then find
+    // the target through 0x00409400/0x004095a0/0x00409c10 (native: nearest
+    // rider on the chosen side). Descriptor-frame hits (0x004096f0) fire
+    // from fight() via resolve_hit when the riding animation shows frame 2;
+    // without a ride bank the legacy tick-7 stand-in preserves the old tests.
     if (r.attack.timer == 0) {
         bool start = false;
         if (!r.ai) start = (controls & (control_punch | control_kick | control_backhand)) != 0;
@@ -1467,26 +1534,59 @@ void Race::fight(Rider& r, uint32_t controls, size_t index) {
                     nearest = &o;
             r.attack.right = nearest ? b.i32(0x28) < nearest->bike.i32(0x28) : b.i32(0x60) >= 0;
             r.attack.timer = 1;
+            r.attack.fired = false;
         }
         return;
     }
-    if (++r.attack.timer == attack_hit_tick) resolve_hit(r, index);
-    if (r.attack.timer > attack_ticks) r.attack.timer = 0;
+    ++r.attack.timer;
+    if (fight_hit_frame(r)) resolve_hit(r, index);
+    if (r.attack.timer > attack_ticks) { r.attack.timer = 0; r.attack.fired = false; }
+}
+
+// 0x004096f0 head: the selected runtime descriptor's flags (0x600000)
+// must allow combat, and animation frame byte +0x81 == 2 is the hit event.
+// The flags word lives on the runtime descriptor selected via rider+0x7c,
+// which no native bank carries (ActorGraphicsDescriptor has no flags word),
+// so the native gate is the frame event only: ride_animation.frame == 2
+// fires once per swing (attack.fired). Without a ride bank (no animation
+// advance) the legacy tick-7 stand-in fires once instead. Flag-gating the
+// hit is open until the runtime descriptor word is traced to a native bank.
+bool Race::fight_hit_frame(const Rider& r) const {
+    if (r.attack.fired) return false;
+    if (ride_library_) return r.ride_animation.frame == 2;
+    return r.attack.timer == attack_legacy_hit_tick;
+}
+
+// 0x00409c10: side match ((attacker_lateral < target_lateral) == side), then
+// |dpos| < 0x40, lateral reach by attack weapon (5/7/8 fists/club/chain,
+// kick 5), and |dheight| < 0x3000.
+bool Race::fight_reach(const Rider& self, const Rider& other, bool side) const {
+    if ((self.bike.i32(0x28) < other.bike.i32(0x28)) != side) return false;
+    if (std::abs(self.bike.i32(0x1c) - other.bike.i32(0x1c)) >= 0x40) return false;
+    if (std::abs(self.bike.i32(0x28) - other.bike.i32(0x28)) >= weapon_reach[self.attack.weapon] * 0x1000) return false;
+    if (std::abs(self.bike.i32(0x20) - other.bike.i32(0x20)) >= 0x3000) return false;
+    return true;
 }
 
 void Race::resolve_hit(Rider& r, size_t index) {
-    // 0x004096f0: find the rider on the attacked side, test reach (0x00409c10), apply damage
-    // (0x00409ad0 → 0x004052c0 → 0x004050c0 stamina / 0x004051e0 bike), knock steering, and
-    // with fists sometimes take the target's weapon.
+    // 0x004096f0 after the descriptor/frame gate: nearest rider on the
+    // attacked side within fight_reach (0x00409400/0x004095a0/0x00409c10).
+    // Steal path first (all gates before the rand()&3 draw): target steal
+    // deadline +0x1cc expired, target frame < 2, attacker +0x1d4 == 0
+    // (fists), target +0x1d4 neither 0 nor kick 3, target actively
+    // attacking (0x00409510). Failed steal still hits. Hit deadline +0x1d0
+    // (native: victim hit_until) suppresses damage until strictly expired;
+    // a landed hit sets tick+(5-level)*6, then rand()%(6-level) decides a
+    // repeat attack and (non-player only) rand()&3==2 queues animation 6.
+    // 0x00409ad0 scales strength by stamina (floor half), multiplies the
+    // per-weapon EXE table at 0x00465a00, then knock_off: kicks add
+    // condition damage trunc(damage/4)+1 with reason 5, others reason 4.
+    r.attack.fired = true;
     Bike& b = r.bike;
     Rider* target = nullptr;
     for (auto& o : riders_) {
         if (&o == &r || o.bike.i32(0x2f4) != 0) continue;
-        const bool on_right = b.i32(0x28) < o.bike.i32(0x28);
-        if (on_right != r.attack.right) continue;
-        if (std::abs(b.i32(0x1c) - o.bike.i32(0x1c)) >= 0x40) continue;
-        if (std::abs(b.i32(0x28) - o.bike.i32(0x28)) >= weapon_reach[r.attack.weapon] * 0x1000) continue;
-        if (std::abs(b.i32(0x20) - o.bike.i32(0x20)) >= 0x3000) continue;
+        if (!fight_reach(r, o, r.attack.right)) continue;
         if (!target || std::abs(o.bike.i32(0x28) - b.i32(0x28)) < std::abs(target->bike.i32(0x28) - b.i32(0x28))) target = &o;
     }
     const int w = r.attack.weapon;
@@ -1496,14 +1596,20 @@ void Race::resolve_hit(Rider& r, size_t index) {
         if (w == 1) sound(SoundEvent::swish_club, b);
         else if (w == 2) sound(SoundEvent::swish_chain, b);
     }
-    if (!target || ticks_ <= target->invulnerable_until) return;
+    if (!target) return;
     if (index == 0) last_target_ = int(target - riders_.data());
-    // Weapon grab with bare fists (simplified trigger of the 0x004096f0 steal branch).
-    if (w == 0 && (target->weapon == 1 || target->weapon == 2) && (random() & 3) == 3) {
+    // Steal: every gate above, then exactly one rand() draw.
+    if (uint32_t(target->steal_until) < uint32_t(ticks_) && target->ride_animation.frame < 2 &&
+        r.attack.weapon == 0 && target->attack.weapon != 0 && target->attack.weapon != 3 &&
+        target->attack.timer != 0 && (random() & 3) == 3) {
         r.weapon = target->weapon;
+        r.attack.weapon = target->weapon;
         target->weapon = 0;
+        target->attack.weapon = 0;
+        r.steal_until = ticks_ + 300;
         return;
     }
+    if (!(uint32_t(ticks_) > uint32_t(target->hit_until))) return;
     // 0x00409ad0: impact sound by weapon (kick alternates kick/punch on the tick parity).
     if (involves_player) {
         static constexpr SoundEvent impact[3] = {SoundEvent::impact_punch, SoundEvent::impact_club, SoundEvent::impact_chain};
@@ -1512,16 +1618,15 @@ void Race::resolve_hit(Rider& r, size_t index) {
     const RiderStats& s = r.stamina;
     int32_t damage = int32_t((int64_t((s.max << 8) / s.base) * s.strength) >> 8);
     if (damage < s.strength / 2) damage = s.strength / 2;
-    damage = div256(int64_t(weapon_damage[w]) * damage);
-    const int32_t bike_damage = w == 3 ? div_pow2(damage, 2) + 1 : 0;
-    RiderStats& t = target->stamina;
-    t.max -= damage * 4;
-    if (t.max < t.base / 2) t.max = t.base / 2;
-    t.current = std::max(0, t.current - damage * 0x40);
+    damage = (int32_t(weapon_damage[w]) * damage + ((int32_t(weapon_damage[w]) * damage >> 31) & 0xff)) >> 8;
+    const int32_t bike_damage = w == 3 ? (damage + ((damage >> 31) & 3)) / 4 + 1 : 0;
+    const bool down = knock_off(*target, damage, bike_damage, bike_damage == 0 ? 4 : 5);
+    (void)down;
+    target->hit_until = ticks_ + (5 - level_) * 6;
+    target->invulnerable_until = target->hit_until;
+    if ((random() % (6 - level_)) == 0) { /* repeat-attack decision: requeue handled by the anim tail */ }
+    else if (index != 0 && (random() & 3) == 2) { /* queue animation 6 on the attacker: render-side */ }
     Bike& tb = target->bike;
-    tb.i32(0x2f0) = std::max(0, tb.i32(0x2f0) - bike_damage);
-    if (t.current == 0 || tb.i32(0x2f0) == 0) crash(*target);   // knocked off (0x00403d60)
-    target->invulnerable_until = ticks_ + (5 - level_) * 6;
     if (r.attack.backhand) { tb.i32(0xec) -= 300; b.i32(0xec) += 300; }   // 0x00409bd0 shove
     auto clamp_steer = [](Bike& k) {
         const int32_t lim = k.i32(0x29c);
@@ -1531,6 +1636,85 @@ void Race::resolve_hit(Rider& r, size_t index) {
     b.i32(0x288) += r.attack.right ? -1000 : 1000;
     if (w == 3) tb.i32(0x288) += r.attack.right ? 8000 : -8000;
     clamp_steer(tb); clamp_steer(b);
+}
+
+// Nitro (player-global in the original; per-rider copies here):
+// 0x0040b110 activates when nitro bit 0x10 and accelerate bit 1 are both
+// held (checked in 0x00434660): boost flag +0xc0 bit 0x20 clear, charges > 0,
+// accumulator/256 >= minimum. It decrements one charge, sets the flag and
+// emits event 14. 0x0040b170 stops boost on accelerate release or finish
+// (event 21). 0x0040b1a0 (called from 0x00407a90 for the player only) drains
+// 256*dt while boosting, else recharges until the maximum test fails.
+// 0x0040adb0 multiplies throttle force by the boost multiplier with an
+// arithmetic >>8 shift.
+void Race::nitro_think(Rider& r, uint32_t controls, bool player) {
+    if (!player) return;
+    Bike& b = r.bike;
+    if ((b.u8(0xc0) & 0x10) == 0) {
+        if ((controls & control_nitro) && (controls & control_accelerate)) nitro_think_activate(r);
+        if (!(controls & control_accelerate)) nitro_think_stop(r);
+    } else {
+        nitro_think_stop(r);
+    }
+}
+void Race::nitro_think_activate(Rider& r) {
+    Bike& b = r.bike;
+    if ((b.u8(0xc0) & 0x20) != 0) return;
+    if (nitro_charges_ <= 0) return;
+    if ((r.nitro_charge + ((r.nitro_charge >> 31) & 0xff)) / 256 < nitro_.minimum) return;
+    --nitro_charges_;
+    b.u8(0xc0) = uint8_t(b.u8(0xc0) | 0x20);
+    sound(SoundEvent::nitro_on, b);
+}
+void Race::nitro_think_stop(Rider& r) {
+    Bike& b = r.bike;
+    if ((b.u8(0xc0) & 0x20) == 0) return;
+    b.u8(0xc0) = uint8_t(b.u8(0xc0) & uint8_t(~0x20));
+    sound(SoundEvent::nitro_off, b);
+}
+void Race::nitro_charge_tick(Rider& r) {
+    Bike& b = r.bike;
+    if ((b.u8(0xc0) & 0x20) == 0) {
+        if ((r.nitro_charge + ((r.nitro_charge >> 31) & 0xff)) / 256 < nitro_.max)
+            r.nitro_charge += b.i32(0x18) * nitro_.recharge;
+    } else {
+        r.nitro_charge += b.i32(0x18) * -0x100;
+        if (r.nitro_charge < 1) nitro_think_stop(r);
+    }
+}
+int32_t Race::nitro_throttle_force(Rider&, int32_t force) {
+    // 0x0040adb0 boost branch: force * multiplier, arithmetic >>8. int64
+    // product then narrowed matches the 32-bit imul before the sar.
+    const int64_t prod = int64_t(force) * int64_t(nitro_.boost);
+    return int32_t(prod >> 8);
+}
+// Riding animation advanced in the Race tick before snapshots (0x00407a90
+// think part + 0x00407f30 selection + 0x0043ae90 advance). Without a ride
+// bank there is nothing to advance; the render owner (Game::tick) keeps its
+// own states. Contact animation 9 (knock_off reason 4) and attack swing
+// codes (fight start) select here; crash states are owned by step_crash.
+void Race::advance_ride_animation(Rider& r, bool player) {
+    if (!ride_library_ || r.bike.i32(0x2f4) != 0) return;
+    const auto& bank = ride_library_->playback[0];
+    const auto& fallback = ride_library_->fallback;
+    auto& st = r.ride_animation;
+    if (r.contact_animation >= 0) {
+        set_animation_with_fallback(st, bank, r.contact_animation, uint32_t(ticks_), fallback);
+        r.contact_animation = -1;
+    }
+    if (r.attack.timer == 1 && attack_codes_) {
+        const auto& codes = *attack_codes_;
+        set_animation_with_fallback(st, bank,
+            codes[r.attack.right ? 1 : 0][r.attack.backhand ? 1 : 0][r.attack.weapon & 3],
+            uint32_t(ticks_), fallback);
+    }
+    RidingAnimationInput input;
+    input.speed = r.bike.i32(0xec); input.throttle = r.bike.i32(0x114);
+    input.lateral_speed = r.bike.i32(0x100); input.boost = r.bike.i32(0xf4);
+    input.flags = r.bike.u8(0x278); input.player = player;
+    input.wrecked = (r.bike.u8(0xc0) & 0x10) != 0;
+    input.camera_distance = std::abs(r.bike.i32(0x1c) - int32_t(camera_position()));
+    advance_riding_animation(st, bank, fallback, input, uint32_t(ticks_));
 }
 
 void Race::update_camera() {
@@ -1597,6 +1781,7 @@ void Race::step(uint32_t controls) {
             collide(a, b);
         }
     for (size_t i = 0; i < riders_.size(); ++i) collide_traffic(riders_[i]);
+    for (size_t i = 0; i < riders_.size(); ++i) advance_ride_animation(riders_[i], i == 0);
     update_camera();
     const auto& player=riders_[0];const auto& road=route_of(player);
     camera_heading_=advance_heading(camera_heading_,previous_camera_position_,camera_position(),road[player.previous_sample].path.bend,road[player.sample].path.bend,(player.bike.u8(0xc0)&16)!=0);

@@ -33,7 +33,18 @@ static const rr_sim_field rr_sim_rider_fields[] = {
     {"ai_base_speed", 0x1bc, 4, 1},
     {"ai_replan", 0x188, 4, 1},
     {"ai_lane", 0x18c, 4, 1},
-    {"ai_bias", 0x190, 4, 1}
+    {"ai_bias", 0x190, 4, 1},
+    {"anim", 0x80, 1, 1},
+    {"anim_frame", 0x81, 1, 1},
+    {"anim_queued", 0x82, 1, 1},
+    {"anim_loops", 0x88, 1, 0},
+    {"anim_deadline", 0x84, 4, 1},
+    {"attack_weapon", 0x1d4, 4, 1},
+    {"steal_until", 0x1cc, 4, 1},
+    {"hit_until", 0x1d0, 4, 1},
+    {"nitro_charge", 0xfffffffeu, 4, 1},
+    {"nitro_throttle", 0xfffffffd, 4, 1},
+    {"nitro_charges", 0xfffffffc, 4, 1}
 };
 
 static const rr_sim_field rr_sim_car_fields[] = {

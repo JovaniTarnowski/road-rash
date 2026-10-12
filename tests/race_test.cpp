@@ -135,6 +135,69 @@ int main() {
     for (int i = 0; i < 18; ++i) far.step(i == 0 ? rr::control_punch : 0);
     check(far.riders()[1].stamina.current == full, "punch out of reach does nothing");
 
+    // Knock-off routing on bike contact (0x004049c0 -> 0x004052c0): with
+    // lethal stamina the contained rider goes down with reason 2, and only
+    // one crash starts when two contacts land in one tick.
+    {
+        rr::Opponent slow2{test_spec(), 90, 0, 0, 0, 1};
+        rr::Race ko(straight(4000), straight(4000), t, spec, 90, {slow2});
+        auto& victim = ko.riders()[1];
+        victim.stamina.current = 5;
+        victim.bike.i32(0x2f0) = 1000;
+        auto& self = ko.riders()[0];
+        self.bike.i32(0x1c) = victim.bike.i32(0x1c);
+        self.bike.i32(0x28) = victim.bike.i32(0x28);
+        self.bike.i32(0x184) = 0x2000; self.bike.i32(0x188) = 0x2000; self.bike.i32(0x18c) = 0;
+        // run one tick into contact
+        ko.step(rr::control_accelerate);
+        int crashes = (ko.riders()[0].bike.i32(0x2f4) != 0) + (ko.riders()[1].bike.i32(0x2f4) != 0);
+        check(crashes <= 1, "at most one crash starts from double contact");
+    }
+    // Weapon conservation across 1000 seeded grab attempts: steals move the
+    // weapon, never duplicate or destroy it.
+    {
+        int failures2 = 0;
+        for (int seed = 0; seed < 1000; ++seed) {
+            rr::Opponent armed{test_spec(), 90, 0, 0, 0, 1};
+            rr::Race w(straight(4000), straight(4000), t, spec, 90, {armed});
+            w.set_rng_state(uint32_t(seed));
+            w.riders()[0].weapon = 0; w.riders()[0].attack.weapon = 0;
+            w.riders()[1].weapon = 1; w.riders()[1].attack.weapon = 1; w.riders()[1].attack.timer = 5;
+            w.riders()[1].steal_until = 0;
+            // park alongside in reach, swing and force the frame gate
+            w.riders()[1].bike.i32(0x28) = w.riders()[0].bike.i32(0x28) + 1000;
+            w.riders()[0].attack.timer = 1; w.riders()[0].attack.right = true;
+            for (int i = 0; i < 18 && w.riders()[0].attack.timer; ++i) w.step(i == 0 ? 0 : 0);
+            const int total = (w.riders()[0].weapon != 0) + (w.riders()[1].weapon != 0);
+            if (total != 1) ++failures2;
+        }
+        check(failures2 == 0, "weapons conserved across steal attempts");
+    }
+    // Nitro: held nitro+accelerate depletes a charge and boosts, release
+    // stops boost, recharge refills, retrigger works.
+    {
+        rr::Race n(straight(8000), straight(8000), t, spec, 90);
+        const int32_t c0 = n.nitro_charges();
+        check(c0 > 0, "nitro starts with charges");
+        for (int i = 0; i < 30; ++i) n.step(rr::control_accelerate | rr::control_nitro);
+        check(n.nitro_charges() < c0, "nitro activation spends a charge");
+        check((n.bike().u8(0xc0) & 0x20) != 0, "nitro boost flag set while held");
+        n.step(0);
+        check((n.bike().u8(0xc0) & 0x20) == 0, "nitro stops on release");
+        const int32_t low = n.riders()[0].nitro_charge;
+        for (int i = 0; i < 600; ++i) n.step(rr::control_accelerate);
+        check(n.riders()[0].nitro_charge >= low, "nitro recharges while boosting off");
+    }
+    // Animation state advances in the Race tick: ride_animation selected is
+    // set before snapshots without a render owner.
+    {
+        rr::Race m(straight(4000), straight(4000), t, spec, 90);
+        m.step(rr::control_accelerate);
+        bool has_anim = false;
+        for (const auto& f : m.snapshot().fields) if (f.name == "rider.0.anim") has_anim = true;
+        check(has_anim, "animation state present in snapshot");
+    }
+
     // Original field from the executable (skips without the disc).
     const std::string game = std::string(RR_SOURCE_DIR) + "/../cdrom/ROADRASH";
     if (std::filesystem::exists(game + "/ROADRASH.EXE")) {

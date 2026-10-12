@@ -137,6 +137,17 @@ const char* golden_key_for(const std::string& slot_prefix,
         // Offsets the proxy never dumps (no golden key in any era).
         return nullptr;
     }
+    // Animation/combat/nitro fields (plan 16): direct golden keys when the
+    // proxy dumps them, else uncovered (reported, never failing).
+    static const char* passthrough[] = {"anim", "anim_frame", "anim_queued", "anim_loops",
+        "anim_deadline", "attack_weapon", "steal_until", "hit_until",
+        "nitro_charge", "nitro_throttle", "nitro_charges", nullptr};
+    for (const char** d = passthrough; *d; ++d)
+        if (suffix == *d) {
+            out = slot_prefix + suffix;
+            if (golden.find(out) == golden.end()) return nullptr;
+            return out.c_str();
+        }
     // AI offsets live in the brain window (rider.N.brain_<hex>, brain
     // +0x138..+0x1c4) in the full era; earlier eras lack them.
     static const struct { const char* suffix; const char* hex; } ai_map[] = {
@@ -345,6 +356,35 @@ int main(int argc, char** argv) {
     if (bundle.scene) race.set_terrain_source([&](const rr::RouteSample& s) -> const rr::TerrainSlice& { return bundle.scene->terrain(s.section, s.local); });
     if (bundle.traffic) race.set_traffic(bundle.traffic.get());
     if (bundle.actors) race.set_crash_library(bundle.actors->library(), bundle.crash_config);
+    // Plan 16: descriptor-frame combat timing needs the ride bank + attack
+    // codes (same library the game uses); nitro setup copies the player
+    // spec +0x14c words (0x0040b0e0, from 0x00405600 after the player build).
+    if (bundle.actors) {
+        static std::array<std::array<std::array<int8_t,4>,2>,2> attack_codes{};
+        static bool attacks_loaded = false;
+        if (!attacks_loaded) {
+            for (int side = 0; side < 2; ++side) {
+                const auto bytes = rr::read_exe_data(exe, side ? 0x464518 : 0x4644f8, 32);
+                for (int kind = 0; kind < 2; ++kind)
+                    for (int weapon = 0; weapon < 4; ++weapon)
+                        attack_codes[side][kind][weapon] = int8_t(bytes[(kind * 4 + weapon) * 4]);
+            }
+            attacks_loaded = true;
+        }
+        race.set_ride_library(&bundle.actors->library(), &attack_codes);
+    }
+    {
+        rr::NitroConfig nitro;
+        bool spec_nitro = false;
+        for (int k = 0; k < 6; ++k)
+            if (bundle.spec.d[size_t(77 + k)] != 0) spec_nitro = true;
+        if (spec_nitro) {
+            nitro.recharge = bundle.spec.d[77]; nitro.boost = bundle.spec.d[78];
+            nitro.max = bundle.spec.d[79]; nitro.charges = bundle.spec.d[80];
+            nitro.minimum = bundle.spec.d[81]; nitro.tail = bundle.spec.d[82];
+        }
+        race.set_nitro(nitro);
+    }
     // The golden rng is the live CRT state AFTER each tick's step (the hook
     // dumps after 0x0044b3b0). The race-setup stream (menu entry through grid
     // build, 11,461 calls) is not reproduced: a single anchor at green covers
