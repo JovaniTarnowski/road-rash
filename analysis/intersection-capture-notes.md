@@ -96,3 +96,14 @@ player ticks ≈921+).
   the accepted .tsv staged only via manual copy (used here). A cleaner path:
   `RR_ORACLE_FRAMES` slightly above the expected finish + accept the
   shortfall, or gate on `end` presence.
+
+## city-intersection-v2 attempt (October 12, 2026): bootstrap fault
+
+Same recipe as v1 plus the rebuilt proxy (car `ring.*` + cursor keys):
+`RR_ORACLE_COURSE=1 RR_ORACLE_SEED=1 RR_ORACLE_DRIVE=2 RR_ORACLE_SIM=1`,
+1500 s timeout. Result: Wine exit 124 (timeout), capture rejected —
+same signature as the `city-cops` attempt (menus cycle, races enter/exit,
+no green light, 0 sim dumps). The v1 recipe (07:17) and the sibling's
+Napa v6 (07:52) both succeeded, so the pipeline works; the CITY menu
+bootstrap is flaky (prefix state or menu timing). Step 5 replay validation
+waits on a successful recapture; no tree changes for this attempt.
