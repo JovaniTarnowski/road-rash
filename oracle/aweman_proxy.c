@@ -285,14 +285,41 @@ static void dump_sim_tick(void) {
                            rr_sim_rider_fields[f].width, rr_sim_rider_fields[f].is_signed));
                 }
                 /* Rider-half raw window: the brain lives at *(bike+0x2fc)
-                 * (weapon +0x1d4, invuln +0x1d0, AI words). Values are
-                 * compared across runs; pointers are stable in practice. */
-                if (readable(node + 0x2fc, 4)) {
-                    const uintptr_t rh = (uint32_t)*(uint32_t*)(node + 0x2fc);
-                    for (unsigned w = 0; w < 16; ++w) {
+                 * (weapon +0x1d4, invuln +0x1d0, AI words, lookahead +0x1dc..+0x1f0).
+                 * Values are compared across runs; pointers are stable in practice. */
+                const uintptr_t rh = readable(node + 0x2fc, 4) ? (uint32_t)*(uint32_t*)(node + 0x2fc) : 0;
+                if (rh) {
+                    for (unsigned w = 0; w < 32; ++w) {
                         snprintf(key, sizeof key, "rider.%d.raw_%x", slot, 0x180 + 4 * w);
                         rr_log(key, sim_field_value(rh, 0x180 + 4 * w, 4, 1));
                     }
+                }
+                /* AI brain chase: rider_half+0x1d8 points at the brain struct
+                 * (state +0x160, replan +0x188, targets +0x194..+0x19c, lookahead
+                 * +0x1dc..+0x200). This is what 0x00407bd0 steps. */
+                if (rh && readable(rh + 0x1d8, 4)) {
+                    const uintptr_t brain = (uint32_t)*(uint32_t*)(rh + 0x1d8);
+                    for (unsigned w = 0; w < 26; ++w) {
+                        snprintf(key, sizeof key, "rider.%d.brain_%x", slot, 0x138 + 4 * w);
+                        rr_log(key, sim_field_value(brain, 0x138 + 4 * w, 4, 1));
+                    }
+                }
+                /* Bike-half lateral chain (+0x104/+0x108/+0x10c) and yaw (+0x60):
+                 * pinpoints steer-vs-bend-push divergences. */
+                snprintf(key, sizeof key, "rider.%d.lat104", slot);
+                rr_log(key, sim_field_value(node, 0x104, 4, 1));
+                snprintf(key, sizeof key, "rider.%d.lat108", slot);
+                rr_log(key, sim_field_value(node, 0x108, 4, 1));
+                snprintf(key, sizeof key, "rider.%d.lat10c", slot);
+                rr_log(key, sim_field_value(node, 0x10c, 4, 1));
+                snprintf(key, sizeof key, "rider.%d.yaw60", slot);
+                rr_log(key, sim_field_value(node, 0x60, 4, 1));
+                /* Steer-rate and limit words (+0x2a0..+0x2b0) plus tick delta (+0x18):
+                 * pins down steer ramp-rate divergences. */
+                static const uint32_t extra[] = {0x18, 0x2a0, 0x2a4, 0x2a8, 0x2ac, 0x29c, 0x2b0, 0x2d0, 0x2d4};
+                for (unsigned e = 0; e < 9; ++e) {
+                    snprintf(key, sizeof key, "rider.%d.bike_%x", slot, extra[e]);
+                    rr_log(key, sim_field_value(node, extra[e], 4, 1));
                 }
             } else {
                 snprintf(key, sizeof key, "node.%d.think", node_index);

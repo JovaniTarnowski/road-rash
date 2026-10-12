@@ -241,8 +241,31 @@ sit at 0 for 120 ticks under controls=5. The demo rider is character 1's rider 8
 (bike SPEC id 2 by condition 142, value 91, weapon 2, stats 7/3000, base speed 95
 = personality 8 level-0). Lane shortlist {0,1} (lane 2 diverges at frame 72);
 bias = slot-0 grid word 16384. Remaining: lane final fit, and the tick-184 AI
-state transition (replan ~179; state machine `0x00408ad0`/`0x00408df0`/table
-`0x00465980` and overtake gate `0x00408e40` unported).
+state transition (now traced to the state 1→5 switch below).
+
+AI-brain finding (October 12, 2026): the rider half (`*(bike+0x2fc)`) is not the
+AI state. Word `rider_half+0x1d8` points at a separate brain struct that
+`0x00407bd0` steps. Offsets confirmed by live dumps (`rider.<slot>.brain_<off>`
+in the sim golden, `sim-kink-probe3/4`): `+0x160` state, `+0x164` skid,
+`+0x168` target object, `+0x16c/+0x170` neighbours, `+0x174` overtake step,
+`+0x178` per-state timer, `+0x188` replan accumulator, `+0x18c` lane, `+0x190`
+bias, `+0x194/+0x198/+0x19c` target x/position/speed, `+0x1a0/+0x1a4` current
+speed, `+0x1bc` base speed, `+0x1dc/+0x1e0/+0x1e4/+0x1e8` lookahead
+(`0x0040a100`). `rider_half+0x1e0` is the stats-table pointer (`0x00463c78` rows).
+The state dispatch table `0x00465980` maps 0→`0x00408e30`, 1→`0x00409000`
+(racing), 2→`0x004092d0`, 3→`0x00409460`, 4→`0x00409ca0`, 5→`0x0040a4f0`,
+6→`0x0040a560` (read from the reference EXE `.data` at file offset `0x63f80`).
+Solo-capture evidence: the demo rider runs state 1 with `target_x` 18688 until
+tick 182, then `0x00408ad0` moves it to state 5 and `0x0040a4f0`→`0x00408e40`
+writes `target_x` 43264; bike `+0x288` ramps +165/tick from tick 183 and
+`+0x10c` flips −34→+86 at tick 184. Native `ai_think` has no state machine and
+holds `+0x288` 0, diverging on `lateral` at tick 184 (17073 vs 16953).
+The transition needs the frozen opponent nodes: solo captures still construct
+7 opponents (think/move nulled), and replan `0x00408cd0` picks the target
+(`+0x168`) among them. Native solo builds zero opponents, so it can never take
+this transition; the replay harness must build frozen opponents (open).
+Steer rates verified: bike `+0x2a8/+0x2ac` read 165/141 live, matching native
+`apply_spec` output for SPEC id 2 exactly — no divergence there.
 | `0x00414ca0` | Open resource container and load table | Native directory reader |
 | `0x00415360` | Iterate table and optionally preload | Layout recovered |
 | `0x004153a0` | Find/load/cache resource payload | Not ported |

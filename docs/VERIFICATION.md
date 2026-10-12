@@ -3,7 +3,7 @@
 ## Session 1: macOS ARM64
 
 - CMake configure and C++17 build succeeded on macOS 27.0 / Apple silicon.
-- `file build/rr-native`: Mach-O 64-bit executable arm64.
+- `file build/rr-viewer`: Mach-O 64-bit executable arm64.
 - Dynamic dependencies: native SDL3, libc++, libSystem. No Windows runtime dependency.
 - CTest resource-bounds test passed: valid synthetic resource, truncated inputs, invalid signature, overflowing/out-of-range offsets, sizes and counts.
 - Original corpus: all 13 resource containers accepted, 429 directory entries validated against file bounds.
@@ -106,7 +106,7 @@
 - `oracle/build.sh`: i686 forwarding DLL built; `oracle/install.sh` creates a separate RoadRashOracle install and verifies the reference EXE hash. Host patch test passes. Runtime frame hooks load and produce complete golden captures.
 - `RR_ORACLE_FRAMES=600 oracle/run.sh napa-attract`: captured 600 original CITY frames, final `end` marker present. Recorded camera positions span Q8 12,544–19,159 with 409 distinct positions. All compared projection fields match in `oracle-road`: **600 compared, 0 mismatches**. First mismatch investigation corrected the oracle's course-index mapping; no expectations were relaxed.
 - `cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug`, build and CTest: **16/16 pass**, including hash vectors, all truncated lengths of a synthetic ISO, invalid endian/extent/cycle checks, folder/ISO import, corrupt/missing input, retained destination and staging cleanup. Malformed existing oracle data fails instead of silently skipping.
-- `build/rr-import <real ISO> .tools/imported-game`: **341/341 verified**; output is local/ignored. `build/rr-native --assets .tools/imported-game --smoke` decodes nine images and all five courses. All-course projection sweep also passes.
+- `build/rr-import <real ISO> .tools/imported-game`: **341/341 verified**; output is local/ignored. `build/rr-viewer --assets .tools/imported-game --smoke` decodes nine images and all five courses. All-course projection sweep also passes.
 - `RR_PREF_OVERRIDE=.tools/first-run-empty build/rr-game --first-run-smoke --screenshot analysis/native-import.bmp`: exits successfully. `analysis/native-import.png` visually inspected: title, import explanation and both desktop picker buttons fit without clipping.
 - Android `assembleDebug`: **BUILD SUCCESSFUL**, including `verifyDebugNoGameData`. Actual ZIP listing has `lib/arm64-v8a/libmain.so` and no `assets/game/` entries.
 - `adb devices`: no devices. Hardware import/input/rendering/lifecycle, additional oracle scenarios, deterministic replay, all original pixels and gameplay fidelity remain unverified. This is progress toward the full port, not final acceptance.
@@ -124,7 +124,7 @@ Final import milestone checks: 16/16 tests also pass under address/undefined san
 - Sanitizer CTest: **23/23 pass** after the codec additions. Runtime playback/cursor/retirement follow-up is also checked in the sanitizer build; see the final milestone record below.
 - `rr-game --assets ../cdrom/ROADRASH --video VIDEO/INTRO.AVI --ticks 600 --screenshot analysis/native-video.bmp`: succeeds. PNG visually inspected: the decoded ten-second intro frame is centered at native size on black. Screenshot simulation is silent and does not measure device A/V latency.
 - Original `0x00402820` confirms the normal native-size centered destination rectangle. Frontend mode selection and doubled/top placement remain unverified in native flow.
-- `rr-native --assets ../cdrom/ROADRASH --smoke` and all-course `rr-course` projection sweep pass.
+- `rr-viewer --assets ../cdrom/ROADRASH --smoke` and all-course `rr-course` projection sweep pass.
 - Android follow-up initially failed because NDK `uint64_t` is unsigned long while an expression used unsigned long long in `std::max`. An explicit fixed-width template resolves it. Rebuild including video player: **BUILD SUCCESSFUL**, `verifyDebugNoGameData` passes.
 - `adb devices`: no devices. Physical playback, audio focus/device latency, frame times and full original gameplay acceptance are still open. Codec equality does not establish original simulation, effect triggers, cutscene selection or frontend fidelity.
 
@@ -348,7 +348,7 @@ Logs: `analysis/napa-scenery-native-tests.log`,
 
 - `ctest` (Debug): **53/53 passed** including the new `traffic` suite (synthetic timer/lane/placement/pool/movement/horn checks always run; the CARS corpus part uses the mounted disc).
 - Sanitizer build (`-fsanitize=undefined,address -fno-sanitize-recover=undefined`): **53/53 passed** (`analysis/traffic-sanitizer-tests.log`).
-- `build/rr-native --assets ../cdrom/ROADRASH --smoke` and the five-course `rr-course --exe` sweep pass.
+- `build/rr-viewer --assets ../cdrom/ROADRASH --smoke` and the five-course `rr-course --exe` sweep pass.
 - Live check: `rr-game --autopilot --ticks 2400 --screenshot analysis/napa-traffic.bmp` on Napa renders with traffic active; a byte-diff against the same run from an assets tree without `DATA/CARS` differs (436,231 pixels), confirming the traffic render path executes. The diff is not car-localised: traffic shares the race's rand stream, so rider AI also shifts — expected, since the original uses one CRT stream.
 - Geometry probe (headless, real NAPA.CAR + NAPA route): after 2400 autopilot-style steps, 14 active cars with phases 192..319, speeds ramping to the 1,800..3,100 targets, kinds 0/2 mixed, depths spanning the 128-sample ring; visible cars produce textured display nodes within the depth-table span.
 - Android: `assembleDebug` and `assembleRelease -PreleaseDebugSigning=true` succeed; the debug APK contains no `assets/game/` entries and `lib/arm64-v8a/libmain.so` includes the traffic code (`analysis/traffic-android-build.log`).
@@ -432,3 +432,26 @@ Crash reset gate additionally compares 64 original `0x00404560` calls, 34 fields
 Police configuration gate: `build/police-test` compares imported pursuit/relationship fields and rider stats against the explicitly induced level-1 Napa cop constructor in `analysis/oracle/napa-police-spawn.tsv`. It also compares 1,024 local arrest outcomes/delays from `napa-police-arrest.tsv`, requiring both the complete count and successful restoration marker. For that scoped probe, the nearby-cop lookup is temporarily substituted only after a five-byte entry preflight; the actual `0x00407f30` decision and `0x00416010` outcome routine run on scratch actors. This gate excludes actual lookup traversal, spawning cadence and chase movement. Private fixtures/REA data remain unbundled.
 
 `make_police_actor` is checked against 50 original bike fields and 43 valid original rider fields in the bounded level-1 constructor capture (excluding the stats pointer and all bike-only fields beyond rider allocation 0x208). Ground and lane target are caller inputs; dynamic AI/scheduler links are not verified by this snapshot. `crash-test` additionally matches 256 original directed player walking decisions in `napa-crash-walking.tsv`, including resetting the mutable recovery timer. Full checkpoint gate: 62/62 native/sanitizer plus Android debug/release passed.
+
+## Tick-184 AI kink probe (October 12, 2026)
+
+- Extended `dump_sim_tick` in `oracle/aweman_proxy.c`: rider-half raw window
+  16→32 words (`+0x180..+0x1fc`), new AI-brain chase (`rider.<slot>.brain_<off>`
+  for brain `+0x138..+0x19c` via `rider_half+0x1d8`), bike lateral chain
+  (`lat104/lat108/lat10c`, `yaw60`) and steer-rate words
+  (`bike_18/2a0/2a4/2a8/2ac/29c/2b0/2d0/2d4`). `oracle-patch-test` preflights
+  clean (no new hook sites).
+- `sim-kink-probe4.tsv` (Napa level 1, seed 1, drive 2, solo, ticks 2–220):
+  demo rider state (`brain_160`) 1→5 at tick 183, `brain_194` (target_x)
+  18688→43264, bike `steer` ramps +165/tick from tick 183, `lat10c` −34→+86 at
+  tick 184. Native `oracle-sim-test` on `sim-napa-solo.tsv` still diverges at
+  frame 183 (tick 184) on `rider.0.lateral` (original 17073, native 16953):
+  native `ai_think` has no state machine and never steers here.
+- Steer-rate cross-check: live `bike_2a8/bike_2ac` = 165/141; native
+  `apply_spec` for SPEC id 2 computes 165/141 exactly (SPEC d62/d63 = 60/70,
+  mass 256, either rider value 90/91). No divergence in steer rates.
+- Open (plan 10 task 6 input): replay harness must build the 7 frozen
+  opponents in solo mode (the original constructs them with nulled think/move
+  and replan `0x00408cd0` picks `+0x168` among them); then port `0x00408ad0`
+  transitions, state dispatch (`0x00465980`), `0x00408e40` and the
+  `0x0040a410`/`0x0040a100` lookahead.
