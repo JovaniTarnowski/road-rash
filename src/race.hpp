@@ -94,15 +94,37 @@ struct RaceSnapshot { int32_t tick; uint32_t rng; std::vector<FieldValue> fields
 class Race {
 public:
     // route_a/route_b: make_route(course,false/true). Identical up to the first split.
+    // road_base_q8: absolute Q8 anchor of the route. The original sub-slice
+    // +0xcc is absolute while RouteSample::offset accumulates from 0 at the
+    // course root, so grid placement adds this. Napa measures 7 world units
+    // from the solo golden frame 0 (18176 - 16384 = 1792); traversal
+    // mechanism open, other courses unmeasured (default 0).
     Race(std::vector<RouteSample> route_a, std::vector<RouteSample> route_b,
          const PhysicsTables&, const BikeSpec&, int32_t rider_value, std::vector<Opponent> opponents = {},
-         int level = 0);   // level 0..4 (0x004b8a12)
+         int level = 0, int32_t road_base_q8 = 0);   // level 0..4 (0x004b8a12)
     void set_terrain_source(std::function<const TerrainSlice&(const RouteSample&)> source) { terrain_source_=std::move(source); }
     // Free traffic steps with the race on the player's route (0x0044b3b0 calls
     // 0x0044dd90 with the per-step camera advance). The random-call
     // interleaving against the original's scheduler is not verified.
-    void set_traffic(TrafficSystem* traffic) { traffic_ = traffic; }
     void set_crash_library(const ActorAnimationLibrary&,const CrashConfig&);
+    // Demo hold (DAT_004753c8): attract/demo races and oracle captures run
+    // with this set; the player rider think takes the AI branch (0x00434660
+    // head: stamina regen, then 0x00407bd0) and ignores the control word.
+    // Human races leave it clear. The attract demo (plan 13) will set it.
+    // Enabling also seeds the player AI brain like an opponent build
+    // (0x00405990/0x00407990/0x00405c80): base/current speed, lane, bias.
+    // The oracle demo player is character 1's rider 8 (base 95).
+    // Demo hold (DAT_004753c8): attract/demo races and oracle captures run
+    // with this set; the player rider think takes the AI branch (0x00434660
+    // head: stamina regen, then 0x00407bd0) and ignores the control word.
+    // Human races leave it clear. The attract demo (plan 13) will set it.
+    // Enabling also seeds the player AI brain like an opponent build
+    // (0x00405990/0x00407990/0x00405c80): base/current speed, lane, bias.
+    // The oracle demo player is character 1's rider 8 (base 95).
+    // Rider params come from its 0x00463c78 row (value +0xc/2, weapon
+    // +0x18+level*4, stats +0x30..+0x3c); rider 8: 91, 2, 7/3000/3000/3000.
+    void set_demo_hold(bool v, int base_speed = 0, int lane = 0, int32_t bias = 0,
+                       int weapon = 0, RiderStats stats = {});
     void step(uint32_t controls);      // one simulation tick
     const std::vector<Rider>& riders() const { return riders_; }
     const Bike& bike() const { return riders_[0].bike; }
@@ -161,6 +183,8 @@ private:
     int32_t ticks_ = 0;
     int level_ = 0;
     int last_target_ = -1;
+    bool demo_hold_ = false;   // DAT_004753c8 (see set_demo_hold)
+    int32_t road_base_ = 0;   // absolute Q8 anchor (ctor param)
     uint32_t seed_ = 1;   // MSVC rand() state (0x00455eb0)
     std::vector<SoundEventRecord> sound_events_;
     void sound(SoundEvent, const Bike&);

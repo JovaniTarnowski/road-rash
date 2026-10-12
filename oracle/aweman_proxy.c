@@ -273,7 +273,8 @@ static void dump_sim_tick(void) {
                      * omitted until their object is traced. */
                     if (off != 0x1c && off != 0x28 && off != 0x20 && off != 0xf4 &&
                         off != 0xec && off != 0x23c && off != 0x2f0 && off != 0x2f4 &&
-                        off != 0xc0 && off != 0x140) continue;
+                        off != 0xc0 && off != 0x140 && off != 0x288 && off != 0xf0 &&
+                        off != 0x10c && off != 0x160) continue;
                     if (off == 0x140) {
                         snprintf(key, sizeof key, "rider.%d.slice_ptr", slot);
                         rr_log(key, sim_field_value(node, off, 4, 0));

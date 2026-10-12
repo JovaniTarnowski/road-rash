@@ -48,8 +48,8 @@ std::vector<Opponent> original_opponents(const std::vector<uint8_t>& exe, const 
 }
 
 Race::Race(std::vector<RouteSample> a, std::vector<RouteSample> b, const PhysicsTables& t,
-           const BikeSpec& spec, int32_t rider_value, std::vector<Opponent> opponents, int level)
-    : routes_{std::move(a), std::move(b)}, tables_(t), level_(level) {
+           const BikeSpec& spec, int32_t rider_value, std::vector<Opponent> opponents, int level, int32_t road_base_q8)
+    : routes_{std::move(a), std::move(b)}, tables_(t), level_(level), road_base_(road_base_q8) {
     if (routes_[0].size() < 64 || routes_[1].size() < 64) throw std::runtime_error("Route too short for a race");
     auto place_rider = [&](const BikeSpec& s, int32_t value, int slot) {
         Rider r;
@@ -61,8 +61,11 @@ Race::Race(std::vector<RouteSample> a, std::vector<RouteSample> b, const Physics
         r.sample = r.previous_sample = size_t(pos >> 8);
         r.bike.i32(0x1c) = pos;
         r.bike.i32(0x138) = pos;
-        // 0x00405990: lateral = sub-slice +0xcc (road offset) + grid offset.
-        r.bike.i32(0x28) = routes_[0][r.sample].offset + grid_lateral[slot % 4];
+        // 0x00405990: lateral = sub-slice +0xcc (road centre, Q8) + grid offset.
+        // RouteSample::offset is world units (edges/AI scale it by 256);
+        // road_base_ anchors the relative route to the original absolute
+        // frame (ctor param); the default 0 keeps synthetic routes exact.
+        r.bike.i32(0x28) = routes_[0][r.sample].offset * 256 + grid_lateral[slot % 4] + road_base_;
         r.bike.i32(0x2f0) = r.bike.i32(0x2ec);   // bike condition (0x00405c80)
         return r;
     };
@@ -89,6 +92,22 @@ Race::Race(std::vector<RouteSample> a, std::vector<RouteSample> b, const Physics
 void Race::set_crash_library(const ActorAnimationLibrary& library,const CrashConfig& config) {
     crash_library_=&library;crash_config_=config;
     for(auto& rider:riders_)init_crash_actor(rider.crash_actor,config);
+}
+
+void Race::set_demo_hold(bool v, int base_speed, int lane, int32_t bias,
+                       int weapon, RiderStats stats) {
+    demo_hold_ = v;
+    if (v && !riders_.empty()) {
+        // Seed the player AI brain like an opponent build: replan starts at
+        // zero (first reset 60 ticks after green) with base/current from the
+        // rider's personality row. The demo rider's own value/weapon/stats
+        // come from its rider-table row (0x00405990/0x00405c80).
+        riders_[0].brain.base_speed = riders_[0].brain.current_speed = base_speed;
+        riders_[0].brain.lane = lane;
+        riders_[0].brain.bias = bias;
+        riders_[0].stamina = stats;
+        riders_[0].weapon = weapon;
+    }
 }
 
 SliceEdges Race::edges(const Rider& r, size_t i) const {
@@ -548,9 +567,13 @@ void Race::step_rider(Rider& r, uint32_t controls, bool player) {
         return;
     }
     if(crash_library_ && b.i32(0x2f4)) {if(!r.crash_active)crash(r);step_crash(r,player,controls);return;}
-    fight(r, controls, size_t(&r - riders_.data()));
+    // 0x00434660 head: demo hold (or race-not-started) takes the AI branch;
+    // the control word is ignored. fight() with zero controls is exactly the
+    // branch's stamina regen with no attacks started.
+    const bool demo_player = demo_hold_ && player;
+    fight(r, demo_player ? 0 : controls, size_t(&r - riders_.data()));
     if (b.i32(0x2f4) == 0) {
-        if (r.ai) ai_think(r);
+        if (r.ai || demo_player) ai_think(r);
         else apply_controls(b, tables_, controls);
     } else {
         // Crashed: slide to a stop, wait one second, remount at the nearest lane.
@@ -603,6 +626,10 @@ RaceSnapshot Race::snapshot() const {
         out.fields.push_back({p + "crash", b.i32(0x2f4)});
         out.fields.push_back({p + "slice", int64_t(r.sample)});
         out.fields.push_back({p + "flags", b.u8(0xc0)});
+        out.fields.push_back({p + "steer", b.i32(0x288)});
+        out.fields.push_back({p + "steer_rate", b.i32(0xf0)});
+        out.fields.push_back({p + "lat_vel", b.i32(0x10c)});
+        out.fields.push_back({p + "ground", b.i32(0x160)});
         out.fields.push_back({p + "stamina_current", r.stamina.current});
         out.fields.push_back({p + "stamina_max", r.stamina.max});
         out.fields.push_back({p + "weapon", r.weapon});

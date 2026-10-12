@@ -75,7 +75,7 @@ PhysicsTables read_physics_tables(const std::vector<uint8_t>& exe) {
 
 void init_bike_object(Bike& b, const PhysicsTables& t) {
     const auto& w = t.bike_object;
-    b.u8(0xc0) = uint8_t(w[0]);
+    b.u8(0xc0) = uint8_t(uint8_t(w[0] & ~0x08) | 0x04);   // 0x00437bb0: bit 2 set, bit 3 cleared at scheduler insert
     b.i32(0xc4) = w[1];
     // 0x004387a0: object constants from the behaviour table words 7..
     b.i32(0x148) = w[7];  b.i32(0x14c) = w[8];  b.i32(0x150) = w[9];  b.i32(0x154) = w[10];

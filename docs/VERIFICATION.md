@@ -354,6 +354,38 @@ Logs: `analysis/napa-scenery-native-tests.log`,
 - Android: `assembleDebug` and `assembleRelease -PreleaseDebugSigning=true` succeed; the debug APK contains no `assets/game/` entries and `lib/arm64-v8a/libmain.so` includes the traffic code (`analysis/traffic-android-build.log`).
 - Not verified: tick-level equality with the original (no traffic oracle capture exists), car animation timing/CCB scaling, rider-car collisions. No Android device was connected.
 
+### Sim-hold replay (October 11, 2026, in progress)
+
+Solo-golden replay (`oracle-sim-test` on `sim-napa-solo.tsv`) runs 124 green
+ticks (tick 60 green through tick 183) with zero field divergence, up from an
+immediate frame-0 RNG mismatch. Findings, each verified against the golden:
+- RNG anchor: the hook dumps post-step state; the race-setup stream
+  (11,461 calls, per randlog) is not reproduced, so replay anchors at the
+  frame-0 golden rng and re-anchors every tick. Mid-race consumers (scenery
+  `0x451xxx`, combat `0x404bxx`, traffic `0x44dexx`, per `RR_ORACLE_RANDLOG=1`
+  capture) run in the original tick but are unported; stream-position
+  equality is plan 11 work, field comparison is the signal.
+- Start-hold: ticks 1-59 frozen (pre-green countdown); replay starts at the
+  first moving frame (tick 60) with RNG re-anchored there.
+- Demo player: the capture runs the AI branch (`rider.1` think `0x00434660`
+  head with mode != 1; only `0x00421430 = 0` writes hold in the tree).
+  `Race::set_demo_hold` routes the player through `ai_think` with rider-8
+  params (base 95 = personality 8 level-0). Lane shortlist {0,1} (lane 2
+  diverges at frame 72); base/lane/bias final fit open.
+- SPEC: golden condition 142 = SPEC id 2 (`specs.at(1)`); flags bit 2 set at
+  scheduler insert (`0x00437bb0`: `(table & ~8) | 4`).
+- Grid lateral: route offset scaled by 256 (Q8); Napa absolute road-base 7
+  world units measured from frame 0, traversal mechanism open.
+- Steer-state fields (`steer`/`steer_rate`/`lat_vel`/`ground`) added to both
+  field tables; golden shows `steer`/`steer_rate` 0 with `latvel` -1..-3
+  through tick 181 (bend push only).
+- Next gap (tick 184): the demo AI starts steering right (`steer` 0 -> 330
+  by tick 184, replan at ~179) while native lane-keeping holds left. Open:
+  AI state machine (`0x00408ad0`/`0x00408df0`/table `0x00465980`,
+  `0x00409f70` owner check) and overtake gate `0x00408e40`.
+
+Plan 11 Task 1 verification (October 11, 2026): every rule in `src/traffic.cpp` carries its address comment (`0x0044db80`, `0x0044dd00`, `0x0044dd90`, `0x0044df60`, `0x004465f0`, `0x0044efa0`, `0x0040b5f0`/`0x0040b620` SNAC chain, 16-object pool `0x00438b70`); container reads go through bounds-checked `read_resources`/`read_exe_data` plus the SNAC range guard, with truncated-`CARS`/`SNAC` rejection tests in `tests/traffic_test.cpp`. Regression gate: native `ctest` 62/62 pass, sanitizer `traffic`+`actor_traffic` pass. Smoke: `rr-game --race --ticks 3600 --autopilot` renders a car ahead on the Napa road with the rider at speed. Tick order and car/rider draw order remain unverified (plan 10 acceptance input).
+
 ## Session 23: simulation oracle, plan 10 tasks 1–4 (October 11, 2026)
 
 - Task 1 (trace): step hook site `0x0044b324` → `0x0044b3b0`; live CRT rand
