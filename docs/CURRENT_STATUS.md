@@ -5,7 +5,7 @@ Generated from `agent-status.json`. Historical entries describe their own checkp
 | Area | Implementation | Verification / remaining acceptance | Evidence |
 | --- | --- | --- | --- |
 | Native build | Playable native game + research viewer | Historical native checkpoints; current receipts below; Simulation acceptance separate | [VERIFICATION.md](VERIFICATION.md), [RUN_NATIVE.md](RUN_NATIVE.md) |
-| Simulation parity | Tick replay and first-divergence diagnostics | Known demo mismatch at tick 120; single RNG anchor; Actual human-control capture/replay and full parity | [SIM_SCENARIOS.md](SIM_SCENARIOS.md), [10-simulation-oracle.md](plans/10-simulation-oracle.md) |
+| Simulation parity | Tick replay and first-divergence diagnostics | Known demo mismatch; exact signature in diagnostic receipts; single RNG anchor; Actual human-control capture/replay and full parity | [SIM_SCENARIOS.md](SIM_SCENARIOS.md), [10-simulation-oracle.md](plans/10-simulation-oracle.md) |
 | Napa race | Native scene/actors/traffic with remaining systems | Component comparisons are partial evidence; Car contact, actor nodes and full-race acceptance | [NAPA_IMPLEMENTATION.md](NAPA_IMPLEMENTATION.md), [11a-napa-playtest-fixes.md](plans/11a-napa-playtest-fixes.md), [16-gameplay-systems.md](plans/16-gameplay-systems.md) |
 | Other courses | Course data supported; composed renderer work pending | No full-course parity claim; Complete CITY/HIWAY/MEDLY/CANYN | [17-all-courses-port.md](plans/17-all-courses-port.md) |
 | Frontend/settings | Menu/career/save paths exist; options gaps | Original save round-trip and options acceptance pending; Settings/screens and music completion | [18-settings-and-options.md](plans/18-settings-and-options.md), [13-music-and-frontend-completion.md](plans/13-music-and-frontend-completion.md) |
@@ -15,4 +15,9 @@ Generated from `agent-status.json`. Historical entries describe their own checkp
 
 ## Latest gate receipts
 
-No current receipts. Historical test counts are not current verification.
+- **android-debug**: passed; source `0f31a63359bf`; commit `b76ffc899e20`; receipt `/Users/archit/Dev/rr/native-port/analysis/agent-gates/p0-p1-android-debug-final/receipt.json`.
+- **android-release**: passed; source `50298bc9812a`; commit `b76ffc899e20`; receipt `/Users/archit/Dev/rr/native-port/analysis/agent-gates/p0-p1-android-release-final/receipt.json`.
+- **native**: passed; source `0f31a63359bf`; commit `b76ffc899e20`; receipt `/Users/archit/Dev/rr/native-port/analysis/agent-gates/p0-p1-native-final/receipt.json`.
+- **oracle**: failed; source `c326c2b97d5a`; commit `b76ffc899e20`; receipt `/Users/archit/Dev/rr/native-port/analysis/agent-gates/p0-p1-strict-final/receipt.json`.
+- **package**: passed; source `0f31a63359bf`; commit `b76ffc899e20`; receipt `/Users/archit/Dev/rr/native-port/analysis/agent-gates/p0-p1-package-final/receipt.json`.
+- **sanitizers**: passed; source `0f31a63359bf`; commit `b76ffc899e20`; receipt `/Users/archit/Dev/rr/native-port/analysis/agent-gates/p0-p1-sanitizers-final/receipt.json`.

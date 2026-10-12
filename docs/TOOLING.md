@@ -5,6 +5,22 @@ part of the port itself. Cross-references: [ACTORS.md](ACTORS.md),
 [REVERSE_ENGINEERING.md](REVERSE_ENGINEERING.md),
 [VERIFICATION.md](VERIFICATION.md).
 
+## clangd / C++ LSP
+
+No editor config is committed. To get go-to-definition/hover/diagnostics in
+an editor with clangd (Xcode's `/usr/bin/clangd` works):
+
+```sh
+cmake -S . -B build-clangd -DCMAKE_BUILD_TYPE=Debug -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
+ln -sfn build-clangd/compile_commands.json compile_commands.json
+```
+
+`compile_commands.json` and `build*/` are git-ignored. Re-run the configure
+step after adding/removing sources so the DB stays current. The `omp`
+`xd://lsp` harness reports no servers configured for this project, so LSP
+queries through the agent channel stay unavailable; `clangd --check` is the
+verification (`--check=src/bike.cpp` parses clean).
+
 ## REA (`npx rea-agents@latest`)
 
 REA 6.4.0 ("Reverse engineer anything") is used as an **independent second

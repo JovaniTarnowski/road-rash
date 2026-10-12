@@ -5,6 +5,7 @@ import json
 import os
 from pathlib import Path
 import sys
+import time
 import uuid
 import xml.etree.ElementTree as ET
 import zipfile
@@ -30,7 +31,7 @@ def run_gate(args):
     output.mkdir(parents=True, exist_ok=False)
     identity = source_identity()
     report = {'profile': args.profile, 'source': identity, 'build_directory': str(build),
-              'configuration': 'Debug', 'steps': [], 'coverage': {}, 'status': 'running'}
+              'configuration': 'Debug', 'started_at': time.time(), 'steps': [], 'coverage': {}, 'status': 'running'}
     claims = ResourceClaims()
     resources = [build]
     if args.profile.startswith('android'):
@@ -44,6 +45,7 @@ def run_gate(args):
             commands = []
             if args.profile in {'native', 'sanitizers', 'oracle'}:
                 configure = ['cmake', '-S', str(ROOT), '-B', str(build), '-DCMAKE_BUILD_TYPE=Debug']
+                configure += ['-DRR_BUNDLE_SDL=OFF']
                 if args.profile == 'sanitizers':
                     flags = '-fsanitize=address,undefined -fno-omit-frame-pointer'
                     configure += ['-DCMAKE_CXX_FLAGS=' + flags, '-DCMAKE_C_FLAGS=' + flags,
@@ -61,8 +63,15 @@ def run_gate(args):
                     if args.tests:
                         test += ['-R', args.tests]
                     commands.append(test)
+                    assets = ROOT.parent / 'cdrom/ROADRASH'
+                    if args.profile == 'native' and not args.tests and assets.is_dir():
+                        commands.append([build / 'rr-viewer', '--assets', assets, '--smoke'])
+                        commands.append([build / 'rr-course', '--exe', assets / 'ROADRASH.EXE',
+                                         *sorted((assets / 'DATA/COURSES').glob('*.CRS'))])
+                        report['coverage']['imported_assets'] = 'viewer smoke and course sweep'
             elif args.profile.startswith('android'):
                 release = args.profile == 'android-release'
+                report['configuration'] = 'RelWithDebInfo' if release else 'Debug'
                 command = [ROOT / 'android/gradlew', '-p', ROOT / 'android', 'assembleRelease' if release else 'assembleDebug']
                 if release:
                     command += ['-PreleaseDebugSigning=true']
@@ -84,7 +93,7 @@ def run_gate(args):
                 if not sum(report['coverage']['ctest'].values()):
                     raise RuntimeError('CTest ran no tests')
                 sim = build / 'oracle-diagnostic.json'
-                if sim.exists():
+                if sim.exists() and sim.stat().st_mtime >= report['started_at']:
                     report['coverage']['simulation_diagnostic'] = json.loads(sim.read_text())
             if args.profile.startswith('android'):
                 variant = 'release' if args.profile.endswith('release') else 'debug'
@@ -94,6 +103,12 @@ def run_gate(args):
                         raise RuntimeError('commercial game data packaged in APK')
                 report['artifact'] = str(apk)
                 report['coverage']['hardware'] = 'not run'
+                manifests = ROOT.glob(f'android/app/.cxx/{report["configuration"]}/*/*/build-info.json')
+                report['binary_provenance'] = [json.loads(x.read_text()) for x in manifests]
+            elif args.profile == 'package':
+                report['artifact'] = str(build / 'Road Rash Native.zip')
+            if (build / 'build-info.json').exists() and not args.profile.startswith('android'):
+                report['binary_provenance'] = json.loads((build / 'build-info.json').read_text())
             after = source_identity()
             if any(after[k] != identity[k] for k in ['commit', 'source_sha256']):
                 raise RuntimeError('source changed during gate; receipt is not valid for a stable source snapshot')
@@ -101,10 +116,11 @@ def run_gate(args):
     except (RuntimeError, OSError, ValueError) as e:
         report.update(status='failed', error=str(e))
     finally:
-        if (output / 'ctest.xml').exists():
-            report['coverage']['ctest'] = ctest_counts(output / 'ctest.xml')
+        xml = build / 'package-ctest.xml' if args.profile == 'package' else output / 'ctest.xml'
+        if xml.exists() and xml.stat().st_mtime >= report['started_at']:
+            report['coverage']['ctest'] = ctest_counts(xml)
             sim = build / 'oracle-diagnostic.json'
-            if sim.exists() and args.profile != 'oracle':
+            if sim.exists() and sim.stat().st_mtime >= report['started_at'] and args.profile != 'oracle':
                 report['coverage']['simulation_diagnostic'] = json.loads(sim.read_text())
         atomic_json(output / 'receipt.json', report)
     print(json.dumps({'status': report['status'], 'receipt': str(output / 'receipt.json'), 'coverage': report['coverage']}, indent=2))

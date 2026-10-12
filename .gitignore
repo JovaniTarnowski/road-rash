@@ -1,4 +1,5 @@
 build*/
+compile_commands.json
 analysis/ghidra-project/
 analysis/decompiled/
 analysis/*.log

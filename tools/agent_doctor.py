@@ -5,6 +5,7 @@ import json
 import os
 from pathlib import Path
 import shutil
+import re
 import subprocess
 from agent_common import ROOT, ResourceClaims, git, pid_alive, sha256
 from oracle_capture import reference_hash
@@ -50,6 +51,10 @@ def doctor(adb_serial=None):
     instructions = {}
     for path in [ROOT.parent / 'AGENTS.md', ROOT.parent / 'CLAUDE.md', ROOT / 'AGENTS.md', ROOT / 'CLAUDE.md']:
         instructions[str(path)] = {'exists': path.is_file(), 'sha256': sha256(path) if path.is_file() else None}
+    node = tools['node'].get('version', [''])
+    version = re.search(r'v(\d+)\.(\d+)\.(\d+)', node[0]) if node else None
+    v = tuple(map(int, version.groups())) if version else (0, 0, 0)
+    compatible_node = (v[0] == 22 and v >= (22, 19, 0)) or (v[0] == 24 and v >= (24, 11, 0)) or v[0] >= 26
     return {'git_root': git('rev-parse', '--show-toplevel'), 'dirty_files': git('status', '--short').splitlines(),
             'claims': [dict(r, owner_alive=pid_alive(r['pid'])) for r in ResourceClaims().list()],
             'tools': tools, 'java_home': {'path': str(java), 'available': (java / 'bin/java').is_file()},
@@ -59,6 +64,7 @@ def doctor(adb_serial=None):
             'ghidra': {'path': str(ghidra), 'available': (ghidra / 'support/analyzeHeadless').is_file()},
             'wine': {'path': str(wine), 'available': wine.is_file()}, 'reference_exe': exe,
             'rea': {'pinned_version': '6.4.0', 'runtime': 'Node 22.19+/24.11+/26+ per docs/TOOLING.md',
+                    'node_on_path_compatible': compatible_node,
                     'invocation': 'npx --yes rea-agents@6.4.0', 'executed': False},
             'adb': adb, 'instruction_files': instructions,
             'instruction_loading': 'File/pointer presence only; actual per-client loading must be checked in that client.'}

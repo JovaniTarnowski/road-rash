@@ -17,7 +17,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / 'tools'))
 from agent_common import ResourceClaims, atomic_json, run_logged, source_identity
 from agent_gate import ctest_counts
 from agent_status import render
-from build_info import write_header
+from build_info import identity, write_header
 from oracle_capture import capture, validate_trace
 from verify_sim import classify, verify
 
@@ -228,6 +228,14 @@ class Tooling(unittest.TestCase):
         xml = self.write('tests.xml', '<testsuite><testcase name="ok"/><testcase name="skip"><skipped/></testcase>'
                          '<testcase name="failure"><failure/></testcase></testsuite>')
         self.assertEqual(ctest_counts(xml), {'passed': 1, 'skipped': 1, 'failed': 1})
+
+    def test_configuration_fingerprint_distinguishes_sanitizers(self):
+        cache = self.write('cache.txt', 'CMAKE_CXX_FLAGS:STRING=\nRR_BUNDLE_SDL:BOOL=OFF\n')
+        with patch('build_info.source_identity', return_value={'commit': 'test', 'source_sha256': EXE}):
+            normal = identity('Debug', 'test-compiler', cache)
+            cache.write_text('CMAKE_CXX_FLAGS:STRING=-fsanitize=address,undefined\nRR_BUNDLE_SDL:BOOL=OFF\n')
+            sanitizer = identity('Debug', 'test-compiler', cache)
+        self.assertNotEqual(normal['configuration_sha256'], sanitizer['configuration_sha256'])
 
     def test_current_status_does_not_upgrade_fidelity_from_green_gate(self):
         output = render({'areas': [{'area': 'Physics', 'implementation': 'ported', 'verification': 'partial',

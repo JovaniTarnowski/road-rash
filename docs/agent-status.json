@@ -99,5 +99,182 @@
       "fidelity_level": "not-claimed"
     }
   ],
-  "gates": {}
+  "gates": {
+    "native": {
+      "status": "passed",
+      "source": {
+        "commit": "b76ffc899e2056148a96dcbaf3887090ed3e5a60",
+        "source_sha256": "0f31a63359bf068e0e419aecf1003abf730e9b437a15d1e657c0523883654fee",
+        "dirty": true,
+        "input_count": 235
+      },
+      "coverage": {
+        "imported_assets": "viewer smoke and course sweep",
+        "ctest": {
+          "passed": 63,
+          "skipped": 0,
+          "failed": 0
+        },
+        "simulation_diagnostic": {
+          "mode": "diagnostic",
+          "acceptance_met": false,
+          "counts": {
+            "pass": 0,
+            "skip": 0,
+            "known-divergence": 1,
+            "unexpected-failure": 0
+          },
+          "outcomes": [
+            {
+              "fixture": "/Users/archit/Dev/rr/native-port/analysis/oracle/sim-napa-solo.tsv",
+              "mode": "diagnostic",
+              "schema": "rr-oracle 1",
+              "exe_sha256": "73d7f9744b5b1a9482b3909950cdf3fe34119fe13d023b031e9c6739a60f18a2",
+              "scenario": "sim-napa-solo-b",
+              "frames": 2402,
+              "tick_start": 1,
+              "tick_end": 2402,
+              "seed": 1,
+              "control_branch": "unverified",
+              "trace_sha256": "3ab614a032666d75d6cf241efd9c0dd7148c958fc969c95579a531ffaec7e2a6",
+              "complete": true,
+              "exit_code": 1,
+              "output": "[single-anchor] start-hold: 59 frozen frames, green at tick 60\nfirst divergence at frame 138 (tick 139): rng original 2574079260 native 1133891140\nrng history (last 8 ticks, golden vs native): (1133891140,1133891140) (1133891140,1133891140) (1133891140,1133891140) (1133891140,1133891140) (1133891140,1133891140) (1133891140,1133891140) (1133891140,1133891140) (2574079260,1133891140)\n",
+              "status": "known-divergence"
+            }
+          ]
+        }
+      },
+      "receipt": "/Users/archit/Dev/rr/native-port/analysis/agent-gates/p0-p1-native-final/receipt.json"
+    },
+    "sanitizers": {
+      "status": "passed",
+      "source": {
+        "commit": "b76ffc899e2056148a96dcbaf3887090ed3e5a60",
+        "source_sha256": "0f31a63359bf068e0e419aecf1003abf730e9b437a15d1e657c0523883654fee",
+        "dirty": true,
+        "input_count": 235
+      },
+      "coverage": {
+        "ctest": {
+          "passed": 6,
+          "skipped": 0,
+          "failed": 0
+        },
+        "simulation_diagnostic": {
+          "mode": "diagnostic",
+          "acceptance_met": false,
+          "counts": {
+            "pass": 0,
+            "skip": 0,
+            "known-divergence": 1,
+            "unexpected-failure": 0
+          },
+          "outcomes": [
+            {
+              "fixture": "/Users/archit/Dev/rr/native-port/analysis/oracle/sim-napa-solo.tsv",
+              "mode": "diagnostic",
+              "schema": "rr-oracle 1",
+              "exe_sha256": "73d7f9744b5b1a9482b3909950cdf3fe34119fe13d023b031e9c6739a60f18a2",
+              "scenario": "sim-napa-solo-b",
+              "frames": 2402,
+              "tick_start": 1,
+              "tick_end": 2402,
+              "seed": 1,
+              "control_branch": "unverified",
+              "trace_sha256": "3ab614a032666d75d6cf241efd9c0dd7148c958fc969c95579a531ffaec7e2a6",
+              "complete": true,
+              "exit_code": 1,
+              "output": "[single-anchor] start-hold: 59 frozen frames, green at tick 60\nfirst divergence at frame 138 (tick 139): rng original 2574079260 native 1133891140\nrng history (last 8 ticks, golden vs native): (1133891140,1133891140) (1133891140,1133891140) (1133891140,1133891140) (1133891140,1133891140) (1133891140,1133891140) (1133891140,1133891140) (1133891140,1133891140) (2574079260,1133891140)\n",
+              "status": "known-divergence"
+            }
+          ]
+        }
+      },
+      "receipt": "/Users/archit/Dev/rr/native-port/analysis/agent-gates/p0-p1-sanitizers-final/receipt.json"
+    },
+    "package": {
+      "status": "passed",
+      "source": {
+        "commit": "b76ffc899e2056148a96dcbaf3887090ed3e5a60",
+        "source_sha256": "0f31a63359bf068e0e419aecf1003abf730e9b437a15d1e657c0523883654fee",
+        "dirty": true,
+        "input_count": 235
+      },
+      "coverage": {
+        "ctest": {
+          "passed": 63,
+          "skipped": 0,
+          "failed": 0
+        },
+        "simulation_diagnostic": {
+          "mode": "diagnostic",
+          "acceptance_met": false,
+          "counts": {
+            "pass": 0,
+            "skip": 0,
+            "known-divergence": 1,
+            "unexpected-failure": 0
+          },
+          "outcomes": [
+            {
+              "fixture": "/Users/archit/Dev/rr/native-port/analysis/oracle/sim-napa-solo.tsv",
+              "mode": "diagnostic",
+              "schema": "rr-oracle 1",
+              "exe_sha256": "73d7f9744b5b1a9482b3909950cdf3fe34119fe13d023b031e9c6739a60f18a2",
+              "scenario": "sim-napa-solo-b",
+              "frames": 2402,
+              "tick_start": 1,
+              "tick_end": 2402,
+              "seed": 1,
+              "control_branch": "unverified",
+              "trace_sha256": "3ab614a032666d75d6cf241efd9c0dd7148c958fc969c95579a531ffaec7e2a6",
+              "complete": true,
+              "exit_code": 1,
+              "output": "[single-anchor] start-hold: 59 frozen frames, green at tick 60\nfirst divergence at frame 138 (tick 139): rng original 2574079260 native 1133891140\nrng history (last 8 ticks, golden vs native): (1133891140,1133891140) (1133891140,1133891140) (1133891140,1133891140) (1133891140,1133891140) (1133891140,1133891140) (1133891140,1133891140) (1133891140,1133891140) (2574079260,1133891140)\n",
+              "status": "known-divergence"
+            }
+          ]
+        }
+      },
+      "receipt": "/Users/archit/Dev/rr/native-port/analysis/agent-gates/p0-p1-package-final/receipt.json"
+    },
+    "android-debug": {
+      "status": "passed",
+      "source": {
+        "commit": "b76ffc899e2056148a96dcbaf3887090ed3e5a60",
+        "source_sha256": "0f31a63359bf068e0e419aecf1003abf730e9b437a15d1e657c0523883654fee",
+        "dirty": true,
+        "input_count": 235
+      },
+      "coverage": {
+        "hardware": "not run"
+      },
+      "receipt": "/Users/archit/Dev/rr/native-port/analysis/agent-gates/p0-p1-android-debug-final/receipt.json"
+    },
+    "android-release": {
+      "status": "passed",
+      "source": {
+        "commit": "b76ffc899e2056148a96dcbaf3887090ed3e5a60",
+        "source_sha256": "50298bc9812afc8ddfc5ec4fa5b9b9c5a434d172ecd83ebe290e1c88f83712f7",
+        "dirty": true,
+        "input_count": 236
+      },
+      "coverage": {
+        "hardware": "not run"
+      },
+      "receipt": "/Users/archit/Dev/rr/native-port/analysis/agent-gates/p0-p1-android-release-final/receipt.json"
+    },
+    "oracle": {
+      "status": "failed",
+      "source": {
+        "commit": "b76ffc899e2056148a96dcbaf3887090ed3e5a60",
+        "source_sha256": "c326c2b97d5ab5186052a0003752868366bae2f50bc8c2febd33e2ac2b9adef6",
+        "dirty": true,
+        "input_count": 237
+      },
+      "coverage": {},
+      "receipt": "/Users/archit/Dev/rr/native-port/analysis/agent-gates/p0-p1-strict-final/receipt.json"
+    }
+  }
 }
