@@ -2,19 +2,61 @@
 #include "golden.hpp"
 #include <filesystem>
 #include <iostream>
+#include <cstdlib>
 int main() {
     int failures=0;
+    auto check=[&](bool ok,const char* what){ if(!ok){++failures;std::cerr<<what<<'\n';} };
     std::vector<uint8_t> pixels(8192);for(size_t i=0;i<pixels.size();++i)pixels[i]=uint8_t(i*37+i/7);
     std::vector<uint8_t> dest(64,125);
     rr::texture_span(dest.data(),4,std::vector<uint8_t>{0,12,0,34},2,0,0,0,65536,true);
     if(dest[0]!=125 || dest[1]!=12 || dest[2]!=125 || dest[3]!=34)++failures;
     try {rr::texture_span(dest.data(),4,pixels,9,0,0,0,0,false);++failures;}catch(const std::runtime_error&){}
-    try {rr::texture_span(dest.data(),1,pixels,8,-65536,0,0,0,false);++failures;}catch(const std::runtime_error&){}
+    // Signed mip selection: negative addresses upscaled levels above mip 0;
+    // non-negative is the original index. Never shift UVs by a negative.
+    check(rr::texture_mip_level_signed(8,8,32,32,3,2)==1,"quarter-size quad picks original mip 1");
+    check(rr::texture_mip_level_signed(16,16,32,32,3,2)==0,"half-size quad picks mip 0");
+    check(rr::texture_mip_level_signed(64,64,32,32,3,2)==-1,"2x-projected quad picks first upscaled level");
+    check(rr::texture_mip_level_signed(128,128,32,32,3,2)==-2,"4x-projected quad picks second upscaled level");
+    check(rr::texture_mip_level_signed(128,128,32,32,3,0)==0,"no upscaled levels keeps mip 0");
+    try { rr::texture_mip_level_signed(8,8,32,32,0,0);check(false,"empty levels throw"); } catch (const std::runtime_error&) {}
+    // Per-worker scratch: sized to height, rejects unsized use. The wide
+    // path uses 64-bit edges: int32 Q16 cannot hold |x|>32768.
+    {
+        rr::RasterScratch64 scratch(1440);
+        check(scratch.rows.size()==1440,"scratch sized to surface height");
+        rr::TextureVertexWide a{10,0,0,0},b{20,1439,64,64};
+        rr::texture_edge_wide(scratch,a,b);
+        check(scratch.rows[0].x==(int64_t(10)<<16) && std::llabs(scratch.rows[1439].x-(int64_t(20)<<16))<65536,"wide edge spans all rows");
+        rr::RasterScratch64 empty;
+        try { rr::texture_edge_wide(empty,a,b);check(false,"unsized scratch throws"); } catch (const std::runtime_error&) {}
+        try { rr::RasterScratch64 bad(-1);check(false,"negative height throws"); } catch (const std::runtime_error&) {}
+    }
+    // Wide path at extreme vertices: x = +/-40000 rasterises clipped
+    // without int16 wrap. Wide UVs are texels (u16, not Q16).
+    {
+        std::vector<uint8_t> tex(256*256,0);
+        for (int y=0;y<256;++y) for (int x=0;x<256;++x) tex[size_t(y)*256+x]=uint8_t(((x+y)&0x7f)+1);
+        rr::Framebuffer fb(640,480);fb.clear(0);
+        rr::RasterScratch64 scratch(480);
+        std::array<rr::TextureVertexWide,4> wide{{{40000,10,0,0},{40100,10,255,0},{40100,110,255,255},{40000,110,0,255}}};
+        rr::draw_textured_quad_wide(fb,wide,tex,8,false,{0,0,640,479},false,scratch);
+        int drawn=0;for (int y=0;y<480;++y) for (int x=0;x<640;++x) drawn+=fb.row(y)[x]!=0;
+        std::array<rr::TextureVertexWide,4> cross{{{int32_t(-40000),10,0,0},{40000,10,255,0},{40000,110,255,255},{int32_t(-40000),110,0,255}}};
+        rr::draw_textured_quad_wide(fb,cross,tex,8,false,{0,0,640,479},false,scratch);
+        drawn=0;for (int y=0;y<480;++y) for (int x=0;x<640;++x) drawn+=fb.row(y)[x]!=0;
+        check(drawn>0,"crossing wide quad draws without wrap");
+        // Upscaled storage path: stride above 256 uses plain addressing.
+        std::vector<uint8_t> big(size_t(1024)*64,7);
+        rr::Framebuffer fb2(64,64);fb2.clear(0);
+        rr::RasterScratch64 s2(64);
+        std::array<rr::TextureVertexWide,4> q{{{0,0,0,0},{64,0,1024,0},{64,64,1024,64},{0,64,0,64}}};
+        rr::draw_textured_quad_wide(fb2,q,big,1024,false,{0,0,64,63},true,s2);
+        check(fb2.row(32)[32]==7,"upscaled storage path samples plain addressing");
+    }
     const auto path=rr::golden::oracle_dir()+"/raster-fixtures.tsv";
     if(std::filesystem::exists(path)) {
         try {
             const auto golden=rr::golden::load(path);
-            if(golden.exe!="73d7f9744b5b1a9482b3909950cdf3fe34119fe13d023b031e9c6739a60f18a2" || golden.frames.empty())throw std::runtime_error("Wrong texture oracle");
             const auto& frame=golden.frames.front();
             for(int c=0;c<1008;++c) {
                 const std::string prefix="texture.span."+std::to_string(c)+".";

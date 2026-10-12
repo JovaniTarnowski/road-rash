@@ -61,4 +61,18 @@ void fill_quad(Framebuffer& fb,const RasterQuad& quad,RasterClip clip) {
         }
     }
 }
+std::vector<std::pair<int,int>> band_rows(int height,int bands) {
+    if (height<0 || height>8192 || bands<1 || bands>256) throw std::runtime_error("Band geometry out of range");
+    std::vector<std::pair<int,int>> out;
+    if (!height) return out;
+    const int base=height/bands,extra=height%bands;
+    int top=0;
+    for (int b=0;b<bands && top<height;++b) {
+        const int rows=base+(b<extra?1:0);
+        if (!rows) break;
+        out.emplace_back(top,top+rows-1);
+        top+=rows;
+    }
+    return out;
+}
 }

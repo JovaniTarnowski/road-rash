@@ -24,5 +24,29 @@ int main() {
     auto rotated=rectangle;rotated.points={rectangle.points[2],rectangle.points[3],rectangle.points[0],rectangle.points[1]};
     rr::Framebuffer other(8,8);other.clear(0);fb.clear(0);rr::fill_quad(fb,rectangle,{0,0,8,7});rr::fill_quad(other,rotated,{0,0,8,7});
     for (int y=0;y<8;++y) check(std::equal(fb.row(y),fb.row(y)+8,other.row(y)),"rotation preserves fill");
+    // Band-parallel contract (plan 19 Task 6): union of bands covers every
+    // row exactly once; banded fill equals the single fill. Edge steps come
+    // from original endpoints before band clipping (fill_quad takes the full
+    // quad plus a row clip per band).
+    for (int bands:{1,2,4,7}) {
+        const auto ranges=rr::band_rows(8,bands);
+        int covered=0;for (const auto& r:ranges) covered+=r.second-r.first+1;
+        check(covered==8,"band union covers all rows");
+        for (size_t i=1;i<ranges.size();++i) check(ranges[i].first==ranges[i-1].second+1,"bands are contiguous");
+        rr::Framebuffer banded(8,8);banded.clear(0);
+        for (const auto& r:ranges) rr::fill_quad(banded,diamond,{0,r.first,8,r.second});
+        rr::Framebuffer whole(8,8);whole.clear(0);rr::fill_quad(whole,diamond,{0,0,8,7});
+        for (int y=0;y<8;++y) check(std::equal(banded.row(y),banded.row(y)+8,whole.row(y)),"banded fill is bit-identical");
+    }
+    // Crossing polygon: vertices above band 1 reach into band 3.
+    {
+        rr::Framebuffer whole(16,24);whole.clear(0);
+        rr::RasterQuad cross{{{{2,-4},{13,-4},{13,20},{2,20}}},5};
+        rr::fill_quad(whole,cross,{0,0,16,23});
+        rr::Framebuffer banded(16,24);banded.clear(0);
+        for (const auto& r:rr::band_rows(24,3)) rr::fill_quad(banded,cross,{0,r.first,16,r.second});
+        for (int y=0;y<24;++y) check(std::equal(banded.row(y),banded.row(y)+16,whole.row(y)),"crossing polygon has no seams");
+    }
+    try { rr::band_rows(8,0);check(false,"bands<1 throws"); } catch (const std::runtime_error&) {}
     std::cout<<failures<<" failures\n";return failures ? 1 : 0;
 }
