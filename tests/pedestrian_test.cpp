@@ -146,6 +146,17 @@ int main(int argc,char** argv) {
             }
         std::cout<<"CITY level 1: "<<pedestrians<<" pedestrian and "<<cops<<" police records, "<<looks<<" with artwork\n";
         check(pedestrians>0 && looks>0,"CITY has no placed pedestrians");
+        // Plan 24 Task 5 pedestrian counterpart: every course keeps DZHR
+        // actor records through the level-1 gate wherever they occur.
+        for(const char* other:{"HIWAY","MEDLY","NAPA","CANYN"}) {
+            Fixture f(other);
+            size_t op=0,oc=0;
+            for(size_t s=0;s<f.course.sections.size();++s)for(size_t j=0;j<f.course.sections[s].samples.size();++j)
+                for(const auto& record:f.scene->dzhr_actors(uint32_t(s),uint32_t(j)))
+                    ((record.word0&15)<0xb)?++op:++oc;
+            std::cout<<other<<" level 1: "<<op<<" pedestrian and "<<oc<<" police records\n";
+            if(op==0)throw std::runtime_error(std::string(other)+" has no placed pedestrians");
+        }
         const auto a=natural_race(city,argc>1?argv[1]:nullptr);
         std::cout<<"natural race: "<<a.spawned<<" spawned, at most "<<a.max_active<<" active, "<<a.crossers
                  <<" crossed more than a lane, "<<a.knocked<<" pedestrian-ticks knocked down\n";
