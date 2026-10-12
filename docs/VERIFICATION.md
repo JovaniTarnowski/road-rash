@@ -1,5 +1,17 @@
 # Verification log (all sessions September 28, 2026)
 
+## Pedestrians (October 12, 2026, plan 24 Task 4)
+
+- `cmake --build build-fixes --parallel`: pass, no warnings.
+- `build-fixes/pedestrian-test <frame.bmp>`:
+  - CITY level 1 has 359 pedestrian and 6 police DZHR records after the level gate, 357 of them with category-2 artwork.
+  - Natural 12,000-tick race (demo-hold player, 7 opponents, density-6 traffic): 22 spawned, at most 15 active, 7 crossed more than one lane, identical on a second run (spawn count, travel, RNG).
+  - Staged hits: speed 12000 gives state 2 with animation 3; speed 800 gives state 3; the rider is never knocked off.
+  - The frame shows pedestrians on both curbs, one stepping off mid-crossing (scratch, not committed).
+- `rr-game --course N --ticks 90000 --autopilot`: all five courses finish. Pedestrians spawned: NAPA 31, CITY 337, HIWAY 33, CANYN 24, MEDLY 231.
+- `ctest --test-dir build-fixes --output-on-failure`: **68/68 pass**, including the `oracle-sim` diagnostic, whose scenarios set no pedestrians.
+- Not run: an original capture/golden (plan 24 Task 4 Steps 2/5), sanitizers, Android, and a listening check of voice 0x16.
+
 ## Playtest fixes: courses, opponent HUD, meters, traffic density (October 12, 2026)
 
 Build tree `build-fixes` (Debug), from baseline `791da21` plus the uncommitted `playtest-visual-fixes` edits to `course_scene.cpp`/`video_player.*`, which were kept.

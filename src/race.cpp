@@ -1913,6 +1913,7 @@ void Race::step(uint32_t controls) {
     if (riders_[0].finished && std::all_of(riders_.begin(), riders_.end(), [](const Rider& r) { return r.finished; })) return;
     ++ticks_;
     for (size_t i = 0; i < riders_.size(); ++i) step_rider(riders_[i], controls, i == 0);
+    step_pedestrians();   // same scheduler pass (0x00438170) as the riders
     // 0x004368f0: overlapping pairs (position within the half-lengths +0x178, lateral within the
     // half-widths +0x174, same road half) separate and exchange impulses.
     for (size_t i = 0; i < riders_.size(); ++i)
@@ -1928,10 +1929,12 @@ void Race::step(uint32_t controls) {
         }
     for (size_t i = 0; i < riders_.size(); ++i) collide_traffic(riders_[i]);
     for (size_t i = 0; i < riders_.size(); ++i) collide_hazards(riders_[i]);
+    collide_pedestrians();
     for (size_t i = 0; i < riders_.size(); ++i) advance_ride_animation(riders_[i], i == 0);
     update_camera();
     const auto& player=riders_[0];const auto& road=route_of(player);
     camera_heading_=advance_heading(camera_heading_,previous_camera_position_,camera_position(),road[player.previous_sample].path.bend,road[player.sample].path.bend,(player.bike.u8(0xc0)&16)!=0);
+    build_pedestrian_slices();   // 0x00454120 ring builds walk DZHR (0x004520d0) before 0x0044dd90
     if (traffic_) {
         // 0x0044b3b0: distance moved this step feeds the spawn timers; the
         // ring front rides 0x5000 ahead of the ring camera, which runs

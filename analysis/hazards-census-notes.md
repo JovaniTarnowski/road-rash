@@ -1,6 +1,8 @@
 # Road-hazards census — plan 24 Task 4 Step 1 (2026-10-12, read-only)
 
-Verdict first: **no pedestrians and no oil slicks exist in this binary.**
+> **Superseded (October 12, 2026):** this verdict is wrong for pedestrians. Pool `DAT_004c1274` (type 0x20) is the pedestrian pool, not cops. DZHR actor events (`0x004520d0` → `0x004409e0`) spawn them, and their artwork is FAMILIES.RSC category 2 (family 101 is the woman on crutches). See REVERSE_ENGINEERING.md "Pedestrians" and plan 24 Task 4. The oil-slick finding stands.
+
+Original verdict: **no pedestrians and no oil slicks exist in this binary.**
 Every pool, every `+0xc4` type test, every template, the scripted-spawn
 path, the surface system and the string table were censused; there is no
 slot for either hazard. Details + how-confirmed per claim below.
@@ -13,7 +15,7 @@ slot for either hazard. Details + how-confirmed per claim below.
 | `DAT_00463ad4` (`00405490`) | 0x208 x `DAT_004642d4` | caller-supplied | varies | riders |
 | `DAT_00468ee0` (`0041ebf0`) | 0x108 x 0x28 = 40 | `0x00468f30` | `0x40` | signals |
 | `DAT_00468ee4` (`0041ebf0`) | 0x114 x 10 | `0x00468f10` | `0x400` | intersection controllers |
-| `DAT_004c1274` (`00440640`) | 0x468 x 0xf = 15 | `0x0046dde0` | `0x20` | cops |
+| `DAT_004c1274` (`00440640`) | 0x468 x 0xf = 15 | `0x0046dde0` | `0x20` | pedestrians (was mislabelled cops) |
 | `DAT_0049e654` (`0044db80`) | 0x210 x 0x10 = 16 | `0x00475698` | `0x10` | cars |
 | `DAT_004b6e68` (`00450d00`) | 0x18 x 4 | none | none | ring/sample cursor structs |
 | `DAT_00476ce8` (`004552e0`) | 0xec x 0x14 = 20 | `0x00476cb8` | 1 | BORR solid objects |

@@ -73,10 +73,14 @@ CourseScene::CourseScene(const Assets& assets,const std::vector<uint8_t>& exe,
             family_slots_.back().push_back(slots);
         }
         for(const auto& e:section.family_events)needed.insert(e.family);
-        objects_.emplace_back(section.samples.size());
+        objects_.emplace_back(section.samples.size());actors_.emplace_back(section.samples.size());
         for(const auto& object:roadside_objects(section,random))objects_.back().at(object.sample).push_back(object);
-        for(const auto& object:placed_scenery(section,level,random))objects_.back().at(object.sample).push_back(object);
+        auto placed=place_dzhr(section,level,random);
+        for(const auto& object:placed.objects)objects_.back().at(object.sample).push_back(object);
+        for(const auto& actor:placed.actors)actors_.back().at(actor.sample).push_back(actor);
     }
+    const std::array<std::pair<uint32_t,uint32_t>,7> tables{{{0x0046de48,6},{0x0046de78,1},{0x0046de80,2},{0x0046de90,6},{0x0046dec0,2},{0x0046ded0,6},{0x0046df00,6}}};
+    for(size_t code=0;code<tables.size();++code)pedestrian_tables_[code]=read_exe_data(exe,tables[code].first,tables[code].second*8);
     const auto file=assets.read("DATA/FAMILIES.RSC");
     for(const auto& entry:read_resources(file))if(needed.count(entry.id) && entry.size>24)
         families_.emplace(entry.id,read_family(std::vector<uint8_t>(file.begin()+entry.offset,file.begin()+entry.offset+entry.size)));
@@ -111,6 +115,39 @@ const AnimationFrame* CourseScene::object_frame(uint32_t section,uint32_t local,
     if(animation==animations_.end())animation=animations_.emplace(key,read_animation(family->second.bytes,*offset)).first;
     if(animation->second.frames.size()<3)return nullptr;
     return &animation->second.frames[2];
+}
+const std::vector<DzhrActor>& CourseScene::dzhr_actors(uint32_t section,uint32_t local) const {return actors_.at(section).at(local);}
+const PedestrianLook* CourseScene::pedestrian_look(uint32_t section,uint32_t local,uint8_t selector) const {
+    const uint16_t id=family_slots_.at(section).at(local)[selector>>6];
+    const auto key=std::make_pair(uint32_t(id),uint32_t(selector&63));
+    if(const auto it=pedestrians_.find(key);it!=pedestrians_.end())return it->second?&*it->second:nullptr;
+    auto& slot=pedestrians_[key];
+    const auto family=families_.find(id);if(family==families_.end())return nullptr;
+    const auto& f=family->second;const auto& bytes=f.bytes;
+    const auto graphics=f.resolve(2,selector&63,0),cans=f.resolve(2,selector&63,1);
+    if(!graphics || !cans)return nullptr;
+    const auto node=f.nodes.find(*graphics);if(node==f.nodes.end() || node->second.tag!=0x5252414e)return nullptr;
+    auto word=[&](size_t p){if(p+4>bytes.size())throw std::runtime_error("Truncated pedestrian resource");
+        return uint32_t(bytes[p])|uint32_t(bytes[p+1])<<8|uint32_t(bytes[p+2])<<16|uint32_t(bytes[p+3])<<24;};
+    // The CANS resource is five chunks (SNAC header, three cel/info chunks,
+    // the code table); its extent is their summed sizes.
+    size_t end=*cans;for(int chunk=0;chunk<5;++chunk){const uint32_t extent=word(end+4);if(extent<8 || end+extent>bytes.size())return nullptr;end+=extent;}
+    const std::vector<uint8_t> layout(bytes.begin()+*cans,bytes.begin()+long(end));
+    PedestrianLook look;
+    look.graphics=read_animation(bytes,*graphics);
+    look.views=read_actor_graphics(layout);
+    for(const auto& table:pedestrian_tables_) {
+        const auto sequence=read_actor_sequence(layout,table);
+        if(!sequence){look.bank.push_back(std::nullopt);continue;}
+        ActorSequence frames;for(const auto& descriptor:*sequence)frames.push_back(descriptor.playback);
+        look.bank.push_back(std::move(frames));
+    }
+    for(int k=0;k<2;++k)if(const auto voice=f.resolve(2,selector&63,uint32_t(2+k))) {
+        const uint32_t v=word(*voice+8);
+        look.voices[size_t(k)]=int32_t((v>>24)|((v>>8)&0xff00)|((v<<8)&0xff0000)|(v<<24));
+    }
+    slot=std::move(look);
+    return &*slot;
 }
 const CelTexture* CourseScene::material(uint32_t section,uint32_t local,uint8_t selector,
     uint8_t category,std::optional<uint32_t> frame,int32_t width,int32_t height) const {

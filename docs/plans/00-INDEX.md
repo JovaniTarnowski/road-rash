@@ -83,7 +83,7 @@ The owner reported four faults; all four are fixed (see [../PROGRESS.md](../PROG
 - **Right meter black.** This is the opponent stamina meter, which was empty because there was no target. Separately, the tachometer froze when no sound system was running.
 - **Too much traffic.** CESR zones set the traffic density (`0x0041ec70` → `0x0044dd00`). On Napa this means about 6× fewer cars than the port's fixed density 6.
 
-The owner also asked for plans covering pedestrians, oil slicks, police and the crash walk. That is [plan 24](24-road-hazards-police-crash-control.md). A static census of the executable finds traffic lights and crossing traffic, but no pedestrian or oil-slick actor. The port's auto-walk with no input matches `0x0040a600`; plan 24 Task 3 settles it with a capture.
+The owner also asked for plans covering pedestrians, oil slicks, police and the crash walk. That is [plan 24](24-road-hazards-police-crash-control.md). The executable has traffic lights and crossing traffic, and **pedestrians**: DZHR actor events spawn them into pool `0x004c1274`, which was first mislabelled as cops. They walk across the road and can be knocked down (family 101 is the woman with a walker). No oil slick was found. The port's auto-walk with no input matches `0x0040a600`; plan 24 Task 3 settles it with a capture.
 
 ## Plan status
 
@@ -112,7 +112,7 @@ The owner also asked for plans covering pedestrians, oil slicks, police and the 
 | **20** | [Asset upscaling](20-asset-upscaling.md) | New (session 26). Local upscale cache; MMPX 2×/4× for indexed textures/sprites (palette-preserving); Real-ESRGAN for menu artwork via a script; GPU screen filters; AI for in-race art experimental | — |
 | **21** | [Enhanced visuals](21-enhanced-visuals.md) | New (October 12). Optional, default-off: high-refresh interpolation, perspective-correct textures, full-colour raster with bilinear/trilinear filtering, fog and colour grading, 48/64-slice draw distance, bloom/vignette/motion blur, Hor+ widescreen; Original/Enhanced/Custom presets | — |
 | **22** | [Toolchain hardening](22-toolchain-hardening.md) | New (October 12). C++20, libFuzzer targets for every parser (in CI), ThreadSanitizer tree, warnings as errors with a ratchet, clang-tidy bounds/lifetime checks. Chosen instead of a Rust rewrite | — |
-| **24** | [Road hazards, police and crash recovery](24-road-hazards-police-crash-control.md) | New (October 12). Per-zone traffic density done; traffic lights and crossing traffic, live police on all courses, player-directed run-back (bounds wreck, on-foot contact), and an evidence gate for pedestrians/oil slicks (none found statically) |
+| **24** | [Road hazards, police and crash recovery](24-road-hazards-police-crash-control.md) | New (October 12). Per-zone traffic density done; traffic lights and crossing traffic, live police on all courses, player-directed run-back (bounds wreck, on-foot contact), and DZHR pedestrians (Task 4; 43–476 events per course). No oil slicks found |
 
 ### Order and dependencies
 

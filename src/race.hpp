@@ -13,6 +13,9 @@
 namespace rr {
 class TrafficSystem;
 struct TrafficCar;
+class PedestrianSystem;
+struct Pedestrian;
+struct DzhrActor;
 // Original timing: 0x004163d0 steps the simulation at QueryPerformanceFrequency/0x3c,
 // at most 0x14 steps per frame.
 constexpr int ticks_per_second = 60;
@@ -199,6 +202,10 @@ public:
     // 0x0044dd90 with the per-step camera advance). The random-call
     // interleaving against the original's scheduler is not verified.
     void set_traffic(TrafficSystem* t) { traffic_ = t; }
+    // Pedestrians (plan 24 Task 4, src/race_pedestrians.cpp): spawned as the
+    // ring builds their slice, thought/moved on the scheduler cadence of
+    // 0x00437e60, and hit by riders and cars through the 0x004368f0 pass.
+    void set_pedestrians(PedestrianSystem* p) { pedestrians_ = p; }
     void set_crash_library(const ActorAnimationLibrary&,const CrashConfig&);
     void set_ride_library(const ActorAnimationLibrary* library,
                           const std::array<std::array<std::array<int8_t,4>,2>,2>* attacks) {
@@ -323,6 +330,19 @@ private:
     // are stored per route sample at course load; no allocation runs in the
     // tick path. Runs after collide_traffic, before advance_ride_animation.
     void collide_hazards(Rider&);
+    // Pedestrians (src/race_pedestrians.cpp).
+    void build_pedestrian_slices();                                   // 0x00454120/0x004552e0 ring builds -> 0x004520d0
+    void spawn_pedestrian(const RouteSample&, size_t sample, const DzhrActor&);  // 0x004520d0 actor record -> 0x004409e0
+    void step_pedestrians();                                          // scheduler cadence 0x00437e60 for type 0x20
+    void think_pedestrian(Pedestrian&);                               // 0x00440dd0
+    void move_pedestrian(Pedestrian&);                                // 0x00440990
+    int pedestrian_lane(const Pedestrian&) const;                     // 0x0044a020(obj, 0)
+    bool pedestrian_road_clear(const Pedestrian&, int factor, int delta) const;  // 0x00441500
+    bool pedestrian_arrived(const Pedestrian&) const;                 // 0x004414a0
+    void hit_pedestrian(Pedestrian&, int32_t hitter_speed, bool hitter_attacking, bool hitter_walking);  // 0x00440760
+    void collide_pedestrians();                                       // 0x004368f0 pairs: rider/car with pedestrian
+    void contact_pedestrian(Rider&, Pedestrian&);                     // 0x004049c0 short-object branch for the rider
+    void pedestrian_voice(Pedestrian&, int which);                    // 0x00436830(0x16) with the MROF voice
     void contact_hazard(Rider&, int32_t hazard_lo_q8, int32_t hazard_hi_q8);
     void fight(Rider&, uint32_t controls, size_t index);
     bool fight_hit_frame(const Rider&) const;  // descriptor flags + frame-2 gate (0x004096f0 head)
@@ -338,6 +358,7 @@ private:
 
     std::function<const TerrainSlice&(const RouteSample&)> terrain_source_;
     TrafficSystem* traffic_ = nullptr;
+    PedestrianSystem* pedestrians_ = nullptr;
     const ActorAnimationLibrary* crash_library_ = nullptr;
     const ActorAnimationLibrary* ride_library_ = nullptr;
     const std::array<std::array<std::array<int8_t,4>,2>,2>* attack_codes_ = nullptr;

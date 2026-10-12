@@ -50,13 +50,23 @@ Detailed evidence is in [REVERSE_ENGINEERING.md](REVERSE_ENGINEERING.md) and tes
 
 ## Timeline
 
+### October 12, 2026: pedestrians (plan 24 Task 4)
+
+Pedestrians are live on every course.
+- **Spawning:** the ring build walks each slice's DZHR actor records (`0x004520d0`). Records below type 0xb spawn into a 15-object pool (`0x004409e0`, template `0x0046dde0`) with the original lateral jitter and trigger `rand()` calls. Police records consume their two draws without spawning (police are not live yet).
+- **Behaviour:** the think `0x00440dd0` waits for the player, crosses when lanes are clear (`0x00441500` against bikes and cars), hesitates, recovers and turns back at the far shoulder (`0x004414a0`). Motion is `0x00440990` (crash-actor motion, held within 0x1ff of the spawn point) on the `0x00437e60` distance cadence.
+- **Hits:** `0x00440760` knocks a pedestrian down above speed 1000 or when hit by an attacking rider (animation 3, voice 0x16), and staggers it otherwise. The rider's short-object branch of `0x004049c0` nudges below speed 2000 and rides up over the pedestrian above it, with no knock-off. Cars knock pedestrians down too.
+- **Drawing:** category-2 RRAN/CANS assets with animation codes 0–6 from the EXE tables, through the actor billboard at size 0x200.
+- **Native differences:** listed in `race_pedestrians.cpp`. Not verified against an original capture.
+
+
 ### October 12, 2026: playtest fixes (other courses, opponent HUD, meters, traffic density)
 
 - **HIWAY and CANYN crashed at the grid** (`vector` out of range). Building heights read the depth table at `depth+256` and `depth+shoulder`. At slice 32 (depth up to 8448) that is index 4352, one past the table. The original reads the two zero words after `0x0046f098`'s 4352 entries there, so the scale is 0. `depth_scale` in `course_scene.cpp` does the same and throws beyond the padding. `course_scene-test` now builds every route sample of all five courses at fractions 0 and 255 (it was Napa at fraction 127 only, which never reaches the padding).
 - **Dashboard opponent.** `nearest_opponent` ports `0x00438550`: the nearest behind wins only if it is less than half the nearest ahead. `Hud::state` names that rider and meters their stamina (`0x00446b80`). It replaces "last rider the player hit". The dashboard draws the gap at layout entry 10 as `%d.%03d` miles (or km) and colours it red/green for ahead/behind (`0x00446c30`). The ahead/behind glyph is Wingdings 0xe9/0xea in the original. Wingdings is not on the disc, so a native arrow stands in for it (labelled in `hud.hpp`). Quick races (`--course`) now resolve opponent names too.
 - **Tachometer.** `0x00434980` refreshes the player's rpm in both of its branches. The port only did so inside `SoundSystem::update` once a race had started, and quick races have no sound system, so the needle stayed at 0x2000. Now the rpm is always refreshed, and the race tick calls `update_engine_rpm` when there is no sound system.
 - **Traffic density.** CESR events of types 1–3 (and other types except 4, 5 and 7) call `0x0041ec70` when their end sample enters the ring front. That applies `0x0044dd00(byte +10)`: a positive value sets the density, so the reloads scale with it; 0 restores 6; a negative value sets the rate and the cruise scale `DAT_004b7e8c`. The initial ring fill applies zones in the first 128 slices after `0x0044db80`'s default. `PathSample::zone_end`, `traffic_set_density` and `TrafficSystem::build_slice` port this. Napa at 0x60/tick: 123 spawns instead of 733. The ring front moves from view camera + 0x5000 to + 0x5100 (ring camera starts at 0x3200 against the view camera's 0x3100). This is a static trace, not capture-checked.
-- **Plans.** [Plan 24](plans/24-road-hazards-police-crash-control.md) covers traffic lights and crossing traffic (`0x0041eca0`/`0x0041f040`, not ported), live police, the run-back under player control and an evidence gate for pedestrians/oil slicks. No such actor was found statically. The port's auto-walk with no keys held matches `0x0040a600`.
+- **Plans.** [Plan 24](plans/24-road-hazards-police-crash-control.md) covers traffic lights and crossing traffic (`0x0041eca0`/`0x0041f040`, not ported), live police, the run-back under player control and an evidence gate for pedestrians/oil slicks. (Corrected the same day after the owner reported a pedestrian on crutches: pedestrians exist. They are the DZHR actor pool `0x004c1274`, earlier mislabelled as cops, with category-2 artwork such as family 101. Plan 24 Task 4 now ports them.) The port's auto-walk with no keys held matches `0x0040a600`.
 - Remaining gaps: intersections and crossing cars; the `0x00407410` route-walk form of `+0x1f8` on split routes (the port uses finish − position, which is exact once the finish is known); the Wingdings glyph; ring-offset capture check.
 
 

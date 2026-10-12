@@ -32,6 +32,9 @@ std::vector<SceneryObject> roadside_objects(const CourseSection& section,std::fu
     return result;
 }
 std::vector<SceneryObject> placed_scenery(const CourseSection& section,int level,std::function<uint32_t()> random) {
+    return place_dzhr(section,level,std::move(random)).objects;
+}
+PlacedEvents place_dzhr(const CourseSection& section,int level,std::function<uint32_t()> random) {
     if(level<0 || level>4)throw std::runtime_error("Invalid scenery difficulty");
     struct Event {uint32_t packed,position,details;};std::vector<Event> events;int32_t base=0;
     for(const auto& pair:section.scenery_events) {
@@ -46,16 +49,17 @@ std::vector<SceneryObject> placed_scenery(const CourseSection& section,int level
     // 0x00451fc0 uses pairwise swaps; equal positions can change order as
     // other entries move through them, so a stable sort is not equivalent.
     for(size_t i=0;i<events.size();++i)for(size_t j=i+1;j<events.size();++j)if(events[j].position<events[i].position)std::swap(events[i],events[j]);
-    std::vector<SceneryObject> result;
+    PlacedEvents placed;auto& result=placed.objects;
     for(const auto& event:events) {
-        const auto word=event.packed;if((uint8_t(word>>8)&63)==63 || (word&0x80000000))continue;
+        const auto word=event.packed;if((uint8_t(word>>8)&63)==63)continue;
         if(event.position>=section.samples.size())continue;
+        if(word&0x80000000) {placed.actors.push_back({event.position,word,event.details});continue;}
         if(std::count_if(result.begin(),result.end(),[&](const SceneryObject& o){return o.sample==event.position;})>=2)continue;
         const auto& path=section.samples[event.position];
         const int32_t displacement=(event.details&0x800)?int32_t(event.details&0xfff)-4096:int32_t(event.details&0xfff);
         result.push_back({event.position,(path.right-path.left)/2+displacement,uint8_t(word>>8),8,uint8_t(word&15),bool(word&0x80),true});
     }
-    return result;
+    return placed;
 }
 DrawNode scenery_node(const AnimationFrame& frame,const SceneryObject& object,int32_t road_x,
     int32_t road_y,int32_t ground_y,int32_t depth,const Camera& camera,const DepthTable& depths) {

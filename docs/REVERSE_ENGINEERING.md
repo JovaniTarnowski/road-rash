@@ -772,11 +772,26 @@ Correction to the section above: layout entry 30 prints `DAT_0049e115`, the rout
 | --- | --- | --- | --- | --- |
 | `0x00463ad0` / `0x00463ad4` | `DAT_004642d4` × 0x32c / 0x208 | per rider | 4 / 8 | bikes / rider halves |
 | `0x0049e654` | 16 × 0x210 | `0x00475698` | 0x10 | cars |
-| `0x004c1274` | 15 × 0x468 | `0x0046dde0` | 0x20 | cops |
+| `0x004c1274` | 15 × 0x468 | `0x0046dde0` | 0x20 | pedestrians (DZHR actors, type < 0xb) |
 | `0x00468ee4` / `0x00468ee0` | 10 × 0x114 / 40 × 0x108 | `0x00468f10` / `0x00468f30` | 0x400 / 0x40 | intersection controllers / signals |
 | `0x00476ce8` | 20 × 0xec | `0x00476cb8` | 1 | in-road BORR solids (no draw) |
 
-The `+0xc4` values tested anywhere are 1, 2, 4, 8, 0x10, 0x20, 0x40 and 0x400; type 2 is still unidentified (`0x004046b0`). No pedestrian or oil-slick pool, template, string or asset was found. Plan 24 Task 4 closes the question.
+The `+0xc4` values tested anywhere are 1, 2, 4, 8, 0x10, 0x20, 0x40 and 0x400. Police bikes are riders (`0x00406b80`), not a separate pool.
+
+**Pedestrians (corrected October 12, 2026).** Pool `0x004c1274` is pedestrians, not cops.
+- `0x004520d0` (slice build, DZHR iterator at section `+0x1b8`) spawns a DZHR record with word0 bit 31 set:
+  - type `word0 & 0xf` < 0xb goes to `0x004409e0` with family selector `(word0 >> 8) & 0xff`;
+  - the position is `(slice+0xcc + sign12(word1)) · 0x100 − 2s + rand() % (4s + 1)`, where `s = (word1 & 0xff0000) >> 14`, and the fourth argument is `word1 >> 24`;
+  - type ≥ 0xb instead spawns a police bike 0x2000–0x2800 Q8 from the player (two `rand()` draws, `0x00449910`, `0x00406b80`);
+  - either way the record is then consumed (`|= 0x3f00`).
+- The think `0x00440dd0` has crossing types 4–7, a performer type 10 (animation 6), and standing types otherwise. States: 0 wait (trigger at the player position + `rand() % 0x4fb1`), 1 cross, 3 hit (animation 2, sound event 0x16), 4/5 get up, 7 performing.
+- Artwork is FAMILIES.RSC category 2 (`0x0044acd0(+0x1dc, 2, n)`). Family 101 is the woman with a walker. About 50 people animations have walk, hit, fall and get-up frames.
+- Per-course actor events (pedestrian / police): CITY 449/12, HIWAY 93/11, MEDLY 476/17, NAPA 85/20, CANYN 43/12.
+- Ported October 12 (`src/race_pedestrians.cpp`). Object words: `+0x1c8` anchor (0x00440990 snaps back beyond 0x1ff), `+0x1dc` selector, `+0x1e0` loaded, `+0x1e4` type, `+0x1e8` state, `+0x1ec` side (index into the heading table `0x0046df30` = {0, 0x400000, −0x800000, −0x400000}), `+0x1f0` heading, `+0x1f4` pace (speed cap/accel ×100 via `0x004498c0`), `+0x1f8` trigger, `+0x1fc` lane, `+0x200` voice tick, and `+0x208..+0x220` code 0–6 sequences.
+- Template `0x0046dde0` → object (`0x004387a0` mapping, template +0x1c.. → +0x148, +0x14c, +0x150, +0x154, +0x160, +0x168, +0x16c, +0x1b4, +0x1b8, +0x170, +0x174, +0x178, +0x17c, +0x180, +0x194, +0x1a4, +0x1a8, +0x1ac): half-width 0x1000, half-length 0x10, half-height 0x1e00, mass 100, drag +0x154 = 5 (0x19 once knocked down), first think interval 0x3c.
+- Lane-clear test `0x00441500`: the nearest bike or car (mask 0x14) in the lane is found by `0x0044a070` (ahead for negative lanes). Clear when `((|v|&~0xff0)>>4 + (|v|&~0x1fe)>>1 + (|v|&~0x7f)·2)/(cruise+1) · ((factor·0x191)>>8) & ~0xf0, >>4` ≤ `|gap| & ~0xf`. The crossing factor is 0xff/0x80/1 for types 5/6/7, and `(factor>>2)+0x10` for the mid-crossing recheck.
+- Voices: category-2 resources 2/3 are `MROF` chunks whose big-endian word +8 is the speech argument (0x64…).
+- The rider against a pedestrian takes the short-object branch (+0x17c < 0x2000) of `0x004049c0`: nudge `((w_rider + w_ped)/16)·dt` below speed 2000 (500 once the pedestrian is down), else height += 0x1e00/2 and +0xf4 += `(((0x1e00·|184|·2) >> 14) >> 4)·4`. No `0x004052c0` decision is made.
 
 ### Crash run-back input (October 12, 2026, static)
 

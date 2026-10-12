@@ -7,7 +7,8 @@
 - per-zone traffic density, which landed on October 12 (see "Done");
 - police: live spawning, chase, contact, sirens, arrest and the busted outcome;
 - the crash and run-back sequence under player control, including its wreck and out-of-bounds endings;
-- pedestrians and oil slicks, if the original has them. This plan proves either way before anything is built.
+- pedestrians: the 15-actor pool spawned from DZHR course events, which walk across the road, get knocked down and get up (Task 4);
+- oil slicks, if the original has them (none found so far).
 
 **Architecture:** No new top-level structure. Hazards belong to the module that owns the actor class: `traffic.*` for cars, crossing cars and intersection controllers; `police.*` for cops; `crash.*` plus `Race::step_crash` for the rider on foot. Each runs from its original point in the tick (`0x0044b3b0` → `0x00454120` ring build → `0x0044dd90` spawns → `0x00438170` scheduler). The draw side goes through `actor_nodes.*`/`traffic_draw_nodes`.
 
@@ -25,11 +26,11 @@ Plans before this one covered police (plan 11 Task 6, plan 16 Task 1) and walls,
 | Per-zone traffic density | CESR events of types 1–3 call `0x0041ec70` → `0x0044dd00(byte +10)` when their end sample enters the ring front | **Ported October 12** (see "Done") |
 | Traffic lights | Controller pool `0x00468ee4` (10 × 0x114, template `0x00468f10`, type `0x400`, think `0x0041f040`); signal pool `0x00468ee0` (40 × 0x108, template `0x00468f30`, type `0x40`, draw `0x0041f220`) | Missing (Task 1) |
 | Crossing traffic | `0x0041f040` spawns kinds 1/3 through `0x0044df60` on the cross road's phase | Missing (Task 1) |
-| Police | Cop pool `0x004c1274` (15 × 0x468, template `0x0046dde0`, type `0x20`, draw `0x00440680`, think `0x00440dd0`), spawned by `0x004409e0` | Arrest decisions and cop setup offline only; never spawned (Task 2) |
+| Police | Police bikes are riders built by `0x00406b80`, spawned by DZHR actor events of type ≥ 0xb (`0x004520d0` → `0x004409e0` else-branch, placed 0x2000–0x2800 Q8 from the player by two `rand()` draws). CITY 12, HIWAY 11, MEDLY 17, NAPA 20, CANYN 12 events | Arrest decisions and cop setup offline only; never spawned (Task 2) |
 | In-road solid objects | BORR pool `0x00476ce8` (20 × 0xec, template `0x00476cb8`, type 1, no draw callback) | Collision spans ported (plan 16 Task 2) |
 | Rider on foot | Rider half type 8; contact `0x004046b0`; recovery `0x0040a600` | Recovery ported; bounds wreck, police owner and traffic-on-foot open (Task 3) |
-| Pedestrians | **No actor pool, template or type code found.** Object types the executable tests are 1, 2, 4, 8, 0x10, 0x20, 0x40, 0x400. Pedestrians appear in verified City frames as scenery. | Drawn as scenery only; whether they move or collide is unknown (Task 4) |
-| Oil slicks | **No pool, template, string or asset name found.** | Unknown (Task 4) |
+| Pedestrians | Pool `0x004c1274` (15 × 0x468, template `0x0046dde0`, type `0x20`, draw `0x00440680`, think `0x00440dd0`, move `0x00440990`), spawned by DZHR actor events of type < 0xb through `0x004409e0`. Artwork is in FAMILIES.RSC category 2: walk, hit, fall and get-up cycles (the woman with a walker/crutches is family 101, plus joggers, a skateboarder, businessmen, construction workers, flag girls and more). CITY 449, HIWAY 93, MEDLY 476, NAPA 85, CANYN 43 events | **Missing:** `placed_scenery` skips every DZHR bit-31 record (Task 4) |
+| Oil slicks | No pool, template, surface class or artwork found | Not built unless evidence appears |
 
 **"The game auto-walks":** the port's run-back follows `0x0040a600`. In the single-player branch, with no direction held the rider walks to the bike by itself at speed 1200 (`0x0040a9d0`). Holding accelerate, brake, left or right (bits `0x800/0x1000/0x4000/0x2000`, the same keys as riding, table `0x00476c00`/`0x00465fb9`) steers the walk by hand and resets the 1,200-tick auto-remount timer. `0x0040a9e0` is the same routine for remote network riders, fed from a packet (`0x00440410`). So "no input means auto-walk" matches the static trace. Task 3 settles it against a capture of the original instead of trusting either the trace or memory. Three parts of the sequence really are missing and could make the port feel different:
 - the out-of-bounds wreck;
@@ -75,7 +76,11 @@ Plan 11 Task 6 (Napa) and plan 16 Task 1 (cop contact) own the pieces. This task
 
 **Files:** `src/police.hpp/.cpp`, `src/race.cpp`, `src/actor_nodes.cpp`, `src/sound.cpp`, `src/game_main.cpp`, `tests/police_test.cpp`, docs.
 
-- [ ] **Step 1: Trace the spawn.** `0x004409e0` (pool `0x004c1274`, 15 objects, template `0x0046dde0`): which courses and levels spawn cops, from what trigger (CESR or timer), and with what `rand()` calls. Then trace the think `0x00440dd0`, draw `0x00440680` and move `0x00440990`. Answer "does Napa level 1 have cops" with evidence (plan 11 Task 6 Step 1).
+- [ ] **Step 1: Trace the spawn.**
+  - Cops come from DZHR actor events with type ≥ 0xb: the else-branch of `0x004409e0` draws `rand() % 0x81` twice, picks a ring slice `(r+0x200)·16` from the player's slice (`0x00449910`), and builds the police bike there with `0x00406b80`.
+  - `placed_scenery`'s level gate already applies the `level − 4` probability to these records (word bit 31 with type ≥ 11).
+  - Trace `0x00406b80`'s remaining setup and the police think, and answer "does Napa level 1 have cops" from the gated events (plan 11 Task 6 Step 1).
+  - Earlier notes called pool `0x004c1274` the cop pool. That was wrong: it is the pedestrian pool (Task 4).
 - [ ] **Step 2: Capture** `napa-cops` (a level with cops), `napa-cops-crashed` (arrest while on foot) and `city-cops`. Each must reach the busted outcome `0x00416010` reason and its video choice.
 - [ ] **Step 3: Port** the spawn, think and move, rider–cop contact (`0x004049c0` type `0x20` branch; plan 16 Task 1) and sirens (slots 30/31, event 19 via `0x00435ae0`). Busted feeds results and the cutscene (plan 13 Task 4). Cops count toward the HUD "nearest opponent" only if `0x00438550`'s slot list includes them (slot 14 is `DAT_004642dc`); check this.
 - [ ] **Step 4: Accept** the three scenarios with a single anchor. A cop frame must match pixels. Commit `sim: live police, sirens and arrests`.
@@ -108,15 +113,61 @@ Plan 11 Task 6 (Napa) and plan 16 Task 1 (cop contact) own the pieces. This task
   - Touch and gamepad controls map to the same four walk bits.
 - [ ] **Step 4: Accept.** The three Step 1 scenarios replay with zero divergence in the dumped fields. `race_test` pins the bounds-wreck boundary (lateral ±1 around each edge). Commit `sim: player-directed run-back, bounds wreck and on-foot contact`.
 
-## Task 4: Pedestrians and oil slicks (evidence gate first)
+## Task 4: Pedestrians
 
-- [x] **Step 1: Prove what exists (done October 12, 2026).** Census in `analysis/hazards-census-notes.md`: 8 pools (riders/signals/controllers/cops/cars/ring/BORR), 5 templates (types 1, 0x10, 0x20, 0x40, 0x400 + riders); type 2 is the self-ignore in `0x004046b0`, not a pedestrian; `surface_class` returns 0..3 only; `0x0044e220`/`0x0044e270` car-only; EXE strings PED/SLICK/OIL/WALK/RRAN/DZHR all 0 hits.
-  - Census every `0x00438b70` pool and every `0x00438930`/`0x004387a0` template, extending the table above.
-  - Census every `+0xc4` type test. Find what type 2 is; `0x004046b0` treats it specially.
-  - List every family on the disc whose RRAN animates (FAMILIES.RSC) and whether DZHR scenery placement (`0x00452060`/`0x00452230`) gives any of them motion or a collision span.
-  - List surface handling in `0x0043a610` and `surface_class` for a low-grip class (oil, gravel, water).
-  - Check `0x0044e220`/`0x0044e270` (scripted car spawns from a packet-like record) for non-car payloads.
-- [x] **Step 2: Decide (done October 12, 2026).** Verdict: neither exists in this binary — no pool, template, type code, spawn path, surface class or asset string. Recorded in PROGRESS.md timeline ("No such actor was found statically"). Task closed; neither hazard is built. Never add hazards the original lacks: a "Road Rash had oil slicks" memory from another platform is not evidence for this binary.
+The first pass of this task (October 12) concluded "no pedestrians", from a pool census that mislabelled the pedestrian pool as cops and never opened the artwork. The owner then reported a person on crutches crossing the street. Evidence since then:
+- FAMILIES.RSC family 101 holds that walker woman's walk/hit/fall cycle, alongside about 50 other people animations.
+- `0x004520d0` spawns them from DZHR records.
+- `0x00440dd0` drives them across the road.
+
+> **Status (October 12, 2026): Steps 1, 3 and 4 done; Steps 2 and 5 (original capture and golden) open.**
+> - `src/pedestrians.*` holds the pool, template and draw node; `src/race_pedestrians.cpp` holds the spawn, think, move and contact ports; `place_dzhr` keeps the actor records; `CourseScene::pedestrian_look` loads the category-2 bank.
+> - `pedestrian-test` checks a CITY race (spawn, crossing, pool ≤ 15, determinism) and staged hits (fast → knocked down, slow → stagger, the rider is never unseated).
+> - Native differences are listed at the top of `race_pedestrians.cpp`: no traffic lights, assets load at spawn, walls skipped, camera roadway only, pedestrians run after riders in the scheduler, no shadow.
+> - Port cars don't brake for pedestrians (`0x0044a070` car braking is unported), so traffic knocks down more of them than the original likely does.
+
+**Files:** create `src/pedestrians.hpp/.cpp`, `tests/pedestrian_test.cpp`; modify `src/scenery.cpp` (keep the DZHR actor records), `src/course_scene.*` (category-2 family residency), `src/race.cpp` (call point and contact), `src/actor_nodes.cpp` (draw), `src/sound.cpp` (event 0x16), docs.
+
+- [x] **Step 1: Trace, recording each in REVERSE_ENGINEERING.md "Pedestrians".**
+  - **DZHR actor record** (`0x004520d0`):
+    - word0 bit 31 marks an actor;
+    - type is `word0 & 0xf`;
+    - family selector is `(word0 >> 8) & 0xff`;
+    - lateral is the signed 12-bit `word1 & 0xfff` plus the slice's `+0xcc`;
+    - spread is `(word1 & 0xff0000) >> 14`, giving a position of `·0x100 − 2·spread + rand() % (4·spread + 1)`;
+    - `word1 >> 24` is passed as the fourth argument;
+    - the record is consumed with `|= 0x3f00` after it fires.
+
+    The level/probability gate and the pairwise sort in `0x00451fc0` (already in `placed_scenery`) apply to these records too, and so does the `rand()` order.
+  - **`0x004409e0` setup:**
+    - `+0x1dc` family; `+0x1e4` type;
+    - `+0x1ec` side (3 when the position is ≥ 1, else 1);
+    - `+0x1f8` trigger at the player position + `rand() % 0x4fb1`;
+    - animation block at `+0x70` (queued `0xff`).
+  - **`0x00440dd0` think by type:**
+    - types 4, 5, 6 and 7 cross the road, with direction from `0x0046df30` and type 4 fixed at `0xff800800`;
+    - state 0 waits until the player passes the trigger, then rolls `rand() & 1` and checks a clear road with `0x00441500`;
+    - state 1 walks at `+0x1f4·100`;
+    - state 3 is hit: animation 2 and a scream (`0x00436830(0x16)` at most every 0xb4 ticks);
+    - states 4 and 5 get up;
+    - on arrival (`0x004414a0`) the pedestrian turns around and re-arms at the player position + 0xa0;
+    - type 10 plays animation 6 once the player is near;
+    - types 0–3 and 8 stand.
+
+    Also trace `0x004415b0`, `0x00441500`, `0x004414a0`, `0x0044a020` and `0x004498c0` (motion).
+  - **Contact:** trace `0x00440760`/`0x00440b80` (hit, fall and collision box), rider ↔ pedestrian in `0x004049c0`, and whether a hit costs the rider speed, stamina or a crash. Also trace the draw `0x00440680` (category-2 frames 0/1 and its billboard path).
+  - **Category 2 resolution** in `Family::resolve`: map animation codes 0–6 to RRAN nodes for families such as 101.
+- [ ] **Step 2: Capture** `city-pedestrians` (the CITY attract demo or a human run past the first crossing type) and `city-pedestrian-hit` (ride into a crossing pedestrian). Dump the 15 pool slots every tick: position, lateral, state `+0x1e8`, animation and frame. Confirm the native replay fails.
+- [x] **Step 3: Tests** (as `pedestrian-test`, against imported CITY rather than synthetic fixtures).
+  - DZHR parse: CITY has 449 actor events below type 0xb and 12 at or above.
+  - The spawn position formula and its `rand()` count.
+  - The pool caps at 15.
+  - A state-machine walk across a synthetic two-lane road.
+  - A hit puts the pedestrian in state 3 with animation 2 and queues sound event 0x16 once.
+- [x] **Step 4: Port** with a fixed pool of 15, at the slice-build call point (`0x00454240` → `0x004520d0`, forward ring builds only, next to `TrafficSystem::build_slice`). All `rand()` draws go through `Race::random()` in the original order. Pedestrians draw through the actor node path with category-2 RRAN frames.
+- [ ] **Step 5: Accept.** Both scenarios replay with zero divergence on the pool fields. A CITY frame with a crossing pedestrian matches pixels in `oracle-scene`. Commit `sim: DZHR pedestrians, crossing, hits and screams`.
+
+Oil slicks stay closed unless new evidence appears. No pool, template, surface class (`0x0043a0c0` returns 0..3) or artwork for them has been found.
 
 ## Task 5: Hazards on all courses and the soak
 
@@ -124,4 +175,4 @@ Plan 11 Task 6 (Napa) and plan 16 Task 1 (cop contact) own the pieces. This task
 
 ## Dependencies
 
-Task 1 needs plan 10's car-field dump (done for traffic). Task 2 needs plan 11 Task 2 cop nodes. Task 3 needs plan 11a Task 1 car contact (done) and plan 10's single-anchor human replay. Task 4 has no dependency and can run now.
+Task 1 needs plan 10's car-field dump (done for traffic). Task 2 needs plan 11 Task 2 cop nodes. Task 3 needs plan 11a Task 1 car contact (done) and plan 10's single-anchor human replay. Task 4 needs the DZHR actor records kept by `placed_scenery` and the category-2 family residency; it can start now.

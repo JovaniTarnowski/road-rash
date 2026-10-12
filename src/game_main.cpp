@@ -10,6 +10,7 @@
 #include "import_ui.hpp"
 #include "race.hpp"
 #include "traffic.hpp"
+#include "pedestrians.hpp"
 #include "road_draw.hpp"
 #include "session.hpp"
 #include "video_player.hpp"
@@ -66,6 +67,7 @@ struct Game {
     std::array<std::array<std::array<int8_t,4>,2>,2> attack_codes{};
     std::unique_ptr<rr::VehicleLibrary> vehicles;
     std::unique_ptr<rr::TrafficSystem> traffic;
+    std::unique_ptr<rr::PedestrianSystem> pedestrians;   // DZHR pedestrians (plan 24 Task 4); needs the course scene
     bool metric=false;
     std::string player_name="Player";
     std::vector<std::string> rider_names;
@@ -108,6 +110,10 @@ struct Game {
         // Free traffic from the course's own vehicle container (0x0044db80 /
         // 0x004465f0). A malformed container disables traffic rather than the
         // race; the importer has already hash-verified the files.
+        pedestrians.reset();
+        if(scene)pedestrians=std::make_unique<rr::PedestrianSystem>(
+            [this](const rr::RouteSample& s)->const std::vector<rr::DzhrActor>&{return scene->dzhr_actors(s.section,s.local);},
+            [this](const rr::RouteSample& s,uint8_t selector){return scene->pedestrian_look(s.section,s.local,selector);},exe);
         traffic.reset();
         if(assets.exists("DATA/CARS/"+course_name+".CAR")) {
             try {
@@ -123,6 +129,7 @@ struct Game {
                                           physics, specs.at(size_t(bike)), rider_value, opponents, level);
         if(scene)race->set_terrain_source([this](const rr::RouteSample& sample)->const rr::TerrainSlice&{return scene->terrain(sample.section,sample.local);});
         if(traffic)race->set_traffic(traffic.get());
+        if(pedestrians){pedestrians->reset();race->set_pedestrians(pedestrians.get());}
         if(actors)race->set_crash_library(actors->library(),crash_config);
         actor_states.assign(race->riders().size(),{});
         previous_attacks.assign(race->riders().size(),0);
@@ -135,7 +142,7 @@ struct Game {
         countdown = countdown_ticks;
     }
     std::vector<rr::DrawNode> rider_nodes(const rr::RoadSlice& near,const rr::RoadSlice& far,int road,int32_t ceiling,bool back)const {
-        struct Visible {int32_t position;size_t index;bool car,body=false;};
+        struct Visible {int32_t position;size_t index;bool car,body=false,pedestrian=false;};
         std::vector<Visible> visible;
         for(size_t i=0;i<race->riders().size();++i) {
             const auto& rd=race->riders()[i];
@@ -154,10 +161,18 @@ struct Game {
             const auto& car=traffic->cars()[i];const auto pos=uint32_t(car.position);
             if(car.active && (pos>>8)==near.sample && ((pos&255)>=128)==back)visible.push_back({car.position,i,true});
         }
+        if(pedestrians && road==near.own)for(size_t i=0;i<pedestrians->pool().size();++i) {
+            const auto& p=pedestrians->pool()[i];const auto pos=uint32_t(p.body.bike.i32(0x1c));
+            if(p.active && (pos>>8)==near.sample && ((pos&255)>=128)==back)visible.push_back({int32_t(pos),i,false,false,true});
+        }
         std::stable_sort(visible.begin(),visible.end(),[](const Visible& a,const Visible& b){return a.position>b.position;});
         std::vector<rr::DrawNode> output;
         for(const auto& item:visible) {
             const size_t i=item.index;
+            if(item.pedestrian) {
+                if(auto node=rr::pedestrian_node(pedestrians->pool()[i],near,far,road,race->route().at(near.sample),race->camera(),depth,ceiling))output.push_back(*node);
+                continue;
+            }
             if(item.car) {
                 const auto& car=traffic->cars()[i];
                 if(auto node=rr::traffic_car_node(traffic->library().vehicles().at(car.vehicle),car,near,far,road,race->route().at(near.sample),race->camera(),depth,int32_t(race->camera_position()),ceiling))output.push_back(*node);
@@ -1153,6 +1168,11 @@ int main(int argc, char** argv) {
                 }
                 std::printf("end tick %ld pos %u of %zu finished %d place %d\n", t, g.race->position() >> 8,
                             g.race->route().size(), int(g.race->finished()), g.race->place(0));
+                if (g.pedestrians) {
+                    int active = 0, crossing = 0, down = 0;
+                    for (const auto& p : g.pedestrians->pool()) if (p.active) { ++active; crossing += p.state == 1; down += p.state == 2; }
+                    std::printf("pedestrians spawned %d active %d crossing %d down %d\n", g.pedestrians->spawned(), active, crossing, down);
+                }
                 std::fflush(stdout);
             }
             if (!into_traffic) run_race(g, renderer, {auto_drive, start_paused, screenshot});
