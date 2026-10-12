@@ -1,4 +1,5 @@
 #include "race.hpp"
+#include "track_ring.hpp"
 #include "terrain_ground.hpp"
 #include "traffic.hpp"
 #include "pedestrians.hpp"
@@ -1336,8 +1337,7 @@ void Race::ai_straight_target(Rider& r) {
     if (ai.lane == 1) lane = (lanes - 1) / 2;
     else if (ai.lane == 2) lane = std::abs(lanes - 1);
     ai.target_position = b.i32(0x1c) + 0x3c0;
-    // +0xcc is the absolute centre: road_base_ maps the relative route to it.
-    ai.target_x = div_pow2(curvature(r, next, 8), 3) + (route[next].offset + lane * 0xfa) * 0x100 + road_base_ + ai.bias;
+    ai.target_x = div_pow2(curvature(r, next, 8), 3) + (route[next].offset + lane * 0xfa) * 0x100 + ai.bias;
     ai.target_speed = ai_curve_limit(r);
 }
 
@@ -1364,7 +1364,7 @@ void Race::ai_curve_target(Rider& r) {
         int32_t off = int32_t((int64_t((m << 8) / 0x60000) * half) >> 8);
         if (c < 0) off = -off;
         ai.target_position = b.i32(0x1c) + 0x3c0;
-        ai.target_x = off + (left_edge + s.path.left_q8) * 0x100 + road_base_ + half;
+        ai.target_x = off + (left_edge + s.path.left_q8) * 0x100 + half;
         ai.target_speed = lim;
         const int32_t x = b.i32(0x28);
         if (c < 1) { if (x < ai.target_x) ai.target_x = x; }
@@ -1527,6 +1527,7 @@ void Race::ai_state_fight(Rider& r) {
 
 void Race::step_rider(Rider& r, uint32_t controls, bool player) {
     Bike& b = r.bike;
+    if (r.frozen) return;   // solo oracle: the scheduler never runs this node
     if (r.finished) {   // coast to a stop past the line
         drive_mode(b, 0);
         integrate_speed(b, tables_, 0);
@@ -1841,6 +1842,7 @@ int32_t Race::nitro_throttle_force(Rider&, int32_t force) {
 // own states. Contact animation 9 (knock_off reason 4) and attack swing
 // codes (fight start) select here; crash states are owned by step_crash.
 void Race::advance_ride_animation(Rider& r, bool player) {
+    if (r.frozen) return;
     // The pending contact selection (knock_off reason 4 -> animation 9) is
     // consumed in the tick even without a ride bank; selection itself needs
     // the bank. Crash states stay owned by step_crash.
@@ -1939,7 +1941,9 @@ void Race::step(uint32_t controls) {
     update_camera();
     const auto& player=riders_[0];const auto& road=route_of(player);
     camera_heading_=advance_heading(camera_heading_,previous_camera_position_,camera_position(),road[player.previous_sample].path.bend,road[player.sample].path.bend,(player.bike.u8(0xc0)&16)!=0);
-    build_pedestrian_slices();   // 0x00454120 ring builds walk DZHR (0x004520d0) before 0x0044dd90
+    // 0x00454120 ring advance (terrain/BORR/DZHR draws) before 0x0044dd90.
+    if (ring_) ring_->advance(int32_t(camera_position()) - int32_t(previous_camera_position_), ring_random_, ring_sink_);
+    else build_pedestrian_slices();
     if (traffic_) {
         // Lane-scan obstacles for 0x0044a070 (mask 0x3f): bikes, riders on
         // foot and pedestrians on the cars' (camera) roadway.

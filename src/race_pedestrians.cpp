@@ -1,5 +1,6 @@
 #include "race.hpp"
 #include "pedestrians.hpp"
+#include "track_ring.hpp"
 #include "traffic.hpp"
 #include <algorithm>
 
@@ -43,7 +44,7 @@ void Race::build_pedestrian_slices() {
         const auto& sample = road[size_t(s)];
         const auto& records = system.actors(sample);
         for (size_t i = 0; i < records.size(); ++i)
-            if (system.consume(sample.section, sample.local, i)) spawn_pedestrian(sample, size_t(s), records[i]);
+            if (system.consume(sample.section, sample.local, i)) spawn_pedestrian(sample, size_t(s), records[i], random());
     };
     if (!system.filled) { system.filled = true; system.built_back = system.built_front = front - 128; }
     while (system.built_front < front) build(system.built_front++);
@@ -52,24 +53,45 @@ void Race::build_pedestrian_slices() {
     system.built_back = std::max(system.built_back, back);
 }
 
-void Race::spawn_pedestrian(const RouteSample& sample, size_t s, const DzhrActor& record) {
+void Race::set_track_ring(TrackRing* ring) {
+    ring_ = ring;
+    if (!ring_) return;
+    ring_random_ = [this] { return random(); };
+    ring_sink_ = [this](const RingActor& a, uint32_t jitter) { ring_actor(a, jitter); };
+    ring_setup_ = true;
+    ring_->setup(int32_t(camera_position()) + 0x100, ring_random_, ring_sink_);   // ring camera 0x004b7ee0
+    ring_setup_ = false;
+}
+
+void Race::ring_actor(const RingActor& a, uint32_t jitter) {
+    // Single-road ring: the slice's route sample is its ring position.
+    if (!pedestrians_) return;
+    const auto& road = route_of(riders_[0]);
+    if (a.ring_sample < 0 || size_t(a.ring_sample) >= road.size()) return;
+    spawn_pedestrian(road[size_t(a.ring_sample)], size_t(a.ring_sample),
+                     DzhrActor{uint32_t(a.ring_sample), a.word0, a.word1}, jitter);
+}
+
+void Race::spawn_pedestrian(const RouteSample& sample, size_t s, const DzhrActor& record, uint32_t jitter) {
     // 0x004520d0: lateral (slice +0xcc + signed 12 bits) * 256, jittered by
-    // the record's spread; the rand() comes first for every actor record.
+    // the record's spread; the caller draws the rand() first for every
+    // actor record.
     auto& system = *pedestrians_;
     const uint32_t w0 = record.word0, w1 = record.word1;
     const int32_t offset12 = (w1 & 0x800) ? int32_t(w1 | 0xfffff000u) : int32_t(w1 & 0xfff);
     const uint32_t spread = (w1 & 0xff0000u) >> 14;
     const int type = int(w0 & 15);
-    const uint32_t jitter = random();
     const int32_t lateral = int32_t(uint32_t((sample.offset + offset12) * 256) - spread * 2 + jitter % (spread * 4 + 1));
     if (type >= 0xb) {
         // 0x004409e0 else-branch: two rand() draws, then the police bike
         // 0x00406b80 near the player. Cops are not live yet (plan 24 Task 2);
         // the draws keep the stream aligned.
-        random(); random();
+        // 0x004409e0 draws only once the player exists (DAT_004642d8);
+        // the ring setup runs before 0x00405600 builds it.
+        if (!ring_setup_) { random(); random(); }
         return;
     }
-    const int32_t player = riders_[0].bike.i32(0x1c);
+    const int32_t player = ring_setup_ ? 0 : riders_[0].bike.i32(0x1c);   // local_8
     Pedestrian* slot = nullptr;
     for (auto& p : system.pool()) if (!p.active) { slot = &p; break; }
     if (!slot) return;   // pool full: 0x004387a0 returns null, the record is still consumed
@@ -107,7 +129,7 @@ void Race::step_pedestrians() {
     // 1 within 4 samples of the ring camera (1 - d when more than 2
     // behind), else (d + 1) / 2. Parked outside the ring window or beyond
     // lateral +-0xc8000.
-    if (!pedestrians_) return;
+    if (!pedestrians_ || freeze_actors_) return;
     const int32_t ring = int32_t(camera_position()) + 0x100;
     const int32_t front = ring + 0x5000, back = ring - 0x3000;
     for (auto& p : pedestrians_->pool()) {

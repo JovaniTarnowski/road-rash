@@ -1,8 +1,8 @@
 {
   "sim-napa-solo.tsv": {
     "trace_sha256": "3ab614a032666d75d6cf241efd9c0dd7148c958fc969c95579a531ffaec7e2a6",
-    "divergence": "first divergence at frame 138 (tick 139): rng original 2574079260 native 1133891140",
-    "reason": "Driver-axis replay (--driver=demo), single green anchor. Fields equal through tick 138 after the 0x00405990 grid-offset lane bias (+0x190) and absolute-centre AI target fix. Tick 139 is the first ring-slice crossing: the original redraws live terrain jitter (0x00451220 walls, 0x00451380 hills via 0x00452e10) from the race stream (24 draws); native terrain is precomputed at load with a private seed. Diagnostic only; acceptance remains incomplete.",
-    "output_sha256": "daad569ca22021062cd64dc829d453c80dafd0010da6556ba2d53c295e49bb73"
+    "divergence": "first divergence at frame 183 (tick 184): rider.0.lateral original 17073 native 16953",
+    "reason": "Driver-axis replay (--driver=demo), single green anchor. TrackRing reproduces the ring setup (srand(seed)+9098 draws, 2352 draws, closes 11 draws before green) and every slice crossing; RNG equal through tick 184. Tick 184: the original demo AI enters state 5 against the frozen opponent at 13312 after a countdown replan (tick 59) native does not run; native lacks the countdown AI ticks, the stale brain image and the state 2/3/4 handlers. Diagnostic only.",
+    "output_sha256": "5698615712dcbfcad7aebfb29a7e5abb3cb47fe2efaa4475653b64a2fdc77461"
   }
 }
