@@ -44,13 +44,21 @@ int main() {
     check(snap.fields.size() == std::size(rr::sim::rider_fields), "one rider, full field row (pre-new-fields)");
     race.set_rng_state(1234);
     check(race.rng_state() == 1234, "rng state round trip");
-    // Synthetic green-anchor replay (replay-harness correction Oct 12):
-    // exactly one random call at green and one later. A human-driven
+    // Shared road-base anchor (0x00405990): the Napa solo golden measures
+    // 1792 = 18176 - route[grid].offset*256 - grid word. Same helper the
+    // replay harness uses through the game ctor's own mechanism.
+    check(rr::race_road_base_q8(18176, 64, 0) == 1792, "race_road_base_q8 anchors the relative route");
+    // Synthetic green-anchor replay (plan 10 replay prerequisite): exactly
+    // one random call at green and one later; both the expected MSVC
+    // stream values and the field states are compared. A human-driven
     // player (demo hold clear) consumes no draws on an empty field, so
     // arming the steal path (fists vs a weapon-carrying neighbour in
     // reach) produces exactly one (random()&3)==3 gate draw at green and
-    // one more on a later tick; both the MSVC stream values and the
-    // field states are compared.
+    // one more on a later tick. Absolute ticks are asserted (green = 0
+    // here; the oracle harness keeps absolute original ticks for
+    // animation deadlines). A mid-stream re-anchor must NOT hide a
+    // missing draw: the control run below replays the same controls with
+    // one seed bit flipped and must diverge on rng.
     {
         auto draw = [](uint32_t& s) { s = s * 0x343fdu + 0x269ec3u; return (s >> 16) & 0x7fff; };
         uint32_t s = 777;  // both first draws have (&3)==3 (verified below)
@@ -72,6 +80,7 @@ int main() {
         for (int t = 0; t < 7; ++t) g.step(rr::control_punch);
         const auto green_hit = g.snapshot();
         check(green_hit.rng == s1, "exactly one rng call at green");
+        check(green_hit.tick == 7, "green-hit tick absolute");
         bool stole = false;
         for (const auto& f : green_hit.fields)
             if (f.name == "rider.0.weapon" && f.value == 1) stole = true;
@@ -92,6 +101,19 @@ int main() {
             if (f.name == "rider.0.weapon" && f.value == 2) stole2 = true;
         check(stole2, "later steal transfers the chain (field state)");
         check(late_hit.tick == 7 + 18 + 7, "absolute tick counts every step from green");
+        // Stream-position sensitivity: the same control stream from a
+        // one-bit-different seed must NOT reproduce the anchored stream.
+        // (A per-tick re-anchor would hide this; single-anchor surfaces it.)
+        {
+            rr::Race h(straight(200), straight(200), rr::PhysicsTables::synthetic(), pspec, 90,
+                       field, 0, 0, {}, {});
+            h.riders()[0].weapon = 0;
+            h.riders()[1].attack.timer = -8;
+            h.riders()[1].attack.weapon = 1;
+            h.set_rng_state(776);
+            for (int t = 0; t < 7; ++t) h.step(rr::control_punch);
+            check(h.snapshot().rng != s1, "seed+1 diverges: single anchor detects stream drift");
+        }
     }
 
     // Plan 16 Task 5 Step 2: a dump line without the new fields still

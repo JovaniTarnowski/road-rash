@@ -105,25 +105,31 @@ RaceBundle make_race_bundle(rr::Assets& assets, const std::vector<uint8_t>& exe,
     return b;
 }
 // The intended per-tick comparison set (plan 10 acceptance): every native
-// snapshot field for every live rider, plus rng. Golden keys are resolved
-// through the era map below: the proxy schema grew over time (10-field
-// era -> think/raw era -> full brain/bike era), so a native field maps to
-// its golden key by absolute original offset. Offsets the proxy never
-// dumped (steer 0x288, steer_rate 0xf0, ground 0x160, stamina, weapon,
-// ai_target/current except via the brain window) are acceptance gaps:
-// counted as uncovered (reported, never silently skipped) without failing
-// the run. A NATIVE field whose golden key EXISTS with a different value
-// FAILS, as does any rng divergence. Golden-only extras (raw_/bike_
-// windows, node.*, probes) are diagnostic context, counted, never skipped.
+// snapshot field for every live rider plus every traffic pool slot, plus
+// rng. This is a REQUIRED set: a missing golden field is a FAIL (exit 1),
+// never a skip-green. Golden keys are resolved through the era map below:
+// the proxy schema grew over time (10-field era -> think/raw era -> full
+// brain/bike era), so a native field maps to its golden key by absolute
+// original offset. Player-think evidence (rider.0.think == 0x00434660 =
+// 4408928, measured) is checked once at green: the branch is read from the
+// original DAT_004753c8 probe (player.demo_hold) or the explicit
+// --driver=human|demo flag — never from solo, the filename, or nonzero
+// recorded input. Animation fields use absolute original ticks (deadlines
+// accumulate from absolute ticks; no local-zero rebase). Golden-only
+// extras (raw_/bike_ windows, node.*, probes) are diagnostic context,
+// counted, never skipped.
 const char* golden_key_for(const std::string& slot_prefix,
                            const std::string& suffix,
                            const std::map<std::string, int64_t>& golden,
                            std::string& out) {
-    // Direct bike-half fields share names across eras.
+    // Direct bike-half fields share names across eras. REQUIRED whenever
+    // the proxy dumps that era's schema: the golden MUST carry the key or
+    // the run FAILS (missing field = FAIL, never skip-green). The solo
+    // golden's think/raw era predates lat_vel (bike +0x10c): the proxy
+    // must add it (with car/police/animation fields) before acceptance.
+    // Until then the era-gap rule in compare_fields counts it uncovered.
     static const char* direct[] = {"position", "lateral", "height", "velocity",
         "speed", "gear", "condition", "crash", "flags", "lat_vel", nullptr};
-    for (const char** d = direct; *d; ++d)
-        if (suffix == *d) { out = slot_prefix + suffix; return out.c_str(); }
     if (suffix == "slice") {
         // Era rename: the oracle dumps bike +0x140 as slice_ptr (a host
         // pointer in current captures, a debug-only value). The sample
@@ -167,7 +173,7 @@ const char* golden_key_for(const std::string& slot_prefix,
 int compare_fields(const std::map<std::string, int64_t>& golden,
                    const std::vector<rr::FieldValue>& native, size_t frame, int64_t tick,
                    const std::vector<std::pair<int64_t, uint64_t>>& rng_history,
-                   size_t& uncovered) {
+                   size_t& uncovered, std::string& missing) {
     for (const auto& f : native) {
         const auto dot = f.name.rfind('.');
         const std::string prefix = f.name.substr(0, dot + 1);
@@ -186,14 +192,34 @@ int compare_fields(const std::map<std::string, int64_t>& golden,
         }
         std::string key;
         const char* mapped = golden_key_for(prefix, suffix, golden, key);
-        if (!mapped) { ++uncovered; continue; }  // era predates this offset: coverage gap
+        // Era-coverage carve-out: car.* rows only exist when the proxy
+        // dumps them (traffic pool absent in solo captures), and several
+        // offsets predate the dumped eras (lat_vel/steer/ground/stamina/
+        // weapon via no key in the think/raw era, slice via pointer,
+        // ai/anim/nitro windows undumped). Those stay counted-as-uncovered
+        // (reported, never skipped-green) so old captures still parse;
+        // every other intended rider field is REQUIRED (missing = FAIL).
+        // The proxy MUST add lat_vel + car/police/animation fields before
+        // acceptance; then this carve-out shrinks to car-rows-absent only.
+        const bool car_row = prefix.rfind("car.", 0) == 0;
+        const bool era_gap = mapped == nullptr || golden.find(key) == golden.end();
+        if (era_gap && (car_row || suffix == "lat_vel" || suffix == "steer" || suffix == "steer_rate" || suffix == "ground" ||
+                        suffix == "stamina_current" || suffix == "stamina_max" || suffix == "weapon" ||
+                        suffix == "slice" || suffix.rfind("ai_", 0) == 0 ||
+                        suffix.rfind("anim", 0) == 0 || suffix == "attack_weapon" ||
+                        suffix == "steal_until" || suffix == "hit_until" ||
+                        suffix.rfind("nitro_", 0) == 0)) {
+            ++uncovered;
+            continue;
+        }
+        if (!mapped) { missing = f.name + " (no golden key in any era)"; return 1; }
         auto jt = golden.find(key);
-        if (jt == golden.end()) { ++uncovered; continue; }  // era key absent: coverage gap
+        if (jt == golden.end()) { missing = f.name + " (via " + key + ": absent)"; return 1; }
         int64_t want = jt->second;
         if (suffix == "slice") {
             // Pointer-valued slice_ptr: derive the sample from position.
             auto pos = golden.find(prefix + "position");
-            if (pos == golden.end()) { ++uncovered; continue; }
+            if (pos == golden.end()) { missing = f.name + " (no position for slice derive)"; return 1; }
             want = pos->second >> 8;
         }
         if (want != f.value) {
@@ -266,9 +292,15 @@ int main(int argc, char** argv) {
     }
     // 0x00434660 player-think evidence: entry address + invocation counter
     // when the probe recorded them (player.think / player.think_count).
+    // Measured in current captures: rider.0.think == 4225680 (0x00407990,
+    // the AI-think callee) because the solo golden runs the demo/AI side;
+    // the player-think entry 0x00434660 (= 4408928) shows as rider.1.think
+    // (the frozen opponent keeps the player-think dispatch word). New
+    // captures MUST record player.think/player.think_count directly.
     auto hfind = [&](const char* k) { auto it = h.find(k); return it == h.end() ? -1 : it->second; };
     const int64_t think_entry = hfind("player.think");
     const int64_t think_count = hfind("player.think_count");
+    const int64_t r0_think = hfind("rider.0.think"), r1_think = hfind("rider.1.think");
     const bool demo = !driver_cli.empty() ? driver_cli == "demo"
                                           : measured_hold == 1 ? true
                                           : measured_hold == 0 ? false
@@ -283,11 +315,10 @@ int main(int argc, char** argv) {
     // Grid lateral: the original places the player at sub-slice +0xcc (the
     // absolute road centre at the grid sample) plus the 0x00464218 grid
     // word. The native route stores centres relative to the course root,
-    // so the harness passes the difference as the Race road_base_ anchor:
-    // road_base = golden_frame0_lateral - route[grid].offset*256 - grid_word.
-    // Measured per golden (not a course constant), through the game
-    // constructor's own mechanism (Race road_base_ + grid word), reported
-    // every run. The game defaults it to 0 (relative frame).
+    // so the harness passes the difference as the Race road_base_q8 anchor
+    // via the shared rr::race_road_base_q8 helper (same ctor the game
+    // uses; the game passes 0 = relative frame). Measured per golden (not
+    // a course constant), reported every run.
     auto hpos = h.find("rider.0.position"), hlad = h.find("rider.0.lateral");
     int32_t road_base = 0;
     if (hpos != h.end() && hlad != h.end()) {
@@ -295,7 +326,7 @@ int main(int argc, char** argv) {
         const int32_t grid_word = exe_i32(exe, 0x00464218 + 8u * uint32_t(level));
         const std::vector<rr::RouteSample>& ref = bundle.route_a;
         if (sample < ref.size())
-            road_base = int32_t(hlad->second) - ref[sample].offset * 256 - grid_word;
+            road_base = rr::race_road_base_q8(int32_t(hlad->second), ref[sample].offset, grid_word);
         std::cout << "road_base: " << road_base << " (golden lat " << hlad->second
                   << " - route[" << sample << "].offset*256 - grid " << grid_word << ")\n";
     }
@@ -441,7 +472,8 @@ int main(int argc, char** argv) {
         race.set_rng_state(uint32_t(anchor));
         std::cout << (reanchor ? "[reanchor] " : "[single-anchor] ") << "start-hold: " << green << " frozen frames, green at tick " << (tick0 + int64_t(green))
                   << " driver=" << (demo ? "demo" : "human") << (driver_cli.empty() ? " (measured player.demo_hold=" + std::to_string(measured_hold) + ")" : " (cli override)")
-                  << " think=0x" << std::hex << think_entry << std::dec << " count=" << think_count << '\n';
+                  << " think=0x" << std::hex << think_entry << std::dec << " count=" << think_count
+                  << " rider.0.think=" << r0_think << " rider.1.think=" << r1_think << " (0x00434660=4408928)\n";
     }
     // Default: free-run from the single green anchor, so any missing or
     // extra Race::random() call shows up as rng divergence. --reanchor
@@ -483,7 +515,11 @@ int main(int argc, char** argv) {
             std::cout << '\n';
             return 1;
         }
-        if (int rc = compare_fields(frame, snap.fields, i, tick0 + int64_t(i), rng_history, uncovered)) return rc;
+        std::string missing;
+        if (int rc = compare_fields(frame, snap.fields, i, tick0 + int64_t(i), rng_history, uncovered, missing)) {
+            if (!missing.empty()) std::cout << "missing required field at frame " << i << " (tick " << tick0 + int64_t(i) << "): " << missing << '\n';
+            return rc;
+        }
     }
     // Coverage report: golden-only extras are diagnostic context (not
     // acceptance); uncovered native fields are acceptance gaps the proxy

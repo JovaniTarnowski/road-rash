@@ -106,7 +106,7 @@ python3 tools/golden_diff.py analysis/oracle/sim-napa-solo-human.tsv analysis/or
 Both report zero differences (replay verified 1,431 frames identical;
 `sim-napa-solo-human-replay.tsv` is git-ignored scratch, not committed).
 
-## Replay driver axis (replay-harness correction, Oct 12)
+## Replay driver axis (replay prerequisites, Oct 12)
 
 `solo` (field isolation: scheduler freeze, traffic nulled) and
 `driver=human|demo` (the `0x00434660` branch) are independent axes.
@@ -116,14 +116,43 @@ Both report zero differences (replay verified 1,431 frames identical;
 `scenario` name, or nonzero recorded input. All captures to date predate
 the probe and require `--driver`.
 
+Player-think entry/counter (`0x00434660`): the harness reports
+`player.think`/`player.think_count` when the probe records them. Measured
+in current captures: `rider.0.think == 4225680` (`0x00407990`, the AI-think
+callee) on the demo/AI side, while the player-think entry `0x00434660`
+(= 4408928) shows as `rider.1.think` (the frozen opponent keeps the
+player-think dispatch word). New captures MUST record
+`player.think`/`player.think_count` directly.
+
+One stable race-setup factory (game + replay): player bike/rider resolve
+through the career tables (character 1 → rider 8 via `0x00415fc0`,
+`level_bike` at `0x004641c8`, rider row at `0x00463c78`), opponents via
+`original_opponents` (offline original: 14, slots 1..14, `0x00405600`;
+`DAT_004642d4 = 0x10`), personalities via `read_personalities`, the
+vehicle library WITH EXE descriptors, traffic + crash config attached to
+the Race, and the Napa road-base anchor through the shared
+`rr::race_road_base_q8` helper into the same `Race` ctor the game uses
+(the game passes 0 = relative route frame; replay passes the measured
+anchor: `road_base = golden_frame0_lateral - route[grid].offset*256 -
+grid_word`, 1792 on the solo golden). No hidden replay-only setup.
+
 New captures MUST record, every frame: `player.demo_hold`
 (`DAT_004753c8`), `player.think` (entry) + `player.think_count`
 (`0x00434660` invocations), `demo.base_speed`/`demo.lane`/`demo.weapon`/
 `demo.stats_*`, `grid.bias`, and `DAT_00467a6c` (the brain personality
 row — the course-entry bootstrap leaves it at startup 0, not the career
-rider). Pre-step RNG capture (or proven post-step equivalence) is
-required at the green boundary; ticks stay absolute (animation deadlines
-accumulate from absolute ticks). See `analysis/replay-notes.md`.
+rider). Pre-step RNG capture (or proven post-step equivalence: every
+hold frame constant rng with `rng_calls==0`, else exit 1) is required at
+the green boundary; ticks stay absolute (animation deadlines accumulate
+from absolute ticks). See `analysis/replay-prereq-notes.md`.
+
+Comparator contract: the intended field set (every native snapshot field
+per live rider + every traffic pool slot + rng) is REQUIRED — a missing
+golden field is a FAIL, never skip-green. Era carve-outs (car.* rows
+absent in solo captures; steer/ground/stamina/weapon/slice/ai/anim/nitro
+offsets no dumped era covers) are counted as uncovered and reported, not
+silently skipped. Car/police/animation fields are in the set: the proxy
+must dump them before acceptance.
 
 Single-anchor replay status (`oracle-sim-test --driver=demo
 analysis/oracle/sim-napa-solo.tsv`): road_base 1792 (measured per

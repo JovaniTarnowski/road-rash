@@ -3,6 +3,6 @@
     "trace_sha256": "3ab614a032666d75d6cf241efd9c0dd7148c958fc969c95579a531ffaec7e2a6",
     "divergence": "first divergence at frame 74 (tick 75): rider.0.lateral original 18173 native 18053",
     "reason": "Driver-axis replay (--driver=demo): shared factory + measured road_base + pre-step green anchor. Lateral gap with RNG equal; earlier tick-139 pin was the old harness (missing personalities, absolute anchor). Diagnostic only; acceptance remains incomplete.",
-    "output_sha256": "dca3a7126f429ee2993e0a437835dc492d290b71a5509be70fe6619789ee3ec9"
+    "output_sha256": "363000f7679f24d32b4babd64ab89ee11dc7e262e3230432c2979d4265407193"
   }
 }
