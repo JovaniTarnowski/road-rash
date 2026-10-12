@@ -27,6 +27,14 @@ static void test_configure() {
     if(t.oncoming!=reload || t.behind!=0 || t.ahead!=-reload)throw std::runtime_error("timer starts");
     traffic_configure(t,0);      // density 0 means 6 in the original
     if(t.density!=6)throw std::runtime_error("default density");
+    // 0x0044dd00 from a zone event: reloads follow the density, the
+    // oncoming timer restarts, behind/ahead keep running.
+    t.behind=123;t.ahead=-77;
+    rr::traffic_set_density(t,30);
+    if(t.oncoming_reload!=div256(2500*30*0x3c) || t.oncoming!=t.oncoming_reload || t.behind!=123 || t.ahead!=-77)
+        throw std::runtime_error("zone density");
+    rr::traffic_set_density(t,-45);   // rate and cruise only
+    if(t.rate!=4500 || t.cruise!=45 || t.oncoming_reload!=div256(2500*30*0x3c))throw std::runtime_error("zone rate");
 }
 
 static void test_lane_count() {
@@ -104,6 +112,31 @@ static void test_library_choose() {
     if(library.choose(2,0)!=-1)throw std::runtime_error("kind 2 rejected by mask");
 }
 
+static void test_zone_events() {
+    // Zone ends apply as their slice enters the ring front (and during the
+    // initial fill of the 128 slices behind the first front).
+    rr::VehicleLibrary library(synthetic_container(0));
+    rr::TrafficSystem system(library,synthetic_exe());
+    system.configure(6);
+    std::vector<rr::RouteSample> route(400);
+    for(auto& s:route)s=lane_sample(0,0);   // no lanes: nothing spawns
+    auto zone=[&](size_t i,int8_t d){route[i].path.zone_end=true;route[i].path.event_parameters[1]=uint8_t(d);};
+    zone(20,40);zone(200,-45);zone(260,15);
+    uint32_t seed=1;
+    auto random=[&]()->uint32_t{seed=seed*214013u+2531011u;return (seed>>16)&0x7fffu;};
+    int32_t camera=0x3100;
+    auto step=[&](int32_t moved){camera+=moved;system.step(route,camera+0x100,camera+0x5100,moved,camera,0,random);};
+    step(0);   // fill [front-128, front): sample 20 is inside
+    if(system.zone_events()!=1 || system.timers().density!=40)throw std::runtime_error("initial fill zone");
+    while(((camera+0x5100)>>8)<=200)step(0x80);
+    if(system.zone_events()!=2 || system.timers().rate!=4500)throw std::runtime_error("zone at ring front");
+    step(-0x400);step(0x400);   // back off and return: the front slice is rebuilt
+    if(system.zone_events()!=3)throw std::runtime_error("rebuilt front slice");
+    while(((camera+0x5100)>>8)<=260)step(0x100);
+    if(system.zone_events()!=4 || system.timers().density!=15 || system.timers().oncoming_reload!=div256(4500*15*0x3c))
+        throw std::runtime_error("density after rate change");
+}
+
 static void test_spawn_and_move() {
     rr::VehicleLibrary library(synthetic_container(0));
     std::vector<uint8_t> exe=synthetic_exe();
@@ -152,6 +185,36 @@ static void test_spawn_and_move() {
     if(horns==0)throw std::runtime_error("no horn while the player blocks the lane");
     // Pool limit is the original 0x00438b70(0x210,0x10) allocation.
     if(rr::TrafficSystem::pool_size!=16)throw std::runtime_error("pool size");
+}
+
+static void test_zone_corpus() {
+    // Napa at a steady 0x60 Q8/tick: spawns with the course's zone events
+    // against the old fixed density 6, over the same random stream.
+    const std::string root=RR_SOURCE_DIR "/../cdrom/ROADRASH";
+    if(!std::filesystem::exists(root+"/DATA/CARS/NAPA.CAR")) return;
+    rr::Assets assets(root);
+    rr::VehicleLibrary library(assets.read("DATA/CARS/NAPA.CAR"));
+    const auto exe=assets.read("ROADRASH.EXE");
+    const rr::Course course=rr::read_course(assets.read("DATA/COURSES/NAPA.CRS"));
+    auto run=[&](bool zones,int32_t& events) {
+        auto route=rr::make_route(course,false);
+        if(!zones)for(auto& s:route){s.path.zone_end=false;s.other.zone_end=false;}
+        rr::TrafficSystem system(library,exe);
+        system.configure(6);
+        uint32_t seed=1,spawned=0,last=0;
+        auto random=[&]()->uint32_t{seed=seed*214013u+2531011u;return (seed>>16)&0x7fffu;};
+        for(int32_t camera=0x3100;((camera+0x5100)>>8)+1<int32_t(route.size());camera+=0x60) {
+            system.step(route,camera+0x100,camera+0x5100,0x60,camera,0,random);
+            for(const auto& car:system.cars())if(car.active && car.serial>last){++spawned;last=std::max(last,car.serial);}
+        }
+        events=system.zone_events();
+        return spawned;
+    };
+    int32_t with_events=0,without_events=0;
+    const uint32_t with=run(true,with_events),without=run(false,without_events);
+    std::cout<<"Napa spawns at 0x60/tick: "<<with<<" with "<<with_events<<" zone events, "<<without<<" at fixed density 6\n";
+    if(with_events==0 || without_events!=0)throw std::runtime_error("Napa zone events");
+    if(with>=without)throw std::runtime_error("Napa zones should thin traffic");
 }
 
 static void test_corpus() {
@@ -354,7 +417,9 @@ int main() {
         test_lane_count();
         test_library_choose();
         test_spawn_and_move();
+        test_zone_events();
         test_corpus();
+        test_zone_corpus();
         test_car_contact_synthetic();
         return 0;
     } catch(const std::exception& e) {

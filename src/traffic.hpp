@@ -42,13 +42,18 @@ private:
 // Spawn timers, ports of 0x0044dd00 / 0x0044dd90. The rate is 0x19*100
 // (0x0044dd00(-25)); the reloads scale with the density argument.
 struct TrafficTimers {
+    int32_t cruise = 25;                              // 0x004b7e8c: car cruise scale (0x0044e710)
     int32_t rate = 2500;                              // 0x004b7e84 / 0x004b7ea4
     int32_t oncoming_reload = 0, other_reload = 0;    // 0x004b7e88 / 0x004b7e9c
     int32_t oncoming = 0, behind = 0, ahead = 0;      // 0x004b7e90 / 0x004b7e94 / 0x004b7e80
     int density = 6;                                  // 0x004b7ea0
 };
+// 0x0044dd00. Negative: rate -d*100 and cruise -d, reloads untouched.
+// Otherwise density (0 means 6) and both reloads from the current rate; the
+// oncoming timer restarts at its reload, behind/ahead keep running.
+void traffic_set_density(TrafficTimers&, int density);
 // 0x0044db80's sequence: 0x0044dd00(-25) then 0x0044dd00(density), then the
-// behind/ahead timer starts.
+// behind/ahead timer starts. A negative density only sets the rate.
 void traffic_configure(TrafficTimers&, int density);
 
 // Lane count of a ring sub-slice lane word in 256ths, with the original's
@@ -78,7 +83,15 @@ public:
     TrafficSystem(const VehicleLibrary&, std::vector<uint8_t> exe);
     void configure(int density) { traffic_configure(timers_, density); }
     // One simulation tick on the player's route. camera/front are the ring
-    // cursors 0x004b6e5c (camera) and 0x004b6e50 (front, camera + 0x5000);
+    // cursors 0x004b6e5c (camera) and 0x004b6e50 (front, ring camera +
+    // 0x5000). The ring camera starts at 0x3200 (0x0044b250) against the
+    // view camera's 0x3100 and both advance by the same delta (0x0044b3b0),
+    // so front = view camera + 0x5100 (static trace, not capture-checked).
+    // Slices entering the ring front apply their zone events (see
+    // PathSample::zone_end) before the spawn timers run, as 0x00454120
+    // precedes 0x0044dd90; the first step also replays the initial ring
+    // fill (0x004552e0, back to front over 128 samples).
+    // 0x0041eca0 crossing traffic at intersections is not ported.
     // distance_moved is the per-step camera advance (0x0044b3b0). player_q8
     // and player_lateral feed the horn rule (0x0044efa0). random is the
     // shared CRT rand stream; the original call order is preserved.
@@ -90,6 +103,7 @@ public:
     // car object, which has no scratch equivalent — see analysis/car-notes.md).
     std::vector<TrafficCar>& cars_mut() { return cars_; }
     const TrafficTimers& timers() const { return timers_; }
+    int32_t zone_events() const { return zone_events_; }   // density changes applied so far
     const VehicleLibrary& library() const { return library_; }
     std::vector<SoundEventRecord> take_sound_events() { auto e = std::move(events_); events_.clear(); return e; }
     // Sprite size class from the car template (0x00475698 +0x28).
@@ -109,6 +123,10 @@ private:
     std::vector<TrafficCar> cars_{pool_size};
     std::vector<SoundEventRecord> events_;
     uint32_t serial_ = 0;                       // DAT_004b7e98
+    bool filled_ = false;                       // initial ring fill replayed
+    int32_t built_end_ = 0;                     // ring front sample (exclusive) already built
+    int32_t zone_events_ = 0;
+    void build_slice(const std::vector<RouteSample>& route, int32_t sample);
     uint8_t sprite_size_ = 10;
 };
 

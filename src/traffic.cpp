@@ -84,17 +84,21 @@ int VehicleLibrary::choose(uint8_t kind,uint32_t random) const {
     return int(accepted[random%accepted.size()]);
 }
 
-void traffic_configure(TrafficTimers& t,int density) {
-    // 0x0044dd00 with the 0x0044db80 preamble: the negative call only fixes
-    // the rate; a density of 0 means 6 in the original.
-    if(density<0) {t.rate=-density*100;return;}    // 0x0044dd00(-25)
+void traffic_set_density(TrafficTimers& t,int density) {
+    // 0x0044dd00 (single player; multiplayer quadruples the density).
+    if(density<0) {t.cruise=-density;t.rate=-density*100;return;}
     if(density==0)density=6;
     t.density=density;
     t.oncoming_reload=div256(t.rate*density*0x3c);
     t.oncoming=t.oncoming_reload;
     t.other_reload=div256(t.rate*density*0x3c);
+}
+void traffic_configure(TrafficTimers& t,int density) {
+    if(density<0) {traffic_set_density(t,density);return;}
+    traffic_set_density(t,-25);         // 0x0044db80: 0x0044dd00(-0x19)
+    traffic_set_density(t,density);     // then 0x0044dd00(6)
     t.behind=0;
-    t.ahead=-t.other_reload;    // 0x0044db80 tail
+    t.ahead=-t.other_reload;            // 0x0044db80 tail
 }
 
 int traffic_lane_count(int32_t lanes_q8) {
@@ -140,7 +144,7 @@ void TrafficSystem::move(TrafficCar& car,const std::vector<RouteSample>& route,i
     // cruise value (DAT_004b7e8c = 25 times +0x71 >> 8, times 100 through
     // 0x00449880), reached at the phase-scaled rate (+0x71 * 0x12 >> 8).
     // Obstacle braking and lane changes (0x0044a070/0x00449e60) are not ported.
-    const int32_t target=div256(25*car.phase)*100;
+    const int32_t target=div256(timers_.cruise*car.phase)*100;
     const int32_t rate=div256(car.phase*0x12);
     car.speed+=rate;
     if(target<car.speed)car.speed=target;
@@ -163,9 +167,32 @@ void TrafficSystem::move(TrafficCar& car,const std::vector<RouteSample>& route,i
     }
 }
 
+void TrafficSystem::build_slice(const std::vector<RouteSample>& route,int32_t sample) {
+    // 0x00454c80 -> 0x00454240 with the forward traversal: each roadway of
+    // the slice (own half first) whose event ends here calls 0x0041ec70.
+    if(sample<0 || size_t(sample)>=route.size())return;
+    const auto& at=route[size_t(sample)];
+    auto zone=[&](const PathSample& path) {
+        if(!path.zone_end)return;
+        traffic_set_density(timers_,int8_t(path.event_parameters[1]));
+        ++zone_events_;
+    };
+    zone(at.path);
+    if(at.dual)zone(at.other);
+}
+
 void TrafficSystem::step(const std::vector<RouteSample>& route,int32_t camera_q8,int32_t front_q8,
                         int32_t distance_moved,int32_t player_q8,int32_t player_lateral,const std::function<uint32_t()>& random) {
     const int32_t back_q8=front_q8-0x8000;    // ring span 0x8000 (0x004552e0)
+    // Ring slices built this step (0x00454120 runs before 0x0044dd90).
+    const int32_t front_sample=front_q8>>8;
+    if(!filled_) {
+        filled_=true;
+        built_end_=(front_q8-distance_moved)>>8;
+        for(int32_t s=built_end_-128;s<built_end_;++s)build_slice(route,s);
+    }
+    for(;built_end_<front_sample;++built_end_)build_slice(route,built_end_);
+    if(front_sample<built_end_)built_end_=front_sample;   // backward: rebuilt later
     const auto sample_at=[&](int32_t q8)->const RouteSample& {
         const size_t index=size_t(std::clamp(q8,int32_t(0),int32_t((route.size()-1)*256))>>8);
         return route.at(index);

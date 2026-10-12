@@ -16,6 +16,12 @@ struct PathSample {
     uint8_t side_flags[2]={0,0};
     uint8_t marking_flags=0,event_type=0;
     std::array<uint8_t,3> event_parameters{};
+    // 0x00452710 returns 0x80000000 (beyond the byte kept in marking_flags)
+    // on an event's end sample, except types 4, 5 and 7. When the forward
+    // ring build reaches it, 0x00454240 calls 0x0041ec70: crossing traffic
+    // for types 1..3 (0x0041eca0) and traffic density event_parameters[1]
+    // (0x0044dd00; 0 = default 6, negative = spawn rate and cruise speed).
+    bool zone_end=false;
 };
 struct CourseEvent {
     int32_t start=0,end=0; // CESR interval, section-local samples (0x00452690)

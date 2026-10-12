@@ -137,6 +137,7 @@ Course read_course(const std::vector<uint8_t>& bytes) {
                 for(int v=0;v<3;++v)sample.event_parameters[v]=uint8_t(segments.byte(p+9+v));
                 if(j<start || j>end)continue;
                 if(j)sample.event_type=uint8_t(segments.byte(p+8)+1);
+                sample.zone_end=j==end && sample.event_type!=4 && sample.event_type!=5 && sample.event_type!=7;
                 if(sample.event_type==4)sample.marking_flags=0x40;
                 else if(sample.event_type==5 || sample.event_type==7)sample.marking_flags=0;
                 else if(j==end)sample.marking_flags=0; // end marker 0x80000000 has a zero low byte

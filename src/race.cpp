@@ -1934,9 +1934,10 @@ void Race::step(uint32_t controls) {
     camera_heading_=advance_heading(camera_heading_,previous_camera_position_,camera_position(),road[player.previous_sample].path.bend,road[player.sample].path.bend,(player.bike.u8(0xc0)&16)!=0);
     if (traffic_) {
         // 0x0044b3b0: distance moved this step feeds the spawn timers; the
-        // front cursor rides 0x5000 ahead of the camera (0x004552e0).
+        // ring front rides 0x5000 ahead of the ring camera, which runs
+        // 0x100 ahead of the view camera (0x0044b250: 0x3200 vs 0x3100).
         const int32_t camera=int32_t(camera_position());
-        traffic_->step(road,camera,camera+0x5000,camera-int32_t(previous_camera_position_),
+        traffic_->step(road,camera+0x100,camera+0x5100,camera-int32_t(previous_camera_position_),
             player.bike.i32(0x1c),player.bike.i32(0x28),[this]{return random();});
     }
     previous_camera_position_=camera_position();
