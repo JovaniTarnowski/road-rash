@@ -140,6 +140,10 @@ public:
     int32_t zone_events() const { return zone_events_; }   // density changes applied so far
     const std::vector<IntersectionController>& controllers() const { return controllers_; }
     const std::vector<IntersectionSignal>& signals() const { return signals_; }
+    // 0x004415b0: phase of the nearest active signal within 0x801 Q8 of a
+    // position (0x00449ce0 ring scan for signal nodes), or -1. Pedestrians
+    // cross on phase 2 without a road check; other phases hold them.
+    int signal_phase_at(int32_t position_q8) const;
     const VehicleLibrary& library() const { return library_; }
     std::vector<SoundEventRecord> take_sound_events() { auto e = std::move(events_); events_.clear(); return e; }
     // Sprite size class from the car template (0x00475698 +0x28).

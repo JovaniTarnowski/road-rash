@@ -507,6 +507,26 @@ static void test_intersections() {
         if(bc!=2)throw std::runtime_error("repeated placement");
     }
 }
+static void test_signal_phase() {
+    // 0x004415b0: nearest active signal phase within 0x801, else -1.
+    rr::VehicleLibrary library(synthetic_container(0));
+    rr::TrafficSystem system(library,synthetic_exe());
+    system.configure(6);
+    if(system.signal_phase_at(100*256)!=-1)throw std::runtime_error("phase without signals");
+    std::vector<rr::RouteSample> route(400);
+    for(auto& s:route)s=lane_sample(0x300,0x300);
+    route[100].path.zone_end=true;route[100].path.event_type=1;
+    uint32_t seed=1;
+    auto random=[&]()->uint32_t{seed=seed*214013u+2531011u;return (seed>>16)&0x7fffu;};
+    system.step(route,0x3100+0x100,0x3100+0x5100,0,0x3100,0,random,16);
+    if(system.controllers().empty() || !system.controllers()[0].active)
+        throw std::runtime_error("no controller for phase query");
+    // All four signals sit at sample 100; phases advance from the seed.
+    const int at=system.signal_phase_at(100*256);
+    if(at<0 || at>2)throw std::runtime_error("phase out of range at signal");
+    if(system.signal_phase_at(100*256+0x801)!=-1)throw std::runtime_error("phase past 0x801");
+    if(system.signal_phase_at(100*256-0x801)!=-1)throw std::runtime_error("phase before 0x801");
+}
 
 int main() {
     try {
@@ -516,6 +536,7 @@ int main() {
         test_spawn_and_move();
         test_zone_events();
         test_intersections();
+        test_signal_phase();
         test_corpus();
         test_zone_corpus();
         test_car_contact_synthetic();

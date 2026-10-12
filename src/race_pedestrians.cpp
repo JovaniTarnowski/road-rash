@@ -5,8 +5,8 @@
 
 // Pedestrians, plan 24 Task 4. Each function names the routine it ports.
 // Known native differences (labelled where they occur):
-// - 0x004415b0 (traffic-light phase) returns -1: signals are not ported
-//   (plan 24 Task 1), so pedestrians never wait on a light;
+// - 0x004415b0 (traffic-light phase) reads live intersection signals:
+//   phase 2 crosses without a road check, phases 0/1 wait, -1 checks;
 // - category-2 resources load at spawn, not at the first draw (0x00440680
 //   calls 0x00440b80 lazily), so +0x1e0 is set one or more ticks early;
 // - the ground height +0x24 settles on the first move instead of
@@ -201,7 +201,9 @@ void Race::think_pedestrian(Pedestrian& p) {
     auto queue = [&](int8_t code) { if (p.look) queue_animation(p.animation, p.look->bank, code); };
     auto rest = [&] { p.state = 0; set(1); queue(-1); p.pace = 0; };          // LAB_004413ea
     auto resume = [&] { p.state = 1; p.pace = 4; set(0); queue(-1); };
-    const bool signal = false;   // 0x004415b0 -> -1 (no signal objects; plan 24 Task 1)
+    // 0x004415b0: nearest signal phase within 0x801, or -1. Phase 2 walks
+    // without a road check; other phases hold; no signal checks the road.
+    const int signal=traffic_?traffic_->signal_phase_at(b.i32(0x1c)):-1;
     p.pace = 0;
     if (p.state != 2) {
         p.heading = crossing_heading[p.side & 3];
@@ -222,7 +224,8 @@ void Race::think_pedestrian(Pedestrian& p) {
             case 0:
                 p.lane = int8_t(pedestrian_lane(p));
                 if ((p.has(0) || p.has(5) || !p.loaded()) && p.trigger < player && (random() & 1) != 0) {
-                    if (!signal) {
+                    if (signal>=0 && signal!=2) break;   // red phases hold
+                    if (signal<0) {
                         if (!pedestrian_road_clear(p, factor, 0)) break;
                         if (!pedestrian_road_clear(p, factor, p.side == 1 ? 1 : -1)) break;
                     }
@@ -236,7 +239,7 @@ void Race::think_pedestrian(Pedestrian& p) {
                 else if (p.has(5)) { queue(5); p.pace = 8; }
                 else if (!p.loaded()) p.pace = 4;
                 else { queue(1); p.pace = 0; }
-                if (signal || int8_t(pedestrian_lane(p)) == p.lane) {
+                if (signal>=0 || int8_t(pedestrian_lane(p)) == p.lane) {
                     if ((random() & 3) == 0 || pedestrian_road_clear(p, (factor >> 2) + 0x10, 0)) {
                         if (pedestrian_arrived(p)) {
                             p.state = 0; queue(1); p.pace = 0;

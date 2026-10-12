@@ -246,6 +246,15 @@ void TrafficSystem::place_intersection(int32_t sample,int variant,int lanes) {
     c.kind_mode=0;c.lane_range=std::max(1,lanes);
     for(int k=0;k<4;++k)c.signals[k]=made[k];
 }
+int TrafficSystem::signal_phase_at(int32_t position_q8) const {
+    int best=-1;int32_t best_gap=0x801;
+    for(const auto& s:signals_) {
+        if(!s.active)continue;
+        const int32_t gap=s.position_q8>=position_q8?s.position_q8-position_q8:position_q8-s.position_q8;
+        if(gap<best_gap){best_gap=gap;best=s.phase;}
+    }
+    return best;
+}
 void TrafficSystem::think_intersections(int32_t back_q8,int32_t front_q8,uint32_t tick,
                                         const std::vector<RouteSample>& route,
                                         const std::function<uint32_t()>& random) {
