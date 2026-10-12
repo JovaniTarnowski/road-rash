@@ -152,3 +152,17 @@ got lucky with a run that stayed in-race. Fixes for a later turn: clear
 `g_race_started` on menu re-entry (or gate dumps on выдача race-active
 state), and/or drive menu choices deterministically instead of relying
 on attract flow. No tree changes for this diagnosis.
+
+## Live CITY check (October 12, 2026): intersections act in-game
+
+`rr-game --race --course 1 --steer-into-traffic --ticks 6000` with a
+temporary controller/crossing count on the hunt line (reverted after):
+
+- t=1000: 4 controllers, 3 crossing cars; t=2000: 3 + 4; t=3000: 2 + 4;
+  t=4000: 3 + 0; t=5000: 4 + 3 — controllers place/teardown and crossing
+  cars spawn/despawn dynamically through a live CITY race.
+- `car-crash tick 1206 reason 2` with crossings live (rider contact path
+  unchanged — crossing cars share the pool and the `& 0x15` branch).
+
+This is behavior evidence only, not the Step-5 golden (car-field replay
+against the original still waits on a working capture).
