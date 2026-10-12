@@ -1,9 +1,10 @@
 #include "traffic.hpp"
+#include "race.hpp"
 #include "assets.hpp"
 #include "course.hpp"
+#include "course_scene.hpp"
 #include <filesystem>
 #include <iostream>
-#include <stdexcept>
 
 // Synthetic tests always run; the CARS-container corpus part skips when the
 // original disc is not mounted. Every rule is traced in src/traffic.cpp.
@@ -192,6 +193,161 @@ static void test_corpus() {
     for(const auto& node:nodes)if(!node.texture)throw std::runtime_error("traffic node without texture");
 }
 
+// Plan 11a Task 1 Step 3: synthetic rider–car contact boundaries. A live
+// Napa race with one seeded car, driven through the real Race::step path:
+// - boundary: gap 128 still enters contact (0x004368f0 breaks only when the
+//   summed half-lengths are STRICTLY below the gap) but both separation
+//   axes are stale, so the hit is silent and only the 0x00404f4d nudge moves
+//   the rider; gap 129 misses the gate entirely (no nudge);
+// - crashed rider: no new crash is entered (0x004049c0 rejects).
+static void test_car_contact_synthetic() {
+    const std::string root = RR_SOURCE_DIR "/../cdrom/ROADRASH";
+    if (!std::filesystem::exists(root + "/ROADRASH.EXE")) { std::cout << "No disc for contact tests\n"; return; }
+    rr::Assets assets(root);
+    const auto exe = assets.read("ROADRASH.EXE");
+    const auto tables = rr::read_physics_tables(exe);
+    const auto course = rr::read_course(assets.read("DATA/COURSES/NAPA.CRS"));
+    const auto specs = rr::read_bike_specs(assets.read("DATA/BIKESPEC.RSC"));
+    const rr::VehicleLibrary library(assets.read("DATA/CARS/NAPA.CAR"), exe);
+    rr::CourseScene scene(assets, exe, course, "NAPA", 1, 0);
+    // Boundary: bike half-length 64 + car half-length 64 = 128. Probe 0
+    // seeds the car exactly at the edge (gap 128: contact), probe 1 one
+    // unit outside it (gap 129: no contact). Lateral/height aligned.
+    // Detection (0x004368f0: longitudinal gate breaks only when
+    // sum < gap, so equality contacts; port src/race.cpp:362) admits the
+    // edge probe. The separation axis choice (0x00436a40 prev-copy
+    // strict <, port src/race.cpp:369-372) then sees both axes stale:
+    // Race::move (0x004395e0, port src/race.cpp:615) recopies the
+    // previous-position words at step start, so prev == current and
+    // 128 < 128 is false on both axes. Impulses stay 0 and the handler
+    // (0x004049c0 LAB_00404c2d: hit 0 < 0x7d1 with lateral 0 < 0x3e9 is
+    // silent, port src/race.cpp:448-455,473) leaves steer rate and speed
+    // alone; the tail (0x00404feb, port src/race.cpp:522) clears the
+    // impulses/flags. The ONLY observable is the unconditional
+    // 0x00404f4d nudge ((7680 + 16384) >> 4 * dt = 1504, port
+    // src/race.cpp:519-520): car lateral equals rider lateral, so the
+    // else branch pushes the rider -1504 laterally.
+    for (int probe = 0; probe < 2; ++probe) {
+        rr::Race race(rr::make_route(course, false), rr::make_route(course, true),
+                      tables, specs.at(0), 90, {}, 0);
+        rr::TrafficSystem traffic(library, exe);
+        traffic.configure(6);
+        race.set_traffic(&traffic);
+        race.set_terrain_source([&](const rr::RouteSample& s) -> const rr::TerrainSlice& {
+            return scene.terrain(s.section, s.local);
+        });
+        auto& me = race.riders()[0];
+        me.bike.i32(0x178) = 64; me.bike.i32(0x174) = 7680; me.bike.i32(0x17c) = 8960;
+        // Pre-roll one step so walls()/vertical() settle the rider inside
+        // the shoulder (the grid lateral starts outside it); the car is
+        // seeded against the SETTLED position, which is what
+        // collide_traffic sees. Speed words are zeroed after the pre-roll
+        // so travel does not move the rider during the measured step.
+        race.set_rng_state(1);
+        race.step(0);
+        const int32_t p0 = me.bike.i32(0x1c), l0 = me.bike.i32(0x28);
+        auto& cars = traffic.cars_mut();
+        for (auto& c : cars) c.active = false;
+        cars[0].active = true;
+        cars[0].position = p0 + 128 + probe;   // probe 0: edge, probe 1: outside
+        cars[0].lateral = l0;
+        cars[0].speed = 0;
+        me.bike.i32(0xec) = 0; me.bike.i32(0x108) = 0; me.bike.i32(0x10c) = 0;
+        me.bike.i32(0xf0) = 0;
+        const int32_t lat_before = me.bike.i32(0x28);
+        const int32_t f0_before = me.bike.i32(0xf0);
+        race.set_rng_state(1);
+        race.step(0);
+        const int32_t lat_after = me.bike.i32(0x28);
+        if (probe == 0) {
+            // Edge contact: silent hit, nudge only.
+            if (lat_after != lat_before - 1504) throw std::runtime_error("edge nudge missed");
+            if (me.bike.i32(0xf0) != f0_before) throw std::runtime_error("edge hit was not silent (f0)");
+            if (me.bike.i32(0xec) != 0) throw std::runtime_error("edge hit was not silent (speed)");
+            if (me.bike.i32(0x2f4) != 0) throw std::runtime_error("edge hit crashed the rider");
+        } else {
+            // Outside the gate: no contact, rider untouched.
+            if (lat_after != lat_before) throw std::runtime_error("outside contact fired (lateral)");
+            if (me.bike.i32(0xf0) != f0_before) throw std::runtime_error("outside contact fired (f0)");
+            if (me.bike.i32(0xec) != 0) throw std::runtime_error("outside contact fired (speed)");
+            if (me.bike.i32(0x2f4) != 0) throw std::runtime_error("outside contact fired (crash)");
+        }
+    }
+    // Crashed rider: contact must not enter a new crash.
+    {
+        rr::Race race(rr::make_route(course, false), rr::make_route(course, true),
+                      tables, specs.at(0), 90, {}, 0);
+        rr::TrafficSystem traffic(library, exe);
+        traffic.configure(6);
+        race.set_traffic(&traffic);
+        race.set_terrain_source([&](const rr::RouteSample& s) -> const rr::TerrainSlice& {
+            return scene.terrain(s.section, s.local);
+        });
+        auto& me = race.riders()[0];
+        me.bike.i32(0x178) = 64; me.bike.i32(0x174) = 7680; me.bike.i32(0x17c) = 8960;
+        me.bike.i32(0x2f4) = 1;   // already crashed
+        const int32_t p0 = me.bike.i32(0x1c), l0 = me.bike.i32(0x28);
+        auto& cars = traffic.cars_mut();
+        for (auto& c : cars) c.active = false;
+        cars[0].active = true;
+        cars[0].position = p0; cars[0].lateral = l0; cars[0].speed = 0;
+        race.set_rng_state(1);
+        race.step(0);
+        if (me.bike.i32(0x2f8) == 2) throw std::runtime_error("crashed rider took car crash");
+    }
+    // Split roadway: a rider on the other branch at the same position as
+    // the car must not collide (0x004368f0 +0x36 & 3 shared-half test;
+    // port src/race.cpp:358-361). LIMIT (Oct 12): this probe is NOT YET
+    // PASSING — the parked AI rider's lateral still moves during the step,
+    // which means either the exclusion misses (route/sample desync between
+    // route_of(r) and the dual flag) or AI-adjacent motion (walls on route
+    // documents the gap; do not claim split parity until it passes.
+    {
+        const auto route_a = rr::make_route(course, false);
+        size_t dual_sample = 0;
+        for (size_t i = 0; i < route_a.size(); ++i)
+            if (route_a[i].dual) { dual_sample = i; break; }
+        if (dual_sample == 0) throw std::runtime_error("no dual sample on Napa route 0");
+        rr::Opponent opp{specs.at(0), 90, 40, 40, 0, 1};
+        rr::Race race(rr::make_route(course, false), rr::make_route(course, true),
+                      tables, specs.at(0), 90, {opp}, 0);
+        rr::TrafficSystem traffic(library, exe);
+        traffic.configure(6);
+        race.set_traffic(&traffic);
+        auto& ai = race.riders()[1];
+        ai.bike.i32(0x178) = 64; ai.bike.i32(0x174) = 7680; ai.bike.i32(0x17c) = 8960;
+        ai.route = 1;   // other branch; player (riders_[0]) stays on route 0
+        ai.sample = ai.previous_sample = dual_sample;
+        ai.bike.i32(0x1c) = int32_t(dual_sample << 8);
+        ai.bike.i32(0x138) = ai.bike.i32(0x1c);
+        // Let walls() settle first: read the clamped lateral, THEN seed
+        // the car dead-center on it. Otherwise the clamp moves the rider
+        // after seeding and the test measures the clamp, not the exclusion.
+        ai.bike.i32(0x114) = 0; ai.bike.i32(0x240) = 0;
+        // Settle walls() BEFORE seeding the car: step once with no cars,
+        // then seed dead-center on the clamped lateral.
+        race.set_rng_state(1);
+        race.step(0);
+        const int32_t l0 = ai.bike.i32(0x28);
+        auto& cars = traffic.cars_mut();
+        for (auto& c : cars) c.active = false;
+        cars[0].active = true;
+        cars[0].position = ai.bike.i32(0x1c); cars[0].lateral = l0; cars[0].speed = 0;
+        ai.bike.i32(0xec) = 0; ai.bike.i32(0x108) = 0; ai.bike.i32(0x10c) = 0;
+        ai.bike.i32(0x114) = 0; ai.bike.i32(0x240) = 0;   // no throttle: no travel
+        ai.brain.current_speed = 0; ai.brain.target_speed = 0; ai.brain.base_speed = 0;   // parked AI: no drive
+        ai.ai = false;   // no think/step: rider is a static post; only the contact pass may move it
+        ai.bike.i32(0xf0) = 0;
+        const int32_t lat_before = ai.bike.i32(0x28);
+        race.set_rng_state(1);
+        race.step(0);
+        if (ai.bike.i32(0x28) != lat_before) throw std::runtime_error("split-roadway contact fired (lateral)");
+        if (ai.bike.i32(0xf0) != 0) throw std::runtime_error("split-roadway contact fired (f0)");
+        if (ai.bike.i32(0x2f4) != 0) throw std::runtime_error("split-roadway contact fired (crash)");
+    }
+    std::cout << "car contact synthetic boundaries pass\n";
+}
+
 int main() {
     try {
         test_configure();
@@ -199,7 +355,7 @@ int main() {
         test_library_choose();
         test_spawn_and_move();
         test_corpus();
-        std::cout<<"traffic tests passed\n";
+        test_car_contact_synthetic();
         return 0;
     } catch(const std::exception& e) {
         std::cerr<<"traffic: "<<e.what()<<"\n";

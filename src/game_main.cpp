@@ -157,6 +157,7 @@ struct Game {
             const auto& state=rd.crash_active?(item.body?rd.crash_actor.animation:rd.crash_bike_animation):actor_states[i];
             const auto selected=*state.selected;const auto& descriptor=actors->library().playback[0].at(size_t(selected[0]))->at(size_t(selected[1]));
             const auto nodes=actors->rider(descriptor,0,rd.colour,orientation,projection,camera,depth,bike.i32(0x20));output.insert(output.end(),nodes.begin(),nodes.end());
+            if(SDL_getenv("RR_DBG_NODES"))for(const auto& nd:nodes)SDL_Log("DBG rider %zu body %d pos %d frac %d ground %d vert %d near.y %d far.y %d near.sample %u top %d bottom %d ceiling %d back %d",i,int(item.body),bike.i32(0x1c),bike.i32(0x1c)&255,bike.i32(0x24),bike.i32(0x20),a.screen_y,b.screen_y,near.sample,nd.view_points[0].y,nd.view_points[2].y,ceiling,int(back));
         }
         return output;
     }
@@ -194,6 +195,29 @@ uint32_t autopilot(const rr::Race& race) {
     uint32_t c = rr::control_accelerate;
     if (x < -60) c |= rr::control_right; else if (x > 60) c |= rr::control_left;
     if (race.ticks() % 40 == 0) c |= rr::control_punch;   // demo: swing at anyone alongside
+    return c;
+}
+// Plan 11a Task 1 Step 5: debug driver that hunts the oncoming lane, forcing
+// rider–car contact so a headless run logs at least one reason-2 crash.
+// Holds a fixed bias (~150 world units left of the road centre), inside the
+// oncoming-traffic lanes but clear of the wall stand-in: the constant-left
+// predecessor rode the shoulder clamp (x ≈ -723, wall hits every tick),
+// which crashed the rider at speed > 4000 (reason 0) before traffic
+// arrived. Hands off entirely while crashed (controls 0): the crash-walk
+// back to the bike only converges with no steering input (0x0040a600
+// state-38 walk; any held direction resets state_elapsed and the walk
+// never reaches the bike), then remounts and keeps hunting. Probe
+// (Game-faithful: NAPA, bike 0, level 0, 7 opponents, density 6, crash
+// library): bias -150 meets a car box (dp<128 AND dl<24064) at t=783 and
+// logs reason 2 the same tick (x=-114, no wall contact before the meet);
+// 6 reason-2 crashes over 20000 ticks with remounts between each.
+uint32_t steer_into_traffic(const rr::Race& race) {
+    if (race.bike().i32(0x2f4) != 0) return 0;   // crash-walk needs no input (see above)
+    const auto& s = race.route()[race.position() >> 8];
+    const int x = race.lateral() - s.offset;
+    constexpr int bias = -150;
+    uint32_t c = rr::control_accelerate;
+    if (x < bias - 40) c |= rr::control_right; else if (x > bias + 40) c |= rr::control_left;
     return c;
 }
 
@@ -904,7 +928,7 @@ int main(int argc, char** argv) {
     std::string root, screenshot, video;
     int course = 0, bike = 0, level = 0, opponents = 7;
     long run_ticks = -1, menu_frames = -1;
-    bool auto_drive = false, start_paused = false, first_run_smoke = false, quick_race = false;
+    bool auto_drive = false, into_traffic = false, start_paused = false, first_run_smoke = false, quick_race = false;
     for (int i = 1; i < argc; ++i) {
         const std::string a = argv[i];
         if (a == "--assets" && i + 1 < argc) root = argv[++i];
@@ -914,6 +938,7 @@ int main(int argc, char** argv) {
         else if (a == "--ticks" && i + 1 < argc) { run_ticks = std::atol(argv[++i]); quick_race = true; }
         else if (a == "--screenshot" && i + 1 < argc) screenshot = argv[++i];
         else if (a == "--autopilot") { auto_drive = true; quick_race = true; }
+        else if (a == "--steer-into-traffic") { into_traffic = true; quick_race = true; }
         else if (a == "--paused") start_paused = true;
         else if (a == "--race") quick_race = true;
         else if (a == "--menu-frames" && i + 1 < argc) menu_frames = std::atol(argv[++i]);
@@ -969,9 +994,38 @@ int main(int argc, char** argv) {
             g.opponents = rr::original_opponents(exe, g.specs, level, opponents);
             g.restart();
             if (run_ticks >= 0) {   // headless-style verification run
-                for (long t = 0; t < run_ticks && !g.race->finished(); ++t) g.tick(auto_drive ? autopilot(*g.race) : 0);
+                const bool hunt = into_traffic;
+                if (hunt) auto_drive = true;
+                int car_crashes = 0, any_crash = 0;
+                for (long t = 0; t < run_ticks && !g.race->finished(); ++t) {
+                    g.tick(hunt ? steer_into_traffic(*g.race) : (auto_drive ? autopilot(*g.race) : 0));
+                    const auto& b = g.race->bike();
+                    if (hunt && t % 1000 == 0) {
+                        int active = 0;
+                        if (g.traffic) for (const auto& car : g.traffic->cars()) if (car.active) ++active;
+                        std::printf("hunt t=%ld pos=%d lat=%d speed=%d crash=%d reason=%d cars=%d\n",
+                                    t, b.i32(0x1c), b.i32(0x28), b.i32(0xec),
+                                    b.i32(0x2f4), b.i32(0x2f8), active);
+                        std::fflush(stdout);
+                    }
+                    if (b.i32(0x2f4) != 0 && any_crash == 0) {
+                        any_crash = 1;
+                        std::printf("crash tick %ld reason %d speed %d pos %d lat %d\n",
+                                    t, b.i32(0x2f8), b.i32(0xec), b.i32(0x1c), b.i32(0x28));
+                        std::fflush(stdout);
+                    } else if (b.i32(0x2f4) == 0) {
+                        any_crash = 0;   // re-arm after remount
+                        car_crashes = 0;
+                    }
+                    if (b.i32(0x2f4) != 0 && b.i32(0x2f8) == 2 && car_crashes == 0) {
+                        std::printf("car-crash tick %ld reason 2 speed %d pos %d\n",
+                                    t, b.i32(0xec), b.i32(0x1c));
+                        std::fflush(stdout);
+                        ++car_crashes;
+                    }
+                }
             }
-            run_race(g, renderer, {auto_drive, start_paused, screenshot});
+            if (!into_traffic) run_race(g, renderer, {auto_drive, start_paused, screenshot});
         }
     } catch (const std::exception& e) { SDL_Log("%s", e.what()); result = 1; }
     SDL_DestroyRenderer(renderer);
