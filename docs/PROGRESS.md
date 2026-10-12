@@ -575,9 +575,10 @@ UI cleanup (October 11, 2026): removed the bottom keyboard-instructions overlay 
   root-caused to the harness (missing personalities) and fixed — physics
   green through frame 138; next divergence is the unported traffic-spawn
   timer RNG at tick 139 (pinned in `tools/sim_known_divergences.json`).
-- **Plan 18 Task 1 (options trace)** and **11a Task 3 (bike/shadow trace)**
-  findings merged into REVERSE_ENGINEERING.md; `--native-actors` blocked on
-  a TSV rider-object recapture (documented recipe in the notes).
+- **11a Task 3 (bike/shadow nodes), Steps 1–2 done October 12:** scene dump
+  v4 + `napa-drive-v4` recapture, `--native-actors` CONFIRMED FAILING 4/4
+  (root cause isolated to the view/subframe selection base); fix + Step 4
+  open (dispatch hooks, recapture, mid-jump frame).
 - **Agent tooling P0/P1** landed separately: workspace ownership, gate
   receipts, capture validator, build provenance, CI/packaging wrappers.
 - Gate: full Debug suite **63/63 pass** (62 + agent-tooling), UBSan affected

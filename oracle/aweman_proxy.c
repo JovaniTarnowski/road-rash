@@ -1251,6 +1251,50 @@ static void snapshot(snap_region* out,uint32_t* n) {
     for (uint32_t b=0;b<nb;++b) out[(*n)++]=(snap_region){blocks[b],0x200,NULL};
     for (uint32_t i=0;i<*n;++i) { out[i].bytes=malloc(out[i].size); if(out[i].bytes) memcpy(out[i].bytes,(void*)(uintptr_t)out[i].base,out[i].size); }
 }
+// Rider/bike object dump for --native-actors (plan 11a Task 3 Step 2): the
+// display-list nodes alone cannot rebuild actor state (position, lateral,
+// height, animation selection +0x98/+0x90). The scheduler ring root S lives
+// on the heap and is never inside the two-level closure, so walk it here and
+// append full bike (0x340) + rider-half bytes per scheduler node to the
+// scene file. Version 4 = v3 regions + node blobs + rider blobs.
+static void dump_rider_objects(FILE* out) {
+    uint32_t count = 0;
+    if (readable(0x0046dcc8, 4)) {
+        const uintptr_t S = (uint32_t)RD32(0x0046dcc8);
+        if (readable(S, 4) && readable(S + 4, 4)) {
+            const uintptr_t end = (uint32_t)*(uint32_t*)S;
+            const uintptr_t cursor = (uint32_t)*(uint32_t*)(S + 4);
+            uintptr_t node = (readable(cursor + 4, 4)) ? (uint32_t)*(uint32_t*)(cursor + 4) : 0;
+            for (int guard = 0; node && node != end && guard < 512; ++guard) {
+                if (!readable(node, 0x340)) break;
+                ++count;
+                node = (uint32_t)*(uint32_t*)(node + 4);
+            }
+        }
+    }
+    fwrite(&count, 4, 1, out);
+    if (!count || !readable(0x0046dcc8, 4)) return;
+    const uintptr_t S = (uint32_t)RD32(0x0046dcc8);
+    const uintptr_t end = (uint32_t)*(uint32_t*)S;
+    const uintptr_t cursor = (uint32_t)*(uint32_t*)(S + 4);
+    uintptr_t node = (uint32_t)*(uint32_t*)(cursor + 4);
+    for (int guard = 0; node && node != end && guard < 512; ++guard) {
+        if (!readable(node, 0x340)) break;
+        const uintptr_t half = (readable(node + 0x2fc, 4)) ? (uint32_t)*(uint32_t*)(node + 0x2fc) : 0;
+        const uint32_t half_ok = (half && readable(half, 0x340)) ? 1 : 0;
+        fwrite(&node, 4, 1, out);
+        unsigned char bike[0x340];
+        memcpy(bike, (void*)(uintptr_t)node, 0x340);
+        fwrite(bike, 1, 0x340, out);
+        fwrite(&half_ok, 4, 1, out);
+        if (half_ok) {
+            unsigned char rh[0x340];
+            memcpy(rh, (void*)(uintptr_t)half, 0x340);
+            fwrite(rh, 1, 0x340, out);
+        }
+        node = (uint32_t)*(uint32_t*)(node + 4);
+    }
+}
 static int capture_frame(void){return g_out && g_pixels && !(g_frame % (uint32_t)g_pixel_every);}
 static void __fastcall hook_project(uint32_t a,int* b,int c,int* d,int e) {
     if (capture_frame()) { snapshot(g_pre,&g_npre); g_pre_frame=(int)g_frame; }
@@ -1270,7 +1314,7 @@ static void dump_scene(void) {
     uint32_t npre=g_pre_frame==(int)g_frame?g_npre:0, pre_ok=0, post_ok=0;
     for(uint32_t i=0;i<npre;++i)pre_ok+=g_pre[i].bytes!=NULL;
     for(uint32_t i=0;i<npost;++i)post_ok+=post[i].bytes!=NULL;
-    const uint32_t header[8]={0x52524e53u,3,g_frame,count,base,(uint32_t)RD32(0x0049e664),pre_ok,post_ok};
+    const uint32_t header[8]={0x52524e53u,4,g_frame,count,base,(uint32_t)RD32(0x0049e664),pre_ok,post_ok};
     fwrite(header,4,8,out);
     put_regions(out,g_pre,npre);
     put_regions(out,post,npost);
@@ -1287,6 +1331,7 @@ static void dump_scene(void) {
         }
         fwrite(rh,1,0x60,out);fwrite(&hash,4,1,out);fwrite(&size,4,1,out);
     }
+    dump_rider_objects(out);
     fclose(out);
     g_scene_written=1;g_scene_nodes=count;
 }

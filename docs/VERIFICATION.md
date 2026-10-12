@@ -599,6 +599,10 @@ Police configuration gate: `build/police-test` compares imported pursuit/relatio
 - **Plan 18 Task 1 (options trace):** findings merged into
   REVERSE_ENGINEERING.md "Options screens and pause"; plan 18's screen map
   corrected (Sound off Restroom as a native dialog look-alike, Pause purely
-  native). **11a Task 3 (bike/shadow nodes):** dispatch, shadow-mode and
-  orientation findings merged into REVERSE_ENGINEERING.md; `--native-actors`
-  blocked on a TSV rider-object recapture (documented).
+  native). **11a Task 3 (bike/shadow nodes), Steps 1–2 done October 12:**
+  scene dump v4 (`dump_rider_objects` in the proxy; `napa-drive-v4`
+  recapture, v4 pixel mode 0 differing pixels) and `--native-actors` mode
+  (oracle-scene-test) CONFIRMED FAILING 4/4 frames, isolated to the
+  view/subframe selection base (`read_actor_sequence` stores a descriptor
+  index where the original resolves a CANS group id). Fix + Step 4 open:
+  dispatch-entry hooks, recapture, `select_actor_view` fix, mid-jump frame.

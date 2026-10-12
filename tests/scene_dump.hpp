@@ -37,13 +37,24 @@ struct Node {
     uint32_t u32(size_t p) const { return uint32_t(bytes[p]) | uint32_t(bytes[p + 1]) << 8 | uint32_t(bytes[p + 2]) << 16 | uint32_t(bytes[p + 3]) << 24; }
 };
 
+
+struct RiderObjects {
+    uint32_t address = 0;                 // scheduler node address (0 = absent)
+    std::vector<uint8_t> bike;            // 0x340 bike-half bytes
+    std::vector<uint8_t> half;            // 0x340 rider-half bytes (empty if unreadable)
+    int32_t i32(size_t p, const std::vector<uint8_t>& v) const {
+        return int32_t(uint32_t(v[p]) | uint32_t(v[p + 1]) << 8 | uint32_t(v[p + 2]) << 16 | uint32_t(v[p + 3]) << 24);
+    }
+    int32_t bike_i32(size_t p) const { return i32(p, bike); }
+    int32_t half_i32(size_t p) const { return i32(p, half); }
+};
 struct Dump {
     uint32_t version = 0, frame = 0, node_base = 0, capacity = 0;
     Memory memory;   // state when the display list was complete (v1/v2/v3 post)
     Memory before;   // v3: state before 0x00443d70 projected the frame (empty if not captured)
     std::vector<Node> nodes;
+    std::vector<RiderObjects> riders;   // v4: scheduler bike/rider-half objects
 };
-
 inline Dump load(const std::string& path) {
     std::ifstream in(path, std::ios::binary);
     if (!in) throw std::runtime_error("Cannot open " + path);
@@ -66,6 +77,9 @@ inline Dump load(const std::string& path) {
     } else if (d.version == 3) {
         for (uint32_t i = 0; i < a; ++i) { const uint32_t base = word(), size = word(); region_into(d.before, base, size); }
         for (uint32_t i = 0; i < c; ++i) { const uint32_t base = word(), size = word(); region(base, size); }
+    } else if (d.version == 4) {
+        for (uint32_t i = 0; i < a; ++i) { const uint32_t base = word(), size = word(); region_into(d.before, base, size); }
+        for (uint32_t i = 0; i < c; ++i) { const uint32_t base = word(), size = word(); region(base, size); }
     } else throw std::runtime_error("Unknown scene dump version");
     for (uint32_t i = 0; i < count; ++i) {
         Node n;
@@ -73,6 +87,22 @@ inline Dump load(const std::string& path) {
         at = take(0x60); n.resource.assign(b.begin() + long(at), b.begin() + long(at + 0x60));
         n.hash = word(); n.size = word();
         d.nodes.push_back(std::move(n));
+    }
+    if (d.version == 4) {
+        // Rider/bike objects appended by dump_rider_objects: count, then per
+        // node {address, 0x340 bike bytes, half_ok, [0x340 rider-half bytes]}.
+        // Old v3 files end at the nodes; tolerate truncation as zero riders.
+        if (p < b.size()) {
+            const uint32_t riders = word();
+            for (uint32_t i = 0; i < riders; ++i) {
+                RiderObjects r;
+                r.address = word();
+                size_t at = take(0x340); r.bike.assign(b.begin() + long(at), b.begin() + long(at + 0x340));
+                const uint32_t half_ok = word();
+                if (half_ok) { at = take(0x340); r.half.assign(b.begin() + long(at), b.begin() + long(at + 0x340)); }
+                d.riders.push_back(std::move(r));
+            }
+        }
     }
     return d;
 }

@@ -844,6 +844,21 @@ frame. Shadow colour `0x00446350` is `0xdf` only when the body colour is cop
 shadows take the same textured path with plain index-0 transparency
 (candidate cause closed by code reading; pixel proof still needs the frame
 match). Orientation math (`0x00413ae0` vs `actor_angles`) matches on
-reading. Blocked on recapture: dump v3's heap closure never walks the
-scheduler ring, so rider object state is absent; `--native-actors` needs a
-TSV rider-object extension plus a napa-drive recapture incl. a jump frame.
+reading. Scene dump v4 (October 12) extends the proxy with
+`dump_rider_objects` (full `0x340` bike + rider-half per ring node), and
+`napa-drive-v4` recaptures frames 0/150/300/750 with rider object state;
+v4 pixel mode still passes (0 differing pixels). `--native-actors`
+(oracle-scene-test) rebuilds actor nodes from the v4 objects and CONFIRMS
+FAILING 4/4 frames — isolated to view/subframe selection base (plan
+candidate 2): native `read_actor_sequence` stores the descriptor-table
+index into `render[0..3]`, but the original `0x0040b6f0` group lookup
+resolves frames 47/54 at CANS group id 28 (native `views[27]`), unreachable
+from the stored base (view clamps to `byte(d[6])-1`). REA second opinion on
+`0x00446250` backs the dispatch structure; the suspicious piece is
+`0x0040b200`'s `+0` store (the `0x40b5a0` directory search is id-keyed, so
+the base must be a group id, not a descriptor index). Next: hook
+`0x0043af60`+`0x0044ba40` entries via trampolines, log per-frame, recapture,
+fix `read_actor_sequence`/`select_actor_view` against ground truth.
+BONUS: opponent colour is the 1-based grid slot in `DAT_004c7f74` (frame 750
+shows colour 0xa = slot 10); player colour is the live rider-table row
+byte+5 (writer unidentified).
