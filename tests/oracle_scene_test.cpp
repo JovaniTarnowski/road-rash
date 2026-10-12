@@ -2,18 +2,20 @@
 // frame (oracle dump_scene) are converted to native DrawNodes, resources identified by their mip-0
 // hash, and rendered over the original frame. Every pixel must equal the original final pixel.
 //
-// --native-actors mode (plan 11a Task 3 Step 2): rebuild the player/opponent actor nodes from the
-// dumped scheduler bike/rider-half objects (scene v4, oracle dump_rider_objects) and compare with
-// the dump's Bob nodes: node order, bank (body/shadow), frame, all four view points, flip, and
-// texture/palette selection (0xde/0xdf/0xe0). Reconstruction rules (traced, see
-// analysis/nodes-notes.md): native project_road over the course (proven vs TSV by oracle-road),
-// Game::rider_nodes orientation/projection from bike +0x1c/+0x28/+0x24/+0x20/+0x5c/+0x60, direct
-// animation selection {+0x80,+0x81} through playback[0], colour from DAT_004642dc / DAT_004c7f70 /
-// DAT_004c7f74 grid slots with the rider-table row byte (0x00446190/0x004460c0), shadow colour 0xdf
-// only for cop bodies (0x00446350), ceiling from the CourseScene emitter pairing.
+// --native-actors mode (plan 11a Task 3 Step 2): per-node original comparison of player/opponent
+// actor nodes against oracle dispatch records (actor.sel.*/actor.bb.* TSV keys, scene v4+). The
+// display list streams through a 250-node buffer (0x00450470 flushes via 0x00450420 mid-projection),
+// so the dump holds the post-flush tail; each surviving bb call maps to dump index nafter-1.
+// Per bb call the test checks, each against its own ground truth:
+//   descriptor import: sel 20B == native playback bank bytes (render/duration/control);
+//   orientation: native actor_angles view vs sel view (+0xd0);
+//   inputs: bb lateral == (sel f50 + sign-rounding) >> 8;
+//   selection+projection: select_actor_view + actor_node with bb lateral/ground/pos/clip/occ_row
+//     vs dump node frame/bank/4 view points/flip;
+//   palette: traced colour rule (cop 0xde / player row byte / grid slot; shadow 0xdf iff cop)
+//     vs dump node colour (+0x38).
 #include "actor_nodes.hpp"
 #include "course.hpp"
-#include "course_scene.hpp"
 #include "golden.hpp"
 #include "rider_sprites.hpp"
 #include "road.hpp"
@@ -36,14 +38,17 @@ std::vector<uint8_t> read_file(const std::string& path) {
 int32_t blob_i32(const std::vector<uint8_t>& b, size_t p) {
     return int32_t(uint32_t(b[p]) | uint32_t(b[p + 1]) << 8 | uint32_t(b[p + 2]) << 16 | uint32_t(b[p + 3]) << 24);
 }
+int64_t key(const std::map<std::string, int64_t>& f, const std::string& k, int64_t dflt = 0) {
+    const auto it = f.find(k);
+    return it == f.end() ? dflt : it->second;
+}
 
 // Expected palette colour for a scheduler bike object (traced 0x00446190 /
 // 0x004460c0 via 0x00446380): the cop bike is 0xde; the player bike
 // (DAT_004c7f70) takes the rider-table row byte (rider half +0x1e0 points at
 // the 0x00463c78 row, +5); other bikes take their 1-based grid slot in
 // DAT_004c7f74, or 0 when the slot equals the player row byte.
-int32_t actor_colour(uint32_t bike_addr, const rr::scene::Memory& mem, const std::vector<uint8_t>& exe,
-                     uint8_t player_row_byte) {
+int32_t actor_colour(uint32_t bike_addr, const rr::scene::Memory& mem, uint8_t player_row_byte) {
     const uint32_t cop = mem.u32(0x004642dc);
     if (cop != 0 && bike_addr == cop) return 0xde;
     if (bike_addr == mem.u32(0x004c7f70)) return int32_t(player_row_byte);
@@ -62,9 +67,6 @@ uint8_t player_row_byte(const rr::scene::Dump& dump, const std::vector<uint8_t>&
     for (const auto& r : dump.riders) {
         if (r.address != player || r.half.empty()) continue;
         const uint32_t row = uint32_t(blob_i32(r.half, 0x1e0));
-        // Rows live in .data (0x00463000 image covers 0x00463c78); scheduler
-        // halves mirror the same pointer. Read through the dump when present,
-        // else through the reference EXE image (same bytes by hash check).
         if (dump.memory.has(row + 5)) return dump.memory.u8(row + 5);
         const size_t raw = 0x61600 + (row - 0x00463000) + 5;   // .data file offset
         if (row >= 0x00463000 && raw < exe.size()) return exe[raw];
@@ -85,211 +87,186 @@ int native_actors(const std::string& tsv, const rr::Assets& assets) {
     const auto course_data = rr::read_course(assets.read(std::string("DATA/COURSES/") + course_files[course] + ".CRS"));
     const auto routes = {rr::make_route(course_data, false), rr::make_route(course_data, true)};
     rr::ActorNodes actors(assets, exe, true);
+    const auto& bank = actors.library().playback[0];
     int failures = 0, frames = 0, nodes = 0;
     for (size_t f = 0; f < golden.frames.size(); ++f) {
         const auto& frame = golden.frames[f];
         if (!frame.count("scene.file")) continue;
-        const auto dump = rr::scene::load(stem + "-scene" + std::to_string(frame.at("scene.file")) + ".raw");
-        if (dump.version < 4 || dump.riders.empty()) {
-            std::cout << "frame " << frame.at("scene.file") << ": skip (no rider objects; recapture with v4 dump)\n";
+        const int64_t scene_file = frame.at("scene.file");
+        const auto dump = rr::scene::load(stem + "-scene" + std::to_string(scene_file) + ".raw");
+        if (dump.version < 4 || dump.riders.empty() || !frame.count("actor.sel.count")) {
+            std::cout << "frame " << scene_file << ": skip (needs v4 dump + actor hooks recapture)\n";
             continue;
         }
         const uint8_t prow = player_row_byte(dump, exe);
-        // Camera matches oracle-road-test: relative to the route's own road.
         const uint32_t cam_pos = uint32_t(frame.at("camera.position"));
         const int32_t cam_x = int32_t(frame.at("camera.x")), cam_h = int32_t(frame.at("camera.height"));
         bool frame_ok = false;
         std::string frame_error;
-        // Try both routes like oracle-road-test.
+        int frame_checked = 0;
         for (const auto& route : routes) {
             if ((cam_pos >> 8) >= route.size()) continue;
             rr::Camera camera{cam_x - route[cam_pos >> 8].offset, cam_h};
             const auto slices = rr::project_road(route, cam_pos, camera, depths);
-            // Slice index by sample for the emitter pairing.
             std::map<uint32_t, size_t> by_sample;
             for (size_t i = 0; i < slices.size(); ++i) by_sample[slices[i].sample] = i;
-            // Expected colour per bike address.
-            std::map<uint32_t, int32_t> colours;
+            // Half objects by scheduler address (halves carry the animation).
+            std::map<uint32_t, const rr::scene::RiderObjects*> halves;
+            for (const auto& r : dump.riders) halves[r.address] = &r;
+            // Bike address per half (via bike +0x2fc).
+            std::map<uint32_t, uint32_t> bike_of_half;
             for (const auto& r : dump.riders) {
-                const auto& bike = r.bike;
-                if (blob_i32(bike, 0xc4) != 4) continue;   // scheduler bike objects only
-                colours[r.address] = actor_colour(r.address, dump.memory, exe, prow);
+                if (r.bike.size() < 0x300 || blob_i32(r.bike, 0xc4) != 4) continue;
+                bike_of_half[uint32_t(blob_i32(r.bike, 0x2fc))] = r.address;
             }
-            // Rebuild actor nodes per drawn bike: shadow then body (0x00446250).
-            struct Expected {
-                uint32_t frame;
-                int32_t colour;   // body colour; shadow is 0xdf iff body is 0xde else 0xe0
-                std::array<rr::RasterPoint, 4> shadow, body;
-                bool shadow_flip, body_flip;
-            };
-            std::vector<Expected> expected;
+            const size_t nsel = size_t(key(frame, "actor.sel.count")), nbb = size_t(key(frame, "actor.bb.count"));
             bool usable = true;
-            // The emitter pairing supplies near/far/ceiling per sample; the
-            // scene is required so ceilings match the original occlusion rows.
-            const auto scene = rr::CourseScene(assets, exe, course_data, course_files[course], 1, 0);
-            std::map<uint32_t, std::vector<rr::DrawNode>> built;
-            auto emitter = [&](const rr::RoadSlice& near, const rr::RoadSlice& far, int road, int32_t ceiling, bool back) {
-                std::vector<rr::DrawNode> out;
-                for (const auto& r : dump.riders) {
-                    const auto& bike = r.bike;
-                    if (blob_i32(bike, 0xc4) != 4) continue;
-                    const uint32_t pos = uint32_t(blob_i32(bike, 0x1c));
-                    if ((pos >> 8) != near.sample || ((pos & 255) >= 128) != back) continue;
-                    auto it = by_sample.find(pos >> 8);
-                    if (it == by_sample.end() || it->second >= slices.size() - 1) continue;
-                    if (&near != &slices[it->second] || &far != &slices[it->second + 1]) continue;
-                    if (near.count == 2) {
-                        // Route check needs the rider's road; v4 stores the
-                        // slice pointer at +0x140: half 0 selects road 0.
-                        // The dump slice word is process-specific, so match by
-                        // sample only and require single-road here.
-                        continue;
-                    }
-                    const auto& sample = route.at(near.sample);
-                    rr::ActorOrientation orientation;
-                    orientation.depth = near.depth;
-                    orientation.position = int32_t(pos);
-                    orientation.road_x = near.road[road].road_x + camera.x;
-                    orientation.lateral_q8 = blob_i32(bike, 0x28) - sample.offset * 256;
-                    orientation.road_heading = near.road[road].heading;
-                    orientation.heading = blob_i32(bike, 0x5c);
-                    orientation.roll = blob_i32(bike, 0x60);
-                    orientation.rider = true;   // dispatch takes the bike (type 4)
-                    rr::ActorProjection projection;
-                    projection.road_x = orientation.road_x;
-                    projection.far_x = far.road[road].road_x + camera.x;
-                    projection.road_y = near.road[road].world_y;
-                    projection.far_y = far.road[road].world_y;
-                    projection.lateral = orientation.lateral_q8 / 256;
-                    projection.ground = blob_i32(bike, 0x24);
-                    projection.depth = near.depth;
-                    projection.fraction = uint8_t(pos);
-                    projection.occlusion = ceiling;
-                    const int8_t anim = int8_t(bike[0x80] & 0x7f), index = int8_t(bike[0x81]);
-                    const auto& bank = actors.library().playback[0];
-                    if (anim < 0 || size_t(anim) >= bank.size() || !bank[size_t(anim)] ||
-                        index < 0 || size_t(index) >= bank[size_t(anim)]->size()) {
-                        usable = false;
-                        continue;
-                    }
-                    const auto& descriptor = bank[size_t(anim)]->at(size_t(index));
-                    const int32_t colour = colours[r.address];
-                    const auto made = actors.rider(descriptor, 0, colour, orientation, projection, camera, depths,
-                                                   blob_i32(bike, 0x20));
-                    for (const auto& n : made) out.push_back(n);
-                    built[r.address] = made;
-                }
-                return out;
-            };
-            try {
-                scene.draw_nodes(route, slices, camera, depths, emitter);
-            } catch (const std::exception& e) {
-                frame_error = std::string("draw_nodes: ") + e.what();
-                usable = false;
-            }
-            if (!usable) continue;
-            // Collect the dump's Bob pairs in order: shadow (0xe0/0xdf) then body.
-            struct Dumped {
-                size_t index;
-                int32_t frame, colour;
-                std::array<rr::RasterPoint, 4> points;
-                bool flip_u, flip_v;
-            };
-            std::vector<std::pair<Dumped, Dumped>> pairs;
-            for (size_t i = 0; i < dump.nodes.size(); ++i) {
-                const auto& s = dump.nodes[i];
-                if (s.u32(8) != 0x00466684) continue;
-                const int32_t colour = int32_t(s.u32(0x38));
-                if ((colour == 0xe0 || colour == 0xdf) && i + 1 < dump.nodes.size()) {
-                    const auto& b = dump.nodes[i + 1];
-                    if (b.u32(8) != 0x00466684) continue;
-                    const int32_t bcolour = int32_t(b.u32(0x38));
-                    if (bcolour == 0xe0 || bcolour == 0xdf) continue;
-                    Dumped shadow{i, int32_t(s.u32(0x34)), colour}, body{i + 1, int32_t(b.u32(0x34)), bcolour};
-                    for (int k = 0; k < 4; ++k) {
-                        shadow.points[size_t(k)] = {int32_t(s.u32(0x44 + 8 * size_t(k))), int32_t(s.u32(0x48 + 8 * size_t(k)))};
-                        body.points[size_t(k)] = {int32_t(b.u32(0x44 + 8 * size_t(k))), int32_t(b.u32(0x48 + 8 * size_t(k)))};
-                    }
-                    shadow.flip_u = s.bytes[0x64] != 0;
-                    shadow.flip_v = s.bytes[0x65] != 0;
-                    body.flip_u = b.bytes[0x64] != 0;
-                    body.flip_v = b.bytes[0x65] != 0;
-                    pairs.emplace_back(shadow, body);
-                    ++i;
-                }
-            }
-            // Match rebuilt nodes to dumped pairs by body colour+frame.
-            if (pairs.size() != built.size()) {
-                frame_error = "pair count " + std::to_string(pairs.size()) + " != rebuilt bikes " + std::to_string(built.size());
-                continue;
-            }
-            bool same = true;
             std::string diff;
-            // Order check: dumped pairs must appear in increasing node order
-            // and rebuilt bikes in increasing position (display-list order).
-            for (size_t i = 1; i < pairs.size(); ++i)
-                if (pairs[i].first.index < pairs[i - 1].first.index) {
-                    same = false;
-                    diff = "dump pair order";
+            int checked = 0;
+            // Group sel records by half; bb records pair with sels in dispatch order.
+            for (size_t b = 0; b < nbb && usable; ++b) {
+                const int32_t pos = int32_t(key(frame, "actor.bb." + std::to_string(b) + ".pos"));
+                const int32_t clip = int32_t(key(frame, "actor.bb." + std::to_string(b) + ".clip"));
+                const int32_t lateral = int32_t(key(frame, "actor.bb." + std::to_string(b) + ".lateral"));
+                const int32_t ground = int32_t(key(frame, "actor.bb." + std::to_string(b) + ".ground"));
+                const int64_t nafter = key(frame, "actor.bb." + std::to_string(b) + ".nafter", -1);
+                if (nafter < 1 || nafter > int64_t(dump.nodes.size())) continue;   // flushed: in photo, not dump
+                // Find the half with this position (scheduler halves mirror +0x1c).
+                const rr::scene::RiderObjects* half = nullptr;
+                for (const auto& r : dump.riders) {
+                    if (r.bike.size() < 0x30) continue;
+                    if (blob_i32(r.bike, 0x1c) == pos && blob_i32(r.bike, 0xc4) == 8) { half = &r; break; }
                 }
-            // Index rebuilt bikes by (colour, frame) like the dump pairs.
-            std::multimap<std::pair<int32_t, uint32_t>, std::pair<uint32_t, std::vector<rr::DrawNode>>> by_key;
-            for (const auto& [addr, made] : built) {
-                if (made.size() != 2) {
-                    same = false;
-                    diff = "bike " + std::to_string(addr) + " rebuilt " + std::to_string(made.size()) + " nodes";
-                    continue;
+                if (!half) { usable = false; diff = "no half for bb pos " + std::to_string(pos); break; }
+                // The half's sel records (shadow then body): find by bike address.
+                size_t sel = nsel;
+                int seen = 0;
+                for (size_t s = 0; s < nsel; ++s) {
+                    if (uint32_t(key(frame, "actor.sel." + std::to_string(s) + ".bike")) != half->address) continue;
+                    if ((seen++ == 0) != (clip == 0)) continue;
+                    sel = s;
+                    break;
                 }
-                // Find the dump frame for this colour.
-                for (const auto& [sh, bo] : pairs)
-                    if (bo.colour == colours[addr]) by_key.emplace(std::make_pair(bo.colour, bo.frame), std::make_pair(addr, made));
-            }
-            for (const auto& [sh, bo] : pairs) {
-                auto range = by_key.equal_range({bo.colour, uint32_t(bo.frame)});
-                if (range.first == range.second) {
-                    same = false;
-                    diff = "no rebuilt bike for colour " + std::to_string(bo.colour) + " frame " + std::to_string(bo.frame);
-                    continue;
+                if (sel >= nsel) { usable = false; diff = "no sel for half pos " + std::to_string(pos); break; }
+                const std::string sp = "actor.sel." + std::to_string(sel) + ".";
+                // (1) Descriptor import parity: sel 20B vs native bank bytes.
+                const int8_t anim = half->bike[0x80], index = half->bike[0x81];
+                if (anim < 0 || size_t(anim) >= bank.size() || !bank[size_t(anim)] || index < 0 ||
+                    size_t(index) >= bank[size_t(anim)]->size()) {
+                    usable = false;
+                    diff = "half anim out of range pos " + std::to_string(pos);
+                    break;
                 }
-                const auto& made = range.first->second.second;
-                const auto& sh_node = made[0], bo_node = made[1];
-                auto check = [&](const rr::DrawNode& n, const Dumped& d, const char* what) {
-                    for (int k = 0; k < 4; ++k)
-                        if (n.view_points[size_t(k)].x != d.points[size_t(k)].x ||
-                            n.view_points[size_t(k)].y != d.points[size_t(k)].y) {
-                            same = false;
-                            diff = std::string(what) + " view point " + std::to_string(k) + " colour " +
-                                   std::to_string(bo.colour);
-                        }
-                    if (n.flip_u != d.flip_u || n.flip_v != d.flip_v) {
-                        same = false;
-                        diff = std::string(what) + " flip colour " + std::to_string(bo.colour);
+                const auto& descriptor = bank[size_t(anim)]->at(size_t(index));
+                const uint8_t* rb = descriptor.render.data();
+                bool desc_ok = key(frame, sp + "d0") == (int64_t(uint32_t(rb[0]) | uint32_t(rb[1]) << 8 | uint32_t(rb[2]) << 16 | uint32_t(rb[3]) << 24)) &&
+                               key(frame, sp + "d1") == (int64_t(uint32_t(rb[4]) | uint32_t(rb[5]) << 8 | uint32_t(rb[6]) << 16 | uint32_t(rb[7]) << 24)) &&
+                               key(frame, sp + "d2") == (int64_t(uint32_t(rb[8]) | uint32_t(rb[9]) << 8 | uint32_t(0) << 16 | uint32_t(0) << 24) & 0xffff) &&
+                               key(frame, sp + "d3") == int64_t(descriptor.duration) + (int64_t(descriptor.control) << 8);
+                // d2 holds render[8..9] in low half; d3 holds duration/control in low half. Compare exactly.
+                const int64_t d2 = key(frame, sp + "d2"), d3 = key(frame, sp + "d3");
+                desc_ok = (d2 & 0xffff) == (int64_t(rb[8]) | (int64_t(rb[9]) << 8)) &&
+                          (d3 & 0xff) == int64_t(descriptor.duration) && ((d3 >> 8) & 0xff) == int64_t(descriptor.control);
+                {
+                    const int64_t d0 = key(frame, sp + "d0"), d1 = key(frame, sp + "d1");
+                    desc_ok = desc_ok && d0 == (int64_t(uint32_t(rb[0]) | uint32_t(rb[1]) << 8 | uint32_t(rb[2]) << 16 | uint32_t(rb[3]) << 24)) &&
+                              d1 == (int64_t(uint32_t(rb[4]) | uint32_t(rb[5]) << 8 | uint32_t(rb[6]) << 16 | uint32_t(rb[7]) << 24));
+                }
+                if (!desc_ok) { usable = false; diff = "descriptor import pos " + std::to_string(pos); break; }
+                // (2) Input consistency: bb lateral == (sel f50 + sign-rounding) >> 8.
+                const int32_t f50 = int32_t(key(frame, sp + "f50"));
+                const int32_t want_lat = (f50 + ((f50 >> 31) & 0xff)) >> 8;
+                if (want_lat != lateral) { usable = false; diff = "lateral consistency pos " + std::to_string(pos); break; }
+                // (3) Orientation: native view angle vs sel view (+0xd0).
+                auto sit = by_sample.find(uint32_t(pos) >> 8);
+                if (sit == by_sample.end() || sit->second >= slices.size() - 1) continue;   // not in slice window
+                const auto& near = slices[sit->second], far = slices[sit->second + 1];
+                if (near.count == 2) continue;   // split roadways: game path only
+                const auto& sample = route.at(near.sample);
+                rr::ActorOrientation orientation;
+                orientation.depth = near.depth;
+                orientation.position = pos;
+                orientation.road_x = near.road[0].road_x + camera.x;
+                orientation.lateral_q8 = blob_i32(half->bike, 0x28) - sample.offset * 256;
+                orientation.road_heading = near.road[0].heading;
+                orientation.heading = blob_i32(half->bike, 0x5c);
+                orientation.roll = blob_i32(half->bike, 0x60);
+                orientation.rider = true;   // halves are type 8 (0x00413ae0 rider rule)
+                const auto angles = rr::actor_angles(orientation, camera.x);
+                if (angles.view_angle != int32_t(key(frame, sp + "view"))) {
+                    usable = false;
+                    diff = "view angle pos " + std::to_string(pos) + " native=" + std::to_string(angles.view_angle) +
+                           " orig=" + std::to_string(key(frame, sp + "view"));
+                    break;
+                }
+                // (4) Full dispatch parity: ActorNodes::rider (shadow axis +
+                // body with select roll, yaw clamp, 0x00450ad0 rotation) vs
+                // the dump node for this bb call. Ground is the shadow
+                // ground (+0x4c); rider() adds vertical>>8 for the body.
+                // Colour from the traced rule, via the half's bike.
+                uint32_t bike_addr = 0;
+                for (const auto& r : dump.riders) {
+                    if (r.bike.size() < 0x300 || blob_i32(r.bike, 0xc4) != 4) continue;
+                    if (uint32_t(blob_i32(r.bike, 0x2fc)) == half->address) { bike_addr = r.address; break; }
+                }
+                const int32_t colour = actor_colour(bike_addr, dump.memory, prow);
+                if (colour < 0) { usable = false; diff = "colour rule pos " + std::to_string(pos); break; }
+                rr::ActorProjection projection;
+                projection.road_x = orientation.road_x;
+                projection.far_x = far.road[0].road_x + camera.x;
+                projection.road_y = near.road[0].world_y;
+                projection.far_y = far.road[0].world_y;
+                projection.lateral = lateral;
+                projection.ground = ground;
+                projection.depth = near.depth;
+                projection.fraction = uint8_t(uint32_t(pos));
+                projection.occlusion = int32_t(key(frame, "actor.bb." + std::to_string(b) + ".occ_row"));
+                const auto made = actors.rider(descriptor, 0, colour, orientation, projection, camera, depths,
+                                               blob_i32(half->bike, 0x20));
+                const bool is_shadow = clip == 0;
+                if (made.size() != 2) { usable = false; diff = "dispatch node count pos " + std::to_string(pos); break; }
+                const auto& node = made[is_shadow ? 0 : 1];
+                const auto& dumped = dump.nodes[size_t(nafter - 1)];
+                const auto& cell = actors.library().views[0].at(
+                    rr::select_actor_view(descriptor, actors.library().views[0], angles.yaw, angles.roll).group).at(
+                    rr::select_actor_view(descriptor, actors.library().views[0], angles.yaw, angles.roll).subframe);
+                if (dumped.u32(8) != 0x00466684 || int32_t(dumped.u32(0x34)) != int32_t(cell.frame)) {
+                    usable = false;
+                    diff = "frame/bank pos " + std::to_string(pos);
+                    break;
+                }
+                const int32_t shadow_colour = (colour == 0xde) ? 0xdf : 0xe0;
+                const int32_t want_colour = is_shadow ? shadow_colour : colour;
+                if (int32_t(dumped.u32(0x38)) != want_colour) {
+                    usable = false;
+                    diff = "palette pos " + std::to_string(pos);
+                    break;
+                }
+                for (int k = 0; k < 4; ++k) {
+                    if (node.view_points[size_t(k)].x != int32_t(dumped.u32(0x44 + 8 * size_t(k))) ||
+                        node.view_points[size_t(k)].y != int32_t(dumped.u32(0x48 + 8 * size_t(k)))) {
+                        usable = false;
+                        diff = "view point " + std::to_string(k) + " pos " + std::to_string(pos);
+                        break;
                     }
-                };
-                check(sh_node, sh, "shadow");
-                check(bo_node, bo, "body");
-                // Palette selection: shadow 0xdf iff body is cop 0xde.
-                const int32_t want_shadow = (bo.colour == 0xde) ? 0xdf : 0xe0;
-                if (sh.colour != want_shadow) {
-                    same = false;
-                    diff = "shadow palette colour " + std::to_string(bo.colour);
                 }
-                if (!same && false) break;
-                by_key.erase(range.first);
+                if (!usable) break;
+                if (node.flip_u != (dumped.bytes[0x64] != 0) || node.flip_v != (dumped.bytes[0x65] != 0)) {
+                    usable = false;
+                    diff = "flip pos " + std::to_string(pos);
+                    break;
+                }
+                ++checked;
             }
-            if (same) {
-                frame_ok = true;
-                nodes += int(pairs.size()) * 2;
-                break;
-            }
-            if (frame_error.empty()) frame_error = diff;
+            if (usable && checked > 0) { frame_ok = true; frame_checked = checked; nodes += checked; break; }
+            if (frame_error.empty()) frame_error = diff + " (checked " + std::to_string(checked) + ")";
         }
         ++frames;
         if (!frame_ok) {
             ++failures;
-            std::cout << "frame " << frame.at("scene.file") << ": MISMATCH " << frame_error << "\n";
+            std::cout << "frame " << scene_file << ": MISMATCH " << frame_error << "\n";
         } else {
-            std::cout << "frame " << frame.at("scene.file") << ": actor nodes match\n";
+            std::cout << "frame " << scene_file << ": " << frame_checked << " actor nodes match\n";
         }
     }
     std::cout << frames << " frames, " << nodes << " actor nodes, " << failures << " failures\n";

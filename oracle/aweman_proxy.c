@@ -1300,6 +1300,112 @@ static void __fastcall hook_project(uint32_t a,int* b,int c,int* d,int e) {
     if (capture_frame()) { snapshot(g_pre,&g_npre); g_pre_frame=(int)g_frame; }
     ((void (__fastcall*)(uint32_t,int*,int,int*,int))0x00443d70)(a,b,c,d,e);
 }
+// Per-actor dispatch records for --native-actors (plan 11a Task 3): hook the
+// two 0x0043af60 view-selection calls and two 0x0044ba40 billboard calls in
+// 0x00446250 at their call sites. Buffered during 0x004439f0 and flushed in
+// dump_frame (records belong to the frame being dumped).
+static struct { uint32_t bike, ctx, desc[5], a8, b0, b4, bc, view; int32_t f1c, f28, f44, f50; } g_sel[512];
+static uint32_t g_nsel;
+static struct { int32_t size, lateral, ground, pre_lat; uint32_t pos; int32_t clip, nbefore, nafter;
+                 uint32_t occ_owner, occ_row; int32_t ctx4, ctx5, ctx6; uint32_t emu, emuw[6]; } g_bb[512];
+static uint32_t g_nbb;
+static void __fastcall hook_select(uint32_t bike, int ctx) {
+    uint32_t desc = 0, d0 = 0, d1 = 0, d2 = 0, d3 = 0, d4 = 0;
+    int32_t f1c = 0, f28 = 0, f44 = 0, f50 = 0;
+    if (readable(bike + 0x98, 4)) {
+        desc = (uint32_t)*(uint32_t*)(bike + 0x98);
+        if (readable(desc, 20)) {
+            d0 = *(uint32_t*)(desc); d1 = *(uint32_t*)(desc + 4); d2 = *(uint32_t*)(desc + 8);
+            d3 = *(uint32_t*)(desc + 12); d4 = *(uint32_t*)(desc + 16);
+        }
+    }
+    // Actor lateral/position fields at dispatch time (the billboard hook
+    // only sees derived inputs, not the object).
+    if (readable(bike + 0x54, 4)) {
+        f1c = *(int32_t*)(bike + 0x1c); f28 = *(int32_t*)(bike + 0x28);
+        f44 = *(int32_t*)(bike + 0x44); f50 = *(int32_t*)(bike + 0x50);
+    }
+    ((void (__fastcall*)(uint32_t, int))0x0043af60)(bike, ctx);
+    if (!g_out || g_nsel >= 512) return;
+    if (!readable(bike + 0xe0, 4)) return;
+    g_sel[g_nsel].bike = bike; g_sel[g_nsel].ctx = (uint32_t)ctx;
+    g_sel[g_nsel].desc[0] = d0; g_sel[g_nsel].desc[1] = d1; g_sel[g_nsel].desc[2] = d2;
+    g_sel[g_nsel].desc[3] = d3; g_sel[g_nsel].desc[4] = d4;
+    g_sel[g_nsel].a8 = (uint32_t)*(uint32_t*)(bike + 0xa8);
+    g_sel[g_nsel].b0 = (uint32_t)*(uint32_t*)(bike + 0xb0);
+    g_sel[g_nsel].b4 = (uint32_t)*(uint32_t*)(bike + 0xb4);
+    g_sel[g_nsel].bc = (uint32_t)*(uint32_t*)(bike + 0xbc);
+    g_sel[g_nsel].view = (uint32_t)*(uint32_t*)(bike + 0xd0);
+    g_sel[g_nsel].f1c = f1c; g_sel[g_nsel].f28 = f28;
+    g_sel[g_nsel].f44 = f44; g_sel[g_nsel].f50 = f50;
+    ++g_nsel;
+}
+static void __fastcall hook_billboard(int* p1, unsigned* p2, int size, int lateral, int ground, unsigned pos, char clip) {
+    const uint32_t base = (uint32_t)RD32(0x0049e66c), end = (uint32_t)RD32(0x0049e660);
+    const int32_t nbefore = end >= base ? (int32_t)((end - base) / 0xa8) : -1;
+    const int32_t pre_lat = lateral;   // params may not survive the forwarded call; snapshot first
+    // Node emu (param_2) words before the call: [0]=+a8 resource, [2]=+b0,
+    // [3]=+b4, [4]=+b8, [5]=+bc roll. Settles the emu-vs-address question.
+    uint32_t emu = (uint32_t)(uintptr_t)p2, emuw[6] = {0, 0, 0, 0, 0, 0};
+    if (readable(emu, 24)) for (int w = 0; w < 6; ++w) emuw[w] = p2[w];
+    const uint32_t e2 = (uint32_t)RD32(0x0049e660);
+    g_bb[g_nbb].size = size; g_bb[g_nbb].lateral = lateral; g_bb[g_nbb].ground = ground;
+    g_bb[g_nbb].pre_lat = pre_lat;
+    g_bb[g_nbb].pos = pos; g_bb[g_nbb].clip = clip; g_bb[g_nbb].nbefore = nbefore;
+    g_bb[g_nbb].nafter = e2 >= base ? (int32_t)((e2 - base) / 0xa8) : -1;
+    g_bb[g_nbb].emu = emu;
+    for (int w = 0; w < 6; ++w) g_bb[g_nbb].emuw[w] = emuw[w];
+    // Slice context (param_1): [2] occlusion owner, [4]/[5] road origin,
+    // [6] depth word. The occlusion row lives at [2]+0x10.
+    g_bb[g_nbb].occ_owner = 0; g_bb[g_nbb].occ_row = 0;
+    g_bb[g_nbb].ctx4 = 0; g_bb[g_nbb].ctx5 = 0; g_bb[g_nbb].ctx6 = 0;
+    if (readable((uintptr_t)&p1[2], 4)) {
+        const uint32_t owner = *(uint32_t*)&p1[2];
+        g_bb[g_nbb].occ_owner = owner;
+        if (readable(owner + 0x10, 4)) g_bb[g_nbb].occ_row = *(uint32_t*)(uintptr_t)(owner + 0x10);
+    }
+    if (readable((uintptr_t)&p1[4], 12)) {
+        g_bb[g_nbb].ctx4 = p1[4]; g_bb[g_nbb].ctx5 = p1[5]; g_bb[g_nbb].ctx6 = p1[6];
+    }
+    ++g_nbb;
+}
+static void flush_actor_records(void) {
+    char key[96];
+    rr_log("actor.sel.count", g_nsel);
+    for (uint32_t i = 0; i < g_nsel; ++i) {
+        snprintf(key, sizeof key, "actor.sel.%u.bike", i); rr_log(key, g_sel[i].bike);
+        snprintf(key, sizeof key, "actor.sel.%u.ctx", i); rr_log(key, g_sel[i].ctx);
+        for (int w = 0; w < 5; ++w) { snprintf(key, sizeof key, "actor.sel.%u.d%d", i, w); rr_log(key, g_sel[i].desc[w]); }
+        snprintf(key, sizeof key, "actor.sel.%u.a8", i); rr_log(key, g_sel[i].a8);
+        snprintf(key, sizeof key, "actor.sel.%u.b0", i); rr_log(key, g_sel[i].b0);
+        snprintf(key, sizeof key, "actor.sel.%u.b4", i); rr_log(key, g_sel[i].b4);
+        snprintf(key, sizeof key, "actor.sel.%u.bc", i); rr_log(key, g_sel[i].bc);
+        snprintf(key, sizeof key, "actor.sel.%u.view", i); rr_log(key, g_sel[i].view);
+        snprintf(key, sizeof key, "actor.sel.%u.f1c", i); rr_log(key, g_sel[i].f1c);
+        snprintf(key, sizeof key, "actor.sel.%u.f28", i); rr_log(key, g_sel[i].f28);
+        snprintf(key, sizeof key, "actor.sel.%u.f44", i); rr_log(key, g_sel[i].f44);
+        snprintf(key, sizeof key, "actor.sel.%u.f50", i); rr_log(key, g_sel[i].f50);
+    }
+    rr_log("actor.bb.count", g_nbb);
+    for (uint32_t i = 0; i < g_nbb; ++i) {
+        snprintf(key, sizeof key, "actor.bb.%u.size", i); rr_log(key, g_bb[i].size);
+        snprintf(key, sizeof key, "actor.bb.%u.lateral", i); rr_log(key, g_bb[i].lateral);
+        snprintf(key, sizeof key, "actor.bb.%u.ground", i); rr_log(key, g_bb[i].ground);
+        snprintf(key, sizeof key, "actor.bb.%u.pos", i); rr_log(key, g_bb[i].pos);
+        snprintf(key, sizeof key, "actor.bb.%u.clip", i); rr_log(key, g_bb[i].clip);
+        snprintf(key, sizeof key, "actor.bb.%u.nbefore", i); rr_log(key, g_bb[i].nbefore);
+        snprintf(key, sizeof key, "actor.bb.%u.nafter", i); rr_log(key, g_bb[i].nafter);
+        snprintf(key, sizeof key, "actor.bb.%u.pre_lat", i); rr_log(key, g_bb[i].pre_lat);
+        snprintf(key, sizeof key, "actor.bb.%u.occ_owner", i); rr_log(key, g_bb[i].occ_owner);
+        snprintf(key, sizeof key, "actor.bb.%u.occ_row", i); rr_log(key, g_bb[i].occ_row);
+        snprintf(key, sizeof key, "actor.bb.%u.ctx4", i); rr_log(key, g_bb[i].ctx4);
+        snprintf(key, sizeof key, "actor.bb.%u.ctx5", i); rr_log(key, g_bb[i].ctx5);
+        snprintf(key, sizeof key, "actor.bb.%u.ctx6", i); rr_log(key, g_bb[i].ctx6);
+        snprintf(key, sizeof key, "actor.bb.%u.emu", i); rr_log(key, g_bb[i].emu);
+        for (int w = 0; w < 6; ++w) { snprintf(key, sizeof key, "actor.bb.%u.emu%d", i, w); rr_log(key, g_bb[i].emuw[w]); }
+    }
+    g_nsel = 0; g_nbb = 0;
+}
 static void put_regions(FILE* out,snap_region* r,uint32_t n){for(uint32_t i=0;i<n;++i){if(!r[i].bytes)continue;uint32_t h[2]={r[i].base,r[i].size};fwrite(h,4,2,out);fwrite(r[i].bytes,1,r[i].size,out);}}
 static void dump_scene(void) {
     char path[1024];const char* slash=strrchr(g_output,'\\');const size_t prefix=slash?(size_t)(slash-g_output)+1:0;
@@ -1754,8 +1860,11 @@ static void dump_frame(uint32_t site) {
     if (g_frame==0) {dump_raster();dump_groups();}
     rr_log("view.quality_mask", RD32(0x00475648));
     if (g_scene_written) { rr_log("scene.file",g_frame);rr_log("scene.nodes",g_scene_nodes);g_scene_written=0; }
+    // Dispatch records buffered during this frame's projection/draw.
+    if (!(g_frame % (uint32_t)g_pixel_every)) flush_actor_records();
+    else { g_nsel = 0; g_nbb = 0; }
     if (g_pixel_written) {
-        rr_log("pixels.file",g_frame);
+         rr_log("pixels.file",g_frame);
         rr_log("pixels.width",g_pixel_width); rr_log("pixels.height",g_pixel_height);
         rr_log("pixels.pitch",g_pixel_pitch);
         for (int i=0;i<256;++i) {
@@ -1847,7 +1956,18 @@ static int rr_install_hooks(void) {
         {0x00442ea8,0x0044f800, hook_controls, {0xe8,0x53,0xc9,0,0}},
         {0x0044b324,0x0044b3b0, hook_step, {0xe8,0x87,0,0,0}},
         {0x00448381,0x00449150, hook_menu_video, {0xe8,0xca,0x0d,0,0}},
-        {0x00448392,0x00421df0, hook_menu_enter, {0xe8,0x59,0x9a,0xfd,0xff}}
+        {0x00448392,0x00421df0, hook_menu_enter, {0xe8,0x59,0x9a,0xfd,0xff}},
+        // 0x00446250 dispatch: view selection (0x0043af60) and billboard
+        // (0x0044ba40) call sites, verified against the reference EXE bytes.
+        {0x00446293,0x0043af60, hook_select, {0xe8,0xc8,0x4c,0xff,0xff}},
+        {0x004462e4,0x0043af60, hook_select, {0xe8,0x77,0x4c,0xff,0xff}},
+        {0x004462d5,0x0044ba40, hook_billboard, {0xe8,0x66,0x57,0x00,0x00}},
+        {0x00446338,0x0044ba40, hook_billboard, {0xe8,0x03,0x57,0x00,0x00}},
+        // 0x004463e0 second bike path (selects draw the emitted nodes).
+        {0x00446420,0x0043af60, hook_select, {0xe8,0x3b,0x4b,0xff,0xff}},
+        {0x00446468,0x0043af60, hook_select, {0xe8,0xf3,0x4a,0xff,0xff}},
+        {0x00446459,0x0044ba40, hook_billboard, {0xe8,0xe2,0x55,0x00,0x00}},
+        {0x004464f3,0x0044ba40, hook_billboard, {0xe8,0x48,0x55,0x00,0x00}}
     };
     const unsigned count=sizeof calls/sizeof calls[0];
     // Validate ALL sites before changing ANY. A foreign binary is never patched.

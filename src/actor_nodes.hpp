@@ -1,8 +1,10 @@
 #pragma once
 #include "actor_descriptors.hpp"
 #include "actor_render.hpp"
+#include "exe_tables.hpp"
 #include "rider_sprites.hpp"
 #include <map>
+#include <vector>
 namespace rr {
 // Owns imported graphics and stable remapped Bob pages for display-list nodes.
 // Animation stepping belongs to the simulation, never to frame presentation.
@@ -17,5 +19,6 @@ private:
     ActorAnimationLibrary library_;
     RiderSprites sprites_;
     mutable std::map<std::array<int32_t,3>,std::optional<CelTexture>> pages_;
+    std::vector<int32_t> sin_table_;   // quarter-sin for body rotation (0x00475768)
 };
 }

@@ -22,4 +22,13 @@ struct ActorProjection {
 // rotation before calling this routine. Caller owns the selected texture.
 std::optional<DrawNode> actor_node(const AnimationFrame&,const CelTexture*,
     const ActorProjection&,const Camera&,const DepthTable&,int32_t logical_width=320);
+// Rotated actor billboard path 0x0044ba40 via 0x00450ad0. Same inputs as
+// actor_node plus the body roll (+0xbc: select result_roll with the
+// 0x004463e0 yaw clamp) and the 1024-word quarter-sin table at 0x00475768
+// (imported, 32768 * sin(i * 90 / 1024)). Runs exactly when roll != 0; the
+// shadow path forces roll zero (0x00446250/0x004463e0 write +0xbc = 0 first)
+// and always takes the axis path. Caller owns the selected texture.
+std::optional<DrawNode> actor_node_rotated(const AnimationFrame&,const CelTexture*,
+    const ActorProjection&,const Camera&,const DepthTable&,const std::vector<int32_t>& sin_table,
+    int32_t roll,int32_t logical_width=320);
 }
