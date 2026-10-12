@@ -72,10 +72,11 @@ Plan 11 Task 6 (Napa) and plan 16 Task 1 (cop contact) own the pieces. This task
 
 **Files:** `src/police.hpp/.cpp`, `src/race.cpp`, `src/actor_nodes.cpp`, `src/sound.cpp`, `src/game_main.cpp`, `tests/police_test.cpp`, docs.
 
-- [ ] **Step 1: Trace the spawn.**
+- [x] **Step 1: Trace the spawn (done).**
   - Cops come from DZHR actor events with type ≥ 0xb: the else-branch of `0x004409e0` draws `rand() % 0x81` twice, picks a ring slice `(r+0x200)·16` from the player's slice (`0x00449910`), and builds the police bike there with `0x00406b80`.
   - `placed_scenery`'s level gate already applies the `level − 4` probability to these records (word bit 31 with type ≥ 11).
-  - Trace `0x00406b80`'s remaining setup and the police think, and answer "does Napa level 1 have cops" from the gated events (plan 11 Task 6 Step 1).
+  - `0x00406b80`: single-cop guard (`DAT_004642dc == 0`), network early-out, video slot cycle 0–7, rider-pair build (`0x00405990`, templates `0x464310/0x464378`, row 15), cop-becomes-owner, 10-column relationship reset + level-scaled rows (`397691a`, REVERSE_ENGINEERING.md). Police bikes are riders: they run the rider think/move/draw, not `0x00440dd0` (that think is the pedestrian-crossing machine, Task 4).
+  - Napa level 1 has NO cops (level-gated census: 42 ped / 0 cops; `072c7d0`). `napa-cops` must use level 3+ (2 records). CITY L1 has 6.
   - Earlier notes called pool `0x004c1274` the cop pool. That was wrong: it is the pedestrian pool (Task 4).
 - [ ] **Step 2: Capture** `napa-cops` (a level with cops), `napa-cops-crashed` (arrest while on foot) and `city-cops`. Each must reach the busted outcome `0x00416010` reason and its video choice.
 - [ ] **Step 3: Port** the spawn, think and move, rider–cop contact (`0x004049c0` type `0x20` branch; plan 16 Task 1) and sirens (slots 30/31, event 19 via `0x00435ae0`). Busted feeds results and the cutscene (plan 13 Task 4). Cops count toward the HUD "nearest opponent" only if `0x00438550`'s slot list includes them (slot 14 is `DAT_004642dc`); check this.
