@@ -18,9 +18,17 @@ struct File {
 };
 
 inline File parse(const std::string& text) {
+    // Accepted schema versions, enumerated explicitly (replay-harness
+    // correction Oct 12): v1 stays parseable so old captures never fail
+    // on a magic bump. A new version is added here only with its parser.
+    static constexpr const char* kVersions[] = {"# rr-oracle 1"};
     std::istringstream in(text);
     std::string line;
-    if (!std::getline(in, line) || line != "# rr-oracle 1") throw std::runtime_error("Golden file: bad magic");
+    if (!std::getline(in, line)) throw std::runtime_error("Golden file: bad magic");
+    if (!line.empty() && line.back() == '\r') line.pop_back();
+    bool known = false;
+    for (const char* v : kVersions) if (line == v) known = true;
+    if (!known) throw std::runtime_error("Golden file: bad magic");
     File f;
     bool ended = false;
     while (std::getline(in, line)) {

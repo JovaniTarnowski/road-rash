@@ -105,25 +105,48 @@ python3 tools/golden_diff.py analysis/oracle/sim-napa-solo-human.tsv analysis/or
 
 Both report zero differences (replay verified 1,431 frames identical;
 `sim-napa-solo-human-replay.tsv` is git-ignored scratch, not committed).
-Single-anchor replay (`oracle-sim-test`, default; owner follow-up Oct 12):
-physics green through tick 139 modulo the traffic-timer RNG draw. The
-earlier tick-120 speed gap (original 1479 vs native 1474) root-caused to
-the harness, not physics — solo replay built `Race` without personalities,
-so the first `ai_replan` (tick 119→120) reset speed from zeroed
-`spd_a`/`spd_b`; with `read_personalities` wired in, native matches
-exactly through frame 138 (speed 1919). Next divergence is frame 138
-(tick 139): RNG original 2574079260 vs native 1133891140, fields still
-matching — most likely the `0x0044dd90` traffic-spawn timer draw (the
-solo hook nulls the pool but the timers still tick and draw; the replay
-never steps `TrafficSystem`). See `analysis/sim-notes.md`.
+
+## Replay driver axis (replay-harness correction, Oct 12)
+
+`solo` (field isolation: scheduler freeze, traffic nulled) and
+`driver=human|demo` (the `0x00434660` branch) are independent axes.
+`oracle-sim-test` selects the branch from the golden's measured
+`player.demo_hold` (the oracle's `DAT_004753c8` sample), overridable with
+`--driver=human|demo`. It never infers the branch from `solo`, the
+`scenario` name, or nonzero recorded input. All captures to date predate
+the probe and require `--driver`.
+
+New captures MUST record, every frame: `player.demo_hold`
+(`DAT_004753c8`), `player.think` (entry) + `player.think_count`
+(`0x00434660` invocations), `demo.base_speed`/`demo.lane`/`demo.weapon`/
+`demo.stats_*`, `grid.bias`, and `DAT_00467a6c` (the brain personality
+row — the course-entry bootstrap leaves it at startup 0, not the career
+rider). Pre-step RNG capture (or proven post-step equivalence) is
+required at the green boundary; ticks stay absolute (animation deadlines
+accumulate from absolute ticks). See `analysis/replay-notes.md`.
+
+Single-anchor replay status (`oracle-sim-test --driver=demo
+analysis/oracle/sim-napa-solo.tsv`): road_base 1792 (measured per
+golden, not a course constant), 59 frozen hold frames, green at tick 60,
+green through tick 74 with rng equal. First divergence frame 74 (tick
+75): `rider.0.lateral` original 18173 vs native 18053. Mechanism
+(measured, not a physics bug): the golden carries a frozen rider.1 that
+the harness cannot yet build (opponent slot mapping is task-6 work; the
+port's `frozen` flag never gates `step_rider`), so the original's
+pre-green replan scaled current 87→81 with rider.1 ahead and its green
+tick ran state 2 with the replan target (tx snapped to 18176), while
+native runs state 1 straight target (tx=1799) with no target. The
+earlier tick-120 speed gap was the same class of harness artifact (no
+personalities wired in); the tick-139 traffic-timer RNG note below is
+superseded — the run now reaches the tick-75 field divergence first.
 
 Known limitation: menu course-entry captures (`RR_ORACLE_COURSE`) run the
 player on the demo AI branch, so `DAT_004b7ed0` words are written to the
 dump but never read by the think function. The native replay mirrors this
-with `set_demo_hold` for `napa-solo`; the human golden documents the
-control-driven branch instead. Clearing `DAT_004753c8=0` mid-capture would
-need a new oracle hook (open).
-
+with `--driver=demo` for `napa-solo`; a TRUE human golden needs the
+`RR_ORACLE_HUMAN` hook (clear `DAT_004753c8` post-setup, open). The
+current `napa-solo-human` file documents the control stream + determinism
+proof, not the control-driven branch.
 ## Planned (tasks 5–7)
 
 - `napa-solo-split-left`, `napa-solo-split-right`: branch commits at the first split (solo).

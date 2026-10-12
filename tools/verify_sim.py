@@ -22,7 +22,7 @@ def classify(code, output, rule, digest):
     return 'unexpected-failure'
 
 
-def verify(binary, fixtures, assets, mode='acceptance', rules=None, timeout=120):
+def verify(binary, fixtures, assets, mode='acceptance', rules=None, timeout=120, driver='demo'):
     outcomes = []
     for fixture in fixtures:
         row = {'fixture': str(fixture), 'mode': mode}
@@ -41,7 +41,7 @@ def verify(binary, fixtures, assets, mode='acceptance', rules=None, timeout=120)
                 capabilities = subprocess.run([str(binary), '--capabilities'], capture_output=True, text=True, timeout=timeout)
                 if capabilities.returncode != 0 or 'human-controls-single-anchor' not in capabilities.stdout.splitlines():
                     raise ValueError('replay binary has not declared human-controls-single-anchor support')
-            result = subprocess.run([str(binary), str(fixture), str(assets)], capture_output=True, text=True, timeout=timeout)
+            result = subprocess.run([str(binary), f'--driver={driver}', str(fixture), str(assets)], capture_output=True, text=True, timeout=timeout)
             output = result.stdout + result.stderr
             row.update({'exit_code': result.returncode, 'output': output})
             row['status'] = classify(result.returncode, output, (rules or {}).get(Path(fixture).name), info['trace_sha256'])
@@ -63,6 +63,8 @@ def verify(binary, fixtures, assets, mode='acceptance', rules=None, timeout=120)
 def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument('--mode', choices=['diagnostic', 'acceptance'], default='acceptance')
+    p.add_argument('--driver', default='demo',
+                   help='driver axis for the replay binary (human|demo); the solo golden is demo-branch')
     p.add_argument('--binary', type=Path, default=ROOT / 'build/oracle-sim-test')
     p.add_argument('--assets', type=Path, default=ROOT.parent / 'cdrom/ROADRASH')
     p.add_argument('--fixture', type=Path, action='append')
@@ -72,7 +74,7 @@ def main():
     directory = Path(os.environ.get('RR_ORACLE_DIR', ROOT / 'analysis/oracle'))
     fixtures = args.fixture or [directory / ('sim-napa-solo.tsv' if args.mode == 'diagnostic' else 'sim-napa-solo-human.tsv')]
     rules = json.loads(args.rules.read_text())
-    report, code = verify(args.binary.resolve(), fixtures, args.assets.resolve(), args.mode, rules)
+    report, code = verify(args.binary.resolve(), fixtures, args.assets.resolve(), args.mode, rules, driver=args.driver)
     if args.report:
         atomic_json(args.report, report)
     print(json.dumps(report, indent=2))
