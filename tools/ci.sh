@@ -15,6 +15,9 @@ fi
 if [ "${RR_CODEC_ORACLE:-0}" = 1 ]; then
     python3 tools/verify_video_audio.py ../cdrom/ROADRASH/VIDEO --video-decoder "$build_dir/cinepak-test"
 fi
+if [ "${RR_TSAN:-0}" = 1 ]; then
+    sh tools/tsan.sh
+fi
 if [ "${RR_STANDALONE_APP:-0}" = 1 ]; then
     python3 tools/agent_gate.py package --build-dir "$root/build-agent-ci-package"
 elif [ -d "build-release/Road Rash Native.app" ]; then
