@@ -163,7 +163,7 @@ Native port: `src/bike.cpp`, `src/race.cpp`.
   - lateral `+0x28`: world units × 256
 - **Timing:** 60 ticks/s from the performance counter (`0x004163d0`), capped at 20 steps per frame.
 - **Camera** (`0x00437c30`): centred on the road with the rider offset ¾, clamped to ±200; height = rider height + crash lift (to 300), minimum 150; position = rider − crash pull-back (to 900) − `0x100`.
-- **Grid** (`0x00464218`/`0x00464258`): 8 slots at samples 50/51 with lateral offsets 16384, −3616, −23616, −43616 (added to the road offset).
+- **Grid:** `0x00464218`/`0x00464258` hold 8 (lateral, sub-slice) slots at samples 50/51 with lateral offsets 16384, −3616, −23616, −43616 (added to the road offset); used when the field is small. Level < 4 full-field construction (`0x00464088`, read from the EXE) places 15 pairs: the race field at consecutive samples 50–57 (slots 0, 9, 4, 10, 2, 11, 3, 12 by position) plus 7 extra bikes parked ahead at 21248–31488. Solo oracle captures freeze all 14 non-player pairs on the first step (`sim-kink-probe7`). Native two-row placement does not match; see the October 12 VERIFICATION.md entries.
 - **Math helpers:** `0x0044f5a0` is a piecewise-linear atan2 (256 per turn); `0x0044f4a0` is a quarter-wave sine table at `0x00475768` (1,024 entries, Q15, 4,096 per turn).
 
 ## Rider sprites, AI and combat recovered

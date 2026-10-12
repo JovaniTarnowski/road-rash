@@ -472,3 +472,25 @@ Police configuration gate: `build/police-test` compares imported pursuit/relatio
   order: `0x00408cd0` neighbour pick → `0x00408ad0` transitions → state
   dispatch (`0x00465980`, states 1 and 5 first) → `0x00408e40` →
   `0x0040a410`/`0x0040a100` lookahead.
+
+## Solo grid layout (October 12, 2026)
+
+- `nodeaddr` header entries now carry `type` (+0xc4), `lateral` (+0x28) and
+  `half` (+0x2fc). `sim-kink-probe7.tsv` (same Napa solo settings) maps all 38
+  ring nodes: 15 bike/half pairs (type 4 bike with `half` pointing at its type 8
+  half) plus traffic-pool and scenery nodes.
+- Group A (the race field, 8 pairs): player at 12800 plus opponents at
+  13056–14592 in consecutive 0x100 steps (samples 50–57). Positions equal the
+  `0x00464088` table selectors (level < 4, full 16-rider construction);
+  opponent slots by position are 9, 4, 10, 2, 11, 3, 12. Every rider-half
+  lateral matches its table lateral exactly (40960/16384).
+- Group B (7 pairs at 21248–31488, ahead of the field): extra constructed
+  bikes, out of the replan/overtake scan windows at the tick-184 transition;
+  relevance for later-race scans is open.
+- Anomaly (not explained, mirrored as-is): two group-A bike laterals are wild
+  (ring 18: 83712, ring 20: 108032) while their halves are normal; the other
+  five equal table lateral plus the local road centre (1792–3584 across
+  samples 50–57, consistent with road_base 7 world units at sample 50).
+- Native `grid_position`/`grid_lateral` (two rows at 0x3200/0x3300 with four
+  fixed offsets) does not match this construction; the replay harness must use
+  per-slot table positions/laterals (open).

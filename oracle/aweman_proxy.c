@@ -266,6 +266,12 @@ static void dump_sim_tick(void) {
                 rr_log(key, sim_field_value(node, 0x1c, 4, 1));
                 snprintf(key, sizeof key, "nodeaddr.%d.kind", addr_index);
                 rr_log(key, sim_field_value(node, 0x73, 1, 0));
+                snprintf(key, sizeof key, "nodeaddr.%d.type", addr_index);
+                rr_log(key, sim_field_value(node, 0xc4, 4, 0));
+                snprintf(key, sizeof key, "nodeaddr.%d.lateral", addr_index);
+                rr_log(key, sim_field_value(node, 0x28, 4, 1));
+                snprintf(key, sizeof key, "nodeaddr.%d.half", addr_index);
+                rr_log(key, sim_field_value(node, 0x2fc, 4, 0));
                 ++addr_index;
             }
             int slot = -1;
