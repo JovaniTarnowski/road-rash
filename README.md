@@ -2,7 +2,7 @@
 
 Progress summary, timeline and next steps: [docs/PROGRESS.md](docs/PROGRESS.md). Binary evidence: [docs/REVERSE_ENGINEERING.md](docs/REVERSE_ENGINEERING.md). Test log: [docs/VERIFICATION.md](docs/VERIFICATION.md). Plans to completion: [docs/plans/00-INDEX.md](docs/plans/00-INDEX.md).
 
-Native C++17 / SDL3 work targeting macOS ARM64 and Android ARM64. `rr-game` is a **playable race against seven AI opponents** with the original bike physics and combat; `rr-native` is the asset research viewer. It does not execute the Windows binary, use Wine, or emulate x86.
+Native C++17 / SDL3 work targeting macOS ARM64 and Android ARM64. `rr-game` is a **playable race against seven AI opponents** with the original bike physics and combat; `rr-viewer` is the asset research viewer. It does not execute the Windows binary, use Wine, or emulate x86.
 
 ## Current implementation
 
@@ -21,6 +21,12 @@ Racing, bike physics, AI riders, sprites and combat are implemented with the app
 
 ```sh
 cd /Users/archit/Dev/rr/native-port
+./run-macos.sh                                      # build and launch the current game
+```
+
+Or build and run directly:
+
+```sh
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug && cmake --build build --parallel
 build/rr-game --assets ../cdrom/ROADRASH            # Napa; --course 0-4, --bike 0-14
 ```
@@ -44,11 +50,13 @@ build/rr-game --assets "/path/to/imported/ROADRASH"
 
 The default destination is `SDL_GetPrefPath("RoadRashNative", "RoadRash")/game/ROADRASH`. `RR_PREF_OVERRIDE` redirects the pref root for development tests. `--first-run-smoke` renders the missing-data screen once and exits; `--screenshot` can capture it. All imported commercial assets stay outside the source and APK.
 
-## Run the research viewer on this Mac
+## Run the research viewer (developer tool)
+
+The asset research viewer is a separate tool, not the game. Use `./run-viewer.sh`:
 
 ```sh
 cd /Users/archit/Dev/rr/native-port
-./run-macos.sh
+./run-viewer.sh
 ```
 
 The default assets directory is `../cdrom/ROADRASH`; an alternative extracted original directory can be passed as the first argument. Left/Right, Space, click, or tap cycle nine images and five course views. On course views, Up/Down change drive speed (negative reverses) and B switches split branch. Escape exits. `--screen 9 --position 1400 --screenshot out.bmp` captures one frame.
@@ -59,7 +67,7 @@ Dependencies: CMake, a C++17 compiler and SDL3 (`brew install cmake sdl3`). The 
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug
 cmake --build build --parallel
 ctest --test-dir build --output-on-failure
-build/rr-native --assets ../cdrom/ROADRASH --smoke
+build/rr-viewer --assets ../cdrom/ROADRASH --smoke
 build/rr-inspect ../cdrom/ROADRASH/DATA/BIKESPEC.RSC
 build/rr-course --exe ../cdrom/ROADRASH/ROADRASH.EXE ../cdrom/ROADRASH/DATA/COURSES/*.CRS
 python3 tools/check_corpus.py ../cdrom/ROADRASH

@@ -80,7 +80,7 @@ int main(int argc, char** argv) {
             initial_screen=int(value);
         }
         else if (arg=="--position" && i+1<argc) initial_position=uint32_t(std::strtoul(argv[++i],nullptr,10))<<8;
-        else { std::fprintf(stderr,"Usage: rr-native [--assets ROADRASH_DIR] [--smoke] [--screen 0..%d] [--position SAMPLE] [--screenshot FILE.bmp]\n",screen_count-1); return 2; }
+        else { std::fprintf(stderr,"Usage: rr-viewer [--assets ROADRASH_DIR] [--smoke] [--screen 0..%d] [--position SAMPLE] [--screenshot FILE.bmp]\n",screen_count-1); return 2; }
     }
     SDL_Window* window = nullptr;
     SDL_Renderer* renderer = nullptr;

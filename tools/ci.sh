@@ -7,7 +7,7 @@ cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug
 cmake --build build --parallel
 ctest --test-dir build --output-on-failure
 if [ -d ../cdrom/ROADRASH ]; then
-    build/rr-native --assets ../cdrom/ROADRASH --smoke
+    build/rr-viewer --assets ../cdrom/ROADRASH --smoke
     build/rr-course --exe ../cdrom/ROADRASH/ROADRASH.EXE ../cdrom/ROADRASH/DATA/COURSES/*.CRS
 fi
 if [ "${RR_CODEC_ORACLE:-0}" = 1 ]; then
@@ -21,5 +21,8 @@ if unzip -Z1 android/app/build/outputs/apk/debug/app-debug.apk | rg -q '^assets/
 fi
 if [ "${RR_STANDALONE_APP:-0}" = 1 ]; then
     tools/build_macos_app.sh
+elif [ -d build-release/Road\ Rash\ Native.app ]; then
+    # A checked-in/stale bundle must not be mistaken for the current game.
+    python3 tools/verify_macos_app.py build-release/Road\ Rash\ Native.app
 fi
 printf '%s\n' 'CI OK'

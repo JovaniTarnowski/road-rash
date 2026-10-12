@@ -298,7 +298,7 @@ In `src/viewer.cpp`, delete `read_file`, construct `rr::Assets assets(root);` on
 
 - [ ] **Step 4: Run all tests and the smoke run**
 
-Run: `cmake --build build --parallel && ctest --test-dir build --output-on-failure && build/rr-native --assets ../cdrom/ROADRASH --smoke | tail -1`
+Run: `cmake --build build --parallel && ctest --test-dir build --output-on-failure && build/rr-viewer --assets ../cdrom/ROADRASH --smoke | tail -1`
 Expected: all tests pass (resource-bounds, road-projection, framebuffer, assets); the smoke run ends with `Decoded MEDLY.CRS: 5634 route samples`.
 
 - [ ] **Step 5: Commit**

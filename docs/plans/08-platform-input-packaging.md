@@ -101,7 +101,7 @@ Assert:
 - One corrupted byte gives `ok == false`, lists that file, and leaves the destination empty: import goes to `dest + ".partial"`, then is renamed.
 
 - [ ] **Step 2:** `tools/gen_reference_hashes.py` reads `analysis/inventory.json` and writes `src/reference_hashes.inc` as `{"ROADRASH/DATA/GLOBAL.RSC", "…sha256…"},` lines. Use an SHA-256 implementation: add `third_party/sha256.h` (public domain / MIT single header) with its licence.
-- [ ] **Step 3:** Implement and pass. Then import from the real ISO (`/Users/archit/Dev/rr/Road Rash (USA) (En,Fr,De,Es,It) (Rerelease) (19970930).iso`) into a temp dir. All 341 files match and `rr-native --assets <tmp>/ROADRASH --smoke` works.
+- [ ] **Step 3:** Implement and pass. Then import from the real ISO (`/Users/archit/Dev/rr/Road Rash (USA) (En,Fr,De,Es,It) (Rerelease) (19970930).iso`) into a temp dir. All 341 files match and `rr-viewer --assets <tmp>/ROADRASH --smoke` works.
 - [ ] **Step 4:** Commit: `platform: ISO 9660 reader and verified game data import`.
 
 ---
@@ -311,7 +311,7 @@ cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug
 cmake --build build --parallel
 ctest --test-dir build --output-on-failure
 if [ -d ../cdrom/ROADRASH ]; then
-  build/rr-native --assets ../cdrom/ROADRASH --smoke
+  build/rr-viewer --assets ../cdrom/ROADRASH --smoke
   build/rr-course --exe ../cdrom/ROADRASH/ROADRASH.EXE ../cdrom/ROADRASH/DATA/COURSES/*.CRS
 fi
 export JAVA_HOME="${JAVA_HOME:-/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home}"

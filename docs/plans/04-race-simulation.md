@@ -267,7 +267,7 @@ Port `apply_spec` and `player_think` (plus the functions it calls for accelerati
 
 **Files:**
 - Create: `src/game_main.cpp` (new executable `rr-game`; desktop and Android `main`)
-- Modify: `CMakeLists.txt`: Android now builds `rr-game` as `libmain.so`; the research viewer stays desktop-only as `rr-native`.
+- Modify: `CMakeLists.txt`: Android now builds `rr-game` as `libmain.so`; the research viewer stays desktop-only as `rr-viewer`.
 
 **Interfaces:**
 - Consumes: `start_race`, `run_steps`, `race_camera`, `build_scene`/`draw_world` (plan 02), `rr::Framebuffer`

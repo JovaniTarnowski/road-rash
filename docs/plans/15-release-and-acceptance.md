@@ -49,7 +49,7 @@ ctest --test-dir build-accept --output-on-failure --output-junit junit.xml
 if grep -q 'status="skipped"\|<skipped' build-accept/junit.xml; then
     echo "FAIL: required tests were skipped (missing goldens or assets)"; exit 1
 fi
-build-accept/rr-native --assets "$ASSETS" --smoke
+build-accept/rr-viewer --assets "$ASSETS" --smoke
 build-accept/rr-course --exe "$ASSETS/ROADRASH.EXE" "$ASSETS"/DATA/COURSES/*.CRS
 for course in 0 1 2 3 4; do
     SDL_AUDIO_DRIVER=dummy build-accept/rr-game --assets "$ASSETS" --race --course "$course" --ticks 60000 --autopilot \
