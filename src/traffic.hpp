@@ -85,6 +85,10 @@ public:
     void step(const std::vector<RouteSample>& route, int32_t camera_q8, int32_t front_q8,
               int32_t distance_moved, int32_t player_q8, int32_t player_lateral, const std::function<uint32_t()>& random);
     const std::vector<TrafficCar>& cars() const { return cars_; }
+    // 0x004368f0 car pass: the contact response writes the car's share of
+    // the separation (lateral push; the original also runs 0x00436a40 on the
+    // car object, which has no scratch equivalent — see analysis/car-notes.md).
+    std::vector<TrafficCar>& cars_mut() { return cars_; }
     const TrafficTimers& timers() const { return timers_; }
     const VehicleLibrary& library() const { return library_; }
     std::vector<SoundEventRecord> take_sound_events() { auto e = std::move(events_); events_.clear(); return e; }

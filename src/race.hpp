@@ -10,6 +10,7 @@
 
 namespace rr {
 class TrafficSystem;
+struct TrafficCar;
 // Original timing: 0x004163d0 steps the simulation at QueryPerformanceFrequency/0x3c,
 // at most 0x14 steps per frame.
 constexpr int ticks_per_second = 60;
@@ -37,9 +38,14 @@ constexpr int attack_hit_tick = 7, attack_ticks = 18;   // animation timing stan
 struct Opponent {
     BikeSpec spec;
     int32_t rider_value;   // rider table +0xc / 2
-    int32_t base_speed;    // personality +0x1bc + level*4 (units of (v>>12)+(v>>7)+(v>>9))
-    int lane;              // personality lane preference (+0x18c): 0, 1, 2
+    int base_speed;        // personality +0x1bc + level*4 (units of (v>>12)+(v>>7)+(v>>9))
+    int cur2_speed;        // personality +0x1a8 + level*4
+    int lane;              // 0x00405990 draws rand()%3 (stream-dependent); -1 = draw at build
     int slot;              // grid slot 0..7 (0x00464218)
+    int rider = 0;         // rider index: 0x00463c78 row and 0x00464558 personality (0x00405990 param_6)
+    int32_t grid_pos = 0;  // table sub-slice selector: exact Q8 start position (0 = native two-row grid)
+    int32_t grid_lat = 0;  // table lateral (added to the road centre); see grid_pos
+    bool frozen = false;   // solo oracle: think/move nulled, body present for scans
     int32_t throttle_percent = 100;   // 0x004642a0[level]
     RiderStats stats{};
     int weapon = 0;                   // rider table word 6 + level
@@ -50,24 +56,54 @@ struct Opponent {
 // scale 0x004642a0[level]; grid slots 1..count.
 std::vector<Opponent> original_opponents(const std::vector<uint8_t>& exe, const std::vector<BikeSpec>& specs,
                                          int level, int count);
+// Original rider personalities (0x00464558, 10 x 0x204 bytes). The AI brain is
+// a copy of one record (0x00407990 selects 0x004c6b40 + rider*0x81 words).
+struct Personality {
+    int32_t cur2_levels[5] = {};    // +0x1a8: reset source for +0x1a0
+    int32_t cur_levels[5] = {};     // +0x1bc: reset source for +0x1a4
+    int32_t rating[30] = {};        // +0x0: overtake rating currents (10 x 3)
+    int32_t rating_tgt[30] = {};    // +0x78: rating targets
+    int32_t ease[3] = {};           // +0x12c/+0x130/+0x134: replan easing steps
+    int overtake_index = 0;         // +0x165: rating-table index used by 0x004092e0
+    int32_t reach = 0;              // +0x1d4: overtake distance scale (0x004092e0)
+};
+std::vector<Personality> read_personalities(const std::vector<uint8_t>& exe);
 
 struct AiState {
     int32_t target_x = 0;        // +0x194 (world units * 256)
     int32_t target_position = 0; // +0x198 (Q8 samples)
     int32_t target_speed = 0;    // +0x19c
     int32_t current_speed = 0;   // +0x1a4
+    int32_t current2 = 0;        // +0x1a0
     int32_t base_speed = 0;      // +0x1bc + level*4
     int32_t replan_ticks = 0;    // +0x188
     int lane = 0;                // +0x18c
     int32_t bias = 0;            // +0x190
+    int state = 1;               // +0x160: dispatch via 0x00465980 (1 = racing)
+    int target_rider = -1;       // +0x168: riders_ index, -1 null
+    int target_step = 0;         // +0x174: rated overtake step of the target
+    int nbr_ahead = -1;          // +0x16c: replan scan pick, -1 null
+    int nbr_behind = -1;         // +0x170: replan scan pick, -1 null
+    int ov_ahead = 0;            // +0x178: overtake-step rating
+    int ov_behind = 0;           // +0x17c: overtake-step rating
+    int32_t rating[30] = {};     // brain +0x0: easing currents
+    int32_t rating_tgt[30] = {}; // brain +0x78: easing targets
+    int32_t ease[3] = {0, 0, 0}; // brain +0x12c/+0x130/+0x134
+    int overtake_index = 0;      // brain +0x165
+    int32_t spd_a[5] = {};       // brain +0x1a8 levels (current2 source)
+    int32_t spd_b[5] = {};       // brain +0x1bc levels (current source)
+    int overtake_latched = -1;   // brain +0x180: latched overtake node (riders_ index, -1 null)
+    int32_t reach = 0;           // brain +0x1d4: overtake distance scale
 };
 
 struct Rider {
     Bike bike;
     int route = 0;                          // which branch route (0 = half 0)
     int slot = 0;                           // grid slot 0..7 (0x00464218); 0 is the player
+    int rider_idx = 0;                      // 0x00463c78 row / personality index (0x00405990 param_6)
     size_t sample = 0, previous_sample = 0; // bike +0x140 / +0x13c
     bool ai = false;
+    bool frozen = false;                    // solo oracle: think/move nulled, scanned but never stepped
     AiState brain;
     bool finished = false;
     int32_t finish_tick = -1;
@@ -101,7 +137,9 @@ public:
     // mechanism open, other courses unmeasured (default 0).
     Race(std::vector<RouteSample> route_a, std::vector<RouteSample> route_b,
          const PhysicsTables&, const BikeSpec&, int32_t rider_value, std::vector<Opponent> opponents = {},
-         int level = 0, int32_t road_base_q8 = 0);   // level 0..4 (0x004b8a12)
+         int level = 0, int32_t road_base_q8 = 0,
+         const std::vector<Personality>& personalities = {},
+         const std::vector<uint8_t>& exe_image = {});   // level 0..4 (0x004b8a12)
     void set_terrain_source(std::function<const TerrainSlice&(const RouteSample&)> source) { terrain_source_=std::move(source); }
     // Free traffic steps with the race on the player's route (0x0044b3b0 calls
     // 0x0044dd90 with the per-step camera advance). The random-call
@@ -166,9 +204,31 @@ private:
     void step_crash(Rider&,bool player,uint32_t controls);
     void step_rider(Rider&, uint32_t controls, bool player);
     void ai_think(Rider&);
+    void ai_replan(Rider&);                 // 0x004082f0
+    void ai_transition(Rider&);             // 0x00408ad0
+    void ai_state_racing(Rider&);           // 0x00409000
+    void ai_state_fight(Rider&);            // 0x0040a4f0 (state 5)
+    bool ai_overtake(Rider&);               // 0x00408e40: true when a target was latched
+    int ai_scan_replan(const Rider&, bool forward, int32_t cap) const;  // 0x00408cd0 via 0x00449ce0
+    int ai_scan_overtake(const Rider&, int32_t& gap) const;  // 0x00449e90: nearest closing rider
     int32_t curvature(const Rider&, size_t sample, int samples) const;
-    int32_t ai_speed_limit(const Rider&) const;
+    int32_t ai_curve_limit(const Rider&) const;  // 0x00409020
+    void ai_curve_target(Rider&);       // 0x004090a0: inside of the curve
+    void ai_straight_target(Rider&);    // 0x004091f0
+    void ai_speed_steer(Rider&);        // 0x00409f70: steering + speed control
+    int ai_attack_anim(const Rider&) const;  // 0x00409510: nonzero while attacking
+    bool ai_behind_target(const Rider&) const;  // 0x004092b0
+    bool ai_can_overtake(Rider&);   // 0x004092e0 (consumes rand on reach)
+    bool ai_fight_range(const Rider&) const;  // 0x0040a4a0
     void collide(Rider&, Rider&);
+    // Rider-against-car pass (0x004368f0 pair loop over the scheduler object
+    // list, 0x004049c0 bike side for +0xc4 == 0x10 cars; see
+    // analysis/car-notes.md). Runs at the traced point in Race::step for
+    // every rider, player and AI. Enters crashes with reason 2 (animation
+    // 29) through the crash module and queues the original sound events.
+    void collide_traffic(Rider&);
+    void contact_car(Rider&, TrafficCar&);
+    void crash_car(Rider&);   // 0x00403d60 reason 2 (car contact, animation 29)
     void contact(Rider& self, Rider& other);
     void update_camera();
     void fight(Rider&, uint32_t controls, size_t index);
@@ -187,6 +247,7 @@ private:
     int last_target_ = -1;
     bool demo_hold_ = false;   // DAT_004753c8 (see set_demo_hold)
     int32_t road_base_ = 0;   // absolute Q8 anchor (ctor param)
+    std::vector<uint8_t> personalities_exe_;   // reference image for EXE-resident tables (e.g. 0x00465a10)
     uint32_t seed_ = 1;   // MSVC rand() state (0x00455eb0)
     std::vector<SoundEventRecord> sound_events_;
     void sound(SoundEvent, const Bike&);

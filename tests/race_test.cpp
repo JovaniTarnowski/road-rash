@@ -80,7 +80,7 @@ int main() {
     check(race.camera().height >= 150, "camera height floor");
 
     // AI opponents (0x00407bd0 racing state): follow the road at their target speed.
-    rr::Opponent opp{test_spec(), 90, 100, 0, 1};   // spec, rider value, target speed, lane, grid slot
+    rr::Opponent opp{test_spec(), 90, 100, 100, 0, 1};   // spec, rider value, target speed, cur2, lane, grid slot
     rr::Race field(straight(4000, 3), straight(4000, 3), t, spec, 90, {opp});
     check(field.riders().size() == 2 && field.riders()[1].ai, "opponent added");
     check(field.riders()[1].bike.i32(0x1c) == 0x3200 && field.riders()[1].bike.i32(0x28) == -3616, "opponent on grid slot 1");
@@ -99,7 +99,7 @@ int main() {
 
     // Rider contact (0x004368f0 detection, 0x00436a40 separation): a rider driving straight into
     // a slower one does not pass through it, and the two end up apart.
-    rr::Opponent slow{test_spec(), 90, 40, 0, 1};
+    rr::Opponent slow{test_spec(), 90, 40, 40, 0, 1};
     rr::Race bump(straight(4000), straight(4000), t, spec, 90, {slow});
     bool overlapped_long = false; int overlap_ticks = 0;
     for (int i = 0; i < 1800; ++i) {
@@ -117,7 +117,7 @@ int main() {
     // Combat (0x004096f0 hit, 0x00409c10 reach, 0x00409ad0 damage, 0x004050c0 stamina):
     // punching a rider alongside drains its stamina until it is knocked off.
     // Grid slots 0 and 1 start side by side 78 world units apart (fist reach is 5*0x1000 Q8 = 80).
-    rr::Opponent target{test_spec(), 90, 0, 0, 1};   // target speed 0: it stays on the grid
+    rr::Opponent target{test_spec(), 90, 0, 0, 0, 1};   // target speed 0: it stays on the grid
     rr::Race fight(straight(4000), straight(4000), t, spec, 90, {target});
     const int32_t before = fight.riders()[1].stamina.current;
     for (int i = 0; i < 18; ++i) fight.step(i == 0 ? rr::control_punch : 0);
@@ -129,7 +129,7 @@ int main() {
     }
     check(knocked, "repeated punches knock the rider off");
     // Slot 3 is 234 units away: out of reach.
-    rr::Opponent distant{test_spec(), 90, 0, 0, 3};
+    rr::Opponent distant{test_spec(), 90, 0, 0, 0, 3};
     rr::Race far(straight(4000), straight(4000), t, spec, 90, {distant});
     const int32_t full = far.riders()[1].stamina.current;
     for (int i = 0; i < 18; ++i) far.step(i == 0 ? rr::control_punch : 0);
