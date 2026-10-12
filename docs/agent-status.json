@@ -17,7 +17,7 @@
     {
       "area": "Simulation parity",
       "implementation": "Tick replay and first-divergence diagnostics",
-      "verification": "Known demo mismatch at tick 120; single RNG anchor",
+      "verification": "Known demo mismatch; exact signature in diagnostic receipts; single RNG anchor",
       "remaining": "Actual human-control capture/replay and full parity",
       "evidence": [
         "SIM_SCENARIOS.md",
