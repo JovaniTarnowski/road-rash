@@ -236,18 +236,22 @@ void SoundSystem::update(Race& race) {
     // Plan 13 remainder hook region: pump the registered race sequencer even
     // when the effect channels are off (music has its own channel/mute).
     if (race_music_) ::rr::pump_race_music();
-    if (!racing_) return;
     auto& riders = race.riders();
     Bike& player = riders[0].bike;
+    // 0x00434980 refreshes the player's rpm in both of its branches
+    // (0x00434ce0 or a direct 0x004349c0), so the dashboard needle moves
+    // with or without engine sound; the race tick calls it when there is no
+    // SoundSystem at all.
+    update_engine_rpm(player);
+    if (!racing_) return;
     // Listener: the camera (0x00437c30).
     const int32_t camera_position = int32_t(race.camera_position());
     listener_speed_ = (camera_position - listener_position_) * 0x100;
     listener_lateral_ = race.camera_x();
     tunnel_ = false;   // sub-slice terrain type 3 (0x00434a80): type 2/3 assignment (0x00454240) not ported
-    // 0x004349c0: the engine rpm lives on the bike (+0x2dc), updated by the
-    // sound tick, so the dashboard needle and the engine pitch read the same
-    // field (0x00434ce0/0x00434fd0). The player's rpm is always refreshed.
-    update_engine_rpm(player);
+    // 0x004349c0: the engine rpm lives on the bike (+0x2dc), so the
+    // dashboard needle and the engine pitch read the same field
+    // (0x00434ce0/0x00434fd0); the player's was refreshed above.
     // 0x00434ce0: the player's engine (nitro and tunnel variants replace it).
     if (!engine_off_) {
         int32_t doppler, vol, pan;
