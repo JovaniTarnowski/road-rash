@@ -236,7 +236,12 @@ static void dump_sim_tick(void) {
             rr_log(key, (long long)g_randtrace_callers[i]);
         }
     rr_log("controls", (long long)(uint32_t)RD32(0x004b7ed0));
-    if (g_record) { fprintf(g_record, "%x\n", (uint32_t)RD32(0x004b7ed0)); fflush(g_record); }
+    /* Ring cursors for the +0x5100 offset and zone-density timing check
+     * (plan 24 Task 1 Step 2/5): front 0x004b6e50, back 0x0049f240,
+     * camera 0x004b6e5c. */
+    rr_log("ring.front", (long long)(int32_t)RD32(0x004b6e50));
+    rr_log("ring.back", (long long)(int32_t)RD32(0x0049f240));
+    rr_log("ring.camera", (long long)(int32_t)RD32(0x004b6e5c));
     const uintptr_t player = (uint32_t)RD32(0x004642d8);
     int rider_index = 1, node_index = 0;
     /* Scheduler ring (0x00438170, see disassembly): S = [0x46dcc8],
@@ -393,6 +398,18 @@ static void dump_sim_tick(void) {
                 rr_log(key, sim_field_value(node, 0x1c, 4, 1));
                 snprintf(key, sizeof key, "node.%d.kind", node_index);
                 rr_log(key, sim_field_value(node, 0x73, 1, 0));
+                /* Car pool slots (0x0049e654, 16 x 0x210, template 0x00475698,
+                 * type 0x10): dump rr_sim_car_fields as ring.<addr>.<field>
+                 * (plan 24 Task 1 Step 5). The native replay matches slots by
+                 * kind+position+lateral (see oracle-sim-test car_rows). */
+                if (readable(node + 0xc4, 4) && (uint32_t)*(uint32_t*)(node + 0xc4) == 0x10) {
+                    for (unsigned f = 0; f < RR_SIM_CAR_FIELD_COUNT; ++f) {
+                        if (rr_sim_car_fields[f].offset == 0xffffffffu) continue;   // active: ring membership implies live
+                        snprintf(key, sizeof key, "ring.%x.%s", node, rr_sim_car_fields[f].name);
+                        rr_log(key, sim_field_value(node, rr_sim_car_fields[f].offset,
+                               rr_sim_car_fields[f].width, rr_sim_car_fields[f].is_signed));
+                    }
+                }
                 ++node_index;
             }
             node = (uint32_t)*(uint32_t*)(node + 4);

@@ -190,6 +190,53 @@ int compare_fields(const std::map<std::string, int64_t>& golden,
             }
             continue;
         }
+        // Car pool slots have no stable index across implementations: match
+        // a native car row to the golden ring node with equal
+        // kind+position+lateral, then compare the remaining field there.
+        // Unmatched cars (or ambiguous matches) stay uncovered, reported
+        // per frame, never skipped-green.
+        if (prefix.rfind("car.", 0) == 0 && (suffix == "vehicle" || suffix == "lane" ||
+            suffix == "speed" || suffix == "phase")) {
+            auto car_field = [&](const std::string& addr, const char* field) -> const int64_t* {
+                auto jt = golden.find("ring." + addr + "." + field);
+                return jt == golden.end() ? nullptr : &jt->second;
+            };
+            int64_t kind = -1, position = 0, lateral = 0;
+            {
+                auto jk = golden.find(prefix + "kind");
+                auto jp = golden.find(prefix + "position");
+                auto jl = golden.find(prefix + "lateral");
+                if (jk == golden.end() || jp == golden.end() || jl == golden.end()) {
+                    ++uncovered;
+                    continue;
+                }
+                kind = jk->second; position = jp->second; lateral = jl->second;
+            }
+            std::string match_addr;
+            for (const auto& kv : golden) {
+                if (kv.first.rfind("ring.", 0) != 0) continue;
+                const size_t dot = kv.first.find('.', 5);
+                if (dot == std::string::npos) continue;
+                const std::string addr = kv.first.substr(5, dot - 5);
+                auto k = car_field(addr, "kind"), p = car_field(addr, "position"), l = car_field(addr, "lateral");
+                if (k && p && l && *k == kind && *p == position && *l == lateral) {
+                    if (!match_addr.empty()) { match_addr.clear(); break; }   // ambiguous
+                    match_addr = addr;
+                }
+            }
+            auto want = match_addr.empty() ? nullptr : car_field(match_addr, suffix.c_str());
+            if (!want) { ++uncovered; continue; }
+            if (*want != f.value) {
+                std::cout << "first divergence at frame " << frame << " (tick " << tick
+                          << "): " << f.name << " original " << *want << " native " << f.value
+                          << " (via ring." << match_addr << "." << suffix << ")\n";
+                std::cout << "rng history (last " << rng_history.size() << " ticks, golden vs native):";
+                for (const auto& e : rng_history) std::cout << " (" << e.first << "," << e.second << ")";
+                std::cout << '\n';
+                return 1;
+            }
+            continue;
+        }
         std::string key;
         const char* mapped = golden_key_for(prefix, suffix, golden, key);
         // Era-coverage carve-out: car.* rows only exist when the proxy
