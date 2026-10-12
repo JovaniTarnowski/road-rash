@@ -92,11 +92,42 @@ brain copy's previous use. Later the native AI enters state 4 (not
 dispatched natively) while the original stays in 1 and enters state 5
 against the frozen bike at 13312 at tick 183 (target x 43264).
 
+Further findings (no code kept; plan 10 Task 6 inputs):
+
+- Frame-0 brain words are not all stale. `+0x180` is the frozen bike at
+  13056 (node 30) latched by `0x00408e40` in the first countdown tick;
+  `+0x198` = 13056 + 0x3c0 and `+0x194` = 43008 - 0x8000 are its target
+  writes. `+0x1a0` = 70 and `+0x1a4` = 108 do not come from personality row
+  0 (zero there) and look like the global brain copy's previous use.
+- Dispatch table `0x00465980`: 0 no-op `0x00408e30`; 1 `0x00409000`; 2
+  `0x004092d0` = thunk to `0x00409000`; 3 `0x00409460` (two rand draws,
+  `0x004095d0` attack start); 4 `0x00409ca0` (follow target, speed through
+  `0x00449a80`); 5 `0x0040a4f0`; 6 `0x0040a560`. Native runs fight for 5
+  and racing for every other state. The capture visits 1, 2, 5, 4.
+- `0x00408ad0` step 2 checks independently: self lane valid and
+  `0x004092e0` -> 3; else target lane valid and `0x0040a4a0` -> 5; else 1.
+  Native nests both lane checks. `0x00408df0` resets `+0x164` and the
+  per-state timer `+0x138 + 4*state` on change (native keeps no timers).
+- Native `ai_overtake` is a stub (never writes targets). The original
+  `0x00449e90` walks objects ahead in position order (`0x00449ce0`, mask
+  0x3f: bikes, halves, pedestrians, cars, window 0x960) and stops at the
+  first one outside the lateral window; native sorts riders by lateral.
+- Frozen field geometry (frame-0 node dump): halves sit on the grid words,
+  bikes do not. Bike lateral = grid word + (position - 0x2b00) for samples
+  50..54 and 57 (player 1792 = its `road_base`, 13056 -> +2048, 13312 ->
+  +2304, ...); 55, 56 and later rows carry an extra lane (+64000) or other
+  shifts. The placement field `*(slot+0x14)+0xcc` in `0x00405990` is not
+  yet traced. Until it is, a replay must seed frozen bike/half laterals from
+  the dump.
+
 Next actions (plan 10 Task 6 / plan 11 Task 5 scope):
-1. seed the demo brain from the golden's frame-0 brain window and run
-   native countdown AI ticks (think, no movement, no draws) for the hold
-   frames;
-2. port the state handlers `0x004092d0` (2), `0x00409460` (3), `0x00409ca0`
+1. trace the `0x00405990` placement field; meanwhile seed frozen bike and
+   half laterals and the demo brain from the frame-0 dump, then run native
+   countdown ticks (AI think and contact pass, no movement, no draws) for
+   the hold frames;
+2. port `0x00408e40`/`0x00449e90` over all scheduler objects (needs a
+   separate half lateral per rider), fix `0x00408ad0` step 2, then the
+   state handlers `0x004092d0` (2), `0x00409460` (3), `0x00409ca0`
    (4), `0x0040a560` (6) and drop the native-only "idle" fallback in
    `ai_state_racing`;
 3. re-run `RR_SIM_CONTINUE=1 RR_SIM_TRACE=rider.0. oracle-sim-test
