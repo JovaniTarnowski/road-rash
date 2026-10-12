@@ -117,3 +117,14 @@ menu timing, and a system-wide fd spike ("Too many open files") killed
 one capture instantly. Before the next Step-5 attempt: verify no live
 session owns the prefix processes, kill orphans, and re-check fd counts.
 Left untouched this turn for lack of ownership proof.
+
+## Pipeline outage (October 12, 2026): no scenario reaches green light
+
+`napa-cars-smoke` (default course, drive 2, SIM=1, FRAMES=300, 600 s)
+also faulted with Wine exit 124 / rejected — the same signature as the
+two CITY attempts. A live game process has sat with a 133-byte trace
+(no sim dumps) for 40+ minutes. Napa captures worked at 07:52; nothing
+has succeeded since ~08:00. The oracle pipeline is unusable right now
+(menu bootstrap or prefix/wineserver state). Step-5 and Task 2/3
+captures wait on pipeline recovery, not on new proxy code (car/ring
+dumps are committed and the DLL is installed).
