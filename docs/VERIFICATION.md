@@ -512,3 +512,45 @@ Police configuration gate: `build/police-test` compares imported pursuit/relatio
   (or fixed `0x0049bce8` in mode 3); `0x00449da0` = nearest ring node by slice
   on each side. Full `0x004082f0` body recovered (replan easing of the 10-entry
   brain table, neighbour pick, overtake-step rating, speed cases).
+
+## Napa playtest fixes: launch paths and tachometer (October 11, 2026, plan 11a)
+
+- **Task 4 (one game, every launch path):**
+  - `tools/verify_macos_app.py` now reads `RRBuildCommit` from the app plist
+    and fails when it differs from `git rev-parse --short HEAD`. Run against
+    the stale October 10 bundle: failed with
+    `App build commit None != HEAD '5e40cc5'`.
+  - `tools/build_macos_app.sh` stamps `RRBuildCommit` into the built plist and
+    re-signs. Full standalone rebuild passed:
+    `PASS: ARM64, 22 system libraries/frameworks, valid ad-hoc signature, no
+    game data, built from 5e40cc5`.
+  - Renamed the research-viewer target `rr-native` → `rr-viewer` (CMake target,
+    `src/viewer.cpp` usage string, `tools/ci.sh`, README, RUN_NATIVE, PROGRESS
+    tool table, plans 00/01/04/08/15, VERIFICATION). `run-macos.sh` now builds
+    and launches `rr-game` (passing `--assets` when the disc is mounted, else
+    first-run import); new `run-viewer.sh` launches the viewer. `tools/ci.sh`
+    fails a stale `build-release` bundle unless `RR_STANDALONE_APP=1` rebuilds it.
+  - `build/rr-viewer --assets ../cdrom/ROADRASH --smoke` passes; `rr-game`
+    links.
+- **Task 2 (tachometer), rpm part:**
+  - `update_engine_rpm(Bike&)` (literal port of `0x004349c0`) added to
+    `bike.cpp`; `SoundSystem::update` now takes `Race&`, calls it for the
+    player and the two nearest opponents, and reads `+0x2dc` for the engine
+    pitch. The private `rpm_`/`rpm_speed_` state is deleted.
+  - `bike_test` drives the port over ten synthetic cases (stationary,
+    acceleration, gear change at constant speed, airborne ± cap, crashed
+    above/below the 0x2001 boundary, unchanged-speed cache, ±0x2000 rate
+    limits); `hud_test` asserts `Hud::state(...).rpm_angle` follows `+0x2dc`.
+  - Native CTest: **62/62 pass**.
+  - The distance readout is traced (see REVERSE_ENGINEERING.md "Dashboard
+    distance readout") but not ported: it needs `0x00407410`'s cumulative
+    distance in feet and oracle calibration.
+
+## Scan-filter correction (October 12, 2026)
+
+- `0x00449ce0`'s `piVar3[0x31]` is word index `0x31` = byte `+0xC4` (node type),
+  not byte `+0x31`. The replan/overtake scans walk rider-half nodes whose type
+  8 always passes the `& 8` filter; slice `+0x36` reads 7 on every Napa node
+  (`sim-kink-probe8.tsv`, all 15 bikes). A dumped `flags31` byte-`+0x31` field
+  turned out to be the previous-position sample byte and was removed again;
+  `slice36` stays as the documented constant. No port code reads either.

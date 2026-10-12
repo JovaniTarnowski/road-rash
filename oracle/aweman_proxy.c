@@ -274,6 +274,13 @@ static void dump_sim_tick(void) {
                 rr_log(key, sim_field_value(node, 0x2fc, 4, 0));
                 snprintf(key, sizeof key, "nodeaddr.%d.net", addr_index);
                 rr_log(key, sim_field_value(node, 0x324, 4, 1));
+                {   /* Slice road-half byte (+0x36): the 0x00449ce0 scan requires
+                 * (slice36 & own36 & 3); Napa reads 7 on every node. */
+                    const uintptr_t slice = (uint32_t)sim_field_value(node, 0x140, 4, 0);
+                    snprintf(key, sizeof key, "nodeaddr.%d.slice36", addr_index);
+                    rr_log(key, (slice && readable(slice + 0x36, 1)) ?
+                        sim_field_value(slice, 0x36, 1, 0) : -1);
+                }
                 ++addr_index;
             }
             int slot = -1;
