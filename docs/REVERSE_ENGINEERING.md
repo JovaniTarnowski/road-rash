@@ -763,8 +763,10 @@ Correction to the section above: layout entry 30 prints `DAT_0049e115`, the rout
 - `0x0044dd00`: a negative value sets cruise `DAT_004b7e8c = −d` and rate `DAT_004b7e84 = DAT_004b7ea4 = −d·100`. Otherwise density is d (0 → 6, ×4 in multiplayer), both reloads become `(rate·d·60) >> 8`, and the oncoming timer restarts. Behind/ahead timers are untouched.
 - Race start order (`0x0044b250`): `0x0044db80` (density 6), then `0x004552e0` with ring camera 0x3200, which builds slices back to front from 0x200 for 0x8000 with the forward traversal, so zones in the first window apply at the grid. The view camera starts at 0x3100 and `0x0044b3b0` moves both by the same delta, so the ring front is view camera + 0x5100.
 - `0x0041eca0` (types 1–3 only) places an intersection controller (pool `0x00468ee4`, 10 × 0x114, template `0x00468f10`, type 0x400, think `0x0041f040`) with up to four signals (`0x0041ef60`, pool `0x00468ee0`, 40 × 0x108, template `0x00468f30`, type 0x40, draw `0x0041f220`). Phase durations are {600, 180, 780}, or {75, 0, 240} for a type-2 slice with flag byte +11 = 0.
-- `0x0041f040` cycles each signal's `+0xf0` phase 0..2. In phase 0 with tick bit 3 set, it spawns a crossing car through `0x0044df60` (kind 1 or 3, lateral speed ∓0x78000) after one `rand()`.
-- Not ported; see plan 24 Task 1.
+- Signal slots `+0xec/+0xf0/+0xf4/+0xf8` take indices 0/2/3/1 with laterals 0x50/0xb0/0x50/0xb0; phase inits `(~index & 1) * 2`, accumulators seed `0x30c`. A failed slot skips every later slot (NULL-`goto`; the `+0xf8` call is unchecked). Full trace in `analysis/intersections-notes.md`.
+- `0x0041f040` advances every accumulator by the controller `+0x18` tick, then wraps phases 0..2 inside `[back+0x100, front-0x200]` with multi-phase catch-up. Crossing spawn iff the wrap lands on 0 with an odd signal index and tick bit 3 set: kind 1 (`-0x78000`) or 3 (`+0x78000`) by `+0x110`, lane `rand()` over `+0x111`, one `rand()` call. Crossing cars collide with riders identically to traffic (`0x004046b0` `& 0x15` branch, type `0x10`).
+- `0x0041f220` is dead: `DAT_00468ee8`/`ef0` have no writer anywhere in the executable (REA xrefs show only the draw's own reads), so the head/lamp draws are always skipped. The port draws no signals.
+- Ported October 12 (`src/traffic.*`, plan 24 Task 1 Steps 3–4); capture acceptance (Step 5) open.
 
 ### Actor census (October 12, 2026, static)
 
