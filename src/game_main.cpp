@@ -197,6 +197,8 @@ struct Game {
             for (const auto& e : race->take_sound_events()) sound->post(e);
             if (traffic) for (const auto& e : traffic->take_sound_events()) sound->post(e);
             sound->update(*race);
+        } else {
+            rr::update_engine_rpm(race->riders()[0].bike);   // 0x00434980 without sound
         }
     }
 };
@@ -392,9 +394,7 @@ struct CourseCanvas {
     ~CourseCanvas(){clear();}
     void clear(){SDL_DestroyTexture(texture);texture=nullptr;SDL_DestroyTexture(dashboard);dashboard=nullptr;}
     void draw_dashboard(SDL_Renderer* renderer,const Game& game) {
-        const int target=game.race->last_target();
-        const auto image=game.hud->compose(game.hud->state(*game.race,game.player_name,
-            target>0 && size_t(target)<game.rider_names.size()?game.rider_names[size_t(target)]:std::string()),game.physics);
+        const auto image=game.hud->compose(game.hud->state(*game.race,game.player_name,game.rider_names),game.physics);
         for(size_t i=0;i<image.pixels.size();++i){const uint32_t c=image.pixels[i];rgba[4*i]=uint8_t(c>>16);rgba[4*i+1]=uint8_t(c>>8);rgba[4*i+2]=uint8_t(c);rgba[4*i+3]=c==0x01000000?0:255;}
         if(!dashboard) {
             dashboard=SDL_CreateTexture(renderer,SDL_PIXELFORMAT_RGBA32,SDL_TEXTUREACCESS_STREAMING,640,480);
@@ -1106,6 +1106,18 @@ int main(int argc, char** argv) {
             g.level = level;
             g.load_course(assets,exe);
             g.opponents = rr::original_opponents(exe, g.specs, level, opponents);
+            // Dashboard target names: personality +0x165 -> 0x00464188 ->
+            // string slot (0x00437860), as the career path resolves them.
+            {
+                const auto strings = rr::frontend_strings(rr::read_string_resources(assets.read(rr::language_dll(rr::default_language()))));
+                const auto name_table = rr::read_exe_data(exe, 0x00464188, 9 * 4);
+                g.rider_names.assign(1, g.player_name);
+                for (const auto& o : g.opponents) {
+                    const int p = o.rider;
+                    const uint32_t slot = p >= 0 && p < 9 ? uint32_t(name_table[size_t(p) * 4]) | uint32_t(name_table[size_t(p) * 4 + 1]) << 8 : 0;
+                    g.rider_names.push_back(slot && slot < strings.size() ? strings[slot] : std::string());
+                }
+            }
             g.restart();
             if (run_ticks >= 0) {   // headless-style verification run
                 const bool hunt = into_traffic;

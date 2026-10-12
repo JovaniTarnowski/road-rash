@@ -15,7 +15,10 @@ public:
     void pause(bool value);
     bool finished() const { return finished_; }
     void skip();
+    // Fills the whole render output (not the 640x480 logical frame), keeping
+    // the clip's aspect ratio; the logical presentation is restored afterwards.
     void draw(SDL_Renderer*);
+    static SDL_FRect fit(int width,int height,int output_width,int output_height);
     void reset_texture() { SDL_DestroyTexture(texture_);texture_=nullptr; }
     size_t frame() const { return shown_; }
     const std::vector<uint8_t>& rgb24() const { return decoder_->rgb24(); }

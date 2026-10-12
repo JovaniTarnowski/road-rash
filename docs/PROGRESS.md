@@ -50,6 +50,16 @@ Detailed evidence is in [REVERSE_ENGINEERING.md](REVERSE_ENGINEERING.md) and tes
 
 ## Timeline
 
+### October 12, 2026: playtest fixes (other courses, opponent HUD, meters, traffic density)
+
+- **HIWAY and CANYN crashed at the grid** (`vector` out of range). Building heights read the depth table at `depth+256` and `depth+shoulder`. At slice 32 (depth up to 8448) that is index 4352, one past the table. The original reads the two zero words after `0x0046f098`'s 4352 entries there, so the scale is 0. `depth_scale` in `course_scene.cpp` does the same and throws beyond the padding. `course_scene-test` now builds every route sample of all five courses at fractions 0 and 255 (it was Napa at fraction 127 only, which never reaches the padding).
+- **Dashboard opponent.** `nearest_opponent` ports `0x00438550`: the nearest behind wins only if it is less than half the nearest ahead. `Hud::state` names that rider and meters their stamina (`0x00446b80`). It replaces "last rider the player hit". The dashboard draws the gap at layout entry 10 as `%d.%03d` miles (or km) and colours it red/green for ahead/behind (`0x00446c30`). The ahead/behind glyph is Wingdings 0xe9/0xea in the original. Wingdings is not on the disc, so a native arrow stands in for it (labelled in `hud.hpp`). Quick races (`--course`) now resolve opponent names too.
+- **Tachometer.** `0x00434980` refreshes the player's rpm in both of its branches. The port only did so inside `SoundSystem::update` once a race had started, and quick races have no sound system, so the needle stayed at 0x2000. Now the rpm is always refreshed, and the race tick calls `update_engine_rpm` when there is no sound system.
+- **Traffic density.** CESR events of types 1–3 (and other types except 4, 5 and 7) call `0x0041ec70` when their end sample enters the ring front. That applies `0x0044dd00(byte +10)`: a positive value sets the density, so the reloads scale with it; 0 restores 6; a negative value sets the rate and the cruise scale `DAT_004b7e8c`. The initial ring fill applies zones in the first 128 slices after `0x0044db80`'s default. `PathSample::zone_end`, `traffic_set_density` and `TrafficSystem::build_slice` port this. Napa at 0x60/tick: 123 spawns instead of 733. The ring front moves from view camera + 0x5000 to + 0x5100 (ring camera starts at 0x3200 against the view camera's 0x3100). This is a static trace, not capture-checked.
+- **Plans.** [Plan 24](plans/24-road-hazards-police-crash-control.md) covers traffic lights and crossing traffic (`0x0041eca0`/`0x0041f040`, not ported), live police, the run-back under player control and an evidence gate for pedestrians/oil slicks. No such actor was found statically. The port's auto-walk with no keys held matches `0x0040a600`.
+- Remaining gaps: intersections and crossing cars; the `0x00407410` route-walk form of `+0x1f8` on split routes (the port uses finish − position, which is exact once the finish is known); the Wingdings glyph; ring-offset capture check.
+
+
 ### October 12, 2026: original start-grid ordering recovered with REA
 
 Used pinned `npx rea-agents@6.4.0` on the hash-verified disc EXE to check

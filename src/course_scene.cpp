@@ -2,6 +2,7 @@
 #include "exe_tables.hpp"
 #include "terrain_ground.hpp"
 #include <algorithm>
+#include <cctype>
 #include <cstring>
 #include <set>
 
@@ -9,12 +10,39 @@ namespace rr {
 namespace {
 int32_t bits(uint32_t v){int32_t r;std::memcpy(&r,&v,4);return r;}
 int32_t wrap(int64_t v){return bits(uint32_t(v));}
+// Building heights read the depth table at depth+256 (0x00454240 forward
+// height) and depth+shoulder; at the farthest slice (depth up to 8448) that
+// reaches index 4352, one past the 4352 positive entries at 0x0046f098. The
+// original reads the two zero words that follow (0x004734a0 holds other
+// data), so those indexes scale to 0. Napa never has a building at slice 32;
+// HIWAY and CANYN do, and an .at() there aborted the race.
+int32_t depth_scale(const DepthTable& depths,int32_t depth) {
+    if(depth<0)throw std::runtime_error("Building depth out of range");
+    const size_t index=size_t(depth&~1)/2;
+    if(index<depths.scale.size())return depths.scale[index];
+    if(index<depths.scale.size()+2)return 0;
+    throw std::runtime_error("Building depth out of range");
+}
+// 0x00416310: the high-resolution horizon is Images/Horizons/<name>, the name
+// read through the pointer table 0x00467aa0 indexed by course number
+// (City, Sierra, Penin, Napa, PCH). Course data files use other names
+// (HIWAY.CRS is Sierra), so the horizon cannot reuse the .CRS name.
+std::string horizon_name(const std::vector<uint8_t>& exe,const std::string& course) {
+    static const char* const files[5]={"CITY","HIWAY","MEDLY","NAPA","CANYN"};   // 0x0046df58
+    const auto it=std::find(std::begin(files),std::end(files),course);
+    if(it==std::end(files))return course;
+    const auto table=read_exe_data(exe,0x00467aa0+uint32_t(it-std::begin(files))*4,4);
+    uint32_t address=0;for(int b=0;b<4;++b)address|=uint32_t(table[size_t(b)])<<(b*8);
+    std::string name;
+    for(const uint8_t c:read_exe_data(exe,address,16)){if(!c)break;name.push_back(char(std::toupper(c)));}
+    return name;
+}
 }
 CourseScene::CourseScene(const Assets& assets,const std::vector<uint8_t>& exe,
     const Course& course,const std::string& name,uint32_t seed,int level)
     :roads_(read_road_materials(exe,assets.read("DATA/GLOBAL.RSC"))),
      logarithms_(read_exe_data(exe,0x00476af8,256)),
-     horizon_(assets.read("IMAGES/HORIZONS/"+name+".BOB")) {
+     horizon_(assets.read("IMAGES/HORIZONS/"+horizon_name(exe,name)+".BOB")) {
     if(horizon_.size()!=720*320)throw std::runtime_error("Invalid course horizon");
     const auto joins=read_exe_data(exe,0x004688e0,128);
     for(int i=0;i<16;++i) {auto word=[&](int p){uint32_t v=0;for(int b=0;b<4;++b)v|=uint32_t(joins[p+b])<<(b*8);return bits(v);};joins_[i]={word(i*8),word(i*8+4)};}
@@ -122,10 +150,10 @@ std::vector<DrawNode> CourseScene::draw_nodes(const std::vector<RouteSample>& ro
                     auto& building=road.building[side];building.shoulder=h.projected[0];building.type=0;
                     building.selector=road.terrain->selectors[side];building.marking_flags=road.path->marking_flags;
                     const int32_t shoulder_width=side?road.path->shoulder_right:road.path->shoulder_left;
-                    const int32_t ns=(building.marking_flags&16)?depths.scale.at(size_t((slice.depth+shoulder_width)&~1)/2):slice.scale;
+                    const int32_t ns=(building.marking_flags&16)?depth_scale(depths,slice.depth+shoulder_width):slice.scale;
                     const int32_t fd=slice.depth+256-((building.marking_flags&8)?shoulder_width:0);
                     building.height=wrap(int64_t(road.terrain->building_height[side])*ns);
-                    building.forward_height=wrap(int64_t(road.terrain->building_height[side])*depths.scale.at(size_t(fd&~1)/2));
+                    building.forward_height=wrap(int64_t(road.terrain->building_height[side])*depth_scale(depths,fd));
                     building.roof_offset=(side?1:-1)*(building.height/2);
                     building.forward_roof_offset=(side?1:-1)*(building.forward_height/2);
                     building.cut_roof=road.terrain->building_cut_roof[side];
@@ -145,8 +173,7 @@ std::vector<DrawNode> CourseScene::draw_nodes(const std::vector<RouteSample>& ro
             const int32_t width=side?near.path->shoulder_right:near.path->shoulder_left;
             const int32_t fraction=(near.path->marking_flags&8)?256-width:width;
             const int32_t depth=slices[n].depth+fraction;
-            if(depth<0 || size_t((depth&~1)/2)>=depths.scale.size())throw std::runtime_error("Building transition depth out of range");
-            const int32_t scale=depths.scale[size_t((depth&~1)/2)];
+            const int32_t scale=depth_scale(depths,depth);
             const int32_t nx=near.hill[side].world[0].x,fx=far.hill[side].world[0].x;
             const int32_t ny=near.hill[side].world[0].y+(side?near.path->height_right:near.path->height_left),fy=far.hill[side].world[0].y+(side?far.path->height_right:far.path->height_left);
             const int32_t x=nx+(wrap(int64_t(fx-nx)*fraction)>>8);
@@ -156,8 +183,15 @@ std::vector<DrawNode> CourseScene::draw_nodes(const std::vector<RouteSample>& ro
     }
     std::vector<DrawNode> result;
     auto append=[&](const std::vector<DrawNode>& nodes){result.insert(result.end(),nodes.begin(),nodes.end());};
+    // Native ordering (not yet an original-golden match): actors in the front
+    // half of a sample (+0x1c low byte < 0x80) are emitted after the road
+    // surface of the next nearer pair. A rider standing on a sample's near
+    // edge (start grid: low byte 0) reaches below that edge, and the nearer
+    // road strip drawn afterwards otherwise cut its tyres along a scanline.
+    std::vector<DrawNode> front;
     for(size_t n=slices.size();n-->1;) {
         const auto& near=slices[n-1];const auto& far=slices[n];const int count=std::min(near.count,far.count);
+        std::vector<DrawNode> pending;pending.swap(front);
         for(int i=0;i<count;++i) {
             const int r=count==2?(i==0?1-near.own:near.own):0;
             const auto& a=far.road[r];const auto& b=near.road[r];const auto& road=roads[n-1][r];const auto& old=roads[n][r];
@@ -175,6 +209,7 @@ std::vector<DrawNode> CourseScene::draw_nodes(const std::vector<RouteSample>& ro
                 MarkedGroundInput ground{{wrap(near.screen_x(r,side?b.right:b.left)),b.screen_y},{wrap(far.screen_x(r,side?a.right:a.left)),a.screen_y},near.scale,far.scale,320,uint8_t(side),path.marking_flags,road.terrain->type==0?8:16};
                 append(marked_ground_nodes(ground,[&](uint8_t index){return index==3?&*roads_.entries[0].texture:&*roads_.terrain.at(index).texture;}));
             }
+            if(i==count-1){append(pending);pending.clear();}
             if(!(path.marking_flags&32) && road.terrain->type==4)for(int side=0;side<2;++side) {
                 if(visible) {
                     ShoulderPanelInput shoulder;shoulder.near_depth=near.depth;shoulder.has_lanes=panels.left_lane_count+panels.right_lane_count!=0;shoulder.strip.side=uint8_t(side);shoulder.strip.far_depth=far.depth;
@@ -203,9 +238,11 @@ std::vector<DrawNode> CourseScene::draw_nodes(const std::vector<RouteSample>& ro
                 auto draw=scenery_node(*frame,object,(a.road_x+b.road_x)/2+camera.x,(a.world_y+b.world_y)/2,ground,near.depth,camera,depths);
                 if(draw.view_points[0].y<road.ceiling)result.push_back(draw);
             }
-            if(actors)append(actors(near,far,r,road.ceiling,false));
+            if(actors){const auto nodes=actors(near,far,r,road.ceiling,false);front.insert(front.end(),nodes.begin(),nodes.end());}
         }
+        append(pending);
     }
+    append(front);
     return result;
 }
 }

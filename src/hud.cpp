@@ -55,8 +55,38 @@ int Hud::meter_level(int current,int base) {
     if(base<=1)return 31;
     return std::clamp(int(((int64_t(current)*2-2)*15)/(base-1)+1),0,31);
 }
-HudState Hud::state(const Race& race,const std::string& player,const std::string& target) const {
-    HudState s;s.player=player;s.target=target;s.place=race.place(0);
+NearestOpponent nearest_opponent(const Race& race) {
+    const auto& riders=race.riders();
+    // +0x1f8 (0x00407410): finish DAT_004b6e58 minus +0x1c once the finish
+    // is known; without one (synthetic routes) the walk runs to the route end.
+    auto remaining=[&](const Rider& r) {
+        const int64_t finish=race.finish_q8()?race.finish_q8():int64_t(race.route_of(r).size())*256;
+        return int32_t(uint32_t(finish-int64_t(r.bike.i32(0x1c))));
+    };
+    if(riders.empty())return {};
+    const int32_t player=remaining(riders[0]);
+    int behind_rider=-1,ahead_rider=-1;
+    int32_t behind=0x20000000,ahead=0x20000000;
+    for(size_t i=1;i<riders.size();++i) {
+        const int32_t d=int32_t(uint32_t(player)-uint32_t(remaining(riders[i])));
+        if(d<0){if(-d<behind){behind_rider=int(i);behind=-d;}}
+        else if(d<ahead){ahead_rider=int(i);ahead=d;}
+    }
+    if(behind*2<ahead)return {behind_rider,behind};
+    return {ahead_rider,-ahead};
+}
+void Hud::draw_gap_arrow(RgbImage& out,int left,int top,bool up,uint32_t color) {
+    // Native stand-in for the 18-pixel Wingdings 0xe9/0xea glyphs: an
+    // 11-wide, 6-row head over a 5-wide, 6-row shaft, inside the cell.
+    for(int row=0;row<12;++row) {
+        const int r=up?row:11-row;          // r: distance from the tip
+        const int half=r<6?r:2;
+        for(int x=5-half;x<=5+half;++x)
+            if(out.contains(left+3+x,top+3+row))out.at(left+3+x,top+3+row)=color;
+    }
+}
+HudState Hud::state(const Race& race,const std::string& player,const std::vector<std::string>& rider_names) const {
+    HudState s;s.player=player;s.place=race.place(0);
     const auto& b=race.bike();const uint32_t velocity=uint32_t(b.i32(0xec));
     const uint32_t sum=uint32_t(int32_t(velocity&0xfffff001u)>>1)+(velocity&0xffffff80u)*16+(velocity&0xfffffe00u)*4;
     int32_t signed_sum;std::memcpy(&signed_sum,&sum,4);
@@ -71,7 +101,15 @@ HudState Hud::state(const Race& race,const std::string& player,const std::string
     s.distance=int(uint8_t(s.distance));
     s.stamina=meter_level(race.riders()[0].stamina.current,race.riders()[0].stamina.base);
     s.condition=meter_level(b.i32(0x2f0),b.i32(0x2ec));
-    if(race.last_target()>0){const auto& rider=race.riders().at(size_t(race.last_target()));s.target_stamina=meter_level(rider.stamina.current,rider.stamina.base);}
+    // 0x00446b80: name (0x00446bf0) and stamina meter of the 0x00438550
+    // target; both clear without one. +0x3c current, +0x34 base.
+    const auto nearest=nearest_opponent(race);
+    if(nearest.rider>0) {
+        const auto& rider=race.riders().at(size_t(nearest.rider));
+        if(size_t(nearest.rider)<rider_names.size())s.target=rider_names[size_t(nearest.rider)];
+        s.target_stamina=meter_level(rider.stamina.current,rider.stamina.base);
+        s.target_gap=nearest.gap;
+    }
     return s;
 }
 RgbImage Hud::compose(const HudState& state,const PhysicsTables& physics,DashMode mode) const {
@@ -136,7 +174,25 @@ RgbImage Hud::compose(const HudState& state,const PhysicsTables& physics,DashMod
     };
     label(state.player,0,0xffff00);label(std::to_string(state.place),25,0xffffff);
     char distance[32];std::snprintf(distance,sizeof distance,"%02d.%d",state.distance/10,state.distance%10);label(distance,30,0xffffff);
-    if(!state.target.empty())label(state.target,5,0xffffff);
+    if(!state.target.empty()) {
+        label(state.target,5,0xffffff);
+        // 0x00446c30 with a target: gap at layout entry 10 as "%d%c%03d" of
+        // (|gap|*1000 >> 4) / (metric ? 3279 : 5280), i.e. miles or km to
+        // three places (one sample is 16 feet). Opponent ahead (gap <= 0):
+        // COLORREF 0x10e7 and Wingdings 0xe9; behind: 0x1ca328 and 0xea.
+        // The arrow rect is entry 11 offset by (-12, +11/+9) in high
+        // resolution, drawn through 0x00447b20 (black, then white at -2,-2).
+        const uint32_t magnitude=state.target_gap<0?0u-uint32_t(state.target_gap):uint32_t(state.target_gap);
+        const int32_t scaled=int32_t(magnitude*1000u);
+        const int64_t wide=int64_t(uint64_t(uint32_t(scaled>>31))<<32 | uint32_t(scaled>>4));
+        const int32_t value=int32_t(wide/(metric_?3279:5280));
+        char gap[32];std::snprintf(gap,sizeof gap,"%d.%03d",value/1000,value%1000);
+        const bool ahead=state.target_gap<1;
+        label(gap,10,ahead?0xe71000:0x28a31c);
+        const int ax=int((layout[11]-12)*scale),ay=int((layout[12]+(ahead?9:11))*scale);
+        draw_gap_arrow(image,ax,ay,ahead,0);
+        draw_gap_arrow(image,ax-2,ay-2,ahead,0xffffff);
+    }
     return image;
 }
 }

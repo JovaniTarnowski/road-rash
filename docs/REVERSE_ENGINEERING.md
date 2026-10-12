@@ -744,6 +744,44 @@ Porting this needs `0x00407410`'s cumulative-distance walk (the native tracks
 confirm the calibration; the readout is not yet ported. The sign (ahead/behind)
 also drives a separate indicator colour/string (`0x00446c30`), not yet ported.
 
+### Dashboard opponent target (October 12, 2026)
+
+Correction to the section above: layout entry 30 prints `DAT_0049e115`, the route distance from bike `+0x44` (a per-frame copy of `+0x1c` made by `0x00438450`). `DAT_004b8a34` is a different value, the opponent gap.
+- `0x00438550` (called from `0x00438450` every frame) scans the 15 opponent slots `DAT_004c7f74..` (slot 14 = `DAT_004642dc`). It computes `d = player.+0x1f8 − opponent.+0x1f8`, where `+0x1f8` is the Q8 distance still to the finish (`0x00407410`: `DAT_004b6e58 − +0x1c` once the finish is known, otherwise node lengths ·0x100 walked to the end).
+- The nearest behind (`d < 0`) becomes the target only when twice its distance is less than the nearest ahead. Otherwise the nearest ahead is the target and `DAT_004b8a34` is negated. With no target, `DAT_004b8a30 = 0`.
+- `0x00446b80` copies the name (`0x00446bf0`: personality string for offline riders) into `DAT_0049e0e0` and the stamina meter `((+0x3c·2−2)·15)/(+0x34−1)+1` into `DAT_0049e119`.
+- `0x00446c30` draws the name at entry 5 and the gap at entry 10 as `%d%c%03d` of `(|gap|·1000 >> 4)/(metric ? 3279 : 5280)` (one sample is 16 feet). Colours are COLORREF `0x10e7` when the target is ahead (gap ≤ 0) and `0x1ca328` when behind.
+- The arrow is Wingdings (`0x00442990`: height 12 low / 18 high) glyph 0xe9 (ahead) or 0xea (behind), in entry 11's rect offset by (−12, +11/+9) in high resolution, drawn through `0x00447b20`.
+
+### Depth table padding (October 12, 2026)
+
+`0x0046f098` holds 4352 positive entries followed by two zero words (`0x004734a0` holds other data). Building forward heights (`0x00454240`) index `depth+256` and `depth+shoulder`, which reach entry 4352 at slice 32. The original reads the zero there, giving scale 0.
+
+### Traffic zones and intersections (October 12, 2026)
+
+- `0x00454240`'s third argument is the traversal's byte +10: 1 for the forward traversal `0x0049ee30` and 0 for the backward one. With it set, an event whose `0x00452710` flag is `0x80000000` (the end sample, types other than 4, 5 and 7) calls `0x0041ec70(record)`. That function calls `0x0041eca0` and then, in single player, `0x0044dd00(record byte +10)`.
+- `0x0044dd00`: a negative value sets cruise `DAT_004b7e8c = −d` and rate `DAT_004b7e84 = DAT_004b7ea4 = −d·100`. Otherwise density is d (0 → 6, ×4 in multiplayer), both reloads become `(rate·d·60) >> 8`, and the oncoming timer restarts. Behind/ahead timers are untouched.
+- Race start order (`0x0044b250`): `0x0044db80` (density 6), then `0x004552e0` with ring camera 0x3200, which builds slices back to front from 0x200 for 0x8000 with the forward traversal, so zones in the first window apply at the grid. The view camera starts at 0x3100 and `0x0044b3b0` moves both by the same delta, so the ring front is view camera + 0x5100.
+- `0x0041eca0` (types 1–3 only) places an intersection controller (pool `0x00468ee4`, 10 × 0x114, template `0x00468f10`, type 0x400, think `0x0041f040`) with up to four signals (`0x0041ef60`, pool `0x00468ee0`, 40 × 0x108, template `0x00468f30`, type 0x40, draw `0x0041f220`). Phase durations are {600, 180, 780}, or {75, 0, 240} for a type-2 slice with flag byte +11 = 0.
+- `0x0041f040` cycles each signal's `+0xf0` phase 0..2. In phase 0 with tick bit 3 set, it spawns a crossing car through `0x0044df60` (kind 1 or 3, lateral speed ∓0x78000) after one `rand()`.
+- Not ported; see plan 24 Task 1.
+
+### Actor census (October 12, 2026, static)
+
+| Pool | Count × size | Template | Type `+0xc4` | Role |
+| --- | --- | --- | --- | --- |
+| `0x00463ad0` / `0x00463ad4` | `DAT_004642d4` × 0x32c / 0x208 | per rider | 4 / 8 | bikes / rider halves |
+| `0x0049e654` | 16 × 0x210 | `0x00475698` | 0x10 | cars |
+| `0x004c1274` | 15 × 0x468 | `0x0046dde0` | 0x20 | cops |
+| `0x00468ee4` / `0x00468ee0` | 10 × 0x114 / 40 × 0x108 | `0x00468f10` / `0x00468f30` | 0x400 / 0x40 | intersection controllers / signals |
+| `0x00476ce8` | 20 × 0xec | `0x00476cb8` | 1 | in-road BORR solids (no draw) |
+
+The `+0xc4` values tested anywhere are 1, 2, 4, 8, 0x10, 0x20, 0x40 and 0x400; type 2 is still unidentified (`0x004046b0`). No pedestrian or oil-slick pool, template, string or asset was found. Plan 24 Task 4 closes the question.
+
+### Crash run-back input (October 12, 2026, static)
+
+In `0x0040a600`, a rider with `+0x324 == −1` (remote network) goes to `0x0040a9e0`, which reads its input packet through `0x00440410`. In the single-player branch, at animation 38, the player's input word `DAT_004b7ed0 & 0x7800` (racing state `DAT_004c5d7c == 1`, demo hold clear) steers the walk and zeroes the 1,200-tick timer. Bits 0x800, 0x1000, 0x4000 and 0x2000 come from the same keys as accelerate, brake, left and right (`0x00465fb9` codes 0x94/0x96/0x93/0x95). With none held, the rider heads for the bike at speed 1200 (`0x0040a9d0`). For the player on slice type 1, a bike or rider lateral outside `[+0x14c, +0x158]` ends the race (`0x00416010(5, 0xb4)`); the port does not have this yet.
+
 ### Rider–vehicle contact (October 12, 2026, plan 11a Task 1)
 
 Detection is the scheduler contact pass `0x004368f0`, called once per tick

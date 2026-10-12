@@ -42,6 +42,28 @@ int main(int argc,char** argv) {
                 }
             }
         }
+        // Every course, every route sample, at the camera fraction that puts
+        // slice 32 farthest (frac 0: depth 8448, building forward lookups
+        // reach the table's zero padding). HIWAY/CANYN once threw here.
+        for(const char* name:{"CITY","HIWAY","MEDLY","NAPA","CANYN"}) {
+            const auto other=rr::read_course(assets.read(std::string("DATA/COURSES/")+name+".CRS"));
+            const rr::CourseScene other_scene(assets,exe,other,name);
+            size_t course_views=0;
+            for(bool second:{false,true}) {
+                const auto route=rr::make_route(other,second);
+                for(uint32_t p=0;p+1<route.size();++p)for(const uint32_t frac:{0u,255u}) {
+                    const auto slices=rr::project_road(route,p*256+frac,{0,150},depths);
+                    try {
+                        const auto draw=other_scene.draw_nodes(route,slices,{0,150},depths);
+                        if(p%97==0)rr::render_nodes(sweep,draw,rr::view_mode(true),16);
+                    } catch(const std::exception& e) {
+                        throw std::runtime_error(std::string(name)+" sample "+std::to_string(p)+" frac "+std::to_string(frac)+" branch "+std::to_string(second)+": "+e.what());
+                    }
+                    ++course_views;
+                }
+            }
+            std::cout<<name<<": "<<course_views<<" views built\n";
+        }
         std::cout<<samples<<" terrain samples, "<<hill_samples<<" hill samples, "<<missing<<" unresolved hill materials, "<<views<<" views, "<<nodes<<" emitted nodes\n";
         for(const auto& entry:building_flags)std::cout<<"Building flags "<<entry.first<<": "<<entry.second<<" samples\n";
         std::cout<<objects<<" scenery objects, "<<missing_objects<<" unresolved scenery frames\n";

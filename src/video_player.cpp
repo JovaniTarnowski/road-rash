@@ -64,13 +64,29 @@ bool VideoPlayer::update(uint64_t now) {
     }
     return true;
 }
+SDL_FRect VideoPlayer::fit(int width,int height,int output_width,int output_height) {
+    if (width<=0 || height<=0 || output_width<=0 || output_height<=0) return {0,0,0,0};
+    const float scale=std::min(float(output_width)/float(width),float(output_height)/float(height));
+    const float w=float(width)*scale,h=float(height)*scale;
+    return {(float(output_width)-w)/2,(float(output_height)-h)/2,w,h};
+}
 void VideoPlayer::draw(SDL_Renderer* renderer) {
     if (renderer_!=renderer) { SDL_DestroyTexture(texture_);texture_=nullptr;renderer_=renderer; }
     if (!texture_) texture_=SDL_CreateTexture(renderer,SDL_PIXELFORMAT_RGB24,SDL_TEXTUREACCESS_STREAMING,width_,height_);
     if (!texture_ || !SDL_UpdateTexture(texture_,nullptr,decoder_->rgb24().data(),width_*3)) throw std::runtime_error(SDL_GetError());
+#if SDL_VERSION_ATLEAST(3, 4, 0)
+    SDL_SetTextureScaleMode(texture_,SDL_SCALEMODE_PIXELART);
+#else
     SDL_SetTextureScaleMode(texture_,SDL_SCALEMODE_NEAREST);
-    // Presentation rectangle is provisional until original MCI setup is traced.
-    const SDL_FRect rect{float(640-width_)/2,float(480-height_)/2,float(width_),float(height_)};
-    if (!SDL_RenderTexture(renderer,texture_,nullptr,&rect)) throw std::runtime_error(SDL_GetError());
+#endif
+    int logical_w=0,logical_h=0,output_w=0,output_h=0;
+    SDL_RendererLogicalPresentation mode=SDL_LOGICAL_PRESENTATION_DISABLED;
+    SDL_GetRenderLogicalPresentation(renderer,&logical_w,&logical_h,&mode);
+    SDL_SetRenderLogicalPresentation(renderer,0,0,SDL_LOGICAL_PRESENTATION_DISABLED);
+    if (!SDL_GetCurrentRenderOutputSize(renderer,&output_w,&output_h)) throw std::runtime_error(SDL_GetError());
+    const SDL_FRect rect=fit(width_,height_,output_w,output_h);
+    const bool drawn=SDL_RenderTexture(renderer,texture_,nullptr,&rect);
+    SDL_SetRenderLogicalPresentation(renderer,logical_w,logical_h,mode);
+    if (!drawn) throw std::runtime_error(SDL_GetError());
 }
 }

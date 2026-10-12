@@ -1,5 +1,19 @@
 # Verification log (all sessions September 28, 2026)
 
+## Playtest fixes: courses, opponent HUD, meters, traffic density (October 12, 2026)
+
+Build tree `build-fixes` (Debug), from baseline `791da21` plus the uncommitted `playtest-visual-fixes` edits to `course_scene.cpp`/`video_player.*`, which were kept.
+
+- Reproduced: `build/rr-game --assets ../cdrom/ROADRASH --course 1 --ticks 300 --screenshot x.bmp` exits 1 with `vector`. lldb on `__cxa_throw` stops in `CourseScene::draw_nodes` at `depths.scale.at(4352)` (size 4352). Course 4 behaves the same; courses 0, 2 and 3 exit 0.
+- After the fix: courses 0–4 exit 0 at the grid (`--ticks 300 --screenshot`). With `--level 3 --ticks 3000 --autopilot` courses 0, 1, 2 and 4 exit 0. Full races `--ticks 90000 --autopilot` finish on all five courses (finish ticks 44928, 77212, 43763, 46294, 44086).
+- `course_scene-test`: 5 courses × 2 branches × every sample × fraction {0, 255} build (CITY to CANYN, 21–25k views each); about 47 s Debug. Pass.
+- `hud-test`: nearest-opponent rule (behind wins at 4 vs 10, ahead wins at 6 vs 10, behind-only case), target name/meter from the nearest rider, and a solo race names no target. Pass.
+- `traffic-test`: `traffic_set_density` keeps behind/ahead timers and a negative value sets rate and cruise; zone events fire on the initial fill, at the ring front and again after backing off; Napa corpus run at 0x60/tick gives 123 spawns with 34 zone events against 733 at fixed density 6. Pass.
+- `sound-test`: 0 failures. Screenshots of Napa at tick 900 show "Pearl", a full opponent meter, a red `0.009` with an up arrow, and a moving tachometer needle (scratch only, not committed).
+- `tools/verify_sim.py --mode diagnostic --binary build-fixes/oracle-sim-test`: `known-divergence`, first divergence frame 74 (tick 75) `rider.0.lateral`, the same before and after the change. The solo scenario has no live traffic.
+- `ctest --test-dir build-fixes --output-on-failure`: **67/67 pass**.
+- Not run: sanitizers, Android assembly, a new Wine capture (ring offset, zone timing), and a pixel comparison of the dashboard against the original.
+
 ## Start-grid ordering research (October 12, 2026)
 
 - Disc EXE SHA-256 matches `analysis/inventory.json`:
