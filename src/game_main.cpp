@@ -22,6 +22,7 @@
 #include "pe_strings.hpp"
 #include "settings.hpp"
 #include "sound.hpp"
+#include "race_music.hpp"
 #include "text.hpp"
 #include <filesystem>
 #include <algorithm>
@@ -31,6 +32,14 @@
 
 namespace {
 const char* const course_names[] = {"NAPA", "CITY", "HIWAY", "CANYN", "MEDLY"};
+// The 640x480 original frames are scaled to arbitrary window sizes. Nearest
+// sampling at non-integer factors doubles alternate texel columns (uneven,
+// "soft" menu text); pixel-art sampling keeps texels sharp and even.
+#if SDL_VERSION_ATLEAST(3, 4, 0)
+constexpr SDL_ScaleMode crisp_scale = SDL_SCALEMODE_PIXELART;
+#else
+constexpr SDL_ScaleMode crisp_scale = SDL_SCALEMODE_NEAREST;
+#endif
 constexpr int countdown_ticks = 3 * rr::ticks_per_second;
 
 SDL_Gamepad* open_first_gamepad() {
@@ -81,8 +90,13 @@ struct Game {
         hud.reset();
         actors.reset();
         course=rr::read_course(assets.read("DATA/COURSES/"+course_name+".CRS"));
-        if(course_name=="NAPA") {
-            scene=std::make_unique<rr::CourseScene>(assets,exe,course,course_name,1,level);
+        // Plan 17 Task 2: the original scene, dashboard and actors on every
+        // course ("playable, not yet verified" off Napa). A course whose scene
+        // data fails to resolve keeps the dashboard and actors and falls back
+        // to the flat debug road, logging the missing resource.
+        {
+            try { scene=std::make_unique<rr::CourseScene>(assets,exe,course,course_name,1,level); }
+            catch(const std::exception& e) { SDL_Log("%s scene unavailable: %s",course_name.c_str(),e.what()); }
             hud=std::make_unique<rr::Hud>(assets,exe,bike,metric);
             actors=std::make_unique<rr::ActorNodes>(assets,exe,true);
             crash_config=rr::read_crash_config(exe);
@@ -157,7 +171,6 @@ struct Game {
             const auto& state=rd.crash_active?(item.body?rd.crash_actor.animation:rd.crash_bike_animation):actor_states[i];
             const auto selected=*state.selected;const auto& descriptor=actors->library().playback[0].at(size_t(selected[0]))->at(size_t(selected[1]));
             const auto nodes=actors->rider(descriptor,0,rd.colour,orientation,projection,camera,depth,bike.i32(0x20));output.insert(output.end(),nodes.begin(),nodes.end());
-            if(SDL_getenv("RR_DBG_NODES"))for(const auto& nd:nodes)SDL_Log("DBG rider %zu body %d pos %d frac %d ground %d vert %d near.y %d far.y %d near.sample %u top %d bottom %d ceiling %d back %d",i,int(item.body),bike.i32(0x1c),bike.i32(0x1c)&255,bike.i32(0x24),bike.i32(0x20),a.screen_y,b.screen_y,near.sample,nd.view_points[0].y,nd.view_points[2].y,ceiling,int(back));
         }
         return output;
     }
@@ -188,12 +201,107 @@ struct Game {
     }
 };
 
-// Keep-to-centre driver used by --autopilot for demos and smoke runs.
-uint32_t autopilot(const rr::Race& race) {
-    const auto& s = race.route()[race.position() >> 8];
-    const int x = race.lateral() - s.offset;
-    uint32_t c = rr::control_accelerate;
-    if (x < -60) c |= rr::control_right; else if (x > 60) c |= rr::control_left;
+// Demo/smoke driver for --autopilot (native, not the original AI). Picks a
+// line clear of traffic and riders (overtaking only when oncoming cars leave
+// time), follows a blocking car's speed when no line is clear, eases off for
+// bends ahead and lets go of every control while crashed: the crash walk back
+// to the bike (0x0040a600 state 38) only converges with no input, see
+// steer_into_traffic.
+uint32_t autopilot(const rr::Race& race, const rr::TrafficSystem* traffic) {
+    if (race.crashed()) return 0;
+    const auto& route = race.route();
+    const auto& bike = race.bike();
+    const int32_t speed = race.speed();
+    const size_t here = race.position() >> 8, last = route.size() - 1;
+    const size_t aim = std::min(last, here + 3 + size_t(std::max(0, speed) / 1500));
+    const auto& s = route[aim];
+    // Lateral positions relative to the road centre of their own sample.
+    const int32_t me = race.lateral() - route[here].offset;
+    // Candidate lines every 62 units across the narrowest road between here
+    // and the aim point, plus lane centres and lane lines (250-unit lanes);
+    // the first right-hand lane first, then the closest line. A car is touched
+    // within 94 lateral units (car contact box dl < 24064 Q8), so a line 120
+    // from every car is clear: the gap between two lanes' traffic counts.
+    int32_t road_left = s.path.left, road_right = s.path.right;
+    for (size_t i = here; i <= aim; ++i) { road_left = std::min(road_left, route[i].path.left); road_right = std::min(road_right, route[i].path.right); }
+    std::vector<int32_t> lanes;
+    for (int32_t x = -road_left + 40; x <= road_right - 40; x += 62) lanes.push_back(x);
+    for (int32_t x = -road_left + 125; x <= road_right - 125; x += 125) lanes.push_back(x);   // centres and lines
+    if (lanes.empty()) lanes.push_back(0);
+    const int32_t home = road_right >= 250 ? 125 : road_right / 2;   // first right-hand lane
+    std::stable_sort(lanes.begin(), lanes.end(), [&](int32_t a, int32_t b) {
+        if ((a == home) != (b == home)) return a == home;
+        return std::abs(a - me) < std::abs(b - me);
+    });
+    // Traffic within reach; speeds become Q8 samples per tick (speed/260,
+    // measured: 10000 covers 0.15 samples a tick). Oncoming cars (lane < 0)
+    // carry a negative velocity.
+    struct Obstacle { int32_t x, gap; double velocity; };
+    std::vector<Obstacle> obstacles;
+    if (traffic) for (const auto& car : traffic->cars()) {
+        if (!car.active) continue;
+        const int64_t gap = int64_t(car.position) - int64_t(race.position());
+        if (gap < -128 || gap > 64 * 256) continue;
+        const size_t at = std::min(last, size_t(std::max<int64_t>(0, car.position >> 8)));
+        obstacles.push_back({(car.lateral >> 8) - route[at].offset, int32_t(gap), (car.lane < 0 ? -car.speed : car.speed) / 260.0});
+    }
+    // Other riders on this roadway: contact shoves the bike sideways.
+    for (size_t i = 1; i < race.riders().size(); ++i) {
+        const auto& rider = race.riders()[i];
+        if (rider.route != race.riders()[0].route) continue;   // crashed bikes still block
+        const int64_t gap = int64_t(rider.bike.i32(0x1c)) - int64_t(race.position());
+        if (gap < -128 || gap > 64 * 256) continue;
+        const size_t at = std::min(last, size_t(std::max<int64_t>(0, rider.bike.i32(0x1c) >> 8)));
+        obstacles.push_back({(rider.bike.i32(0x28) >> 8) - route[at].offset, int32_t(gap), rider.bike.i32(0xec) / 260.0});
+    }
+    const double pass_velocity = std::max(speed, 7000) / 260.0;
+    // Nearest same-direction obstacle in a line within 20 samples.
+    auto ahead_in = [&](int32_t lane) -> const Obstacle* {
+        const Obstacle* best = nullptr;
+        for (const auto& o : obstacles)
+            if (o.velocity >= 0 && o.gap > -128 && o.gap < 20 * 256 && std::abs(o.x - lane) < 120 && (!best || o.gap < best->gap)) best = &o;
+        return best;
+    };
+    const Obstacle* blocker = ahead_in(lanes.front());
+    double need = 90;   // ticks to change line, plus to get past the blocker
+    if (blocker) need += (blocker->gap + 3 * 256) / std::max(1.0, pass_velocity - blocker->velocity);
+    auto clear = [&](int32_t lane) {
+        if (ahead_in(lane)) return false;
+        for (const auto& o : obstacles) {
+            if (o.velocity >= 0 || std::abs(o.x - lane) >= 120) continue;
+            if (o.gap < 128) return false;                                         // alongside
+            if (o.gap / (pass_velocity - o.velocity) < need * 1.2 + 40) return false;   // meets before the pass ends
+        }
+        return true;
+    };
+    int32_t target = lanes.front(), limit = 1 << 30;
+    bool found = false;
+    for (const int32_t lane : lanes) if (clear(lane)) { target = lane; found = true; break; }
+    if (!found && blocker && blocker->gap > 64 && blocker->gap < 14 * 256)   // follow it until a lane opens
+        limit = int32_t(std::max(0.0, blocker->velocity) * 260) + 300;
+    // Threading close past a car: keep the closing speed modest.
+    for (const auto& o : obstacles)
+        if (o.gap > -64 && o.gap < 8 * 256 && std::abs(o.x - target) < 160)
+            limit = std::min(limit, std::max(6000, int32_t(std::max(0.0, o.velocity) * 260) + 3000));
+    // Zero-width road data (CITY's route tail past sample 5456 until plan 17's
+    // race bounds land): the wall stand-in crashes above 4000, so crawl the centre.
+    if (road_left + road_right < 100) { target = 0; limit = std::min(limit, 3500); }
+    // Bend severity ahead (path bend per sample) sets a speed ceiling.
+    int32_t bend = 0;
+    for (size_t i = here; i <= std::min(last, here + 12); ++i) bend = std::max(bend, std::abs(route[i].path.bend));
+    // move() pushes the bike outward by about bend x distance a tick against
+    // a fixed steering authority, so the sustainable speed goes as 1/bend.
+    if (bend > 0) limit = std::min(limit, std::clamp(200000 / bend, 4500, 13500));
+    // Steer on the lateral position 16 ticks on (+0x28 Q8 plus the +0x10c
+    // lateral velocity, as move() integrates it) so the bike does not overshoot.
+    // The target is relative to the centre of the sample aimed at: through a
+    // split the road centre (offset) moves quickly under the bike.
+    const int32_t predicted = int32_t((int64_t(bike.i32(0x28)) + int64_t(bike.i32(0x10c)) * 16) >> 8);
+    const int32_t error = s.offset + target - predicted;
+    uint32_t c = 0;
+    if (error > 20) c |= rr::control_right; else if (error < -20) c |= rr::control_left;
+    if (speed > limit + 800) c |= rr::control_brake;
+    else if (speed < std::min(3000, limit) || (speed < limit && std::abs(target - me) < 500)) c |= rr::control_accelerate;
     if (race.ticks() % 40 == 0) c |= rr::control_punch;   // demo: swing at anyone alongside
     return c;
 }
@@ -271,7 +379,7 @@ struct SpriteCache {
         SDL_Surface* s = SDL_CreateSurfaceFrom(img.width, img.height, SDL_PIXELFORMAT_RGBA32, rgba.data(), img.width * 4);
         t = s ? SDL_CreateTextureFromSurface(r, s) : nullptr;
         SDL_DestroySurface(s);
-        if (t) SDL_SetTextureScaleMode(t, SDL_SCALEMODE_NEAREST);
+        if (t) SDL_SetTextureScaleMode(t, crisp_scale);
         return t;
     }
 };
@@ -291,7 +399,7 @@ struct CourseCanvas {
         if(!dashboard) {
             dashboard=SDL_CreateTexture(renderer,SDL_PIXELFORMAT_RGBA32,SDL_TEXTUREACCESS_STREAMING,640,480);
             if(!dashboard)throw std::runtime_error(SDL_GetError());
-            SDL_SetTextureScaleMode(dashboard,SDL_SCALEMODE_NEAREST);SDL_SetTextureBlendMode(dashboard,SDL_BLENDMODE_BLEND);
+            SDL_SetTextureScaleMode(dashboard,crisp_scale);SDL_SetTextureBlendMode(dashboard,SDL_BLENDMODE_BLEND);
         }
         if(!SDL_UpdateTexture(dashboard,nullptr,rgba.data(),640*4))throw std::runtime_error(SDL_GetError());
         const SDL_FRect dst{0,0,640,480};SDL_RenderTexture(renderer,dashboard,nullptr,&dst);
@@ -303,7 +411,7 @@ struct CourseCanvas {
         if(!texture) {
             texture=SDL_CreateTexture(renderer,SDL_PIXELFORMAT_RGBA32,SDL_TEXTUREACCESS_STREAMING,640,480);
             if(!texture)throw std::runtime_error(SDL_GetError());
-            SDL_SetTextureScaleMode(texture,SDL_SCALEMODE_NEAREST);
+            SDL_SetTextureScaleMode(texture,crisp_scale);
         }
         if(!SDL_UpdateTexture(texture,nullptr,rgba.data(),640*4))throw std::runtime_error(SDL_GetError());
         const SDL_FRect dst{0,0,640,480};
@@ -537,7 +645,7 @@ RaceEnd run_race(Game& g, SDL_Renderer* renderer, const RaceOptions& opt) {
     bool running = true, decided = false;
     int end_ticks = 0;
     uint64_t last = SDL_GetTicksNS();
-    SDL_SetRenderLogicalPresentation(renderer, 640, 510, SDL_LOGICAL_PRESENTATION_LETTERBOX);
+    SDL_SetRenderLogicalPresentation(renderer, 640, 480, SDL_LOGICAL_PRESENTATION_LETTERBOX);
     while (running) {
         SDL_Event e;
         bool restart = false;
@@ -617,7 +725,7 @@ RaceEnd run_race(Game& g, SDL_Renderer* renderer, const RaceOptions& opt) {
             in.kick |= SDL_GetGamepadButton(pad, SDL_GAMEPAD_BUTTON_NORTH);
             in.backhand |= SDL_GetGamepadButton(pad, SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER);
         }
-        const uint32_t controls = opt.auto_drive ? autopilot(*g.race) : rr::controls_from(in);
+        const uint32_t controls = opt.auto_drive ? autopilot(*g.race, g.traffic.get()) : rr::controls_from(in);
 
         const uint64_t now = SDL_GetTicksNS();
         if (lifecycle.state.take_clock_reset()) { touch.clear(); clock.reset(); last = now; }
@@ -716,6 +824,7 @@ int run_game(const rr::Assets& assets, SDL_Window* window, SDL_Renderer* rendere
         sound = std::make_unique<rr::SoundSystem>(assets, mixer, rr::read_volume_curve(exe), int(rr::read_exe_data(exe, 0x0046dce5, 1)[0]));
     } catch (const std::exception& e) { SDL_Log("Race sounds unavailable: %s", e.what()); }
     rr::MusicPlayer music(assets, mixer);
+    rr::RaceMusicPlayer race_music(assets, mixer);  // 0x00433bb0: MIDI by course, Klown by alias
     auto apply_levels = [&] {
         rr::SoundLevels l;
         l.master = settings.master_volume; l.effects = settings.effects_volume; l.engine = settings.engine_volume;
@@ -730,7 +839,7 @@ int run_game(const rr::Assets& assets, SDL_Window* window, SDL_Renderer* rendere
     LifecycleWatch audio_lifecycle(&mixer);
     SDL_Texture* texture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_XRGB8888, SDL_TEXTUREACCESS_STREAMING, 640, 480);
     if (!texture) throw std::runtime_error(SDL_GetError());
-    SDL_SetTextureScaleMode(texture, SDL_SCALEMODE_NEAREST);
+    SDL_SetTextureScaleMode(texture, crisp_scale);
     SDL_Gamepad* pad = open_first_gamepad();
     rr::MenuStickInput menu_stick;
     LifecycleWatch lifecycle;
@@ -770,11 +879,15 @@ int run_game(const rr::Assets& assets, SDL_Window* window, SDL_Renderer* rendere
                 g.restart();
                 if (menu_frames >= 0) { running = false; break; }   // smoke run: stop at the first race
                 music.stop();                                         // 0x004160c0 -> 0x00402f50
+                // Plan 11 race-start point: race MIDI replaces the RRA soundtrack.
+                // ev.course is the original 1..5 index (0x0046df58 order), matching race_song_name.
+                race_music.play_race(ev.course, fe.player_name());
                 g.sound = sound.get();
                 if (sound) sound->start_race(career.state.bike, career.state.character);
                 const RaceEnd end = run_race(g, renderer, {});
                 menu_stick.suspend();
                 if (sound) sound->stop_race();
+                race_music.stop();  // race end
                 g.sound = nullptr;
                 settings.music_track = music.track();
                 music.play(music.track());
@@ -878,7 +991,7 @@ int run_game(const rr::Assets& assets, SDL_Window* window, SDL_Renderer* rendere
                 SDL_DestroyTexture(texture);
                 texture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_XRGB8888, SDL_TEXTUREACCESS_STREAMING, 640, 480);
                 if (!texture) throw std::runtime_error(SDL_GetError());
-                SDL_SetTextureScaleMode(texture, SDL_SCALEMODE_NEAREST);
+                SDL_SetTextureScaleMode(texture, crisp_scale);
             }
             if (e.type == SDL_EVENT_RENDER_DEVICE_LOST) throw std::runtime_error("Render device lost");
         }
@@ -953,9 +1066,9 @@ int main(int argc, char** argv) {
     int result = 0;
     try {
         if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMEPAD)) throw std::runtime_error(SDL_GetError());
-        if (!SDL_CreateWindowAndRenderer("Road Rash Native", 960, 760, SDL_WINDOW_RESIZABLE, &window, &renderer))
+        if (!SDL_CreateWindowAndRenderer("Road Rash Native", 960, 720, SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY, &window, &renderer))
             throw std::runtime_error(SDL_GetError());
-        SDL_SetRenderLogicalPresentation(renderer, 640, 510, SDL_LOGICAL_PRESENTATION_LETTERBOX);
+        SDL_SetRenderLogicalPresentation(renderer, 640, 480, SDL_LOGICAL_PRESENTATION_LETTERBOX);
         SDL_SetRenderVSync(renderer, 1);
         if (root.empty()) {
             root = rr::data_root();
@@ -971,6 +1084,7 @@ int main(int argc, char** argv) {
         }
         const rr::Assets assets(root);
         if (!video.empty()) {
+            SDL_SetRenderLogicalPresentation(renderer, 640, 480, SDL_LOGICAL_PRESENTATION_LETTERBOX);
             play_video(assets,video,renderer,screenshot,run_ticks);
             SDL_DestroyRenderer(renderer);SDL_DestroyWindow(window);SDL_Quit();return 0;
         }
@@ -997,8 +1111,9 @@ int main(int argc, char** argv) {
                 const bool hunt = into_traffic;
                 if (hunt) auto_drive = true;
                 int car_crashes = 0, any_crash = 0;
-                for (long t = 0; t < run_ticks && !g.race->finished(); ++t) {
-                    g.tick(hunt ? steer_into_traffic(*g.race) : (auto_drive ? autopilot(*g.race) : 0));
+                long t = 0;
+                for (; t < run_ticks && !g.race->finished(); ++t) {
+                    g.tick(hunt ? steer_into_traffic(*g.race) : (auto_drive ? autopilot(*g.race, g.traffic.get()) : 0));
                     const auto& b = g.race->bike();
                     if (hunt && t % 1000 == 0) {
                         int active = 0;
@@ -1024,6 +1139,9 @@ int main(int argc, char** argv) {
                         ++car_crashes;
                     }
                 }
+                std::printf("end tick %ld pos %u of %zu finished %d place %d\n", t, g.race->position() >> 8,
+                            g.race->route().size(), int(g.race->finished()), g.race->place(0));
+                std::fflush(stdout);
             }
             if (!into_traffic) run_race(g, renderer, {auto_drive, start_paused, screenshot});
         }
