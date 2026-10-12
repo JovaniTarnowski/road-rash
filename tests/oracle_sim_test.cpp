@@ -411,7 +411,9 @@ int main(int argc, char** argv) {
         const int base = dbase >= 0 ? int(dbase)
             : !personalities.empty() ? personalities[size_t(brain_row)].cur_levels[0] : 95;
         const int lane = dlane >= 0 ? int(dlane) : 1;
-        const int32_t bias = dbias >= 0 ? int32_t(dbias) : 7;
+        // Unmeasured: the grid offset the ctor stored (0x00405990 -> +0x190;
+        // the human-era golden reads brain_190 = 16384 = the level-0 word).
+        const int32_t bias = dbias >= 0 ? int32_t(dbias) : race.riders().at(0).brain.bias;
         const int weapon = dweapon >= 0 ? int(dweapon) : row.weapon0;
         const rr::RiderStats stats{dstr >= 0 ? int32_t(dstr) : row.stats.strength,
                                   dbas >= 0 ? int32_t(dbas) : row.stats.base,
@@ -543,6 +545,18 @@ int main(int argc, char** argv) {
         // human goldens consume them through apply_controls (0x00434660).
         race.step(demo ? 0 : uint32_t(fc->second));
         const auto snap = race.snapshot();
+        // Diagnostic: RR_SIM_TRACE=<prefix> prints every native field with
+        // that prefix beside its golden value (same key) each replayed tick.
+        if (const char* trace = std::getenv("RR_SIM_TRACE")) {
+            std::cout << "tick " << tick0 + int64_t(i) << ':';
+            for (const auto& f : snap.fields) {
+                if (f.name.rfind(trace, 0) != 0) continue;
+                auto it = frame.find(f.name);
+                std::cout << ' ' << f.name.substr(f.name.rfind('.') + 1) << '=' << f.value;
+                if (it != frame.end() && it->second != f.value) std::cout << "/orig " << it->second;
+            }
+            std::cout << '\n';
+        }
         const auto fr = frame.find("rng");
         const uint64_t want_rng = fr == frame.end() ? 0 : uint64_t(fr->second);
         rng_history.push_back({want_rng, snap.rng});

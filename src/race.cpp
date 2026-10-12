@@ -144,6 +144,9 @@ Race::Race(std::vector<RouteSample> a, std::vector<RouteSample> b, const Physics
         // frame (ctor param); the default 0 keeps synthetic routes exact.
         const int32_t lat = grid_pos ? grid_lat : grid_lateral[slot % 4];
         r.bike.i32(0x28) = routes_[0][r.sample].offset * 256 + lat + road_base_;
+        // 0x00405990 passes the same grid offset to 0x00407990 as the
+        // brain's lane bias (+0x190), which 0x004091f0 adds to its target.
+        r.brain.bias = lat;
         r.bike.i32(0x2f0) = r.bike.i32(0x2ec);   // bike condition (0x00405c80)
         return r;
     };
@@ -1333,7 +1336,8 @@ void Race::ai_straight_target(Rider& r) {
     if (ai.lane == 1) lane = (lanes - 1) / 2;
     else if (ai.lane == 2) lane = std::abs(lanes - 1);
     ai.target_position = b.i32(0x1c) + 0x3c0;
-    ai.target_x = div_pow2(curvature(r, next, 8), 3) + (route[next].offset + lane * 0xfa) * 0x100 + ai.bias;
+    // +0xcc is the absolute centre: road_base_ maps the relative route to it.
+    ai.target_x = div_pow2(curvature(r, next, 8), 3) + (route[next].offset + lane * 0xfa) * 0x100 + road_base_ + ai.bias;
     ai.target_speed = ai_curve_limit(r);
 }
 
@@ -1360,7 +1364,7 @@ void Race::ai_curve_target(Rider& r) {
         int32_t off = int32_t((int64_t((m << 8) / 0x60000) * half) >> 8);
         if (c < 0) off = -off;
         ai.target_position = b.i32(0x1c) + 0x3c0;
-        ai.target_x = off + (left_edge + s.path.left_q8) * 0x100 + half;
+        ai.target_x = off + (left_edge + s.path.left_q8) * 0x100 + road_base_ + half;
         ai.target_speed = lim;
         const int32_t x = b.i32(0x28);
         if (c < 1) { if (x < ai.target_x) ai.target_x = x; }
