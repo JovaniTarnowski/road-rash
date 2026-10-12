@@ -1,5 +1,11 @@
 # Road Rash native port research
 
+Current implementation and acceptance gaps: [docs/CURRENT_STATUS.md](docs/CURRENT_STATUS.md).
+Agent setup, ownership, verification profiles and capture receipts:
+[docs/AGENT_TOOLING.md](docs/AGENT_TOOLING.md). The dated sections below and in
+the progress timeline describe historical checkpoints; use the current matrix
+and gate receipts when assessing completion.
+
 Progress summary, timeline and next steps: [docs/PROGRESS.md](docs/PROGRESS.md). Binary evidence: [docs/REVERSE_ENGINEERING.md](docs/REVERSE_ENGINEERING.md). Test log: [docs/VERIFICATION.md](docs/VERIFICATION.md). Plans to completion: [docs/plans/00-INDEX.md](docs/plans/00-INDEX.md).
 
 Native C++17 / SDL3 work targeting macOS ARM64 and Android ARM64. `rr-game` is a **playable race against seven AI opponents** with the original bike physics and combat; `rr-viewer` is the asset research viewer. It does not execute the Windows binary, use Wine, or emulate x86.

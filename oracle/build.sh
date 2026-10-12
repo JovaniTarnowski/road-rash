@@ -1,6 +1,7 @@
 #!/bin/sh
 set -eu
-cd "$(dirname "$0")"
+root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+cd "$root/oracle"
 mkdir -p build
-i686-w64-mingw32-gcc -O2 -Wall -shared -static-libgcc -o build/AWEMAN32.DLL aweman_proxy.c aweman_proxy.def -Wl,--enable-stdcall-fixup
-echo "built $(pwd)/build/AWEMAN32.DLL"
+exec python3 "$root/tools/agent_resource.py" --session oracle-build --resource "$root/oracle/build" -- \
+    i686-w64-mingw32-gcc -O2 -Wall -shared -static-libgcc -o build/AWEMAN32.DLL aweman_proxy.c aweman_proxy.def -Wl,--enable-stdcall-fixup

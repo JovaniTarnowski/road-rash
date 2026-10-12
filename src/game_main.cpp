@@ -1,3 +1,4 @@
+#include "rr_build_info.hpp"
 // Shared native/Android frontend and playable race.
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_main.h>
@@ -389,9 +390,6 @@ void draw_hud(SDL_Renderer* r, const Game& g) {
         bar(24, "YOU", race.riders()[0].stamina);
         if (race.last_target() > 0) bar(36, "THEM", race.riders()[size_t(race.last_target())].stamina);
     }
-    SDL_SetRenderDrawColor(r, 255, 255, 255, 255);
-    SDL_RenderDebugText(r, 8, 483, "Up/Down throttle/brake, Left/Right steer, Z punch, X kick, C backhand");
-    SDL_RenderDebugText(r, 8, 497, "P/Esc/Back/Start pauses. Enter/Start/tap resumes. Q quits");
 }
 
 bool lifecycle_event(Uint32 type) {
@@ -899,6 +897,10 @@ int run_game(const rr::Assets& assets, SDL_Window* window, SDL_Renderer* rendere
 }
 
 int main(int argc, char** argv) {
+    if (argc == 2 && std::string(argv[1]) == "--build-info") {
+        std::puts(rr::build_info_json);
+        return 0;
+    }
     std::string root, screenshot, video;
     int course = 0, bike = 0, level = 0, opponents = 7;
     long run_ticks = -1, menu_frames = -1;

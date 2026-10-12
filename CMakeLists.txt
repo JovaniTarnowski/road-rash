@@ -5,6 +5,14 @@ if(RR_BUNDLE_SDL AND NOT ANDROID)
     set(CMAKE_OSX_DEPLOYMENT_TARGET 13.0 CACHE STRING "Minimum macOS version" FORCE)
 endif()
 project(RoadRashNative LANGUAGES C CXX)
+find_package(Python3 REQUIRED COMPONENTS Interpreter)
+add_custom_target(rr-build-provenance
+    COMMAND ${Python3_EXECUTABLE} "${CMAKE_SOURCE_DIR}/tools/build_info.py"
+        --header "${CMAKE_BINARY_DIR}/generated/rr_build_info.hpp"
+        --manifest "${CMAKE_BINARY_DIR}/build-info.json"
+        --config "$<CONFIG>" --compiler "${CMAKE_CXX_COMPILER_ID}-${CMAKE_CXX_COMPILER_VERSION}"
+    BYPRODUCTS "${CMAKE_BINARY_DIR}/generated/rr_build_info.hpp"
+    VERBATIM)
 option(RR_DEV_ASSETS "Allow developer-only packaged Android game assets" OFF)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -64,11 +72,20 @@ else()
         set_tests_properties(oracle-patch PROPERTIES SKIP_RETURN_CODE 77)
         add_executable(oracle-sim-test tests/oracle_sim_test.cpp)
         target_link_libraries(oracle-sim-test PRIVATE rr-resource SDL3::SDL3)
-        add_test(NAME oracle-sim COMMAND oracle-sim-test)
+        # Diagnostic gate accepts only a pinned trace hash + exact divergence.
+        # Strict fidelity is a separate verify-sim target; never invert all failures.
+        add_test(NAME oracle-sim COMMAND ${Python3_EXECUTABLE}
+            "${CMAKE_SOURCE_DIR}/tools/verify_sim.py" --mode diagnostic
+            --binary "$<TARGET_FILE:oracle-sim-test>"
+            --report "${CMAKE_BINARY_DIR}/oracle-diagnostic.json")
         set_tests_properties(oracle-sim PROPERTIES SKIP_RETURN_CODE 77)
-        # Known divergence (plan 10 task 4): native construction does not yet
-        # replicate race-setup rand consumption; remove when task 6 item 1 lands.
-        set_tests_properties(oracle-sim PROPERTIES WILL_FAIL TRUE)
+        add_test(NAME agent-tooling COMMAND ${Python3_EXECUTABLE}
+            "${CMAKE_SOURCE_DIR}/tests/agent_tooling_test.py")
+        add_custom_target(verify-sim
+            COMMAND ${Python3_EXECUTABLE} "${CMAKE_SOURCE_DIR}/tools/verify_sim.py"
+                --mode acceptance --binary "$<TARGET_FILE:oracle-sim-test>"
+                --report "${CMAKE_BINARY_DIR}/oracle-acceptance.json"
+            DEPENDS oracle-sim-test VERBATIM)
         add_executable(oracle-road-test tests/oracle_road_test.cpp)
         target_link_libraries(oracle-road-test PRIVATE rr-resource)
         add_test(NAME oracle-road COMMAND oracle-road-test)
@@ -105,6 +122,13 @@ else()
         add_test(NAME mixer-device COMMAND mixer-test --device)
         set_tests_properties(mixer-device PROPERTIES ENVIRONMENT "SDL_AUDIODRIVER=dummy")
     endif()
+endif()
+add_dependencies(${RR_VIEWER} rr-build-provenance)
+if(TARGET rr-game)
+    add_dependencies(rr-game rr-build-provenance)
+    target_include_directories(rr-game PRIVATE "${CMAKE_BINARY_DIR}/generated")
+else()
+    target_include_directories(main PRIVATE "${CMAKE_BINARY_DIR}/generated")
 endif()
 target_include_directories(${RR_VIEWER} PRIVATE third_party)
 target_link_libraries(${RR_VIEWER} PRIVATE rr-resource SDL3::SDL3)

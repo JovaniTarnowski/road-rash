@@ -1,0 +1,126 @@
+# Convenience wrapper around the CMake / Gradle / script workflows in README.md.
+# Run `make help` for targets. Override variables on the command line, e.g.
+#   make run COURSE=2 BIKE=5      make build BUILD_TYPE=Release
+
+BUILD_DIR  ?= build
+BUILD_TYPE ?= Debug
+ASSETS     ?= ../cdrom/ROADRASH
+COURSE     ?=
+BIKE       ?=
+JOBS       ?= $(shell sysctl -n hw.ncpu 2>/dev/null || nproc 2>/dev/null || echo 4)
+JAVA_HOME  ?= /opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home
+
+.PHONY: help all configure build run run-first viewer video test corpus smoke \
+        import app apk apk-release decompile inventory ci clean distclean \
+        doctor gate-native gate-sanitizers verify-sim gate-android-debug \
+        gate-android-release gate-package agent-status analysis-index
+
+help:
+	@echo "Targets:"
+	@echo "  build        configure and build everything ($(BUILD_TYPE)) into $(BUILD_DIR)/"
+	@echo "  run          build and launch rr-game (optional COURSE=0-4 BIKE=0-14; ASSETS=$(ASSETS))"
+	@echo "  run-first    launch rr-game without --assets (first-run import flow)"
+	@echo "  viewer       build and launch the asset research viewer"
+	@echo "  video        play a cutscene: make video VIDEO=VIDEO/INTRO.AVI"
+	@echo "  test         run ctest"
+	@echo "  smoke        viewer smoke check and corpus check"
+	@echo "  corpus       python3 tools/check_corpus.py"
+	@echo "  import       import an ISO: make import ISO=path/to.iso DEST=path/ROADRASH"
+	@echo "  app          standalone macOS app bundle (tools/build_macos_app.sh)"
+	@echo "  apk          Android debug APK"
+	@echo "  apk-release  Android release APK (debug signing)"
+	@echo "  inventory    regenerate analysis/inventory.json"
+	@echo "  decompile    run Ghidra headless export (overwrites analysis import)"
+	@echo "  ci           tools/ci.sh local verification"
+	@echo "  clean        remove $(BUILD_DIR)/"
+	@echo "  distclean    also remove build-release/ and android build output"
+	@echo "  doctor       read-only capability, instruction and resource report"
+	@echo "  gate-native|gate-sanitizers|verify-sim  logged checks (override BUILD_DIR)"
+	@echo "  gate-android-debug|gate-android-release|gate-package  logged artifact checks"
+	@echo "  agent-status regenerate docs/CURRENT_STATUS.md from its evidence manifest"
+	@echo "  analysis-index build the address/evidence lookup cache"
+
+all: build
+
+configure:
+	cmake -S . -B $(BUILD_DIR) -DCMAKE_BUILD_TYPE=$(BUILD_TYPE)
+
+build: configure
+	cmake --build $(BUILD_DIR) --parallel $(JOBS)
+
+run: build
+	$(BUILD_DIR)/rr-game --assets $(ASSETS) $(if $(COURSE),--course $(COURSE)) $(if $(BIKE),--bike $(BIKE))
+
+run-first: build
+	$(BUILD_DIR)/rr-game
+
+viewer: build
+	$(BUILD_DIR)/rr-viewer --assets $(ASSETS)
+
+video: build
+	$(BUILD_DIR)/rr-game --assets $(ASSETS) --video $(or $(VIDEO),VIDEO/INTRO.AVI)
+
+test: build
+	ctest --test-dir $(BUILD_DIR) --output-on-failure
+
+smoke: build corpus
+	$(BUILD_DIR)/rr-viewer --assets $(ASSETS) --smoke
+
+corpus:
+	python3 tools/check_corpus.py $(ASSETS)
+
+import: build
+	@test -n "$(ISO)" -a -n "$(DEST)" || { echo "usage: make import ISO=<iso> DEST=<dir>"; exit 1; }
+	$(BUILD_DIR)/rr-import "$(ISO)" "$(DEST)"
+
+app:
+	tools/build_macos_app.sh
+
+apk:
+	JAVA_HOME=$(JAVA_HOME) android/gradlew -p android assembleDebug
+
+apk-release:
+	JAVA_HOME=$(JAVA_HOME) android/gradlew -p android assembleRelease -PreleaseDebugSigning=true
+
+inventory:
+	python3 tools/inventory.py $(ASSETS) --out analysis/inventory.json
+
+decompile:
+	tools/decompile.sh
+
+ci:
+	tools/ci.sh
+
+doctor:
+	python3 tools/agent_doctor.py
+
+gate-native:
+	python3 tools/agent_gate.py native --build-dir "$(BUILD_DIR)" --jobs "$(JOBS)"
+
+gate-sanitizers:
+	python3 tools/agent_gate.py sanitizers --build-dir "$(BUILD_DIR)-sanitizers" --jobs "$(JOBS)"
+
+verify-sim:
+	python3 tools/agent_gate.py oracle --build-dir "$(BUILD_DIR)" --jobs "$(JOBS)"
+
+gate-android-debug:
+	python3 tools/agent_gate.py android-debug
+
+gate-android-release:
+	python3 tools/agent_gate.py android-release
+
+gate-package:
+	python3 tools/agent_gate.py package --build-dir "$(BUILD_DIR)-package"
+
+agent-status:
+	python3 tools/agent_status.py
+
+analysis-index:
+	python3 tools/analysis_index.py
+
+clean:
+	rm -rf $(BUILD_DIR)
+
+distclean: clean
+	rm -rf build-release
+	-JAVA_HOME=$(JAVA_HOME) android/gradlew -p android clean

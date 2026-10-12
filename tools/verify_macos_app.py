@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 """Verify a self-contained ARM64 app; this does not establish gameplay fidelity."""
 import argparse
+import json
 from pathlib import Path
 import plistlib
 import subprocess
+from agent_common import source_identity
 
 
 def main():
@@ -21,6 +23,16 @@ def main():
     if stamp != expected:
         raise RuntimeError(f'App build commit {stamp!r} != HEAD {expected!r}; rebuild with tools/build_macos_app.sh')
     executable = app / 'Contents/MacOS' / info['CFBundleExecutable']
+    provenance = json.loads((app / 'Contents/Resources/build-info.json').read_text())
+    current = source_identity()
+    for key in ['commit', 'source_sha256']:
+        if provenance[key] != current[key]:
+            raise RuntimeError(f'Stale source identity: {key}; rebuild the app')
+    if provenance['configuration'] != 'Release':
+        raise RuntimeError('App is not a Release build')
+    embedded = json.loads(subprocess.check_output([str(executable), '--build-info'], text=True))
+    if embedded != provenance:
+        raise RuntimeError('Binary build identity differs from packaged manifest')
     architectures = subprocess.check_output(['lipo', '-archs', str(executable)], text=True).strip()
     if architectures != 'arm64':
         raise RuntimeError(f'Unexpected architecture: {architectures}')

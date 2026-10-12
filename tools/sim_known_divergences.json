@@ -1,0 +1,8 @@
+{
+  "sim-napa-solo.tsv": {
+    "trace_sha256": "3ab614a032666d75d6cf241efd9c0dd7148c958fc969c95579a531ffaec7e2a6",
+    "divergence": "first divergence at frame 138 (tick 139): rng original 2574079260 native 1133891140",
+    "reason": "Physics green through tick 139 (personalities fix closed the tick-120 speed gap); first draw is the unported traffic-spawn timer RNG at tick 139. Diagnostic only; acceptance remains incomplete.",
+    "output_sha256": "de49839cc54ebc4631f87e07d2706d32aaea5e57b84a48016dc1a9db07af8028"
+  }
+}

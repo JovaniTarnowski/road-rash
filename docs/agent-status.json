@@ -1,0 +1,103 @@
+{
+  "reviewed_on": "2026-10-12",
+  "timezone": "America/Los_Angeles",
+  "areas": [
+    {
+      "area": "Native build",
+      "implementation": "Playable native game + research viewer",
+      "verification": "Historical native checkpoints; current receipts below",
+      "remaining": "Simulation acceptance separate",
+      "evidence": [
+        "VERIFICATION.md",
+        "RUN_NATIVE.md"
+      ],
+      "last_verified_commit": null,
+      "fidelity_level": "not-claimed"
+    },
+    {
+      "area": "Simulation parity",
+      "implementation": "Tick replay and first-divergence diagnostics",
+      "verification": "Known demo mismatch at tick 120; single RNG anchor",
+      "remaining": "Actual human-control capture/replay and full parity",
+      "evidence": [
+        "SIM_SCENARIOS.md",
+        "plans/10-simulation-oracle.md"
+      ],
+      "last_verified_commit": null,
+      "fidelity_level": "partial"
+    },
+    {
+      "area": "Napa race",
+      "implementation": "Native scene/actors/traffic with remaining systems",
+      "verification": "Component comparisons are partial evidence",
+      "remaining": "Car contact, actor nodes and full-race acceptance",
+      "evidence": [
+        "NAPA_IMPLEMENTATION.md",
+        "plans/11a-napa-playtest-fixes.md",
+        "plans/16-gameplay-systems.md"
+      ],
+      "last_verified_commit": null,
+      "fidelity_level": "partial"
+    },
+    {
+      "area": "Other courses",
+      "implementation": "Course data supported; composed renderer work pending",
+      "verification": "No full-course parity claim",
+      "remaining": "Complete CITY/HIWAY/MEDLY/CANYN",
+      "evidence": [
+        "plans/17-all-courses-port.md"
+      ],
+      "last_verified_commit": null,
+      "fidelity_level": "not-claimed"
+    },
+    {
+      "area": "Frontend/settings",
+      "implementation": "Menu/career/save paths exist; options gaps",
+      "verification": "Original save round-trip and options acceptance pending",
+      "remaining": "Settings/screens and music completion",
+      "evidence": [
+        "plans/18-settings-and-options.md",
+        "plans/13-music-and-frontend-completion.md"
+      ],
+      "last_verified_commit": null,
+      "fidelity_level": "not-claimed"
+    },
+    {
+      "area": "Android",
+      "implementation": "Native asset-free APK build",
+      "verification": "Hardware validation remains unverified",
+      "remaining": "Device import/render/input/lifecycle/performance",
+      "evidence": [
+        "plans/14-android-port.md",
+        "VERIFICATION.md"
+      ],
+      "last_verified_commit": null,
+      "fidelity_level": "not-claimed"
+    },
+    {
+      "area": "Packaging",
+      "implementation": "Source/commit/config/compiler stamp and manifest check",
+      "verification": "Current package receipt below if run",
+      "remaining": "Owner signing/release acceptance",
+      "evidence": [
+        "USER_GUIDE.md",
+        "plans/15-release-and-acceptance.md"
+      ],
+      "last_verified_commit": null,
+      "fidelity_level": "not-claimed"
+    },
+    {
+      "area": "Agent tooling",
+      "implementation": "Canonical instructions, claims, gates, capture validation, evidence index",
+      "verification": "Tooling regression suite; receipts below",
+      "remaining": "Clients must honor claims; direct unmanaged commands bypass them",
+      "evidence": [
+        "AGENT_TOOLING.md",
+        "agent-review/REVIEW.md"
+      ],
+      "last_verified_commit": null,
+      "fidelity_level": "not-claimed"
+    }
+  ],
+  "gates": {}
+}

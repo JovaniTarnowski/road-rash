@@ -1,28 +1,23 @@
 #!/bin/sh
-# Native + Android checks; codec and standalone packaging checks are opt-in.
+# Logged native + Android debug; strict fidelity/release/packaging opt in.
 set -eu
 root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 cd "$root"
-cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug
-cmake --build build --parallel
-ctest --test-dir build --output-on-failure
-if [ -d ../cdrom/ROADRASH ]; then
-    build/rr-viewer --assets ../cdrom/ROADRASH --smoke
-    build/rr-course --exe ../cdrom/ROADRASH/ROADRASH.EXE ../cdrom/ROADRASH/DATA/COURSES/*.CRS
+build_dir=${RR_BUILD_DIR:-"$root/build-agent-ci"}
+python3 tools/agent_gate.py native --build-dir "$build_dir"
+python3 tools/agent_gate.py android-debug
+if [ "${RR_ANDROID_RELEASE:-0}" = 1 ]; then
+    python3 tools/agent_gate.py android-release
+fi
+if [ "${RR_SIM_ACCEPTANCE:-0}" = 1 ]; then
+    python3 tools/agent_gate.py oracle --build-dir "$build_dir"
 fi
 if [ "${RR_CODEC_ORACLE:-0}" = 1 ]; then
-    python3 tools/verify_video_audio.py ../cdrom/ROADRASH/VIDEO --video-decoder build/cinepak-test
-fi
-export JAVA_HOME="${JAVA_HOME:-/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home}"
-android/gradlew -p android assembleDebug
-if unzip -Z1 android/app/build/outputs/apk/debug/app-debug.apk | rg -q '^assets/game/'; then
-    printf '%s\n' 'Original game data found in APK' >&2
-    exit 1
+    python3 tools/verify_video_audio.py ../cdrom/ROADRASH/VIDEO --video-decoder "$build_dir/cinepak-test"
 fi
 if [ "${RR_STANDALONE_APP:-0}" = 1 ]; then
-    tools/build_macos_app.sh
-elif [ -d build-release/Road\ Rash\ Native.app ]; then
-    # A checked-in/stale bundle must not be mistaken for the current game.
-    python3 tools/verify_macos_app.py build-release/Road\ Rash\ Native.app
+    python3 tools/agent_gate.py package --build-dir "$root/build-agent-ci-package"
+elif [ -d "build-release/Road Rash Native.app" ]; then
+    python3 tools/verify_macos_app.py "build-release/Road Rash Native.app"
 fi
-printf '%s\n' 'CI OK'
+printf '%s\n' 'CI OK (see receipts; simulation parity and hardware are separate coverage)'

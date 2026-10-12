@@ -281,6 +281,44 @@ static void dump_sim_tick(void) {
                     rr_log(key, (slice && readable(slice + 0x36, 1)) ?
                         sim_field_value(slice, 0x36, 1, 0) : -1);
                 }
+                {   /* Half speed-copy (+0x108): the 0x00449e90 closing-rate
+                 * adjust reads it off candidate halves. */
+                    const uintptr_t half = (uint32_t)sim_field_value(node, 0x2fc, 4, 0);
+                    snprintf(key, sizeof key, "nodeaddr.%d.half108", addr_index);
+                    rr_log(key, (half && readable(half + 0x108, 4)) ?
+                        sim_field_value(half, 0x108, 4, 1) : -1);
+                }
+                snprintf(key, sizeof key, "nodeaddr.%d.w2c", addr_index);
+                rr_log(key, sim_field_value(node, 0x2c, 4, 0));
+                snprintf(key, sizeof key, "nodeaddr.%d.link0", addr_index);
+                rr_log(key, sim_field_value(node, 0x0, 4, 0));
+                snprintf(key, sizeof key, "nodeaddr.%d.link1", addr_index);
+                rr_log(key, sim_field_value(node, 0x4, 4, 0));
+                {   /* Half slice word (+0x2c): the 0x00449ce0 walk filter. */
+                    const uintptr_t half = (uint32_t)sim_field_value(node, 0x2fc, 4, 0);
+                    snprintf(key, sizeof key, "nodeaddr.%d.half2c", addr_index);
+                    rr_log(key, (half && readable(half + 0x2c, 4)) ?
+                        sim_field_value(half, 0x2c, 4, 0) : -1);
+                }
+                {   /* Brain statics (header frame only): rating currents and
+                 * targets (+0x0..+0xf0), ease steps (+0x12c..+0x134) and the
+                 * overtake index byte (+0x165). Keys: nodeaddr.<i>.p.<off>. */
+                    const uintptr_t half = (uint32_t)sim_field_value(node, 0x2fc, 4, 0);
+                    const uintptr_t brain = (half && readable(half + 0x1d8, 4)) ?
+                        (uint32_t)*(uint32_t*)(half + 0x1d8) : 0;
+                    if (brain) {
+                        for (unsigned w = 0; w < 60; ++w) {
+                            snprintf(key, sizeof key, "nodeaddr.%d.p.%x", addr_index, 4 * w);
+                            rr_log(key, sim_field_value(brain, 4 * w, 4, 1));
+                        }
+                        for (unsigned e = 0; e < 3; ++e) {
+                            snprintf(key, sizeof key, "nodeaddr.%d.p.%x", addr_index, 0x12c + 4 * e);
+                            rr_log(key, sim_field_value(brain, 0x12c + 4 * e, 4, 1));
+                        }
+                        snprintf(key, sizeof key, "nodeaddr.%d.p.165", addr_index);
+                        rr_log(key, sim_field_value(brain, 0x165, 1, 0));
+                    }
+                }
                 ++addr_index;
             }
             int slot = -1;
@@ -326,7 +364,7 @@ static void dump_sim_tick(void) {
                  * +0x1dc..+0x200). This is what 0x00407bd0 steps. */
                 if (rh && readable(rh + 0x1d8, 4)) {
                     const uintptr_t brain = (uint32_t)*(uint32_t*)(rh + 0x1d8);
-                    for (unsigned w = 0; w < 26; ++w) {
+                    for (unsigned w = 0; w < 36; ++w) {
                         snprintf(key, sizeof key, "rider.%d.brain_%x", slot, 0x138 + 4 * w);
                         rr_log(key, sim_field_value(brain, 0x138 + 4 * w, 4, 1));
                     }
