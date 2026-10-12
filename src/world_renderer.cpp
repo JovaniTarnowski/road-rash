@@ -17,6 +17,9 @@ void render_nodes(Framebuffer& fb,const std::vector<DrawNode>& nodes,const ViewM
         int32_t minx=points[0].x,maxx=minx,miny=points[0].y,maxy=miny;
         for(const auto& p:points){minx=std::min(minx,p.x);maxx=std::max(maxx,p.x);miny=std::min(miny,p.y);maxy=std::max(maxy,p.y);}
         if(minx>clip.right || maxx<clip.left || miny>clip.bottom || maxy<clip.top)continue;
+        // Mip-less textures (0x004436a0 null pixel pointer for zero-size
+        // sheet frames) contribute no pixels; the node still exists.
+        if(node.texture && node.texture->mips.empty() && !(node.texture->flags&flat_mask))continue;
         if(!node.texture || (node.texture->flags&flat_mask)) {
             draw_flat_quad(fb,{points,node.texture?node.texture->flat_index:*node.flat_index},clip);continue;
         }

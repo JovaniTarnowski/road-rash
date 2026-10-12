@@ -20,6 +20,10 @@ private:
     ActorAnimationLibrary library_;
     RiderSprites sprites_;
     mutable std::map<std::array<int32_t,3>,std::optional<CelTexture>> pages_;
+    // 0x004436a0 leaves a null pixel pointer for zero-size sheet frames
+    // (~130 of the 326 shadow frames on disc); 0x0044ba40 still emits the
+    // node and the rasterizer draws nothing. A mip-less texture marks that.
+    mutable std::optional<CelTexture> empty_texture_;
     std::vector<int32_t> sin_table_;   // quarter-sin for body rotation (0x00475768)
 };
 }

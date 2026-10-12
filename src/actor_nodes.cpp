@@ -20,7 +20,9 @@ const CelTexture* ActorNodes::texture(size_t bank,uint32_t frame,int32_t colour)
     const std::array<int32_t,3> key{int32_t(bank),int32_t(frame),palette};
     auto found=pages_.find(key);
     if(found==pages_.end())found=pages_.emplace(key,rider_texture(sprites_,palette,int32_t(frame))).first;
-    return found->second?&*found->second:nullptr;
+    if(found->second)return &*found->second;
+    if(!empty_texture_)empty_texture_=CelTexture{};
+    return &*empty_texture_;
 }
 std::vector<DrawNode> ActorNodes::rider(const ActorAnimationFrame& descriptor,size_t bank,int32_t colour,
     const ActorOrientation& orientation,ActorProjection projection,const Camera& camera,const DepthTable& depths,int32_t vertical_q8,
