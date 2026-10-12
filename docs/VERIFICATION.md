@@ -1,5 +1,24 @@
 # Verification log (all sessions September 28, 2026)
 
+## Start-grid ordering research (October 12, 2026)
+
+- Disc EXE SHA-256 matches `analysis/inventory.json`:
+  `73d7f9744b5b1a9482b3909950cdf3fe34119fe13d023b031e9c6739a60f18a2`.
+- `npx --yes rea-agents@6.4.0 function ../cdrom/ROADRASH/ROADRASH.EXE
+  <address> --format json` on `0x00443af0`, `0x00438610`, `0x00443cd0`:
+  all exit 0 with Ghidra 12.1.4; all pseudocode exactly matches existing
+  exports. Assembly confirms world-before-objects, byte threshold and callbacks.
+- Python integrity/node audit: PASS. `napa-start` frame 0 and `napa-drive`
+  frames 0–900 have valid headers, expected EXE hash, contiguous frame numbers
+  and completion markers. Scene-0 v3 files have exact recorded lengths/counts;
+  near road nodes precede shadow/body in both saved list tails. Receipt:
+  `analysis/oracle/start-grid-order-audit.json`; REA JSON evidence and full
+  commands are in [the research report](research/2026-10-12-start-grid-order.md).
+- Scope: recovered original ordering plus saved original near-grid layering.
+  The current native front-half-only delay differs. No native source edits,
+  build/CTest, new Wine capture or full native frame comparison in this task.
+  Plan 11a Task 3 acceptance remains open; actor state recapture is still needed.
+
 ## Session 1: macOS ARM64
 
 - CMake configure and C++17 build succeeded on macOS 27.0 / Apple silicon.

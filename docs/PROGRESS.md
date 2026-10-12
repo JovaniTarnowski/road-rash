@@ -50,6 +50,19 @@ Detailed evidence is in [REVERSE_ENGINEERING.md](REVERSE_ENGINEERING.md) and tes
 
 ## Timeline
 
+### October 12, 2026: original start-grid ordering recovered with REA
+
+Used pinned `npx rea-agents@6.4.0` on the hash-verified disc EXE to check
+`0x00443af0`, `0x00443cd0` and `0x00438610`, including their assembly;
+all three pseudocode outputs match the prior exports exactly. The original
+emits the complete next nearer world strip before the farther object pass.
+The `<0x80` fraction threshold inserts scenery between actors, rather than
+delaying only front-half actors. Two saved original frame-0 tails confirm
+the near road precedes shadow/body. The current native workaround remains
+approximate and was left intact during this research request. See
+[the trace and correction sequence](research/2026-10-12-start-grid-order.md).
+Plan 11a Task 3 stays open pending actor-state capture and native node/frame parity.
+
 Sessions 1–6: September 28, 2026. Later dates are listed per session.
 
 ### Session 1: foundations

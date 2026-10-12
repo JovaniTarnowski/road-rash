@@ -816,6 +816,22 @@ native look-alike of dialog 300, Pause is purely native.
 
 ### Rider/bike/shadow nodes (October 12, 2026, plan 11a Task 3 trace)
 
+Start-grid ordering follow-up (October 12): pinned `npx rea-agents@6.4.0`
+on the hash-verified disc EXE confirms `0x00443af0`, `0x00443cd0` and
+`0x00438610`; all three pseudocode outputs exactly match the existing exports.
+The original emits the complete next nearer world strip (lanes and terrain,
+both roads and join when split) before the farther slice's object pass.
+The unsigned rendered-position low-byte `<0x80` test inserts scenery between
+actors; it does not delay only front-half actors past a road strip. Saved
+`napa-start` and `napa-drive` frame-0 tails place the near shadow/body after
+the nearer road, with body bottom y 164.5 below the road seam y 152.5.
+The native front-half-only delay remains an approximation, including its
+placement before nearer hills/buildings. Full trace, exact call sites, masks,
+evidence limits and correction sequence:
+[start-grid order research](research/2026-10-12-start-grid-order.md).
+This confirms the original rule and captured near-grid layering, not native
+constructed-list/full-frame parity.
+
 The bike+shadow dispatch `0x00446250` emits shadow first (clip 0, ground
 without vertical) then body (clip 1, ground + vertical>>8), re-running view
 selection `0x0043af60` after the `+0x90` swap on each side. The armed variant
