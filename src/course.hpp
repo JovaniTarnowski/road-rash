@@ -17,19 +17,25 @@ struct PathSample {
     uint8_t marking_flags=0,event_type=0;
     std::array<uint8_t,3> event_parameters{};
 };
-struct FamilyEvent {
-    int32_t sample=0;
-    uint8_t type=0,slot=0;
-    uint16_t family=0;
+struct CourseEvent {
+    int32_t start=0,end=0; // CESR interval, section-local samples (0x00452690)
+    uint8_t raw_type=0;    // record byte +8; runtime type is raw+1 (finish = raw 6)
+    uint8_t params[3]={};  // record bytes +9..+11; params[0] is the level tag
 };
-struct CourseSection {
-    std::vector<PathSample> samples;
-    TerrainDefinition terrain;
-    std::vector<FamilyEvent> family_events;
-    int32_t family_forward_bias=0;
-    std::vector<uint32_t> roadside_profiles; // BORR packed words, in original order
-    std::vector<std::array<uint32_t,2>> scenery_events; // DZHR packed records, before random placement
-};
+ struct FamilyEvent {
+     int32_t sample=0;
+     uint8_t type=0,slot=0;
+     uint16_t family=0;
+ };
+ struct CourseSection {
+     std::vector<PathSample> samples;
+     TerrainDefinition terrain;
+    std::vector<CourseEvent> events; // raw CESR records in original order (0x004525c0 scans these)
+     std::vector<FamilyEvent> family_events;
+     int32_t family_forward_bias=0;
+     std::vector<uint32_t> roadside_profiles; // BORR packed words, in original order
+     std::vector<std::array<uint32_t,2>> scenery_events; // DZHR packed records, before random placement
+ };
 struct CourseNode {
     uint32_t offset, kind, next=0, previous=0, link=0, length=0;
 };
@@ -55,8 +61,20 @@ struct RouteSample {
     int32_t dx_sep=0, x_sep=0; // half 1 minus half 0: traversal [5], [6]
 };
 Course read_course(const std::vector<uint8_t>& bytes);
-// At each split choose its first or second outgoing edge. Merge follows link.
-// Annotates split/merge windows as the original lookahead traversal would,
-// assuming the rider has already committed to the chosen branch (0x00476cd4).
-std::vector<RouteSample> make_route(const Course& course, bool second_branch);
+// Split node offsets in traversal order (kind 1 nodes reached from root).
+// Census key: one branch bit per split, in this order (26 combos total:
+// CITY 2, HIWAY 4, MEDLY 8, NAPA 8, CANYN 4).
+std::vector<uint32_t> split_nodes(const Course& course);
+// Route with per-split branch choices (0 = node.next, 1 = node.previous).
+// make_route(course,second) keeps the all-false/all-true shorthand.
+std::vector<RouteSample> make_route_choices(const Course& course, const std::vector<int>& choices);
+ // At each split choose its first or second outgoing edge. Merge follows link.
+ // Annotates split/merge windows as the original lookahead traversal would,
+ // assuming the rider has already committed to the chosen branch (0x00476cd4).
+ std::vector<RouteSample> make_route(const Course& course, bool second_branch);
+// First-match finish recovery 0x004525c0: graph-relative event-start sample
+// of the first raw-type-6 event on this route whose parameter[0]-level==1
+// (level 1..5; level is 0-based DAT_004b8a12). -1 when no route sample
+// carries a qualifying event.
+int32_t finish_event_sample(const Course& course, const std::vector<RouteSample>& route, int level);
 }

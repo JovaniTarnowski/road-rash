@@ -123,6 +123,10 @@ Course read_course(const std::vector<uint8_t>& bytes) {
                 const size_t p=events+20+k*12;
                 if(segments.s32(p)>segments.s32(p+4) || (k && segments.s32(p)<segments.s32(p-12)))
                     throw std::runtime_error("Invalid course event interval");
+                CourseEvent e; e.start=segments.s32(p); e.end=segments.s32(p+4);
+                e.raw_type=segments.byte(p+8);
+                for(int v=0;v<3;++v)e.params[v]=segments.byte(p+9+v);
+                section.events.push_back(e);
             }
             uint32_t k=0;
             for(uint32_t j=0;n && j<count;++j) {
@@ -230,17 +234,65 @@ std::vector<RouteSample> branch_backward(const Course& course,uint32_t offset) {
 // 0x00453b60 walks 0x51 samples from each split/merge and rewrites node +0x14 to 0x5100.
 constexpr uint32_t window=0x51;
 }
+std::vector<RouteSample> make_route_indexed(const Course& course, const std::vector<int>& choices,
+                                           const std::vector<uint32_t>& splits_by_node, int global_branch);
 
-std::vector<RouteSample> make_route(const Course& course,bool second_branch) {
+std::vector<uint32_t> split_nodes(const Course& course) {
+    std::vector<uint32_t> splits;
+    std::set<uint32_t> visited;
+    std::vector<uint32_t> pending{course.root};
+    while(!pending.empty()) {
+        uint32_t offset=pending.back(); pending.pop_back();
+        if(!visited.insert(offset).second) continue;
+        const auto& node=node_at(course,offset);
+        if(node.kind>=3) continue;
+        if(node.kind==0) { pending.push_back(node.next); pending.push_back(node.previous); }
+        else if(node.kind==1) { splits.push_back(offset); pending.push_back(node.next); pending.push_back(node.previous); }
+        else pending.push_back(node.link);
+    }
+    std::sort(splits.begin(),splits.end());
+    return splits;
+}
+
+std::vector<RouteSample> make_route_choices(const Course& course, const std::vector<int>& choices) {
+    const auto splits=split_nodes(course);
+    if(choices.size()!=splits.size()) throw std::runtime_error("Branch choice count must match split count");
+    for(int c:choices) if(c!=0 && c!=1) throw std::runtime_error("Branch choice must be 0 or 1");
+    return make_route_indexed(course,choices,splits,-1);
+}
+std::vector<RouteSample> make_route(const Course& course, bool second_branch) {
+    return make_route_indexed(course,{},split_nodes(course),second_branch?1:0);
+}
+
+int32_t finish_event_sample(const Course& course, const std::vector<RouteSample>& route, int level) {
+    // 0x004525c0 scans CESR entries (header20, stride12) for raw type 6 with
+    // signed parameter byte +9 such that parameter-level==1; it returns the
+    // first matching local start sample, stored at section+0x2c by 0x00453e60.
+    // Route samples carry section/local metadata, so scan them in order.
+    if(level<0 || level>4) throw std::runtime_error("Finish level out of range");
+    for(size_t i=0;i<route.size();++i) {
+        const auto& s=route[i];
+        const auto& section=course.sections.at(s.section);
+        for(const auto& e:section.events) {
+            if(e.raw_type!=6 || int(e.params[0])-level!=1) continue;
+            if(int32_t(s.local)!=e.start) continue;
+            // Graph-relative event-start sample = route index of the matching local start.
+            return int32_t(i);
+        }
+    }
+    return -1;
+}
+
+std::vector<RouteSample> make_route_indexed(const Course& course, const std::vector<int>& choices,
+                                           const std::vector<uint32_t>& splits_by_node, int global_branch) {
     std::vector<RouteSample> route;
     std::set<uint32_t> visited;
-    struct Split { size_t index; uint32_t other; };
+    struct Split { size_t index; uint32_t other; int branch; };
     struct Merge { size_t index; uint8_t half; uint32_t other; };
     std::vector<Split> splits;
     std::vector<Merge> merges;
     uint32_t offset=course.root, arrived=0;
-    while(true) {
-        if(!visited.insert(offset).second) throw std::runtime_error("Cycle in forward course route");
+    for(size_t guard=0;guard<=course.nodes.size();++guard) {
         const auto& node=node_at(course,offset);
         if(node.kind>=3) break;
         if(node.kind==0) {
@@ -249,16 +301,19 @@ std::vector<RouteSample> make_route(const Course& course,bool second_branch) {
             arrived=offset;
             offset=node.next;
         } else if(node.kind==1) {
-            splits.push_back({route.size(),second_branch?node.next:node.previous});
-            offset=second_branch?node.previous:node.next;
+            auto it=std::find(splits_by_node.begin(),splits_by_node.end(),offset);
+            if(it==splits_by_node.end()) throw std::runtime_error("Split node missing from census order");
+            const int branch=choices.empty()?global_branch:choices[size_t(it-splits_by_node.begin())];
+            splits.push_back({route.size(),branch?node.previous:node.next,branch});
+            offset=branch?node.previous:node.next;
         } else {
             const uint8_t half=arrived==node.next?0:1;
             merges.push_back({route.size(),half,half?node.next:node.previous});
             offset=node.link;
         }
+        if(guard==course.nodes.size()) throw std::runtime_error("Cycle in forward course route");
     }
     if(route.empty()) throw std::runtime_error("Empty course route");
-
     // Replay the lookahead traversal (0x00453030) along the route.
     auto merge_at=[&](size_t i){ for(auto& m:merges) if(m.index==i) return &m; return (Merge*)nullptr; };
     auto split_at=[&](size_t i){ for(auto& s:splits) if(s.index==i) return &s; return (Split*)nullptr; };
@@ -288,7 +343,7 @@ std::vector<RouteSample> make_route(const Course& course,bool second_branch) {
         } else if(const Split* s=split_at(i)) {
             other=branch_forward(course,s->other);
             if(other.empty()) throw std::runtime_error("Empty split branch");
-            primary=second_branch?1:0;
+            primary=uint8_t(s->branch);
             other_index=0;
             const auto& before=route[i-1].path;
             auto [h0,h1]=halves(sample.path,other[0].path);
