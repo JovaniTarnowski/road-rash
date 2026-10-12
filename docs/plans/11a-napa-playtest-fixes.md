@@ -166,27 +166,10 @@ void update_engine_rpm(Bike& b) {
 - Modify: `src/actor_nodes.cpp`, `src/actor_render.cpp`, `src/world_renderer.cpp` / `src/texture.cpp` (only if a shadow raster mode is traced), `src/rider_sprites.cpp`, `tests/oracle_scene_test.cpp`, `tests/actor_nodes_test.cpp`
 - Create: `analysis/playtest/` (git-ignored via `.gitignore`, added in the October 11 replan; never commit its screenshots)
 
-- [ ] **Step 1: Reproduce and record.** Capture native frames showing the glitches into `analysis/playtest/napa-t<tick>.bmp` with `build/rr-game --assets ../cdrom/ROADRASH --race --autopilot --ticks <t> --screenshot …` for t = 300, 900, 1500, 2400. Add a debug flag `--dump-nodes FILE` that writes the merged node list (resource, frame, bank, view points, flip) for the screenshot frame.
-- [ ] **Step 2: Get the original nodes for the same situation.** The v3 scene dumps (`napa-drive`, frames 0/150/300/750) contain the original player, bike and shadow nodes. Add `--native-actors` to `oracle-scene-test`. It rebuilds the player's and opponents' actor nodes from the dumped object state (position, lateral, height, animation selection) and compares them with the dump's actor nodes:
-  - node order;
-  - bank (body/shadow);
-  - frame;
-  - all four view points;
-  - flip;
-  - texture/palette selection (`0xde`/`0xdf`/`0xe0`).
-
-  Run it and confirm it fails on at least the defect frames' equivalents. **If the existing dumps lack the object state needed**, extend dump v3 with the rider/bike object bytes (the plan 10 field table already lists the offsets) and recapture `napa-drive`.
-- [ ] **Step 3: Fix at the root**, guided by the first differing field. Candidate causes, in the order to check:
-  1. shadow projection (`clip_ground=false`, ground without vertical, wrong depth or fraction);
-  2. view/subframe selection (`select_actor_view` angles; yaw sign; the rider `depth*2` rule);
-  3. frame bank mismatch between body and shadow (`bank+2` versus the 0xe0 sheet);
-  4. a missing shadow raster mode: if the original draws shadows through a darkening or translucency table rather than plain index-zero transparency, trace it in `0x0044d300` dispatch and add the mode to `DrawNode` and `render_nodes` with a raster fixture;
-  5. a stale page cache key in `ActorNodes::texture` (`pages_` keyed by bank, frame and palette) after a renderer reset.
-
-  Also check the weapon frame: a club appeared in the player's hand while the autopilot was not attacking (tick 2400 screenshot). Confirm the player's starting weapon and the riding-animation selection against the original.
-- [ ] **Step 4: Accept.**
-  - `oracle-scene-test --native-actors` matches every actor node in every captured frame, and pixel mode matches the full frame.
-  - Recapture the Step 1 screenshots, inspect them, and add a frame mid-jump (Review Focus 4).
+- [x] **Step 1: Reproduce and record (done, NodeCompare session).** Fresh native frames recaptured t=300..6000 (`analysis/playtest/napa-t*.bmp`, git-ignored). Club-at-2400 explained: autopilot punches every 40 ticks; player starting weapon is 0. No mid-jump frame: drive-2 never gets airborne. `--dump-nodes` not added (debug rebuilds served its role).
+- [x] **Step 2: Get the original nodes (done: `0541981`, `480022a`).** Scene dump v4 carries full `0x340` bike+rider-half objects per scheduler node; `--native-actors` compares per-bb-node against dispatch records (`actor.sel.*`/`actor.bb.*` from `0x0043af60`/`0x0044ba40` call-site hooks). Failed as required, then 17/21.
+- [x] **Step 3: Fix at the root (done: `dad61b3`).** Closed: shadow projection/order/bank, no shadow raster mode (`0x0044d300` same textured path), animation selection on rider halves, colour rule, bb-lateral inputs, 250-node streaming buffer mapping. The one remaining defect was body-roll rotation `0x00450ad0`: q3 sign, S/C slot mapping, SAR divide — all traced to decompile text and golden-verified. Test harness fixes in the same unit: sel-byte descriptor match (dispatch/dump `+0x81` skew), dispatch `+0xbc` roll override.
+- [x] **Step 4: Accept (done: `c86d566`).** `oracle-scene-test --native-actors` matches every actor node in every captured frame (25/25 over frames 0/150/300/750 of `napa-drive-v5`); pixel mode matches the full frame (0 differing pixels). Empty-SHADOW.DAT frames (~130/326, `0x004436a0` null pixel pointer) emit geometry with an empty texture. Screenshots reinspected. NOT done: frame mid-jump (no jump-capable capture exists) — tracked as remaining.
 - [ ] **Step 5:** Commit: `render: rider, bike and shadow nodes match original display lists`.
 
 ---
