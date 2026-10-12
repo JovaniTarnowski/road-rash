@@ -81,27 +81,11 @@ Android builds `rr-game` and is current whenever it is rebuilt.
   std::vector<TrafficCar>& cars_mut();
   ```
 
-- [ ] **Step 1: Trace.**
-  - Find where the original tests the player and AI riders against cars: the contact detector `0x004368f0` over the scheduler's object list, which includes cars, then the `0x004049c0` branches for bike against car.
-  - Record the hit-box sizes per kind, the impulse and speed transfer, the crash reason code passed to `0x00403d60`, the car's own reaction (stop, swerve, horn) and the sound events (crash codes 0/1/2, grunts 3/4).
-  - Write it into REVERSE_ENGINEERING.md with addresses.
-- [ ] **Step 2: Capture an original fixture.** Use the same isolated-call technique as the crash fixtures (`analysis/oracle/rea-crash-entry.json` workflow). Call the contact branch with a scratch rider and a scratch car over 256 cases:
-  - head-on and from behind;
-  - lateral offsets across the hit-box edge;
-  - speeds below and above the crash threshold;
-  - a rider already crashed.
-
-  Save to `analysis/oracle/napa-car-contact.tsv`.
-- [ ] **Step 3: Write the failing tests.**
-  - `actor_traffic_test` gets two synthetic cases: a car exactly at the hit-box boundary (no contact one unit outside, contact on the boundary per the traced comparison), and a car on the other split roadway at the same position, which gives no contact.
-  - `crash_test` gets a golden mode that runs the 256 fixture cases and compares every tracked field on rider, bike and car.
-
-  Run both and confirm they fail.
-- [ ] **Step 4: Port.** Call `collide_traffic` for every rider (player and AI) at the traced point in `Race::step`. Use the fixture-verified response, and enter the crash through the existing crash module with the car reason. Queue the original sound events.
-- [ ] **Step 5: Accept.**
-  - The fixture matches every case.
-  - A live check (`rr-game --race --ticks 6000` with a debug flag `--steer-into-traffic` that forces the autopilot towards the oncoming lane; add it if missing) shows at least one crash with reason "car" in the log.
-  - Plan 10's `napa-crash-car` tick scenario is recorded as the remaining parity check.
+- [x] **Step 1: Trace (done).** REVERSE_ENGINEERING.md "Rider–vehicle contact": `0x004368f0` detector (+0x10 tick match, +0xc0 6/5 walks, +0x178/+0x174/+0x17c overlap, +0x36 shared roadway), `0x00436a40` separation (masses 256/1800), bike `0x004049c0` + car `0x0044efa0` horn branches, hit-boxes/impulse/reason codes/sound events recorded.
+- [x] **Step 2: Capture (done).** `analysis/oracle/napa-car-contact.tsv` (git-ignored): 256 isolated `0x004049c0` calls, 0 faults — 32 fast-contained crashes (reason 2, anim 29), 32 slow-contained speed transfers, 64 side shoves, 128 crashed-rider rejections.
+- [x] **Step 3: Write the failing tests (done).** `traffic_test` synthetic boundaries (hit-box edge ±1, split-roadway exclusion) fail-then-pass; fixture case comparison done ad-hoc, not yet an in-tree golden.
+- [x] **Step 4: Port (done).** `collide_traffic` for player and AI at the traced point in `Race::step`; crash entry with the car reason; original sound events queued.
+- [x] **Step 5: Accept (done, with open remainders).** Live `--steer-into-traffic` 6000-tick run shows `car-crash tick 1249 reason 2` (plus a second crash at 5408). Fixture golden comparison (256 cases in-tree) and the `napa-crash-car` tick scenario remain open (plan 10 oracle work).
 - [ ] **Step 6:** Commit: `sim: rider and car contact with original crash response`.
 
 ---
