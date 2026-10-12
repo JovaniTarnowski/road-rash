@@ -128,19 +128,15 @@ void update_engine_rpm(Bike& b) {
 
   Check the airborne branch against the disassembly before trusting the decompiled text above. In the decompile, the `else` branch (speed unchanged path / airborne) does **not** update `+0x2e8`; keep that.
 
-- [ ] **Step 1: Find the call site.** Find where the original calls `0x004349c0`: per tick from the bike/rider think, or from the sound update `0x00434ce0`/`0x00435030`. The native call must sit at the same point, because `+0x2e8` caching makes the result depend on call frequency.
-- [ ] **Step 2: Write the failing tests.**
-  - `bike_test` drives `update_engine_rpm` over a synthetic bike for: gear change at constant speed; acceleration from 0; airborne (`+0x20 = 0x65`) with the 0xffff cap; crashed with rpm > 0x2001; and speed unchanged with nonzero speed (no change).
-  - If an isolated original-function fixture is practical (same technique as the crash fixtures), capture 256 cases into `analysis/oracle/engine-rpm.tsv` and compare all three fields.
-  - `hud_test` asserts that `Hud::state(...).rpm_angle` follows `+0x2dc`.
-- [ ] **Step 3: Implement.** Call it at the traced point. Delete `sound.cpp`'s private `rpm_`/`rpm_speed_` state and read `+0x2dc` for the player and opponents, so the engine pitch and the needle cannot disagree. Then run `sound_test`.
-- [ ] **Step 4: Distance readout.** Trace the dashboard draw (`0x00416310` layout, the routine that prints layout entry 30) for which object and field it reads. `+0x44` on the player's bike is evidently wrong or unmaintained. Port the source and add a `hud_test` case with a synthetic value.
+- [x] **Step 1: Find the call site (done).** `update_engine_rpm` (`0x004349c0` literal) lives in `bike.cpp`; called per tick from the race tick and from `SoundSystem::update` (player always refreshed, even with sound off — `46e08c0`).
+- [x] **Step 2: Write the failing tests (done).** `bike_test` covers gear change, acceleration, airborne cap, crashed rpm, speed-unchanged; `hud_test` asserts `rpm_angle` follows `+0x2dc`. No isolated fixture captured.
+- [x] **Step 3: Implement (done).** `sound.cpp` reads bike `+0x2dc` (no private rpm state); `sound_test` green.
+- [x] **Step 4: Distance readout (done).** Entry 30 prints route distance from `+0x44` (`+0x1c` snapshot): `(pos>>8)-50)/33` tenths (metric `(pos>>5)-400)/165`), 0.0 at grid sample 50; `hud_test` synthetic case (50+33*12 → 12).
 - [ ] **Step 5: Accept against the original.** Capture `napa-dash`: `RR_ORACLE_PIXELS=1` **after** the dashboard is drawn. Add a post-dashboard capture point to the oracle hook if the existing one is pre-dashboard (it is: `0x004439f5` captures before presentation). Compare the dashboard region over 120 frames:
   - needle endpoints and the distance text must match the original;
   - needle pen pixels may differ only where the native line routine differs.
 
   Document either result. If the pen rasterisation is ported, remove that exception.
-- [ ] **Step 6:** Commit: `hud: tachometer from the original engine rpm update; distance readout source`.
 
 ---
 
