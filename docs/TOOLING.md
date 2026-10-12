@@ -126,3 +126,24 @@ evidence in `analysis/oracle/rea-actor-animation.json`. The pseudocode agrees wi
 the repository's Ghidra export. The playback port was separately validated
 against 2,048 calls to the original function; REA output alone was not treated
 as runtime proof.
+
+## Emscripten (plan 23, web port)
+
+Local install only, owner-approved October 12, 2026 (plan 23 Task 1 Step 1):
+
+- `.tools/emsdk`, cloned `--depth 1 --branch 6.0.10`, installed and
+  activated there; nothing global. 6.0.10 (released 2026-09-21) is the
+  newest release at least two weeks old; `emcc 6.0.10
+  (d6c521a7f05449857c76bd99e396895583cf2083)`.
+- emsdk needs Python >= 3.10 (the Xcode `/usr/bin/python3` is 3.9); run
+  its commands with Homebrew Python on `PATH`. Tests run under the
+  bundled Node v24.19.0, never the system Node.
+- Configure: `source .tools/emsdk/emsdk_env.sh` then
+  `.tools/emsdk/upstream/emscripten/emcmake cmake -S . -B build-web
+  -DCMAKE_BUILD_TYPE=Release`.
+- Gotcha: `-sDISABLE_EXCEPTION_CATCHING=0` must be in compile options as
+  well as link options, or no landing pads are emitted and every `catch`
+  is dead (see [WEB.md](WEB.md)). The ported code throws
+  `std::runtime_error` pervasively, so this bit every test at once.
+- CTest logs under `--output-on-failure` are bloated by Node printing the
+  whole single-line `.js` as error context; grep past it.
