@@ -70,7 +70,7 @@ void read_grid_slot(const std::vector<uint8_t>& exe, int level, int slot,
 }
 std::vector<Opponent> original_opponents(const std::vector<uint8_t>& exe, const std::vector<BikeSpec>& specs,
                                          int level, int count) {
-    if (level < 0 || level > 4 || count < 0 || count > 7) throw std::runtime_error("Invalid level or opponent count");
+    if (level < 0 || level > 4 || count < 0 || count > 14) throw std::runtime_error("Invalid level or opponent count");
     constexpr uint32_t data_va = 0x00463000, data_raw = 0x61600, data_size = 0x16400;
     auto at = [&](uint32_t va) {
         if (va < data_va || va + 4 > data_va + data_size || exe.size() < data_raw + (va - data_va) + 4)
@@ -88,16 +88,27 @@ std::vector<Opponent> original_opponents(const std::vector<uint8_t>& exe, const 
         const size_t bike = byte(0x004641c8 + uint32_t(level + k * 5));
         if (bike >= specs.size()) throw std::runtime_error("Opponent bike index out of range");
         const uint32_t row = 0x00463c78 + 0x40u * uint32_t(k);
+        // 0x00405600 builds slots 1..<DAT_004642d4-1 with the grid tables
+        // 0x00464088 (level<4) / 0x00464108: position equals the selector,
+        // lateral is the table lateral (0x00405990 adds road centre at
+        // build). Slots 1..7 existed before; 8..14 complete the offline 15.
+        int32_t grid_lat = 0, grid_pos = 0;
+        read_grid_slot(exe, level, k, grid_lat, grid_pos);
         Opponent o{specs[bike], word(row + 0xc) / 2, word(personality + 0x1bc + 4u * uint32_t(level)),
                    word(personality + 0x1a8 + 4u * uint32_t(level)),
-                   int(byte(personality + 0x18c)), k, k, 0, 0, false,
+                   int(byte(personality + 0x18c)), k, k, grid_pos, grid_lat, false,
                    word(0x004642a0 + 4u * uint32_t(level)),
                    {word(row + 0x30), word(row + 0x34), word(row + 0x38), word(row + 0x3c)},
                    word(row + 0x18 + 4u * uint32_t(level))};
-        if (o.weapon < 0 || o.weapon > 2) throw std::runtime_error("Unexpected opponent weapon");
         out.push_back(o);
     }
     return out;
+}
+int32_t race_road_base_q8(int32_t golden_lateral, int32_t route_offset, int32_t grid_word) {
+    // 0x00405990: lateral = sub-slice +0xcc (absolute Q8 road centre) +
+    // grid offset. RouteSample::offset is relative (world units), so the
+    // absolute anchor is golden - relative*256 - grid. No RNG/allocation.
+    return golden_lateral - route_offset * 256 - grid_word;
 }
 
 Race::Race(std::vector<RouteSample> a, std::vector<RouteSample> b, const PhysicsTables& t,
@@ -236,9 +247,28 @@ void Race::cross_sample(Rider& r, int32_t delta) {
     uint32_t to = from + uint32_t(delta);
     const size_t last = route_of(r).size() - 2;
     if (int32_t(to) < 0) to = 0;
+    // 0x00406890: finish when the nonzero global DAT_004b6e58 is reached
+    // (with the +0x2c scheduler gate and the +0xc0 bit-0x10 latch moving to
+    // 0x00437800). finish_q8_ carries DAT_004b6e58; 0 keeps route-end
+    // semantics for synthetic routes. +0x2c is nonzero for every inserted
+    // scheduler actor (bike.cpp scheduler insert), so the gate passes here.
+    if (finish_q8_ != 0 && (b.u8(0xc0) & 0x10) == 0 && int32_t(to) >= finish_q8_) {
+        const size_t start_sample = r.sample;
+        to = uint32_t(finish_q8_);
+        b.i32(0x134) = int32_t(from);
+        b.i32(0x1c) = int32_t(to);
+        b.i32(0x138) = int32_t(to);
+        r.previous_sample = start_sample;
+        r.sample = size_t(to >> 8);
+        accumulate(r, from, to, start_sample, r.sample);
+        if (!r.finished) { r.finished = true; r.finish_tick = ticks_; }
+        b.u8(0xc0) = uint8_t(b.u8(0xc0) | 0x10);   // 0x00437800 rider+bike latch
+        return;
+    }
     if ((to >> 8) > last) {
         to = uint32_t(last << 8);
         if (!r.finished) { r.finished = true; r.finish_tick = ticks_; }
+        b.u8(0xc0) = uint8_t(b.u8(0xc0) | 0x10);   // 0x00437800 latch on the legacy path too
     }
     b.i32(0x134) = int32_t(from);
     b.i32(0x1c) = int32_t(to);
@@ -427,6 +457,111 @@ void Race::collide_traffic(Rider& r) {
         contact_car(r, car);
         if (s.i32(0x2f4) != 0) return;   // knocked off: stop scanning
     }
+}
+// BORR span builder (plan 16 Task 2): the 0x00451cb0 lateral-slot walk over
+// a section's BORR profiles, keeping only slots strictly inside the road
+// edges (0x00454240 strictly-inside test) at sample fraction 0x80. The walk
+// (record/stride/spacing) mirrors the billboard builder so both consume
+// random() in the same order; the hazard half-width uses the same 224-unit
+// inset the walk places slots at.
+std::vector<RoadHazard> road_hazard_spans(const CourseSection& section, uint32_t sample_base,
+                                          std::function<uint32_t()> random) {
+    std::vector<RoadHazard> result;
+    if (section.roadside_profiles.empty()) return result;
+    size_t record = 0; int32_t start = 0, end = 0;
+    auto period = [](uint32_t word) { return (word & 0x0f000000) ? int32_t((word >> 12) & 15) : 0; };
+    auto duration = [&](uint32_t word) { return (period(word) + 1) * int32_t((word >> 24) & 15); };
+    end = duration(section.roadside_profiles[0]);
+    for (size_t j = 0; j < section.samples.size(); ++j) {
+        if (j && int64_t(j) > end) {
+            if (record + 1 >= section.roadside_profiles.size()) break;
+            ++record; start = int32_t(j); end = start + duration(section.roadside_profiles[record]);
+        }
+        const uint32_t word = section.roadside_profiles[record];
+        const uint8_t selector = uint8_t(word >> 16);
+        const int32_t stride = period(word) + 1;
+        if ((selector & 63) == 63 || (int32_t(j) - start) % stride) continue;
+        bool left = (word & 0x10000000) != 0;
+        if ((word & 0x80000000) && ((int32_t(j) - start) & 1) == 0) left = !left;
+        int32_t spacing;
+        if (word & 0x0f000000) spacing = (word & 0x20000000) ? int32_t(((word & 15) + 4) * 256) : int32_t((word & 15) * 64);
+        else { const int32_t amount = int32_t(((word & 0xf000) >> 8) + (word & 15)); spacing = (word & 0x20000000) ? (amount + 32) * 32 : amount * 8; }
+        const auto& path = section.samples[j];
+        int32_t x = left ? -path.left + 224 - spacing : path.right - 224 + spacing;
+        const int count = int((word >> 8) & 7) + 1;
+        for (int object = 0; object < count; ++object) {
+            if (-path.left < x && x < path.right)
+                result.push_back({sample_base + uint32_t(j), (x - 224) * 256, (x + 224) * 256});
+            const int32_t step = (word & 0x800) ? spacing / 2 + int32_t(random() % uint32_t(spacing - spacing / 2 + 1)) : spacing;
+            x += left ? -step : step;
+        }
+    }
+    return result;
+}
+// In-road BORR hazard pass (plan 16 Task 2). 0x00454240 instantiates only
+// BORR slots strictly inside the road edges (0x00438930, pool DAT_00476ce8,
+// template 0x00476cb8 class 1); 0x004373f0 sweeps the rider box
+// (lateral +/- +0x174 at sample fraction 0x80) against each slot and
+// 0x00437660 builds the static hazard actor and runs the shared 0x00436a40
+// separator plus the rider contact handler. Hazards are immovable: the rider
+// takes the full lateral push. The contact branch is class 1
+// (0x004049c0: other +0xc4 == 1, short: the halved template +0x17c fits in
+// half the bike's; reason 1 through knock_off, small-gap speed transfer,
+// big-gap crash entry reason 1). No RNG, no allocation in the tick path.
+void Race::collide_hazards(Rider& r) {
+    if (r.finished || r.bike.i32(0x2f4) != 0) return;   // 0x004049c0 rejects
+    const auto& table = hazards_[r.route];
+    if (table.empty() || r.sample >= table.size()) return;
+    const auto& spans = table[r.sample];
+    if (spans.empty()) return;
+    Bike& s = r.bike;
+    for (const auto& h : spans) {
+        const int32_t half = s.i32(0x174);
+        if (s.i32(0x28) + half <= h.lo_q8 || h.hi_q8 <= s.i32(0x28) - half) continue;
+        contact_hazard(r, h.lo_q8, h.hi_q8);
+        if (s.i32(0x2f4) != 0) return;   // knocked off: stop scanning
+    }
+}
+void Race::contact_hazard(Rider& self, int32_t hazard_lo_q8, int32_t hazard_hi_q8) {
+    Bike& s = self.bike;
+    if (s.i32(0x2f4) != 0) return;
+    const int32_t elasticity = s.i32(0x180);
+    s.i32(0x188) = div256(int64_t(s.i32(0x188)) * elasticity);
+    s.i32(0x184) = div256(int64_t(s.i32(0x184)) * elasticity);
+    const int32_t hit = std::abs(s.i32(0x184));
+    if (&self == &riders_[0]) {
+        if (hit < 0x1771) {
+            if (hit >= 0x7d1 || std::abs(s.i32(0x188)) >= 0x3e9) {
+                sound(SoundEvent((random() & 1) + 3), s);
+                sound(SoundEvent(random() & 1), s);
+            }
+        } else {
+            sound(SoundEvent((random() & 1) + 4), s);
+            sound(SoundEvent(random() & 1), s);
+        }
+    }
+    const int32_t magnitude = (std::abs(s.i32(0x184)) + std::abs(s.i32(0x188)) +
+                               std::abs(s.i32(0x18c))) >> 10;
+    // Class 1 (hazard short): knock_off reason 1; on survival the small-gap
+    // branch transfers impulse to speed, the big-gap branch crashes reason 1
+    // with the default 0x004052c0 vector pair (0x004049c0 local_18 ladder).
+    const bool down = knock_off(self, magnitude, magnitude, 1);
+    if (down) {
+        return;
+    } else if (s.i32(0xec) - 0 < 0x1771) {
+        s.i32(0xec) += s.i32(0x184);
+    } else {
+        crash_reason(self, 1, {-256, 0, 1792}, {0, 0, 1024});
+        return;
+    }
+    // Lateral separation against the immovable slot (0x00436a40 with the
+    // static actor mass >> bike mass: the rider takes it all).
+    const int32_t centre = (hazard_lo_q8 + hazard_hi_q8) / 2;
+    const int32_t depth = (s.i32(0x174) - std::abs(s.i32(0x28) - centre)) + 0x800;
+    s.i32(0x28) += s.i32(0x28) < centre ? -(depth + 3) : (depth + 3);
+    s.i32(0x184) = 0; s.i32(0x188) = 0; s.i32(0x18c) = 0; s.u8(0x19c) = 0;
+    if (s.i32(0xec) > 30000) s.i32(0xec) = 30000;
+    if (s.i32(0xec) < -1000) s.i32(0xec) = 0;
 }
 
 // Shared knock-off decision 0x004052c0(victim, stamina_damage, bike_damage,
@@ -659,9 +794,12 @@ void Race::crash_reason(Rider& r, int32_t reason, std::array<int32_t,3> rider_im
 }
 
 void Race::contact(Rider& self, Rider& other) {
-    // Bike-against-bike branch of the contact handler 0x004049c0 (the knock-off decision
-    // 0x004052c0 and sounds are not ported). Bikes are 0x2300 tall (>= 0x2000), so the hit is
-    // class 1/2 when the other bike's width contains ours (+0x19c bit 0x40), otherwise 3.
+    // Bike-against-bike branch of the contact handler 0x004049c0: the
+    // knock-off decision 0x004052c0 runs on contained hits (reason 2 here;
+    // class 1 needs a short other object, +0x17c < 0x2800, which bikes never
+    // satisfy: bike +0x17c = 0x2300 tall, so the reason-1 branch is dead for
+    // bike-bike). Bikes are tall (>= 0x2000), so the hit is class 2 when the
+    // other bike's width contains ours (+0x19c bit 0x40), otherwise class 3.
     Bike& s = self.bike; const Bike& o = other.bike;
     if (s.i32(0x2f4) != 0) return;
     const int32_t elasticity = s.i32(0x180);
@@ -683,10 +821,9 @@ void Race::contact(Rider& self, Rider& other) {
     const bool contained = (o.i32(0x28) - o.i32(0x174) < s.i32(0x28) - s.i32(0x174) / 2) &&
                            (s.i32(0x28) + s.i32(0x174) / 2 < o.i32(0x28) + o.i32(0x174));
     // 0x004049c0 class routing for two bikes: contained hits run the 0x004052c0
-    // decision (same reason ladder as cars: class 1 short-other hits use the
-    // reason-1 branch), glancing hits run the lateral branch. Bikes are tall
-    // (>= 0x2000), so class 1 needs the other bike short: never fires here,
-    // and contained bike hits take the class-2 path below.
+    // decision with reason 2 (class 1 is dead for bike-bike: it needs the
+    // other object short, +0x17c < 0x2800, but bikes are 0x2300 tall).
+    // Glancing (class-3) hits run the lateral branch below.
     const int32_t magnitude = (std::abs(s.i32(0x184)) + std::abs(s.i32(0x188)) +
                                std::abs(s.i32(0x18c))) >> 10;
     if (contained) {
@@ -1499,6 +1636,11 @@ RaceSnapshot Race::snapshot() const {
         out.fields.push_back({p + "nitro_throttle", int64_t(r.nitro_throttle)});
         out.fields.push_back({p + "nitro_charges", int64_t(nitro_charges_)});
     }
+    // Free-traffic rows (tests/sim_fields.hpp car_fields) for every pool
+    // slot, active or not; the replay comparator requires the intended
+    // set (missing field = FAIL). No RNG, no allocation in the tick path
+    // beyond the field vector the snapshot already builds.
+    if (traffic_) traffic_->append_snapshot(out.fields);
     return out;
 }
 
@@ -1694,7 +1836,11 @@ int32_t Race::nitro_throttle_force(Rider&, int32_t force) {
 // own states. Contact animation 9 (knock_off reason 4) and attack swing
 // codes (fight start) select here; crash states are owned by step_crash.
 void Race::advance_ride_animation(Rider& r, bool player) {
-    if (!ride_library_ || r.bike.i32(0x2f4) != 0) return;
+    // The pending contact selection (knock_off reason 4 -> animation 9) is
+    // consumed in the tick even without a ride bank; selection itself needs
+    // the bank. Crash states stay owned by step_crash.
+    if (!ride_library_) { r.contact_animation = -1; return; }
+    if (r.bike.i32(0x2f4) != 0) return;
     const auto& bank = ride_library_->playback[0];
     const auto& fallback = ride_library_->fallback;
     auto& st = r.ride_animation;
@@ -1781,6 +1927,7 @@ void Race::step(uint32_t controls) {
             collide(a, b);
         }
     for (size_t i = 0; i < riders_.size(); ++i) collide_traffic(riders_[i]);
+    for (size_t i = 0; i < riders_.size(); ++i) collide_hazards(riders_[i]);
     for (size_t i = 0; i < riders_.size(); ++i) advance_ride_animation(riders_[i], i == 0);
     update_camera();
     const auto& player=riders_[0];const auto& road=route_of(player);

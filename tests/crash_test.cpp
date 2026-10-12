@@ -229,5 +229,36 @@ static void test_knock_off_reasons() {
         if (race.knock_off(r, 1, 0, 5)) throw std::runtime_error("reason 5 clamp crashed");
         if (r.bike.i32(0x288) != 100) throw std::runtime_error("reason 5 steer not clamped");
     }
-    std::cout << "knock-off reason table matches\n";
+    // Negative inputs use the assembly sign-bias, not C++ truncation:
+    // reason 2 p=-5 -> (-35+3)>>2 = -8; reason 3 p=-9 -> (-9+7)>>3 = -1.
+    {
+        auto race = fresh();
+        auto& r = race.riders()[0];
+        if (race.knock_off(r, -5, -5, 2)) throw std::runtime_error("reason 2 negative crashed");
+        if (r.stamina.max != 2500 + 32 || r.stamina.current != 2500 + 512 || r.bike.i32(0x2f0) != 1008)
+            throw std::runtime_error("reason 2 negative scale mismatch");
+    }
+    {
+        auto race = fresh();
+        auto& r = race.riders()[0];
+        if (race.knock_off(r, -9, -9, 3)) throw std::runtime_error("reason 3 negative crashed");
+        if (r.stamina.max != 2500 + 4 || r.stamina.current != 2500 + 64 || r.bike.i32(0x2f0) != 1001)
+            throw std::runtime_error("reason 3 negative scale mismatch");
+    }
+    // Crash-impulse argument order (0x00403d60 param_2 rider, param_3 bike):
+    // reason 4 enters {-80,0,0}/{0,0,0}, other reasons {-256,0,1792}/{0,0,1024}.
+    {
+        auto race = fresh();
+        auto& r = race.riders()[0];
+        r.stamina.current = 1;
+        if (!race.knock_off(r, 10, 0, 4)) throw std::runtime_error("reason 4 impulse crashed");
+        if (r.bike.i32(0x2f4) != 1 || r.bike.i32(0x2f8) != 4) throw std::runtime_error("reason 4 crash not recorded");
+    }
+    {
+        auto race = fresh();
+        auto& r = race.riders()[0];
+        r.stamina.current = 1;
+        if (!race.knock_off(r, 10, 0, 1)) throw std::runtime_error("reason 1 impulse crashed");
+        if (r.bike.i32(0x2f4) != 1 || r.bike.i32(0x2f8) != 1) throw std::runtime_error("reason 1 crash not recorded");
+    }
 }

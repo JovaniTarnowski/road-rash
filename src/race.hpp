@@ -27,7 +27,18 @@ struct NitroConfig { int32_t recharge = 0x11, boost = 0x180, max = 0x78, charges
 // +0x38 maximum, +0x3c current). Hits lower maximum by damage*4 (not below base/2) and current
 // by damage*64; current regenerates one point per tick up to maximum (0x00407d40).
 struct RiderStats { int32_t strength = 7, base = 2500, max = 2500, current = 2500; };
-
+// In-road roadside hazard (plan 16 Task 2): one BORR lateral slot built by
+// 0x00451cb0 and instantiated by 0x00454240/0x00438930 when strictly inside
+// the road edges. Lateral span in Q8, on one route sample; only spans from
+// this table are solid (pictured trees outside the edges are never actors).
+struct RoadHazard { uint32_t sample = 0; int32_t lo_q8 = 0, hi_q8 = 0; };
+// BORR span builder: the 0x00451cb0 lateral-slot walk over a section's BORR
+// profiles, keeping only slots strictly inside the road edges (0x00454240)
+// at sample fraction 0x80. sample_base is the route index of section local
+// sample 0. Pure; consumes random() in the same order as the billboard walk
+// for shared-stream parity.
+std::vector<RoadHazard> road_hazard_spans(const CourseSection&, uint32_t sample_base,
+                                          std::function<uint32_t()> random);
 // Weapons (rider +0x1d4): 0 fists, 1 club, 2 chain, 3 kick. Reach in units of 0x1000 Q8
 // (0x00409c10) and damage multipliers (0x00465a00).
 constexpr int32_t weapon_reach[4] = {5, 7, 8, 5};
@@ -51,7 +62,7 @@ struct Opponent {
     int base_speed;        // personality +0x1bc + level*4 (units of (v>>12)+(v>>7)+(v>>9))
     int cur2_speed;        // personality +0x1a8 + level*4
     int lane;              // 0x00405990 draws rand()%3 (stream-dependent); -1 = draw at build
-    int slot;              // grid slot 0..7 (0x00464218)
+    int slot;              // grid slot 1..15 (0x00464088/0x00464108 via 0x00405600)
     int rider = 0;         // rider index: 0x00463c78 row and 0x00464558 personality (0x00405990 param_6)
     int32_t grid_pos = 0;  // table sub-slice selector: exact Q8 start position (0 = native two-row grid)
     int32_t grid_lat = 0;  // table lateral (added to the road centre); see grid_pos
@@ -63,9 +74,30 @@ struct Opponent {
 
 // The original opponents for a level: personalities 1..count (0x00464558, 0x204 bytes each),
 // bikes from 0x004641c8[level + rider*5], rider values from 0x00463c78 (+0xc / 2), AI throttle
-// scale 0x004642a0[level]; grid slots 1..count.
+// scale 0x004642a0[level]; grid slots 1..count. Offline races build 14
+// opponents (DAT_004642d4=0x10, player + fourteen, slots 1..14, 0x00405600).
 std::vector<Opponent> original_opponents(const std::vector<uint8_t>& exe, const std::vector<BikeSpec>& specs,
                                          int level, int count);
+// Stable race-setup factory shared by game + replay (plan 10 replay
+// prerequisite). One explicit config, no hidden replay-only setup: the
+// player bike/rider resolve through the career tables (0x00415fc0 character
+// -> rider, 0x004641c8 level_bike, 0x00463c78 rider row), opponents through
+// original_opponents, and the road_base anchor through the same Race ctor
+// mechanism on both sides (the game passes 0 = relative route frame;
+// replay measures per golden with race_road_base_q8; see the Race ctor).
+// The game (game_main.cpp, owned by another slice) calls the same resolvers;
+// the replay harness below must not hard-code SPEC ids, weights or stats.
+struct RaceSetupRequest {
+    std::string course = "NAPA";  // CRS stem, e.g. "NAPA"
+    int level = 0;                // 0..4 (0x004b8a12)
+    int character = 1;            // 1..8 front-end character (0x00415fc0)
+    bool solo = true;             // scheduler freeze + nulled traffic pool (field isolation only)
+    int32_t road_base_q8 = 0;     // absolute Q8 anchor (game: 0; replay: measured)
+    int opponents = 7;            // full-field count when !solo (offline original: 14)
+};
+// 0x00405990 lateral anchor math: road_base = golden_frame0_lateral - route[grid].offset*256 - grid_word.
+// Throws std::runtime_error on bad data. Pure; no RNG, no allocation.
+int32_t race_road_base_q8(int32_t golden_lateral, int32_t route_offset, int32_t grid_word);
 // Original rider personalities (0x00464558, 10 x 0x204 bytes). The AI brain is
 // a copy of one record (0x00407990 selects 0x004c6b40 + rider*0x81 words).
 struct Personality {
@@ -153,8 +185,10 @@ public:
     // road_base_q8: absolute Q8 anchor of the route. The original sub-slice
     // +0xcc is absolute while RouteSample::offset accumulates from 0 at the
     // course root, so grid placement adds this. Napa measures 7 world units
-    // from the solo golden frame 0 (18176 - 16384 = 1792); traversal
-    // mechanism open, other courses unmeasured (default 0).
+    // from the solo golden frame 0 (18176 - 16384 = 1792, via
+    // race_road_base_q8); traversal mechanism open, other courses
+    // unmeasured. The game passes 0 (relative frame); replay passes the
+    // measured anchor through the same ctor — no hidden replay-only setup.
     Race(std::vector<RouteSample> route_a, std::vector<RouteSample> route_b,
          const PhysicsTables&, const BikeSpec&, int32_t rider_value, std::vector<Opponent> opponents = {},
          int level = 0, int32_t road_base_q8 = 0,
@@ -203,6 +237,17 @@ public:
     const std::vector<RouteSample>& route() const { return route_of(riders_[0]); }
     const std::vector<RouteSample>& route_of(const Rider& r) const { return routes_[r.route]; }
     const std::vector<RouteSample>& route_for(int road) const { return routes_[road]; }
+    // Finish line 0x00454240/0x00406890/0x00437800: nonzero global finish
+    // DAT_004b6e58 (Q8 position) ends the race when the actor's +0x1c
+    // reaches it (with the +0x2c nonzero scheduler gate and +0xc0 bit 0x10
+    // latch). 0 keeps the legacy route-end rule for synthetic routes.
+    void set_finish_q8(int32_t q8) { finish_q8_ = q8; }
+    int32_t finish_q8() const { return finish_q8_; }
+    // Course-load hazard table (plan 16 Task 2): one span list per route
+    // sample per road (index by route_for(road)[sample]); empty by default.
+    void set_hazards(std::vector<std::vector<RoadHazard>> road0,
+                     std::vector<std::vector<RoadHazard>> road1) {
+        hazards_[0] = std::move(road0); hazards_[1] = std::move(road1); }
     bool finished() const { return riders_[0].finished; }
     bool crashed() const { return bike().i32(0x2f4) != 0; }
     int32_t ticks() const { return ticks_; }
@@ -270,6 +315,15 @@ private:
                       std::array<int32_t,3> bike_impulse);   // reason-tagged crash entry
     void contact(Rider& self, Rider& other);
     void update_camera();
+    // In-road BORR hazard pass (plan 16 Task 2): 0x00454240 instantiates only
+    // BORR slots strictly inside the road edges via 0x00438930 (pool
+    // DAT_00476ce8, template 0x00476cb8 class 1); 0x004373f0/0x00437660 sweep
+    // the rider box against them and run the shared 0x00436a40 separator plus
+    // the class-1 branch of 0x004049c0 (reason 1 through knock_off). Spans
+    // are stored per route sample at course load; no allocation runs in the
+    // tick path. Runs after collide_traffic, before advance_ride_animation.
+    void collide_hazards(Rider&);
+    void contact_hazard(Rider&, int32_t hazard_lo_q8, int32_t hazard_hi_q8);
     void fight(Rider&, uint32_t controls, size_t index);
     bool fight_hit_frame(const Rider&) const;  // descriptor flags + frame-2 gate (0x004096f0 head)
     bool fight_reach(const Rider&, const Rider&, bool side) const;  // 0x00409c10
@@ -292,12 +346,14 @@ private:
     int32_t nitro_charges_ = 0;
     std::vector<RouteSample> routes_[2];
     PhysicsTables tables_;
+    std::vector<std::vector<RoadHazard>> hazards_[2];   // BORR spans per route sample per road
     std::vector<Rider> riders_;
     int32_t ticks_ = 0;
     int level_ = 0;
     int last_target_ = -1;
     bool demo_hold_ = false;   // DAT_004753c8 (see set_demo_hold)
     int32_t road_base_ = 0;   // absolute Q8 anchor (ctor param)
+    int32_t finish_q8_ = 0;   // global finish DAT_004b6e58 (Q8); 0 = route end (0x00454240/0x00406890)
     std::vector<uint8_t> personalities_exe_;   // reference image for EXE-resident tables (e.g. 0x00465a10)
     uint32_t seed_ = 1;   // MSVC rand() state (0x00455eb0)
     std::vector<SoundEventRecord> sound_events_;

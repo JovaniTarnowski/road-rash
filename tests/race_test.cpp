@@ -70,6 +70,32 @@ int main() {
     for (int i = 0; i < 1500; ++i) { wall.step(rr::control_accelerate | rr::control_right); inside &= wall.lateral() <= 500 + 200; }
     check(inside, "wall keeps rider within shoulder");
 
+    // Finish line from the level-tagged event (0x004525c0/0x00454240 global
+    // DAT_004b6e58, 0x00406890 crossing, 0x00437800 latch): the race ends at
+    // the tagged sample on both branch routes, with the +0xc0 bit-0x10 latch
+    // set and tick/order recorded, instead of running to the route end.
+    for (int road = 0; road < 2; ++road) {
+        rr::Race fin(straight(2000), straight(2000), t, spec, 90);
+        const int32_t line = int32_t((0x3200 >> 8) + 400) << 8;
+        fin.set_finish_q8(line);
+        for (int i = 0; i < 20000 && !fin.finished(); ++i) fin.step(rr::control_accelerate);
+        check(fin.finished(), "finish at the tagged event sample");
+        check(fin.position() == uint32_t(line), "finish clamps position to the line");
+        check((fin.bike().u8(0xc0) & 0x10) != 0, "finish latches +0xc0 bit 0x10");
+        check(fin.riders()[0].finish_tick >= 0, "finish records the tick");
+        check(fin.place(0) == 1, "solo finisher leads");
+        (void)road;
+    }
+    // AI riders cross the same line: the field orders by finish tick.
+    {
+        rr::Opponent slowf{test_spec(), 90, 0, 0, 0, 1};
+        rr::Race ff(straight(2000), straight(2000), t, spec, 90, {slowf});
+        const int32_t line = int32_t((0x3200 >> 8) + 400) << 8;
+        ff.set_finish_q8(line);
+        for (int i = 0; i < 20000 && !ff.riders()[0].finished; ++i) ff.step(rr::control_accelerate);
+        check(ff.riders()[0].finished && (ff.bike().u8(0xc0) & 0x10) != 0, "player crosses the tagged line");
+        check(ff.place(0) == 1, "player beats the parked opponent to the line");
+    }
     // Reaching the end of the route finishes the race.
     rr::Race shortrace(straight(80), straight(80), t, spec, 90);
     for (int i = 0; i < 20000 && !shortrace.finished(); ++i) shortrace.step(rr::control_accelerate);
@@ -153,7 +179,65 @@ int main() {
         int crashes = (ko.riders()[0].bike.i32(0x2f4) != 0) + (ko.riders()[1].bike.i32(0x2f4) != 0);
         check(crashes <= 1, "at most one crash starts from double contact");
     }
-    // Weapon conservation across 1000 seeded grab attempts: steals move the
+    // Roadside hazards via the in-road BORR actor path (0x00454240/0x00438930
+    // -> 0x004049c0 class 1 -> knock_off reason 1): a rider crossing an
+    // in-road span takes stamina damage, a lethal hit crashes reason 1, and
+    // a span outside the road edges never fires (pictured trees are not solid).
+    {
+        rr::Race hz(straight(4000), straight(4000), t, spec, 90);
+        auto& me = hz.riders()[0];
+        const size_t s = me.sample;
+        const int32_t centre = me.bike.i32(0x28);
+        std::vector<std::vector<rr::RoadHazard>> h0(4000), h1(4000);
+        h0[s].push_back({uint32_t(s), centre - 1000, centre + 1000});
+        hz.set_hazards(std::move(h0), std::move(h1));
+        me.bike.i32(0x2f0) = 1000;
+        me.bike.i32(0x188) = 0; me.bike.i32(0x2d8) = 0; me.bike.i32(0x288) = 0;
+        me.bike.i32(0x29c) = 0x2e00;
+        me.bike.i32(0x184) = 0x2000; me.bike.i32(0x188) = 0; me.bike.i32(0x18c) = 0;
+        const int32_t st0 = me.stamina.current;
+        hz.step(0);
+        check(me.stamina.current < st0, "in-road hazard damages stamina (reason 1)");
+        check(me.bike.i32(0x2f4) == 0, "glancing hazard does not crash");
+    }
+    {
+        rr::Race hz(straight(4000), straight(4000), t, spec, 90);
+        auto& me = hz.riders()[0];
+        const size_t s = me.sample;
+        const int32_t centre = me.bike.i32(0x28);
+        std::vector<std::vector<rr::RoadHazard>> h0(4000), h1(4000);
+        h0[s].push_back({uint32_t(s), centre - 1000, centre + 1000});
+        hz.set_hazards(std::move(h0), std::move(h1));
+        me.bike.i32(0x2f0) = 1000;
+        me.stamina.current = 5; me.stamina.max = 5;
+        me.bike.i32(0x184) = 0x4000; me.bike.i32(0x188) = 0x4000; me.bike.i32(0x18c) = 0;
+        hz.step(0);
+        check(me.bike.i32(0x2f4) != 0 && me.bike.i32(0x2f8) == 1, "lethal hazard crashes reason 1");
+    }
+    {
+        rr::Race hz(straight(4000), straight(4000), t, spec, 90);
+        auto& me = hz.riders()[0];
+        const size_t s = me.sample;
+        std::vector<std::vector<rr::RoadHazard>> h0(4000), h1(4000);
+        h0[s].push_back({uint32_t(s), 900 * 256, 1000 * 256});   // outside the 500-unit road edge
+        hz.set_hazards(std::move(h0), std::move(h1));
+        me.bike.i32(0x2f0) = 1000;
+        me.bike.i32(0x184) = 0x2000; me.bike.i32(0x188) = 0; me.bike.i32(0x18c) = 0;
+        const int32_t st0 = me.stamina.current;
+        hz.step(0);
+        check(me.stamina.current == st0 && me.bike.i32(0x2f4) == 0, "outside-edge span never fires");
+    }
+    // Span builder keeps only strictly-inside BORR slots (0x00454240): slots
+    // at right-96/right+32 keep the first and drop the second here; pictured
+    // trees are not all solid.
+    {
+        rr::CourseSection sec; sec.samples.resize(2);
+        for (auto& path : sec.samples) { path.left = path.right = 500; }
+        sec.roadside_profiles = {0x014c0182u};
+        const auto spans = rr::road_hazard_spans(sec, 100, []() { return 0u; });
+        check(spans.size() == 2 && spans[0].sample == 100, "in-road hazard spans kept with sample base");
+        check(spans[0].lo_q8 < spans[0].hi_q8, "hazard span ordered");
+    }
     // weapon, never duplicate or destroy it.
     {
         int failures2 = 0;
@@ -196,6 +280,13 @@ int main() {
         bool has_anim = false;
         for (const auto& f : m.snapshot().fields) if (f.name == "rider.0.anim") has_anim = true;
         check(has_anim, "animation state present in snapshot");
+        // knock_off reason 4 selects riding animation 9 in the same tick's
+        // snapshot: the pending contact_animation is consumed before
+        // snapshots (without a ride bank there is nothing to select into,
+        // so the observable is that the pending flag clears in-tick).
+        m.riders()[0].contact_animation = 9;
+        m.step(0);
+        check(m.riders()[0].contact_animation == -1, "contact animation consumed in-tick before snapshot");
     }
 
     // Original field from the executable (skips without the disc).
@@ -209,6 +300,30 @@ int main() {
         check(field0[0].base_speed == 99 && field0[0].lane == 1, "personality 1 level 1 speed and lane (0x00464558)");
         check(field0[0].throttle_percent == 116, "level 1 AI throttle scale (0x004642a0)");
         check(field0[0].rider_value == 180 / 2 || field0[0].rider_value > 0, "rider value from 0x00463c78");
+        // Full offline field (0x00405600: DAT_004642d4=0x10, slots 1..14,
+        // rider rows 1..14 from 0x00463c78, grid tables 0x00464088/0x00464108).
+        auto field14 = rr::original_opponents(exe, specs, 0, 14);
+        check(field14.size() == 14 && field14[13].slot == 14, "fourteen opponents in slots 1..14");
+        bool grid_ok = true, slots_ok = true;
+        for (int k = 0; k < 14; ++k) {
+            int32_t lat = 0, pos = 0;
+            const uint32_t base = 0x00464088u + 8u * uint32_t(k + 1);
+            constexpr uint32_t data_raw = 0x61600;
+            auto word = [&](uint32_t va) {
+                const size_t p = data_raw + (va - 0x00463000u);
+                return int32_t(uint32_t(exe[p]) | uint32_t(exe[p+1]) << 8 |
+                               uint32_t(exe[p+2]) << 16 | uint32_t(exe[p+3]) << 24);
+            };
+            lat = word(base); pos = word(base + 4);
+            grid_ok &= field14[size_t(k)].grid_lat == lat && field14[size_t(k)].grid_pos == pos;
+            slots_ok &= field14[size_t(k)].slot == k + 1 && field14[size_t(k)].rider == k + 1;
+        }
+        check(grid_ok, "all 14 opponents carry the 0x00464088 grid slot");
+        check(slots_ok, "opponent slots/riders are 1..14 (0x00405990 param_6)");
+        // The full field constructs: player + 14 opponents on their grid slots.
+        rr::Race full(straight(4000), straight(4000), t, spec, 90, field14);
+        check(full.riders().size() == 15, "fifteen riders on the grid");
+        check(full.riders()[14].slot == 14, "last opponent in slot 14");
     }
 
     std::cout << failures << " failures\n";
