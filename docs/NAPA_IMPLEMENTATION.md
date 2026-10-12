@@ -21,7 +21,35 @@ verification. Approximations cannot be silently described as original matches.
   honking and drawing as documented approximations. See `docs/ACTORS.md`.
 - Animation decoding covers 1,663 family animations and 6,503 frames. Roadside
   placement matches 1,024 direct original-function samples.
-- The 53-test native and sanitizer suites pass, and both Android variants build.
+- Combat remainder landed (October 12: `ba7e127`, `42e3e4d`): shared
+  `knock_off` routing (`0x004052c0`) on every contact branch, weapon hits at
+  descriptor frames instead of the tick-7 stand-in, nitro (`0x0040b110`
+  family), roadside-hazard collision, animation advanced in-tick, and
+  crash-impulse ordering. Evidence: `race` (`tests/race_test.cpp`), `crash`
+  (`tests/crash_test.cpp`), `sim_fields` replay checks. Full-race
+  combat equality against original captures is still open (car/police/
+  animation dump fields not yet in the proxy).
+- Courses census landed (`e7dc0a6`): 26 course/level-combo census with a
+  level-tagged finish table (`finish_event_sample`, `make_route_choices`).
+  Evidence: `course` (`tests/course_test.cpp`). Finish-crossing latch work
+  exists only as uncommitted notes (`analysis/course-finish-notes.md`) and
+  the finish golden is still open.
+- Race music landed (`fcaf29b`, `7edce12`): MIDS song parser, SoundFont 1
+  banks, factory presets for unmapped programs, streaming PCM queue in the
+  mixer, race hooks and jukebox video triggers. Evidence: `music`
+  (`tests/music_test.cpp`). Live `game_main.cpp` wiring stays with the
+  playtest-visual-fixes session owner; hardware A/V latency unverified.
+- Render infrastructure landed (`cea33a2`): Q16-preserving wide path,
+  signed mip selection, MMPX cache, band-threaded raster. The 640x480
+  baseline stays bit-identical; enhancements are opt-in. Evidence: `mmpx`,
+  `upscale_cache`, `texture`, `raster`, `view` tests.
+- Replay harness landed (`ce8e1eb`, `e4b32a8`): driver-axis
+  (`human`/`demo`) replay independent of solo, shared race factory
+  prerequisites, strict comparator over the required field set. Evidence:
+  `oracle-sim` (`tests/oracle_sim_test.cpp`), `sim_fields`, `golden`.
+  Single-anchor acceptance still needs the finish-crossing golden, the
+  15-rider golden, and proxy captures of car/police/animation fields.
+- The 66-test native and sanitizer suites pass, and both Android variants build.
 - Rider-car collisions, DZHR scripted vehicles and police, the original car
   animation/scaling laws, split stitching, full rider animation/shadows,
   traffic/police behaviour parity and the race soundtrack remain open.
@@ -50,6 +78,24 @@ Tasks 1 (rider–car collision) and 3 (bike/shadow nodes) remain.
 - [ ] Race soundtrack and all needed sound/video triggers.
 - [ ] Complete automated Napa race and regression checks.
 - [ ] Refreshed standalone macOS and asset-free Android packages.
+
+Slice evidence landed October 12 (partial — no box above ticks, per plan 11
+Task 8 Step 4, because the full-race `napa-acceptance` golden does not exist yet):
+- Combat/crash item: `race`, `crash`, `sim_fields` pass
+  (`ba7e127`, `42e3e4d`; notes `analysis/plan16-combat-notes.md`,
+  `analysis/combat-anim-notes.md`).
+- Scenery/course item: `course` passes, 26-combo census + finish table
+  (`e7dc0a6`); finish-crossing golden still open.
+- Soundtrack item: `music` passes, MIDS/SF1 parser + streaming player
+  (`fcaf29b`, `7edce12`; notes `analysis/music-notes.md`,
+  `analysis/music-next-notes.md`).
+- Renderer item: `mmpx`, `upscale_cache`, `texture`, `raster`, `view` pass
+  (`cea33a2`; note `analysis/render-infra-notes.md`).
+- Automated-checks item: `oracle-sim`, `sim_fields`, `golden` pass with the
+  driver-axis harness (`ce8e1eb`, `e4b32a8`; notes
+  `analysis/replay-notes.md`, `analysis/replay-prereq-notes.md`).
+  Still open: finish-crossing golden, 15-rider golden, proxy captures of
+  car/police/animation fields.
 
 No Android device is connected as of the start of this work. Physical Android
 rendering, input and picker/import verification remain pending.

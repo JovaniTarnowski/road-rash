@@ -586,3 +586,27 @@ UI cleanup (October 11, 2026): removed the bottom keyboard-instructions overlay 
   course sweep and headless race render exit 0. The release bundle is stale
   by design until the next `tools/build_macos_app.sh` run (verifier fails
   it as intended).
+
+### Session 29: NAPA doc refresh — four landed slice families (October 12, 2026)
+
+- Gate this turn: full native suite **66/66 pass** (`ctest -N` enumerates 66
+  tests, up from the session-28 63).
+- Landed since session 28:
+  - Combat (`ba7e127`, `42e3e4d`): shared `knock_off` routing, descriptor-frame
+    weapon hits, nitro, roadside hazards, in-tick animation, crash-impulse order.
+    Tests: `race`, `crash`, `sim_fields`.
+  - Courses (`e7dc0a6`): 26-combo census with level-tagged finish table. Test: `course`.
+  - Music (`fcaf29b`, `7edce12`): MIDS parser, SF1 banks, factory presets,
+    streaming PCM queue, race hooks, jukebox triggers. Test: `music`.
+  - Render (`cea33a2`): Q16-preserving wide path, signed mips, MMPX cache,
+    band raster. Tests: `mmpx`, `upscale_cache`, `texture`, `raster`, `view`.
+  - Replay (`ce8e1eb`, `e4b32a8`): driver-axis harness with shared factory
+    prerequisites and strict comparator. Tests: `oracle-sim`, `sim_fields`, `golden`.
+- `NAPA_IMPLEMENTATION.md` acceptance boxes stay open per plan 11 Task 8
+  Step 4 (no full-race `napa-acceptance` golden yet); per-slice evidence
+  lines recorded under the checklist.
+- Remaining open work: finish-crossing golden, 15-rider golden, proxy captures
+  of car/police/animation fields, live `game_main.cpp` music wiring (owner:
+  playtest-visual-fixes session), visual-session-owned files untouched.
+- No pixel/frame equality with the original is claimed beyond the measured
+  fixtures cited above.
