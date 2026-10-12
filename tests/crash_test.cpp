@@ -7,6 +7,16 @@
 #include <sstream>
 #include <map>
 #include <iostream>
+// Plan 16 Task 1: synthetic 0x004052c0 reason-table coverage through the
+// shared Race::knock_off helper (no crash library: stand-in crash path).
+// A straight synthetic route keeps walls() out of the way; stamina base 2500
+// matches the default RiderStats.
+static std::vector<rr::RouteSample> knock_straight(size_t n) {
+    rr::RouteSample s{{0, 0, 500, 500, 512, 512}, 0, 0, 0};
+    s.path.shoulder_left = s.path.shoulder_right = 200;
+    return std::vector<rr::RouteSample>(n, s);
+}
+static void test_knock_off_reasons();
 int main(int argc,char** argv) {
     try {
         rr::Assets assets(RR_SOURCE_DIR "/../cdrom/ROADRASH");
@@ -116,6 +126,108 @@ int main(int argc,char** argv) {
             const auto& state=rider.animation;if(state.animation!=get("animation") || state.frame!=get("frame") || state.queued!=get("queued") || state.loops!=get("loops") || state.deadline!=get("deadline"))throw std::runtime_error(root+"entry animation mismatch");
         }
         std::cout<<values.at("crash.entry.count")<<" original local crash entries match across 49 motion fields per actor\n";
+        test_knock_off_reasons();
         return 0;
     }catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}
+}
+static void test_knock_off_reasons() {
+    auto fresh = []() {
+        rr::Race race(knock_straight(200), knock_straight(200),
+                      rr::PhysicsTables::synthetic(), rr::BikeSpec{}, 90);
+        auto& r = race.riders()[0];
+        r.stamina = {7, 2500, 2500, 2500};
+        r.bike.i32(0x2f0) = 1000;
+        r.bike.i32(0x188) = 0; r.bike.i32(0x2d8) = 0; r.bike.i32(0x288) = 0;
+        r.bike.i32(0x29c) = 0x2e00;
+        return std::move(race);
+    };
+    // Reason 0 zeroes both: no damage, no crash, returns false.
+    {
+        auto race = fresh();
+        auto& r = race.riders()[0];
+        if (race.knock_off(r, 10, 10, 0)) throw std::runtime_error("reason 0 crashed");
+        if (r.stamina.max != 2500 || r.stamina.current != 2500 || r.bike.i32(0x2f0) != 1000)
+            throw std::runtime_error("reason 0 damaged");
+    }
+    // Reason 1 keeps both: max -4*p floor base/2, current -64*p floor 0,
+    // +0x2f0 -= p floor 0.
+    {
+        auto race = fresh();
+        auto& r = race.riders()[0];
+        if (race.knock_off(r, 10, 30, 1)) throw std::runtime_error("reason 1 crashed");
+        if (r.stamina.max != 2500 - 40 || r.stamina.current != 2500 - 640 || r.bike.i32(0x2f0) != 970)
+            throw std::runtime_error("reason 1 damage mismatch");
+    }
+    // Reason 2 scales by 7/4 trunc-toward-zero: p=8 -> 14.
+    {
+        auto race = fresh();
+        auto& r = race.riders()[0];
+        if (race.knock_off(r, 8, 8, 2)) throw std::runtime_error("reason 2 crashed");
+        if (r.stamina.max != 2500 - 56 || r.stamina.current != 2500 - 896 || r.bike.i32(0x2f0) != 986)
+            throw std::runtime_error("reason 2 scale mismatch");
+    }
+    // Reason 3 divides by 8 trunc-toward-zero: p=16 -> 2.
+    {
+        auto race = fresh();
+        auto& r = race.riders()[0];
+        if (race.knock_off(r, 16, 16, 3)) throw std::runtime_error("reason 3 crashed");
+        if (r.stamina.max != 2500 - 8 || r.stamina.current != 2500 - 128 || r.bike.i32(0x2f0) != 998)
+            throw std::runtime_error("reason 3 scale mismatch");
+    }
+    // Silent-hit 6 zeroes both like the default case.
+    {
+        auto race = fresh();
+        auto& r = race.riders()[0];
+        if (race.knock_off(r, 10, 10, 6)) throw std::runtime_error("reason 6 crashed");
+        if (r.stamina.max != 2500 || r.stamina.current != 2500 || r.bike.i32(0x2f0) != 1000)
+            throw std::runtime_error("reason 6 damaged");
+    }
+    // Depleted stamina enters the stand-in crash with the supplied reason.
+    {
+        auto race = fresh();
+        auto& r = race.riders()[0];
+        r.stamina.current = 10;
+        if (!race.knock_off(r, 10, 0, 2)) throw std::runtime_error("depleted stamina did not crash");
+        if (r.bike.i32(0x2f4) != 1 || r.bike.i32(0x2f8) != 2) throw std::runtime_error("crash reason not recorded");
+    }
+    // Network bypass: remote victims (flag -1) and unowned peers (flag 1,
+    // owner_local false) take no damage even with lethal inputs.
+    {
+        auto race = fresh();
+        auto& r = race.riders()[0];
+        if (race.knock_off(r, 1000, 1000, 1, false, -1)) throw std::runtime_error("remote bypass crashed");
+        if (r.stamina.current != 2500 || r.bike.i32(0x2f0) != 1000) throw std::runtime_error("remote bypass damaged");
+    }
+    {
+        auto race = fresh();
+        auto& r = race.riders()[0];
+        if (race.knock_off(r, 1000, 1000, 1, false, 1)) throw std::runtime_error("peer bypass crashed");
+        if (r.stamina.current != 2500 || r.bike.i32(0x2f0) != 1000) throw std::runtime_error("peer bypass damaged");
+    }
+    // Reason 4 without a crash records riding animation 9.
+    {
+        auto race = fresh();
+        auto& r = race.riders()[0];
+        if (race.knock_off(r, 1, 0, 4)) throw std::runtime_error("reason 4 crashed");
+        if (r.contact_animation != 9) throw std::runtime_error("reason 4 animation not recorded");
+    }
+    // Reason 5: bike+0x188 *= scaled stamina damage; nonzero + riding steers
+    // +0x288 += trunc(+0x2d8 * +0x188 / 256) clamped to +-+0x29c.
+    {
+        auto race = fresh();
+        auto& r = race.riders()[0];
+        r.bike.i32(0x188) = 3; r.bike.i32(0x2d8) = 256;
+        if (race.knock_off(r, 5, 0, 5)) throw std::runtime_error("reason 5 crashed");
+        if (r.bike.i32(0x188) != 15) throw std::runtime_error("reason 5 impulse mismatch");
+        if (r.bike.i32(0x288) != 15) throw std::runtime_error("reason 5 steer mismatch");
+    }
+    // Reason-5 clamp: +0x29c bounds the steering gain.
+    {
+        auto race = fresh();
+        auto& r = race.riders()[0];
+        r.bike.i32(0x188) = 100; r.bike.i32(0x2d8) = 1 << 20; r.bike.i32(0x29c) = 100;
+        if (race.knock_off(r, 1, 0, 5)) throw std::runtime_error("reason 5 clamp crashed");
+        if (r.bike.i32(0x288) != 100) throw std::runtime_error("reason 5 steer not clamped");
+    }
+    std::cout << "knock-off reason table matches\n";
 }

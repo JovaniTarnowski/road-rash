@@ -414,30 +414,106 @@ void Race::collide_traffic(Rider& r) {
     }
 }
 
+// Shared knock-off decision 0x004052c0(victim, stamina_damage, bike_damage,
+// reason). The grunt/crash sound draws stay upstream in the 0x004049c0 caller
+// (shared stream position); this helper performs no RNG.
+// Reason table: 0 zeroes both inputs; 1/4/5 keep both; 2 scales both by 7/4
+// with C++ truncation toward zero (the assembly adds a sign-bias then shifts
+// right arithmetically, which rounds negative dividends up, i.e. matches
+// trunc(p*7/4) for p*7 != INT32_MIN); 3 divides both by 8 with the same
+// truncation caveat; all other reasons including silent-hit 6 zero both.
+// Stamina damage 0x004050c0: max -= 4*p floored at base/2, current -= 64*p
+// floored at zero. Bike damage 0x004051e0: +0x2f0 -= p floored at zero.
+// Owner/network bypasses: flag -1 (remote) or (flag 1 without local
+// ownership) skip both applications and return the untouched +0x2f4 state,
+// mirroring the assembly's early-return branches (network decisions from
+// 0x00405990/0x004060b0 are not ported; offline play always passes flag 0).
+// When either application returns zero, crash entry 0x00403d60 runs with the
+// assembly's argument order: rider impulse (local_1c+3) then bike impulse
+// (local_1c). Reason 4 passes {-80,0,0}/{0,0,0}; every other reason passes
+// {-256,0,1792}/{0,0,1024}. Reason 4 without a crash selects riding
+// animation 9 on the victim's +0x70 block (recorded on Rider for the render
+// owner; the Rider object has no animation block of its own). Reason 5
+// multiplies bike+0x188 by the scaled stamina damage; when that field is
+// nonzero and the victim is still riding (+0x2f4 == 0), steer +0x288 gains
+// trunc(+0x2d8 * +0x188 / 256) computed in original-width 32-bit wrap
+// before truncation, then clamps to +-+0x29c.
+bool Race::knock_off(Rider& victim, int32_t stamina_damage, int32_t bike_damage,
+                     int32_t reason, bool owner_local, int32_t owner_flag,
+                     std::optional<std::array<int32_t,3>> rider_impulse,
+                     std::optional<std::array<int32_t,3>> bike_impulse) {
+    int32_t p = stamina_damage, q = bike_damage;
+    if (reason == 0) { p = 0; q = 0; }
+    else if (reason == 1 || reason == 4 || reason == 5) { /* keep */ }
+    else if (reason == 2) {
+        // 0x004052c0: (p*7 + ((p*7 >> 31) & 3)) >> 2, i.e. sar-rounded /4.
+        const auto scale74 = [](int32_t v) {
+            const uint32_t prod = uint32_t(v) * 7u;
+            const int32_t p7 = prod <= uint32_t(INT32_MAX) ? int32_t(prod)
+                                                          : int32_t(int64_t(prod) - 0x100000000LL);
+            return (p7 + ((p7 >> 31) & 3)) >> 2;
+        };
+        p = scale74(p); q = scale74(q);
+    } else if (reason == 3) {
+        // 0x004052c0: (p + ((p >> 31) & 7)) >> 3, i.e. sar-rounded /8.
+        p = (p + ((p >> 31) & 7)) >> 3; q = (q + ((q >> 31) & 7)) >> 3;
+    } else { p = 0; q = 0; }
+    const bool bypass = owner_flag == -1 || (owner_flag == 1 && !owner_local);
+    if (!bypass) {
+        // 0x004050c0 (local/offline branch): products in int64 then narrowed,
+        // matching the assembly's 32-bit imul before the add.
+        RiderStats& st = victim.stamina;
+        Bike& b = victim.bike;
+        st.max = int32_t(int64_t(st.max) + int64_t(p) * -4);
+        const int32_t floor = st.base / 2;   // truncating divide, as original
+        if (st.max < floor) st.max = floor;
+        st.current = int32_t(int64_t(st.current) + int64_t(p) * -0x40);
+        if (st.current < 1) st.current = 0;
+        // 0x004051e0 (local/offline branch).
+        b.i32(0x2f0) -= q;
+        if (b.i32(0x2f0) < 1) b.i32(0x2f0) = 0;
+    }
+    if (victim.stamina.current == 0 || victim.bike.i32(0x2f0) == 0) {
+        // 0x00403d60 with the reason-4 vectors or the default vectors,
+        // assembly argument order preserved (rider impulse, then bike).
+        if (!rider_impulse)
+            rider_impulse = reason == 4 ? std::array<int32_t,3>{-80, 0, 0}
+                                        : std::array<int32_t,3>{-256, 0, 1792};
+        if (!bike_impulse)
+            bike_impulse = reason == 4 ? std::array<int32_t,3>{0, 0, 0}
+                                       : std::array<int32_t,3>{0, 0, 1024};
+        crash_reason(victim, reason, *rider_impulse, *bike_impulse);
+    }
+    if (reason == 4 && victim.bike.i32(0x2f4) == 0) victim.contact_animation = 9;
+    else if (reason == 5) {
+        // 0x004052c0: original-width 32-bit wraparound product.
+        const uint32_t prod = uint32_t(victim.bike.i32(0x188)) * uint32_t(p);
+        victim.bike.i32(0x188) = prod <= uint32_t(INT32_MAX) ? int32_t(prod)
+                                                             : int32_t(int64_t(prod) - 0x100000000LL);
+    }
+    if (victim.bike.i32(0x188) != 0 && victim.bike.i32(0x2f4) == 0) {
+        // Steering path shared by every reason (0x004052c0 tail): original
+        // widths first (+0x2d8 * +0x188 wraps 32-bit), bias +sar-round /256.
+        const uint32_t raw = uint32_t(victim.bike.i32(0x2d8)) * uint32_t(victim.bike.i32(0x188));
+        const int32_t wide = raw <= uint32_t(INT32_MAX) ? int32_t(raw)
+                                                        : int32_t(int64_t(raw) - 0x100000000LL);
+        const int32_t add = (wide + ((wide >> 31) & 0xff)) >> 8;
+        const int32_t next = int32_t(uint32_t(victim.bike.i32(0x288)) + uint32_t(add));
+        const int32_t lim = victim.bike.i32(0x29c);
+        victim.bike.i32(0x288) = (lim < next || (-lim != -next && next <= -lim)) ? (lim < next ? lim : -lim) : next;
+    }
+    return victim.bike.i32(0x2f4) != 0;
+}
+
 // Bike side of the contact handler 0x004049c0 against a car (+0xc4 == 0x10).
 // Cars are tall (+0x17c = 8960 >= 0x2000), so the hit is class 2 when the
 // car's width contains the rider (+0x19c bit 0x40, set by collide_traffic
 // from the 0x00436a40 prologue rule), otherwise class 3. Class 1 needs a
-// short other object and never fires for cars.
+// short other object and never fires for cars. The knock-off decision below
+// is the shared 0x004052c0 helper; the grunt/crash sound draws above stay
+// upstream in this caller, preserving the shared-stream position.
 void Race::contact_car(Rider& self, TrafficCar& car) {
     Bike& s = self.bike;
-    // Knock-off decision 0x004052c0: scales its argument by class (x7/4 for
-    // class 2, /8 for class 3), applies stamina damage (0x004050c0: max -4,
-    // current -64, max floored at base/2) and bike damage (0x004051e0:
-    // +0x2f0), and enters the crash (reason = class) when stamina or
-    // condition runs out. Returns whether the rider went down.
-    auto knock_off = [&](int32_t scaled) -> bool {
-        RiderStats& st = self.stamina;
-        st.max -= scaled * 4;
-        if (st.max < st.base / 2) st.max = st.base / 2;
-        st.current = std::max(0, st.current - scaled * 0x40);
-        s.i32(0x2f0) = std::max(0, s.i32(0x2f0) - scaled);
-        if (st.current == 0 || s.i32(0x2f0) == 0) {
-            crash_car(self);
-            return true;
-        }
-        return s.i32(0x2f4) != 0;
-    };
     const int32_t elasticity = s.i32(0x180);
     s.i32(0x188) = div256(int64_t(s.i32(0x188)) * elasticity);
     s.i32(0x184) = div256(int64_t(s.i32(0x184)) * elasticity);
@@ -483,8 +559,14 @@ void Race::contact_car(Rider& self, TrafficCar& car) {
     } else if (!contained) {
         // Class 3: glance off the car's side, with the 0x004052c0 decision.
         // 0x004049c0: other lateral < self lateral shoves +f0 (away from the
-        // car), else -f0; speed loses |184|/4 either way.
-        const bool down = knock_off(magnitude / 8);
+        // car), else -f0; speed loses |184|/4 either way. The car caller has
+        // +0xc4 & 0xc != 0, so the assembly passes stamina local_20 and bike
+        // damage (local_20 + (iVar8>>31 & 15)) >> 4, where iVar8 is the
+        // pre-shift magnitude sum (|184|+|188|+|18c| before >>10); both scale
+        // by /8 inside the helper.
+        const int32_t full = std::abs(s.i32(0x184)) + std::abs(s.i32(0x188)) + std::abs(s.i32(0x18c));
+        const int32_t swing = (magnitude + ((full >> 31) & 15)) >> 4;
+        const bool down = knock_off(self, magnitude, swing, 3);
         if (down) {
             s.i32(0xf4) += div_pow2(hit, 8);
         } else if (car.lateral < s.i32(0x28)) {
@@ -496,7 +578,7 @@ void Race::contact_car(Rider& self, TrafficCar& car) {
             s.i32(0xf0) -= hit / 2;
             s.i32(0xec) = std::max(0, s.i32(0xec) - div_pow2(hit, 2));
         }
-    } else if (const bool down = knock_off((magnitude * 7) / 4); down) {
+    } else if (const bool down = knock_off(self, magnitude, magnitude, 2); down) {
         // Class 2 and the rider went down in the decision: the impulse still
         // transfers to speed (0x004049c0).
         s.i32(0xec) += s.i32(0x184);
@@ -534,22 +616,29 @@ void Race::contact_car(Rider& self, TrafficCar& car) {
     }
 }
 
-// Crash entry for car contact: 0x00403d60 with reason 2 (animation 29).
-// Race::crash hard-codes reason 0 for combat/wall knock-offs; the car path
-// passes 2 through begin_crash identically.
+// Crash entries for contact 0x00403d60. crash_car keeps the reason-2 car path
+// (animation 29); crash_reason carries any reason with the 0x004052c0 vector
+// pair in the assembly's argument order (rider impulse, then bike impulse).
 void Race::crash_car(Rider& r) {
+    crash_reason(r, 2, {-80 - 176, 0, 1792}, {0, 0, 1024});
+}
+void Race::crash_reason(Rider& r, int32_t reason, std::array<int32_t,3> rider_impulse,
+                        std::array<int32_t,3> bike_impulse) {
     if (crash_library_) {
         if (r.crash_active) return;
         r.bike.i32(0x2f4) = 0;
         begin_crash(r.bike, r.crash_actor, crash_config_, crash_library_->playback[0],
-                    crash_library_->fallback, uint32_t(ticks_), 2);
+                    crash_library_->fallback, uint32_t(ticks_), reason, rider_impulse, bike_impulse);
         r.crash_active = true; r.crash_timer = 0;
         r.crash_actor.route = r.route; r.crash_actor.sample = r.sample;
         r.crash_actor.previous_sample = r.previous_sample;
         return;
     }
+    // Stand-in (no crash library): the shared helper already computed the
+    // vector pair for the golden path; the reason lands in +0x2f8.
+    (void)rider_impulse; (void)bike_impulse;
     r.bike.i32(0x2f4) = 1;
-    r.bike.i32(0x2f8) = 2;
+    r.bike.i32(0x2f8) = reason;
     r.bike.u8(0xc0) |= 0x10;
     r.crash_timer = 0;
 }

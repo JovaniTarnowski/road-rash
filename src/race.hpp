@@ -4,8 +4,10 @@
 #include "actor_descriptors.hpp"
 #include "road.hpp"
 #include "sound_event.hpp"
+#include <array>
 #include <vector>
 #include <functional>
+#include <optional>
 #include <string>
 
 namespace rr {
@@ -115,6 +117,9 @@ struct Rider {
     RiderStats stamina;
     int weapon = 0;                         // carried weapon (+0x1c8)
     Attack attack;
+    // Riding animation selected by contact 0x004052c0 reason 4 without a crash
+    // (0x0040ac70 with animation 9); -1 when no contact animation is pending.
+    int8_t contact_animation = -1;          // bike +0x80/+0x81 update, original-side only
     int32_t invulnerable_until = 0;         // +0x1d0: no further hits before this tick
 };
 
@@ -192,6 +197,13 @@ public:
     // Sound events queued this tick (0x00436830 call sites that involve the player).
     std::vector<SoundEventRecord> take_sound_events() { auto e = std::move(sound_events_); sound_events_.clear(); return e; }
     bool wrecked() const { return bike().i32(0x2f0) == 0; }   // bike condition used up
+    // Shared knock-off decision 0x004052c0 (plan 16 Task 1): public for the
+    // contact unit tests; the tick path calls it from contact_car. No RNG
+    // inside; grunt/crash draws stay upstream in the 0x004049c0 caller.
+    bool knock_off(Rider& victim, int32_t stamina_damage, int32_t bike_damage,
+                   int32_t reason, bool owner_local = true, int32_t owner_flag = 0,
+                   std::optional<std::array<int32_t,3>> rider_impulse = {},
+                   std::optional<std::array<int32_t,3>> bike_impulse = {});
 private:
     SliceEdges edges(const Rider&, size_t sample) const;
     void move_along(Rider&, int32_t distance, bool accumulate_sweep = true);
@@ -229,6 +241,11 @@ private:
     void collide_traffic(Rider&);
     void contact_car(Rider&, TrafficCar&);
     void crash_car(Rider&);   // 0x00403d60 reason 2 (car contact, animation 29)
+    void crash_reason(Rider&, int32_t reason, std::array<int32_t,3> rider_impulse,
+                      std::array<int32_t,3> bike_impulse);   // reason-tagged crash entry
+    // (Private implementation notes for the shared helper live on the public
+    // declaration above; crash entry preserves the assembly's argument order:
+    // rider impulse first, bike impulse second.)
     void contact(Rider& self, Rider& other);
     void update_camera();
     void fight(Rider&, uint32_t controls, size_t index);
