@@ -66,3 +66,20 @@ answer it empirically.
 `src/police.cpp` today covers only the numeric core of (B) + arrest
 thresholds. Missing: all of (A), think/move/draw, sirens, contact, HUD
 integration.
+
+## Napa level 1 verdict: NO cops (October 12, 2026, level-gated census)
+
+`CourseScene` DZHR actor records after the `0x00451fc0` level gate:
+
+| Course | L1 ped/cops | L3 ped/cops |
+| --- | --- | --- |
+| CITY | 359 / 6 | 346 / 3 |
+| HIWAY | 34 / 0 | 37 / 0 |
+| MEDLY | 276 / 4 | 278 / 8 |
+| NAPA | 42 / 0 | 46 / 2 |
+| CANYN | 24 / 3 | 24 / 3 |
+
+Napa level 1 has zero type->=0xb DZHR actor records: no live police
+spawn (and the offline `0x00407f30` timer path needs its own check).
+`napa-cops` must use level 3+. CITY level 1 (6 cops) is the Step 2
+capture candidate.
