@@ -455,3 +455,20 @@ Police configuration gate: `build/police-test` compares imported pursuit/relatio
   and replan `0x00408cd0` picks `+0x168` among them); then port `0x00408ad0`
   transitions, state dispatch (`0x00465980`), `0x00408e40` and the
   `0x0040a410`/`0x0040a100` lookahead.
+
+## Fight-target identification (October 12, 2026)
+
+- `dump_sim_tick` now logs every scheduler-ring node's address, think, position
+  and kind in the header frame (`nodeaddr.<i>[.think/.position/.kind]`), plus a
+  restored readability guard. `oracle-patch-test` preflights clean.
+- `sim-kink-probe6.tsv` (same Napa solo settings): the demo rider's
+  `brain_168` target `0x1402f60` is ring node 28 with think 0 (a frozen
+  opponent node, position 13312, kind 1); the player bike is ring node 32
+  (`0x1403c10`). The tick-183 state 1→5 transition targets a frozen opponent
+  the rider is pulling away from (gap trips `0x0040a4a0`'s 0xf0 window).
+- Consequence for the native replay harness (plan 10 task 6 item 1): solo
+  replay must construct the 7 opponents frozen at their grid slots with think
+  and move skipped but positions present for the replan/target scans. Port
+  order: `0x00408cd0` neighbour pick → `0x00408ad0` transitions → state
+  dispatch (`0x00465980`, states 1 and 5 first) → `0x00408e40` →
+  `0x0040a410`/`0x0040a100` lookahead.

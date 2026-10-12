@@ -266,6 +266,12 @@ The transition needs the frozen opponent nodes: solo captures still construct
 this transition; the replay harness must build frozen opponents (open).
 Steer rates verified: bike `+0x2a8/+0x2ac` read 165/141 live, matching native
 `apply_spec` output for SPEC id 2 exactly — no divergence there.
+Target identification (same session, `sim-kink-probe6`): the `+0x168` value
+`0x1402f60` is scheduler-ring node 28, think 0, position 13312 — a frozen
+opponent node the demo rider is pulling away from. The player bike is ring
+node 32. So `0x0040a4a0`'s ahead-window (`0xf0`) trips on a receding frozen
+node, and `0x00408e40` then steers off it. Solo replay must mirror the frozen
+opponent construction exactly.
 | `0x00414ca0` | Open resource container and load table | Native directory reader |
 | `0x00415360` | Iterate table and optionally preload | Layout recovered |
 | `0x004153a0` | Find/load/cache resource payload | Not ported |

@@ -254,8 +254,20 @@ static void dump_sim_tick(void) {
             rr_log("probe.end", (long long)end);
             rr_log("probe.player", (long long)player);
         }
+        int addr_index = 0;
         for (int guard = 0; node && node != end && guard < 512; ++guard) {
             if (!readable(node, 0xe4)) break;
+            if (g_sim_frames == 0) {
+                snprintf(key, sizeof key, "nodeaddr.%d", addr_index);
+                rr_log(key, (long long)node);
+                snprintf(key, sizeof key, "nodeaddr.%d.think", addr_index);
+                rr_log(key, sim_field_value(node, 0xe0, 4, 0));
+                snprintf(key, sizeof key, "nodeaddr.%d.position", addr_index);
+                rr_log(key, sim_field_value(node, 0x1c, 4, 1));
+                snprintf(key, sizeof key, "nodeaddr.%d.kind", addr_index);
+                rr_log(key, sim_field_value(node, 0x73, 1, 0));
+                ++addr_index;
+            }
             int slot = -1;
             if (node == player) slot = 0;
             else {
