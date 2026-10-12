@@ -743,3 +743,91 @@ Porting this needs `0x00407410`'s cumulative-distance walk (the native tracks
 `+0x1c` in Q8 samples, a different scale) and an oracle pixel capture to
 confirm the calibration; the readout is not yet ported. The sign (ahead/behind)
 also drives a separate indicator colour/string (`0x00446c30`), not yet ported.
+
+### Rider–vehicle contact (October 12, 2026, plan 11a Task 1)
+
+Detection is the scheduler contact pass `0x004368f0`, called once per tick
+from the scheduler driver `0x004383b6` (after the `0x004383ab` ring resort; a
+second resort follows when any contact fired). A node participates as the
+primary only when its schedule word `+0x10` equals the tick `DAT_004b7ecc`
+and `(byte)+0xc0 & 6 == 6`; the inner loop walks forward while
+`(byte)+0xc0 & 5 == 5`, breaking at the first pair whose longitudinal gap
+exceeds the summed half-lengths (`+0x178` each). Lateral must be within the
+summed half-widths (`+0x174` each), the slice-half bits (`+0x36` of the
+`+0x2c` node, masked with the primary's, `& 3`) must share a roadway, and
+height within the summed half-heights (`+0x17c` each). Split-roadway
+exclusion is that `+0x36 & 3` shared-half test: rider and car on different
+roadways never collide (the native `Race::step` pair loop already has this
+as `sa.dual && a.route != b.route`). On overlap both `+0x1a0` links are set,
+`0x00436a40` separates them, then each side's `+0x1a4` handler runs (bike:
+`0x004049c0`; car: `0x0044efa0`, horn only).
+
+Separation `0x00436a40` uses masses `+0x194` (bike 256, car 1800), impulses
+`+0x184`/`+0x188`/`+0x18c`, contact flags `+0x19c` (bit `0x40` = "other width
+contains ours", set in the forward-overlap prologue), and previous-position
+copies `+0x30..+0x44` to choose the separation axis. Longitudinal moves go
+through course-ring traversal `0x00439270`, which has no scratch equivalent,
+so the oracle fixture pre-seeds impulses instead (documented approximation).
+
+The bike-side handler `0x004049c0` against cars (`+0xc4 == 0x10`): crashed
+riders (`+0x2f4 != 0`) never take a new crash. Live riders with the tall-car
+height (`+0x17c = 8960 >= 0x2000`) take class 2 when `+0x19c & 0x40` is set,
+class 3 otherwise (class 1 needs a short other object and never fires for
+cars). Player-only sounds via `0x00436830` (two `0x00441750` draws, same as
+the bike-bike path). Class 2/3 reach the knock-off decision `0x004052c0`
+(class 2 scales `local_20` by 7/4, class 3 by 1/8; stamina damage
+`0x004050c0`, bike damage `0x004051e0`), then `0x00403d60` with reason 2
+(animation 29) on knock-off — no `crash.cpp` change needed since reason is a
+caller parameter. Class 2 without knock-off transfers speed when the gap is
+`< 0x1771`; class 3 shoves laterally and cuts speed.
+
+Car dimensions come from template `0x00475698` via `0x004387a0`: `+0x174 =
+16384`, `+0x178 = 64`, `+0x17c = 8960`, `+0x180 = 192`, `+0x194 = 1800`.
+The car reaction `0x0044efa0` is horn-only (sound 18, player-gated): no stop,
+swerve, or speed change. Fixture `analysis/oracle/napa-car-contact.tsv`
+(git-ignored): 256 isolated `0x004049c0` calls — 32 fast-contained crashes
+(reason 2, anim 29), 32 slow-contained speed transfers, 64 side shoves, 128
+crashed-rider rejections. Open: stamina words rise in the crash cases with
+no writer found yet; the golden captures it and the port must reproduce it.
+End-to-end parity needs the plan 10 `napa-crash-car` tick scenario.
+
+### Options screens and pause (October 12, 2026, plan 18 Task 1)
+
+Tables dumped from the reference EXE (image base `0x400000`): screen table
+`0x0046a390`, item rows 0x38 bytes. Restroom `0x10` has 13 items at
+`0x00473860` — the sound mix (handler `0x00401df0`) and Configure Input init
+(`0x0040fd90`) live here, NOT under Graphics Options. Jukebox `0x11` has 9
+slots (8 live + 1 dead). Configure Input `0x12` has 22 slots (9 rebind rows
+via `0x0040e580`, 2 defaults rows, Done, spacer, 9 key labels);
+`0x0040fd90` is device init returning the target, not the screen itself.
+Graphics Options `0x13` has 8 slots (Resolution/Bikers/Videos live, 4 dead).
+The sound mix is a Win32 modal dialog (resource id 300), not a menu screen:
+seven `msctls_trackbar32` sliders, range 0-100, defaults 100/80/80/80/80/80/80,
+mute bit `0x00463030`; OK commits and writes the `Mixer` registry value; no
+preview sound on the traced paths. Controls `0x0044f800` ORs keyboard and
+joystick bits into `0x004b7ed0` once per frame. There is NO original in-race
+pause screen: the frame driver `0x00442e10` has no pause branch; pause is the
+modal `MessageBoxA` `0x00443120` and quit-confirm is the modal pump
+`0x004431d0`. F10 cycles `MiniDash` 0-1-2-0 (full/mini/off); PrintScreen sets
+the screenshot flag. Open: menu keys feeding the MiniDash/OpponentList
+dispatch, the rebind flow and conflict rule, and the Escape race-quit path.
+Plan 18's screen map is corrected accordingly: Sound hangs off Restroom as a
+native look-alike of dialog 300, Pause is purely native.
+
+### Rider/bike/shadow nodes (October 12, 2026, plan 11a Task 3 trace)
+
+The bike+shadow dispatch `0x00446250` emits shadow first (clip 0, ground
+without vertical) then body (clip 1, ground + vertical>>8), re-running view
+selection `0x0043af60` after the `+0x90` swap on each side. The armed variant
+`0x004463e0` adds a weapon overlay: a third `0x0044ba40` node with the
+`0x0040b750` frame selection — native `rider_nodes` emits only 2 nodes, so
+the reported club-without-attack is a missing overlay, not a wrong base
+frame. Shadow colour `0x00446350` is `0xdf` only when the body colour is cop
+(`0xde`), else `0xe0` (no live-race effect: the game only calls with bank
+0). The `0x0044d300` dispatch has NO shadow darkening/translucency mode:
+shadows take the same textured path with plain index-0 transparency
+(candidate cause closed by code reading; pixel proof still needs the frame
+match). Orientation math (`0x00413ae0` vs `actor_angles`) matches on
+reading. Blocked on recapture: dump v3's heap closure never walks the
+scheduler ring, so rider object state is absent; `--native-actors` needs a
+TSV rider-object extension plus a napa-drive recapture incl. a jump frame.

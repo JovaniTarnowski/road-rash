@@ -554,3 +554,32 @@ Police configuration gate: `build/police-test` compares imported pursuit/relatio
   (`sim-kink-probe8.tsv`, all 15 bikes). A dumped `flags31` byte-`+0x31` field
   turned out to be the previous-position sample byte and was removed again;
   `slice36` stays as the documented constant. No port code reads either.
+
+## Rider-car contact and single-anchor replay (October 12, 2026)
+
+- **11a Task 1 (rider–car collision), trace + fixture + port:**
+  - `collide_traffic`/`contact_car`/`crash_car` in `src/race.cpp` with a
+    `cars_mut()` accessor in `src/traffic.hpp`; called for player and AI at
+    the traced point in `Race::step`. Fixture
+    `analysis/oracle/napa-car-contact.tsv` (git-ignored): 256 isolated
+    `0x004049c0` calls, 0 faults — 32 fast-contained crashes (reason 2,
+    anim 29), 32 slow-contained speed transfers, 64 side shoves, 128
+    crashed-rider rejections. Golden comparison and the live
+    `--steer-into-traffic` 6000-tick log remain open.
+- **Plan 10 Task 5 Step 2a (single-anchor replay):** `oracle-sim-test`
+  defaults to one RNG anchor at the green light; `--reanchor` keeps
+  per-tick re-anchoring as a diagnostic only. The tick-120 speed gap
+  root-caused to the harness (solo replay built `Race` without
+  personalities; fixed by loading `0x00464558` rows) — physics now green
+  through frame 138 (speed 1919). Next divergence frame 138 (tick 139):
+  RNG original 2574079260 vs native 1133891140, fields matching — the
+  unported `0x0044dd90` traffic-spawn timer draw. Pinned in
+  `tools/sim_known_divergences.json`; `oracle-sim` diagnostic gate passes.
+  New `napa-solo-human` scripted-controls scenario (1,431 frames,
+  self-check + input replay zero differences). Full Debug suite 63/63.
+- **Plan 18 Task 1 (options trace):** findings merged into
+  REVERSE_ENGINEERING.md "Options screens and pause"; plan 18's screen map
+  corrected (Sound off Restroom as a native dialog look-alike, Pause purely
+  native). **11a Task 3 (bike/shadow nodes):** dispatch, shadow-mode and
+  orientation findings merged into REVERSE_ENGINEERING.md; `--native-actors`
+  blocked on a TSV rider-object recapture (documented).

@@ -547,3 +547,29 @@ UI cleanup (October 11, 2026): removed the bottom keyboard-instructions overlay 
 ## Makefile
 
 `native-port/Makefile` wraps the README workflows: `make build|run|viewer|video|test|smoke|app|apk|apk-release|ci|clean`. `make help` lists targets; `COURSE=`, `BIKE=`, `ASSETS=`, `BUILD_TYPE=` override defaults. `run` omits `--course/--bike` unless set, since those flags force quick-race mode.
+
+### Session 28: rider-car contact, single-anchor replay, tooling gates (October 12, 2026)
+
+- **11a Task 1 (rider–car collision)** trace, fixture and port landed:
+  `collide_traffic`/`contact_car`/`crash_car` in `src/race.cpp` (player and
+  AI, traced point in `Race::step`), `cars_mut()` in `src/traffic.hpp`.
+  Fixture `analysis/oracle/napa-car-contact.tsv`: 256 isolated `0x004049c0`
+  calls, 0 faults. Golden comparison and the live `--steer-into-traffic`
+  log remain open; stamina-rise in crash cases is an open trace question.
+- **Plan 10 Task 5 Step 2a (single-anchor replay)** landed: default one RNG
+  anchor at green, `--reanchor` diagnostic only, `napa-solo-human`
+  scripted-controls scenario (1,431 frames). The tick-120 speed gap
+  root-caused to the harness (missing personalities) and fixed — physics
+  green through frame 138; next divergence is the unported traffic-spawn
+  timer RNG at tick 139 (pinned in `tools/sim_known_divergences.json`).
+- **Plan 18 Task 1 (options trace)** and **11a Task 3 (bike/shadow trace)**
+  findings merged into REVERSE_ENGINEERING.md; `--native-actors` blocked on
+  a TSV rider-object recapture (documented recipe in the notes).
+- **Agent tooling P0/P1** landed separately: workspace ownership, gate
+  receipts, capture validator, build provenance, CI/packaging wrappers.
+- Gate: full Debug suite **63/63 pass** (62 + agent-tooling), UBSan affected
+  suites pass (pre-existing `sim_fields` div-by-zero on a zeroed spec
+  confirmed on pristine HEAD, documented, not fixed here), viewer smoke,
+  course sweep and headless race render exit 0. The release bundle is stale
+  by design until the next `tools/build_macos_app.sh` run (verifier fails
+  it as intended).
