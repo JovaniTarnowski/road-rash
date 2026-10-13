@@ -177,6 +177,7 @@ Native port: `src/bike.cpp`, `src/race.cpp`.
 - **Animation (not ported):**
   - Each object has an anim struct at `+0x70`, with `+8` → a table of animations by code (`0x00474d78[type]`, filled at runtime by `0x00445a60` from `GLOBAL.RSC` `CANS` 1–2 and `ANIM` 1–4 through `0x0040b6a0`).
   - Frame records are 20 bytes: duration at `+0xc`, loop flags at `+0xd`. `0x0040ac70` sets the animation; `0x0043ae90` advances it.
+  - Anim-advance REA verification (October 12, 2026; plan 10 Task 5/6 merge `36c03dc` + plan 11 Task 5): pinned REA 6.4.0 pseudocode whitespace-identical for `0x0043ae90` advance (1355 chars: deadline/loop/frame stepping the merge's `advance_ride_animation` ports) and `0x0043ae10` set (535: code → slot lookup the merge's selection path uses). `0x00407a90` bike-anim think is absent from REA's procedure database (gap #8, scheduler-dispatched pattern; valid 1631-char export) — port from the project export. Files: `analysis/oracle/rea-43ae90-animadv.md`, `rea-43ae10-animset.md` (disc-derived, git-ignored).
 - **AI personalities:** 10 records of `0x204` bytes at `0x00464558`, copied to `0x004c6b40`. Each holds per-level target speeds at `+0x1bc` (5 levels; e.g. rider 1: 99/115/130/150/185) and a lane preference at `+0x18c`. `0x004078f0` also makes 6 copies with ±6 random variation.
 - **AI driving:**
   - Target point: `+0x194` lateral, `+0x198` = position + `0x3c0`, `+0x19c` speed.
