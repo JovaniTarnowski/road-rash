@@ -1,0 +1,158 @@
+#include "render_threads.hpp"
+#include "texture.hpp"
+#include <algorithm>
+#include <condition_variable>
+#include <cstring>
+#include <mutex>
+#include <stdexcept>
+#include <thread>
+#include <vector>
+namespace rr {
+namespace {
+int16_t narrow_point(int32_t v) {
+    const uint16_t bits = uint16_t(v);
+    int16_t r;
+    std::memcpy(&r, &bits, 2);
+    return r;
+}
+}
+struct RenderThreads::Impl {
+    explicit Impl(int n) : stop(false), generation(0), pending(0) {
+        for (int i = 0; i < n; ++i) workers.emplace_back([this] { loop(); });
+    }
+    ~Impl() {
+        {
+            std::lock_guard<std::mutex> lock(mutex);
+            stop = true;
+        }
+        wake.notify_all();
+        for (auto& t : workers) t.join();
+    }
+    void loop() {
+        uint64_t seen = 0;
+        for (;;) {
+            std::function<void()> work;
+            {
+                std::unique_lock<std::mutex> lock(mutex);
+                wake.wait(lock, [&] { return stop || generation != seen; });
+                if (stop) return;
+                seen = generation;
+                if (!queue.empty()) { work = std::move(queue.back()); queue.pop_back(); }
+            }
+            if (work) {
+                work();
+                std::lock_guard<std::mutex> lock(mutex);
+                if (--pending == 0) done.notify_all();
+            }
+        }
+    }
+    std::mutex mutex;
+    std::condition_variable wake, done;
+    std::vector<std::thread> workers;
+    std::vector<std::function<void()>> queue;
+    bool stop;
+    uint64_t generation;
+    size_t pending;
+};
+RenderThreads::RenderThreads(int threads) : threads_(threads < 1 ? 1 : threads) {
+    if (threads_ > 1) impl_ = new Impl(threads_);
+}
+RenderThreads::~RenderThreads() { delete impl_; }
+void RenderThreads::run(int bands, int height, const std::function<void(int,int,int)>& job) {
+    if (bands < 1 || height < 1) throw std::runtime_error("Render bands out of range");
+    if (threads_ == 1 || bands == 1) {
+        for (int b = 0; b < bands; ++b) {
+            const int top = (height * b) / bands, bottom = (height * (b + 1)) / bands - 1;
+            job(b, top, bottom);
+        }
+        return;
+    }
+    Impl& impl = *impl_;
+    {
+        std::lock_guard<std::mutex> lock(impl.mutex);
+        for (int b = bands - 1; b >= 0; --b) {
+            const int top = (height * b) / bands, bottom = (height * (b + 1)) / bands - 1;
+            impl.queue.push_back([job, b, top, bottom] { job(b, top, bottom); });
+        }
+        impl.pending = size_t(bands);
+        ++impl.generation;
+    }
+    impl.wake.notify_all();
+    std::unique_lock<std::mutex> lock(impl.mutex);
+    impl.done.wait(lock, [&] { return impl.pending == 0; });
+}
+// Band entry: the existing node loop with RasterClip rows [top, bottom].
+// Every band renders the whole node list in order, clipped to its rows, so
+// the union is bit-identical to one thread (Review Focus 2).
+void render_nodes_threaded(Framebuffer& fb, const std::vector<DrawNode>& nodes, const ViewMode& mode,
+                           uint32_t flat_mask, RenderThreads& pool) {
+    if (fb.width() != mode.surface_width || fb.height() != mode.surface_height)
+        throw std::runtime_error("View/framebuffer size mismatch");
+    const bool wide_surface = mode.surface_width > 640 || mode.surface_height > 480;
+    const int bands = std::max(1, pool.count());
+    pool.run(bands, fb.height(), [&](int, int top, int bottom) {
+        RasterClip clip{0, top, fb.width(), bottom};
+        RasterScratch64 scratch(wide_surface ? fb.height() : 0);
+        for (const auto& node : nodes) {
+            if (!node.texture && !node.flat_index) continue;
+            std::array<RasterPoint,4> points;
+            for (size_t i = 0; i < 4; ++i) points[i] = {mode.map(node.view_points[i].x), mode.map(node.view_points[i].y)};
+            int32_t minx = points[0].x, maxx = minx, miny = points[0].y, maxy = miny;
+            for (const auto& p : points) {
+                minx = std::min(minx, p.x); maxx = std::max(maxx, p.x);
+                miny = std::min(miny, p.y); maxy = std::max(maxy, p.y);
+            }
+            if (minx > clip.right || maxx < clip.left || miny > clip.bottom || maxy < clip.top) continue;
+            if (node.texture && node.texture->mips.empty() && !(node.texture->flags & flat_mask)) continue;
+            if (!node.texture || (node.texture->flags & flat_mask)) {
+                draw_flat_quad(fb, {points, node.texture ? node.texture->flat_index : *node.flat_index}, clip);
+                continue;
+            }
+            const auto& texture = *node.texture;
+            if (texture.flags & 0x2000) throw std::runtime_error("Dynamic rider texture must be specialized before rendering");
+            bool flip_u = node.flip_u;
+            if (!normalize_quad(points, texture.flags, &flip_u)) continue;
+            const auto& bounds = texture.bounds;
+            const uint32_t src_w = uint32_t(std::abs(int64_t(bounds[2]) - bounds[0]) + 1);
+            const uint32_t src_h = uint32_t(std::abs(int64_t(bounds[3]) - bounds[1]) + 1);
+            const uint16_t u0 = uint16_t(flip_u ? bounds[2] - 1 : bounds[0] + 1);
+            const uint16_t u1 = uint16_t(flip_u ? bounds[0] + 1 : bounds[2] - 1);
+            const uint16_t v0 = uint16_t(node.flip_v ? bounds[3] - 1 : bounds[1] + 1);
+            const uint16_t v1 = uint16_t(node.flip_v ? bounds[1] + 1 : bounds[3] - 1);
+            const std::array<std::array<uint16_t,2>,4> uv = {{{u0, v0}, {u1, v0}, {u1, v1}, {u0, v1}}};
+            if (wide_surface) {
+                const int signed_level = texture_mip_level_signed(uint32_t(maxx - minx + 1), uint32_t(maxy - miny + 1),
+                                                                  src_w, src_h, texture.mips.size(), texture.upscaled.size());
+                std::array<TextureVertexWide,4> vertices;
+                if (signed_level < 0) {
+                    const size_t up = size_t(-signed_level - 1);
+                    const auto& mip = texture.upscaled.at(up);
+                    const unsigned s = unsigned(1) << (up + 1);
+                    for (size_t i = 0; i < 4; ++i)
+                        vertices[i] = {points[i].x, points[i].y, uint16_t(uv[i][0] * s), uint16_t(uv[i][1] * s)};
+                    draw_textured_quad_wide(fb, vertices, mip.pixels, mip.width, mip.stride_shift,
+                                            (texture.flags & 2) != 0, clip, true, scratch);
+                } else {
+                    const size_t level = size_t(signed_level);
+                    for (size_t i = 0; i < 4; ++i)
+                        vertices[i] = {points[i].x, points[i].y, uint16_t(uv[i][0] >> level), uint16_t(uv[i][1] >> level)};
+                    const auto& mip = texture.mips.at(level);
+                    draw_textured_quad_wide(fb, vertices,
+                                            mip.sampling_storage.empty() ? mip.pixels : mip.sampling_storage,
+                                            mip.width, mip.stride_shift, (texture.flags & 2) != 0, clip, false, scratch);
+                }
+                continue;
+            }
+            const size_t level = texture_mip_level(uint32_t(maxx - minx + 1), uint32_t(maxy - miny + 1),
+                                                   src_w, src_h, texture.mips.size());
+            std::array<TextureVertex,4> vertices;
+            for (size_t i = 0; i < 4; ++i)
+                vertices[i] = {narrow_point(points[i].x), narrow_point(points[i].y),
+                               uint16_t(uv[i][0] >> level), uint16_t(uv[i][1] >> level)};
+            const auto& mip = texture.mips.at(level);
+            draw_textured_quad(fb, vertices, mip.sampling_storage.empty() ? mip.pixels : mip.sampling_storage,
+                               mip.stride_shift, (texture.flags & 2) != 0, clip);
+        }
+    });
+}
+}

@@ -6,6 +6,7 @@ if(RR_BUNDLE_SDL AND NOT ANDROID)
 endif()
 project(RoadRashNative LANGUAGES C CXX)
 find_package(Python3 REQUIRED COMPONENTS Interpreter)
+find_package(Threads REQUIRED)
 add_custom_target(rr-build-provenance
     COMMAND ${Python3_EXECUTABLE} "${CMAKE_SOURCE_DIR}/tools/build_info.py"
         --header "${CMAKE_BINARY_DIR}/generated/rr_build_info.hpp"
@@ -34,8 +35,8 @@ elseif(RR_BUNDLE_SDL)
 else()
     find_package(SDL3 3.2 REQUIRED CONFIG)
 endif()
-add_library(rr-resource STATIC src/resource.cpp src/course.cpp src/road.cpp src/assets.cpp src/framebuffer.cpp src/bike.cpp src/race.cpp src/input.cpp src/bob.cpp src/session.cpp src/iso9660.cpp src/sha256.cpp src/importer.cpp src/import_job.cpp src/wav.cpp src/mixer.cpp src/ima_adpcm.cpp src/avi.cpp src/cinepak.cpp src/video_player.cpp src/raster.cpp src/terrain.cpp src/scene.cpp src/polygon.cpp src/texture.cpp src/cel.cpp src/world_renderer.cpp src/road_panels.cpp src/road_materials.cpp src/exe_tables.cpp src/pe_strings.cpp src/career.cpp src/text.cpp src/settings.cpp src/rri.cpp src/frontend.cpp src/sound.cpp src/explode.cpp src/rider_sprites.cpp src/mmpx.cpp src/upscale_cache.cpp src/display.cpp src/native_strings.cpp src/native_screens.cpp)
-target_link_libraries(rr-resource PUBLIC SDL3::SDL3)
+add_library(rr-resource STATIC src/resource.cpp src/course.cpp src/road.cpp src/assets.cpp src/framebuffer.cpp src/bike.cpp src/race.cpp src/input.cpp src/bob.cpp src/session.cpp src/iso9660.cpp src/sha256.cpp src/importer.cpp src/import_job.cpp src/wav.cpp src/mixer.cpp src/ima_adpcm.cpp src/avi.cpp src/cinepak.cpp src/video_player.cpp src/raster.cpp src/terrain.cpp src/scene.cpp src/polygon.cpp src/texture.cpp src/cel.cpp src/world_renderer.cpp src/render_threads.cpp src/road_panels.cpp src/road_materials.cpp src/exe_tables.cpp src/pe_strings.cpp src/career.cpp src/text.cpp src/settings.cpp src/rri.cpp src/frontend.cpp src/sound.cpp src/explode.cpp src/rider_sprites.cpp src/mmpx.cpp src/upscale_cache.cpp src/display.cpp src/native_strings.cpp src/native_screens.cpp)
+target_link_libraries(rr-resource PUBLIC SDL3::SDL3 Threads::Threads)
 target_sources(rr-resource PRIVATE src/family.cpp src/terrain_panels.cpp src/building_panels.cpp src/terrain_ground.cpp src/course_scene.cpp src/hud.cpp src/animation.cpp src/actor_animation.cpp src/actor_descriptors.cpp src/actor_render.cpp src/actor_nodes.cpp src/crash.cpp src/police.cpp src/scenery.cpp src/traffic.cpp src/pedestrians.cpp src/race_pedestrians.cpp src/race_music.cpp src/race_setup.cpp src/track_ring.cpp)
 set_target_properties(rr-resource PROPERTIES POSITION_INDEPENDENT_CODE ON)
 target_include_directories(rr-resource PUBLIC src)

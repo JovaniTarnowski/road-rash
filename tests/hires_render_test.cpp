@@ -11,6 +11,7 @@
 #include "texture_library.hpp"
 #include "view.hpp"
 #include "world_renderer.hpp"
+#include "render_threads.hpp"
 #include <cstdio>
 #include <cstring>
 #include <filesystem>
@@ -191,6 +192,47 @@ int main(int argc, char** argv) {
             ++failures;
         }
         check(views == 2509, "sweep covers 2509 views at s=4");
+    }
+    // Plan 19 Task 6 (Review Focus 2): every golden display list at s=1..4
+    // renders byte-identical with 1, 2, 4 and 7 threads (7 makes uneven bands).
+    {
+        const auto& f = golden.frames[0];
+        const long file = f.at("scene.file");
+        const auto dump = rr::scene::load(stem + "-scene" + std::to_string(file) + ".raw");
+        std::vector<rr::DrawNode> nodes;
+        std::vector<std::unique_ptr<rr::CelTexture>> dynamic;
+        for (const auto& s : dump.nodes) {
+            rr::DrawNode n;
+            for (int k = 0; k < 4; ++k)
+                n.view_points[size_t(k)] = {int32_t(s.u32(0x44 + 8 * size_t(k))), int32_t(s.u32(0x48 + 8 * size_t(k)))};
+            n.flip_u = s.bytes[0x64] != 0;
+            n.flip_v = s.bytes[0x65] != 0;
+            if (s.u32(8) == 0x00466684) {
+                auto t = rr::rider_texture(sprites, int32_t(s.u32(0x38)), int32_t(s.u32(0x34)));
+                if (!t) continue;
+                dynamic.push_back(std::make_unique<rr::CelTexture>(std::move(*t)));
+                n.texture = dynamic.back().get();
+            } else if (s.bytes[0x66]) n.flat_index = s.bytes[0x67];
+            else if (!(n.texture = lib.find(s.hash, s.size))) continue;
+            nodes.push_back(n);
+        }
+        for (int s = 1; s <= 4; ++s) {
+            const rr::ViewMode mode = s == 1 ? rr::view_mode(true) : rr::view_mode_scaled(s);
+            rr::Framebuffer ref(640 * s, 480 * s);
+            ref.clear(0);
+            rr::render_nodes(ref, nodes, mode, uint32_t(f.at("view.quality_mask")));
+            for (int threads : {1, 2, 4, 7}) {
+                rr::Framebuffer fb(640 * s, 480 * s);
+                fb.clear(0);
+                rr::RenderThreads pool(threads);
+                rr::render_nodes_threaded(fb, nodes, mode, uint32_t(f.at("view.quality_mask")), pool);
+                size_t differ = 0;
+                for (int y = 0; y < fb.height(); ++y)
+                    for (int x = 0; x < fb.width(); ++x) differ += fb.row(y)[x] != ref.row(y)[x];
+                if (differ) std::cerr << "s=" << s << " threads=" << threads << ": " << differ << " band pixels differ\n";
+                check(differ == 0, "band rendering is bit-identical");
+            }
+        }
     }
     std::cout << failures << " failures\n";
     return failures ? 1 : 0;

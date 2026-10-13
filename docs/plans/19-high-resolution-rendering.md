@@ -190,11 +190,11 @@ inline ViewMode view_mode_scaled(int s) {
   ```
   Each band calls the existing node loop with `RasterClip{0, top, width, bottom}`. Threads are created once and reused (no thread creation per frame).
 
-- [ ] **Step 1: Write the failing test.** For every golden display list and `s = 1..4`, render with 1, 2, 4 and 7 threads (7 makes uneven bands); all images are byte-identical to the 1-thread image (Review Focus 2).
-- [ ] **Step 2:** Run; expected FAIL (no overload).
-- [ ] **Step 3: Implement.** Check that `draw_flat_quad` and `draw_textured_quad` honour `clip.top`/`clip.bottom` for every row (fix the raster if a row outside the clip is ever written; the test will show it). Default thread count: `std::min(8, SDL_GetNumLogicalCPUCores() - 1)`, at least 1.
-- [ ] **Step 4: Measure.** Add `--bench` frame-time output if plan 14 Task 2 has not (p50/p95/max over 3,600 frames). Record on the Mac in VERIFICATION.md: race frame time at `s = 1..4` with 1 thread and with the default. The default render scale "Match display" (Task 8) may not pick a scale whose p95 exceeds 12 ms on this machine; record the rule.
-- [ ] **Step 5:** Commit: `render: band-parallel rasterisation, bit-identical to one thread`.
+- [x] **Step 1: Write the failing test.** For every golden display list and `s = 1..4`, render with 1, 2, 4 and 7 threads (7 makes uneven bands); all images are byte-identical to the 1-thread image (Review Focus 2).
+- [x] **Step 2:** Run; expected FAIL (no overload).
+- [x] **Step 3: Implement.** Check that `draw_flat_quad` and `draw_textured_quad` honour `clip.top`/`clip.bottom` for every row (fix the raster if a row outside the clip is ever written; the test will show it). Default thread count: `std::min(8, SDL_GetNumLogicalCPUCores() - 1)`, at least 1.
+- [x] **Step 4: Measure.** Add `--bench` frame-time output if plan 14 Task 2 has not (p50/p95/max over 3,600 frames). Record on the Mac in VERIFICATION.md: race frame time at `s = 1..4` with 1 thread and with the default. The default render scale "Match display" (Task 8) may not pick a scale whose p95 exceeds 12 ms on this machine; record the rule.
+- [x] **Step 5:** Commit: `render: band-parallel rasterisation, bit-identical to one thread`.
 
 ---
 

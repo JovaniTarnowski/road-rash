@@ -814,3 +814,18 @@ Owned edits: `src/import_job.hpp/.cpp` (new), `src/sha256.hpp/.cpp`
 - `show_fps` draws `"<fps> FPS <tps> TPS"` top-right (Futura Bold 24, `#DEFFF0`, 2 px shadow, transparent ARGB background, refreshed twice a second).
 - Headless proof: `RR_PREF_OVERRIDE=/tmp/rrpref` (`show_fps=1`) `build/rr-game --assets ../cdrom/ROADRASH --ticks 200 --screenshot /tmp/fps.bmp` shows `1 FPS 0 TPS` over the sky (first-frame counts); `show_fps=0` control screenshot is identical minus the text.
 - USER_GUIDE Settings section, README/PROGRESS updates. `tools/ci.sh` green; macOS bundle rebuilt and verified (`verify_macos_app.py`: ARM64, ad-hoc signature, no game data, stamp matches HEAD).
+
+## Plan 19 Task 6 Step 4 (October 13, 2026): band-parallel rasterisation
+
+- `hires-render`: 0 failures (golden frame 0 at s=1..4, 1/2/4/7 threads each: byte-identical to the 1-thread image — Review Focus 2).
+- Bug fixed by the test: per-band `RasterScratch64` was sized to the band, but 64-bit edge tables index by absolute surface row — bands 1+ read zeroed rows and dropped polygons crossing into them. Scratch is now sized to the full surface height per band job (per-worker allocation, no sharing).
+- Frame times (Apple M3 Pro, 12 cores; Debug tree, node raster only, 360 frames over 5 golden display lists):
+  | scale | 1 thread (p50/p95/max ms) | 7 threads (p50/p95/max ms) |
+  | --- | --- | --- |
+  | 1 (640x480) | 0.50/0.59/2.03 | 0.22/0.24/0.27 |
+  | 2 (1280x960) | 2.46/2.55/2.65 | 0.99/1.02/1.13 |
+  | 3 (1920x1440) | 5.01/5.11/5.24 | 1.91/1.96/2.22 |
+  | 4 (2560x1920) | 8.26/8.75/9.61 | 3.22/3.91/5.27 |
+- Match-display rule: every scale's 7-thread p95 is under 12 ms on this machine, so no scale is excluded here. Full-frame cost (scene build, horizon, dashboard, presentation) is not included; re-measure end-to-end before shipping the Task 8 default.
+- Default thread count (plan interface): `min(8, cores - 1)`, at least 1 — not yet wired into the game (no caller); lands with Task 8's presentation work.
+- TSan re-run required once the game calls the threaded path (tsan.sh covers it via the race scenario).
