@@ -60,11 +60,12 @@ void texture_edge_wide(RasterScratch64& scratch,const TextureVertexWide& from,co
 int texture_mip_level_signed(uint32_t projected_width,uint32_t projected_height,
     uint32_t source_width,uint32_t source_height,size_t original_levels,size_t upscaled_levels);
 // Wide textured quad: baseline fill rules (right exclusive, bottom inclusive)
-// at every scale. `upscaled` selects plain bounds-checked addressing (strides
-// above 256 cannot use the 16-bit sampling-storage path); original levels keep
+// at every scale. `upscaled_storage` selects plain bounds-checked addressing
+// with the level width (strides above 256 cannot use the 16-bit
+// sampling-storage path); original levels pass their stride shift and keep
 // the emulated path unchanged.
 void draw_textured_quad_wide(Framebuffer&,const std::array<TextureVertexWide,4>&,
-    const std::vector<uint8_t>& pixels,unsigned stride_shift,bool transparent,
+    const std::vector<uint8_t>& pixels,int level_width,unsigned stride_shift,bool transparent,
     RasterClip,bool upscaled_storage,RasterScratch64& scratch);
 // Perspective-correct quads with equal per-corner depth MUST call the
 // original affine draw_textured_quad above: float arithmetic and 16-pixel

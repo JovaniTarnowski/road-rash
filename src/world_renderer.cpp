@@ -10,6 +10,8 @@ int16_t narrow(int32_t v){const uint16_t bits=uint16_t(v);int16_t result;std::me
 void render_nodes(Framebuffer& fb,const std::vector<DrawNode>& nodes,const ViewMode& mode,uint32_t flat_mask) {
     if(fb.width()!=mode.surface_width || fb.height()!=mode.surface_height)throw std::runtime_error("View/framebuffer size mismatch");
     const RasterClip clip{0,0,fb.width(),fb.height()-1};
+    const bool wide_surface=mode.surface_width>640 || mode.surface_height>480;
+    RasterScratch64 scratch(wide_surface?fb.height():0);
     for(const auto& node:nodes) {
         if(!node.texture && !node.flat_index)continue;
         std::array<RasterPoint,4> points;
@@ -28,11 +30,43 @@ void render_nodes(Framebuffer& fb,const std::vector<DrawNode>& nodes,const ViewM
         bool flip_u=node.flip_u;
         if(!normalize_quad(points,texture.flags,&flip_u))continue;
         const auto& bounds=texture.bounds;
-        const size_t level=texture_mip_level(uint32_t(maxx-minx+1),uint32_t(maxy-miny+1),
-            uint32_t(std::abs(int64_t(bounds[2])-bounds[0])+1),uint32_t(std::abs(int64_t(bounds[3])-bounds[1])+1),texture.mips.size());
+        const uint32_t src_w=uint32_t(std::abs(int64_t(bounds[2])-bounds[0])+1),src_h=uint32_t(std::abs(int64_t(bounds[3])-bounds[1])+1);
         const uint16_t u0=uint16_t(flip_u?bounds[2]-1:bounds[0]+1),u1=uint16_t(flip_u?bounds[0]+1:bounds[2]-1);
         const uint16_t v0=uint16_t(node.flip_v?bounds[3]-1:bounds[1]+1),v1=uint16_t(node.flip_v?bounds[1]+1:bounds[3]-1);
         const std::array<std::array<uint16_t,2>,4> uv={{{u0,v0},{u1,v0},{u1,v1},{u0,v1}}};
+        if(wide_surface) {
+            // Plan 19 Task 3: int32 surface points (Review Focus 5); negative
+            // levels sample upscaled[-level-1] with uv scaled by 2^(-level).
+            const int signed_level=texture_mip_level_signed(uint32_t(maxx-minx+1),uint32_t(maxy-miny+1),src_w,src_h,texture.mips.size(),texture.upscaled.size());
+            std::array<TextureVertexWide,4> vertices;
+            if(signed_level<0) {
+                const size_t up=size_t(-signed_level-1);
+                const auto& mip=texture.upscaled.at(up);
+                const unsigned scale=unsigned(1)<<(up+1);
+                for(size_t i=0;i<4;++i)vertices[i]={points[i].x,points[i].y,uint16_t(uv[i][0]*scale),uint16_t(uv[i][1]*scale)};
+                draw_textured_quad_wide(fb,vertices,mip.pixels,mip.width,mip.stride_shift,(texture.flags&2)!=0,clip,true,scratch);
+            } else {
+                const size_t level=size_t(signed_level);
+                for(size_t i=0;i<4;++i)vertices[i]={points[i].x,points[i].y,uint16_t(uv[i][0]>>level),uint16_t(uv[i][1]>>level)};
+                const auto& mip=texture.mips.at(level);
+                draw_textured_quad_wide(fb,vertices,mip.sampling_storage.empty()?mip.pixels:mip.sampling_storage,mip.width,mip.stride_shift,(texture.flags&2)!=0,clip,false,scratch);
+            }
+            continue;
+        }
+        // Narrow surface: signed selection for the upscaled hook, int16 path
+        // for original levels (bit-identical when upscaled is empty).
+        const int signed_level=texture_mip_level_signed(uint32_t(maxx-minx+1),uint32_t(maxy-miny+1),src_w,src_h,texture.mips.size(),texture.upscaled.size());
+        if(signed_level<0) {
+            const size_t up=size_t(-signed_level-1);
+            const auto& mip=texture.upscaled.at(up);
+            const unsigned scale=unsigned(1)<<(up+1);
+            std::array<TextureVertexWide,4> vertices;
+            for(size_t i=0;i<4;++i)vertices[i]={points[i].x,points[i].y,uint16_t(uv[i][0]*scale),uint16_t(uv[i][1]*scale)};
+            RasterScratch64 narrow_scratch(fb.height());
+            draw_textured_quad_wide(fb,vertices,mip.pixels,mip.width,mip.stride_shift,(texture.flags&2)!=0,clip,true,narrow_scratch);
+            continue;
+        }
+        const size_t level=texture_mip_level(uint32_t(maxx-minx+1),uint32_t(maxy-miny+1),src_w,src_h,texture.mips.size());
         std::array<TextureVertex,4> vertices;
         for(size_t i=0;i<4;++i)vertices[i]={narrow(points[i].x),narrow(points[i].y),uint16_t(uv[i][0]>>level),uint16_t(uv[i][1]>>level)};
         const auto& mip=texture.mips.at(level);

@@ -124,14 +124,14 @@ inline ViewMode view_mode_scaled(int s) {
   - `TextureVertex` x/y become `int32_t` (Review Focus 5); `texture_edge` takes a `std::vector<TextureEdge>&` sized to the surface height, owned by a per-framebuffer `RasterScratch` struct created with the framebuffer (no allocation per quad).
   - `CelTexture` gains `std::vector<CelMip> upscaled;` (index 0 = 2× of mip 0, index 1 = 4×), empty by default. `texture_mip_level` may return a negative level when the projected size exceeds mip 0 and `upscaled` is non-empty; `render_nodes` then samples `upscaled[-level-1]` with uv scaled by `2^(-level)`. With `upscaled` empty, behaviour is exactly today's. Note: original mips sample through `sampling_storage`, which emulates the original span functions' 16-bit byte addressing (`src/cel.hpp`). A 4× level of a 256-wide texture is 1,024 wide and cannot use that path, so upscaled levels get their own textured-span function with plain bounds-checked addressing; original levels keep the emulated path unchanged.
 
-- [ ] **Step 1: Write the failing tests.**
+- [x] **Step 1: Write the failing tests.**
   - `texture_test`: a vertex at x = 40,000 and x = −40,000 rasterises (clipped) without wrap; an edge table for a 1,440-row surface fills every row.
   - `world_renderer_test`: a synthetic 16×16 checkerboard texture with a synthetic 32×32 `upscaled[0]` level (each 2×2 block a distinct index, so the test can tell which level was sampled). A quad covering 64×64 surface pixels samples `upscaled[0]`; the same quad at 8×8 pixels samples mip 0 or below; with `upscaled` empty the 64×64 quad samples mip 0.
   - `world_renderer_test`: a flat quad whose corners are Q16 (10.5, 20.25)…(100.75, 90.5) logical pixels covers, at `s = 3`, a pixel count within `perimeter_in_pixels` of `9 ×` the `s = 1` count (edge pixels may round differently; interior must scale exactly).
-- [ ] **Step 2:** Run; expected FAIL.
-- [ ] **Step 3: Implement** as specified. Keep the original fill rules (right edge exclusive, bottom inclusive) unchanged at every scale.
-- [ ] **Step 4:** Run the tests plus `oracle-raster`, `oracle-scene`, `world_renderer`. Expected: PASS, goldens unchanged.
-- [ ] **Step 5:** Commit: `raster: any surface size; upscaled mip hook`.
+- [x] **Step 2:** Run; expected FAIL.
+- [x] **Step 3: Implement** as specified. Keep the original fill rules (right edge exclusive, bottom inclusive) unchanged at every scale.
+- [x] **Step 4:** Run the tests plus `oracle-raster`, `oracle-scene`, `world_renderer`. Expected: PASS, goldens unchanged.
+- [x] **Step 5:** Commit: `raster: any surface size; upscaled mip hook`.
 
 ---
 

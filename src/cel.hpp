@@ -15,7 +15,7 @@ struct CelMip {
     // zero guards: process-specific heap reads cannot be reproduced safely.
     std::vector<uint8_t> sampling_storage;
 };
-struct CelTexture {std::array<int32_t,4> bounds{};uint32_t flags=0;uint8_t flat_index=0;std::string name;std::vector<CelMip> mips;};
+struct CelTexture {std::array<int32_t,4> bounds{};uint32_t flags=0;uint8_t flat_index=0;std::string name;std::vector<CelMip> mips;std::vector<CelMip> upscaled;};
 struct Cel {
     uint32_t flags=0;
     int width=0,height=0;

@@ -128,12 +128,12 @@ int texture_mip_level_signed(uint32_t width,uint32_t height,uint32_t source_widt
     return -int(up);
 }
 void draw_textured_quad_wide(Framebuffer& fb,const std::array<TextureVertexWide,4>& vertices,
-    const std::vector<uint8_t>& pixels,unsigned shift,bool transparent,RasterClip clip,
+    const std::vector<uint8_t>& pixels,int level_width,unsigned stride_shift,bool transparent,RasterClip clip,
     bool upscaled_storage,RasterScratch64& scratch) {
     if (scratch.rows.empty()) throw std::runtime_error("Raster scratch not sized");
     if (upscaled_storage) {
-        if (shift==0 || shift>8192 || pixels.empty()) throw std::runtime_error("Invalid upscaled textured quad storage");
-    } else if (clip.left!=0 || shift>8 || pixels.empty() || pixels.size()%(size_t(1)<<shift)) {
+        if (level_width<=0 || level_width>8192 || pixels.empty()) throw std::runtime_error("Invalid upscaled textured quad storage");
+    } else if (stride_shift>8 || pixels.empty() || pixels.size()%(size_t(1)<<stride_shift)) {
         throw std::runtime_error("Invalid textured quad storage/clip");
     }
     const int64_t height=int64_t(scratch.rows.size());
@@ -152,7 +152,7 @@ void draw_textured_quad_wide(Framebuffer& fb,const std::array<TextureVertexWide,
             const int next=(index+direction+4)%4;
             if (vertices[size_t(next)].y<vertices[size_t(index)].y) throw std::runtime_error("Textured quad requires normalized monotone edges");
             TextureVertexWide a{vertices[size_t(index)].x,vertices[size_t(index)].y,vertices[size_t(index)].u,vertices[size_t(index)].v};
-            TextureVertexWide b{vertices[size_t(next)].x,vertices[size_t(next)].y,vertices[size_t(next)].u,vertices[size_t(next)].v};
+            TextureVertexWide b{vertices[size_t(next)].x,vertices[size_t(next)].y,vertices[size_t(index)].u,vertices[size_t(index)].v};
             for (auto& e:seg.rows) e={empty_sentinel,0,0};
             texture_edge_wide(seg,a,b);
             for (int64_t y=std::max<int64_t>(0,a.y);y<=std::min<int64_t>(height-1,b.y);++y)
@@ -166,7 +166,7 @@ void draw_textured_quad_wide(Framebuffer& fb,const std::array<TextureVertexWide,
     const int64_t top=std::max<int64_t>({0,vertices[size_t(first)].y,clip.top});
     const int64_t last=std::min<int64_t>({height-1,bottom,clip.bottom,fb.height()-1});
     const int64_t bound=std::min<int64_t>(clip.right,fb.width());
-    const int64_t stride=upscaled_storage?0:int64_t(1)<<shift;
+    const int64_t stride=upscaled_storage?int64_t(level_width):int64_t(1)<<stride_shift;
     for (int64_t y=top;y<=last;++y) {
         auto l=saved_left[size_t(y)],r=saved_right[size_t(y)];
         if (l.x==empty_sentinel || r.x==empty_sentinel) continue;
@@ -187,16 +187,15 @@ void draw_textured_quad_wide(Framebuffer& fb,const std::array<TextureVertexWide,
             for (int64_t x=start;x<end;++x) {
                 int64_t col=floor_q16_64(cu),rowv=floor_q16_64(cv);
                 if (col>=0 && rowv>=0) {
-                    size_t addr=size_t(rowv)*size_t(shift)+size_t(col);
+                    size_t addr=size_t(rowv)*size_t(stride)+size_t(col);
                     if (addr>=w) throw std::runtime_error("Upscaled texel outside storage");
                     const uint8_t index=pixels[addr];if (index || !transparent) dst[x-start]=index;
                 }
                 cu+=du;cv+=dv;
             }
-            (void)stride;
         } else {
             if (start<0 || end>fb.width()) throw std::runtime_error("Textured span outside framebuffer");
-            texture_span(fb.row(int(y))+start,size_t(end-start),pixels,shift,int32_t(cv),int32_t(cu),int32_t(dv),int32_t(du),transparent);
+            texture_span(fb.row(int(y))+start,size_t(end-start),pixels,stride_shift,int32_t(cv),int32_t(cu),int32_t(dv),int32_t(du),transparent);
         }
     }
 }

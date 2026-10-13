@@ -39,18 +39,19 @@ int main() {
         rr::Framebuffer fb(640,480);fb.clear(0);
         rr::RasterScratch64 scratch(480);
         std::array<rr::TextureVertexWide,4> wide{{{40000,10,0,0},{40100,10,255,0},{40100,110,255,255},{40000,110,0,255}}};
-        rr::draw_textured_quad_wide(fb,wide,tex,8,false,{0,0,640,479},false,scratch);
+        rr::draw_textured_quad_wide(fb,wide,tex,256,8,false,{0,0,640,479},false,scratch);
         int drawn=0;for (int y=0;y<480;++y) for (int x=0;x<640;++x) drawn+=fb.row(y)[x]!=0;
         std::array<rr::TextureVertexWide,4> cross{{{int32_t(-40000),10,0,0},{40000,10,255,0},{40000,110,255,255},{int32_t(-40000),110,0,255}}};
-        rr::draw_textured_quad_wide(fb,cross,tex,8,false,{0,0,640,479},false,scratch);
+        rr::draw_textured_quad_wide(fb,cross,tex,256,8,false,{0,0,640,479},false,scratch);
         drawn=0;for (int y=0;y<480;++y) for (int x=0;x<640;++x) drawn+=fb.row(y)[x]!=0;
         check(drawn>0,"crossing wide quad draws without wrap");
-        // Upscaled storage path: stride above 256 uses plain addressing.
+        // Upscaled storage path: width-addressed (strides above 256 cannot
+        // use the 16-bit sampling-storage path).
         std::vector<uint8_t> big(size_t(1024)*64,7);
         rr::Framebuffer fb2(64,64);fb2.clear(0);
         rr::RasterScratch64 s2(64);
         std::array<rr::TextureVertexWide,4> q{{{0,0,0,0},{64,0,1024,0},{64,64,1024,64},{0,64,0,64}}};
-        rr::draw_textured_quad_wide(fb2,q,big,1024,false,{0,0,64,63},true,s2);
+        rr::draw_textured_quad_wide(fb2,q,big,1024,10,false,{0,0,64,63},true,s2);
         check(fb2.row(32)[32]==7,"upscaled storage path samples plain addressing");
     }
     const auto path=rr::golden::oracle_dir()+"/raster-fixtures.tsv";

@@ -18,6 +18,55 @@ int main(int argc,char** argv) {
         if(fb.row(6)[6]!=17){std::cerr<<"Flat override failed\n";return 1;}
         try{rr::render_nodes(fb,{},rr::view_mode(true),16);std::cerr<<"Mismatched framebuffer accepted\n";return 1;}catch(const std::runtime_error&){}
     }
+    // Plan 19 Task 3: any surface size through the scaled view mapping, with
+    // an upscaled level above mip 0 sampled when the quad covers 2x+.
+    {
+        rr::CelTexture texture;texture.bounds={0,0,15,15};
+        rr::CelMip mip0;mip0.width=mip0.height=16;mip0.stride_shift=4;mip0.pixels.assign(256,11);texture.mips.push_back(mip0);
+        rr::CelMip up;up.width=up.height=32;up.stride_shift=5;up.pixels.assign(1024,0);
+        for(int y=0;y<32;++y)for(int x=0;x<32;++x)up.pixels[size_t(y)*32+x]=uint8_t((y/2)*16+(x/2)+1);
+        texture.upscaled.push_back(up);
+        rr::DrawNode node;node.texture=&texture;
+        node.view_points={{{0,0},{64*65536,0},{64*65536,64*65536},{0,64*65536}}};
+        // 64x64 surface pixels at s=1: covers 4x the 16-wide source, so
+        // upscaled[0] (2x) is selected. Corner (0,0) samples the edge texel
+        // (2,2) -> block (1,1) -> 18, proving the upscaled level is sampled
+        // (mip 0 would give flat 11 everywhere).
+        rr::Framebuffer fb(640,480);fb.clear(0);
+        rr::render_nodes(fb,{node},rr::view_mode(true),0);
+        if(fb.row(0)[0]!=18){std::cerr<<"Upscaled level not sampled, got "<<int(fb.row(0)[0])<<"\n";return 1;}
+        // The same quad at 8x8 surface pixels samples mip 0 or below (index 11).
+        rr::Framebuffer small(320,240);small.clear(0);
+        rr::DrawNode tiny;tiny.texture=&texture;
+        tiny.view_points={{{0,0},{8*65536,0},{8*65536,8*65536},{0,8*65536}}};
+        rr::render_nodes(small,{tiny},rr::view_mode(false),0);
+        if(small.row(4)[4]!=11){std::cerr<<"Small quad should sample mip 0, got "<<int(small.row(4)[4])<<"\n";return 1;}
+        // With upscaled empty the 64x64 quad samples mip 0.
+        rr::CelTexture plain;plain.bounds={0,0,15,15};plain.mips.push_back(mip0);
+        rr::DrawNode big;big.texture=&plain;
+        big.view_points={{{0,0},{64*65536,0},{64*65536,64*65536},{0,64*65536}}};
+        rr::render_nodes(fb,{big},rr::view_mode(true),0);
+        if(fb.row(4)[4]!=11){std::cerr<<"Empty upscaled should fall back to mip 0, got "<<int(fb.row(4)[4])<<"\n";return 1;}
+        // The 64-logical-px quad at s=3 also selects upscaled[0]; its corner
+        // samples an edge texel (inset (1,1) block), proving the wide path.
+        rr::Framebuffer wide(1920,1440);wide.clear(0);
+        rr::render_nodes(wide,{node},rr::view_mode_scaled(3),0);
+        if(wide.row(0)[0]!=18){std::cerr<<"Wide path should sample upscaled[0], got "<<int(wide.row(0)[0])<<"\n";return 1;}
+    }
+    // Flat quad area scales with s*s: Q16 (10.5,20.25)..(100.75,90.5) at s=3.
+    {
+        auto flat_count=[](int s){
+            rr::Framebuffer fb(640*s,480*s);fb.clear(0);
+            rr::DrawNode node;node.flat_index=7;
+            node.view_points={{{int32_t(10.5*65536),int32_t(20.25*65536)},{int32_t(100.5*65536),int32_t(20.25*65536)},{int32_t(100.5*65536),int32_t(90.5*65536)},{int32_t(10.5*65536),int32_t(90.5*65536)}}};
+            rr::render_nodes(fb,{node},rr::view_mode_scaled(s),0);
+            size_t n=0;for(int y=0;y<fb.height();++y)for(int x=0;x<fb.width();++x)n+=fb.row(y)[x]!=0;
+            return n;
+        };
+        const size_t one=flat_count(1),three=flat_count(3);
+        const size_t perimeter=2*(270+210);
+        if(!(three+perimeter>=9*one && three<=9*one+perimeter)){std::cerr<<"Flat area s=3 ("<<three<<") not ~9x s=1 ("<<one<<")\n";return 1;}
+    }
     const std::string path=argc>1?argv[1]:rr::golden::oracle_dir()+"/raster-fixtures.tsv";
     if(!std::filesystem::exists(path)){std::cerr<<"SKIP missing nodes oracle\n";return 0;}
     size_t failures=0;
