@@ -340,6 +340,13 @@ int main(int argc, char** argv) {
         const std::string text((std::istreambuf_iterator<char>(settings_file)), std::istreambuf_iterator<char>());
         check(text.find("music_volume=100") != std::string::npos, "mixer changes saved to settings file");
     }
+    // Restroom controls row (0x0040fd90 device init): enters Configure Input.
+    fe.enter(screen_id::restroom);
+    int controls_row = -1;
+    for (size_t i = 0; i < fe.items().size(); ++i) if (fe.items()[i].handler == 0x0040fd90) controls_row = int(i);
+    check(controls_row >= 0, "restroom has the controls row");
+    if (focus_item(controls_row)) key("select");
+    check(fe.screen() == 0x12, "controls row enters Configure Input");
     // Outcome videos (plan 13 Task 4 Step 3): every outcome maps to its video family for fixed random values.
     {   // Pure rule first: exact names, no RNG state involved.
         Career c;

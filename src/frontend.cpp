@@ -963,7 +963,7 @@ int Frontend::run_handler(size_t index) {
         return r == 0x0f ? 0x19 : r;
     }
     case 0x00401df0: return screen_id::native_sound;   // plan 18 Task 6: native look-alike of dialog 300
-    case 0x0040fd90: return 0;   // controls: not ported (plan 18 Task 7)
+    case 0x0040fd90: return m.target;   // controls device init: no native init needed, enter 0x12
     case 0x0040e580:
         // Plan 18 Task 7: the 9 rebind rows (captions 256-264) cover actions 0-8;
         // nitro/camera rows have no UI. Arm press-a-key capture for the action.

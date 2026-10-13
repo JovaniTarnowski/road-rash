@@ -791,3 +791,26 @@ Owned edits: `src/import_job.hpp/.cpp` (new), `src/sha256.hpp/.cpp`
 - Preview click: none. Task 1 found no wave playback in the dlgproc (scroll/edit post the live-apply thread message; button 0xBC1 re-posts it) — the `apply_mixer` event is the native equivalent.
 - Deviations: mute/swap are direct-toggle rows (dialog has a mute bit; no toggle UI traced — direct toggle is the minimal faithful mapping); swap speakers exposed alongside mute (same bit class).
 - Full gate after the wiring: native `ctest --test-dir build` (Debug) **73/73**.
+
+## Plan 18 Task 7 Step 4 (October 13, 2026): Configure Input, gamepad and touch pages
+
+- `frontend-test`: 0 failures (restroom controls row `0x0040fd90` enters 0x12; W binds accelerate low-byte-first per `0x0040e760`, label follows; Escape cancels unchanged and disarms; swap toggle, dead-zone slider 35 → 40 → Home 10; gamepad/touch Back returns to 0x12).
+- `input-test`: 0 failures (defaults equal the traced table, rebound key yields its bit, old key silent; left-handed mirrors the touch zones).
+- `settings-test`: 0 failures (page fields round-trip; out-of-range dead zone rejected).
+- `native_screens-test`: 0 failures (gamepad/touch page rows, desktop/mobile 0x12 link counts, touch link mobile-only).
+- Byte order: custom keyboard codes store low-byte-first `(key,0)` per `0x0040e760` (capture store, label read, control-bit read); joystick codes stay high-byte-first.
+- Full gate after the wiring: native `ctest --test-dir build` (Debug) **73/73**.
+
+## Plan 18 Task 8 Step 4 (October 13, 2026): in-race pause menu
+
+- `frontend-test`: 0 failures (`open_pause` focuses RESUME; Down×4 → QUIT RACE; quit dialog, No stays paused with no event, Yes emits `quit_race` and closes; Escape emits `resume_race`; sub-screen Back returns to pause; controller-only d-pad + A/B flow).
+- `race-test`: 0 failures (two 900-tick runs, second with 120-frame no-tick gaps after ticks 10/450/899: per-tick snapshots and final state identical — Review Focus 4).
+- `native_screens-test`: 0 failures (pause rows and SOUND/DISPLAY/CONTROLS targets).
+- `draw_pause` deleted; lifecycle freezes open the menu instead. Deviations: CONTROLS rebinds while racing (original limit untraced); sliders apply levels live, no preview click.
+- Full gate after the wiring: native `ctest --test-dir build` (Debug) **73/73**; `tools/ci.sh` (native + android-debug) green.
+
+## Plan 18 Task 9 Step 4 (October 13, 2026): FPS counter, docs and gate
+
+- `show_fps` draws `"<fps> FPS <tps> TPS"` top-right (Futura Bold 24, `#DEFFF0`, 2 px shadow, transparent ARGB background, refreshed twice a second).
+- Headless proof: `RR_PREF_OVERRIDE=/tmp/rrpref` (`show_fps=1`) `build/rr-game --assets ../cdrom/ROADRASH --ticks 200 --screenshot /tmp/fps.bmp` shows `1 FPS 0 TPS` over the sky (first-frame counts); `show_fps=0` control screenshot is identical minus the text.
+- USER_GUIDE Settings section, README/PROGRESS updates. `tools/ci.sh` green; macOS bundle rebuilt and verified (`verify_macos_app.py`: ARM64, ad-hoc signature, no game data, stamp matches HEAD).
