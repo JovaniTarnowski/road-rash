@@ -931,9 +931,9 @@ via `0x0040e580`, 2 defaults rows, Done, spacer, 9 key labels);
 `0x0040fd90` is device init returning the target, not the screen itself.
 Graphics Options `0x13` has 8 slots (Resolution/Bikers/Videos live, 4 dead).
 The sound mix is a Win32 modal dialog (resource id 300), not a menu screen:
-seven `msctls_trackbar32` sliders, range 0-100, defaults 100/80/80/80/80/80/80,
-mute bit `0x00463030`; OK commits and writes the `Mixer` registry value; no
-preview sound on the traced paths. Controls `0x0044f800` ORs keyboard and
+seven `msctls_trackbar32` sliders, range 0-100 step 1 stored as `100 - pos`, defaults 100/80/80/80/80/80/80,
+mute bit `0x00463030`. CORRECTION (October 12, 2026; export-grounded `00401e20`/`00401ee0`/`004020a0`/`004022d0`, REA gap — `0x00401e20` not in REA's procedure DB): every scroll AND edit-box change live-applies via `PostThreadMessageA(thread 0x4753f4, msg 0x4c8018)`; test button `0xbc1` posts `0x4c801c`. The earlier "no preview sound" claim was wrong. OK (id 1) harvests sliders + mutes + master into `0x00463030..`, writes 64-byte REG_BINARY `Mixer`, posts `0x4c800c`, EndDialog(1); Cancel (id 2) skips harvest/registry (live-applied values NOT rolled back) but still posts `0x4c800c`, EndDialog(2). Plan 18's native Sound screen must live-apply to active mixer voices (already required by the jukebox-handoff research) AND match the no-rollback-on-cancel semantics.
+Item-table detail (October 12, 2026; EXE dumps): `0x10` rows carry desc slots 65–87 with handlers `0x445150/0x445370/0x445310/0x445460/0x445490/0x445560/0x445390/0x445590` (restroom services), sound mix row (cap 82, `0x401df0`) and controls row (cap 84 → target 18 = screen `0x12`, `0x40fd90`); quit row `0x4453c0`, Done row `0x41f4f0`. `0x12` rows: 9 rebind (caps 256–264, `0x40e580`), 2 defaults (382/383, `0x40fdf0` — caption `0x17e/0x17f` selects keyboard/joystick table `0x466618/0x466630`), Done, spacer, 9 key labels (flags `0x10000`, caps 160–168, filled by `0x40e7b0`). `0x11` rows now carry descs 231–236/496 (band/track names). Controls `0x0044f800` ORs keyboard and
 joystick bits into `0x004b7ed0` once per frame. There is NO original in-race
 pause screen: the frame driver `0x00442e10` has no pause branch; pause is the
 modal `MessageBoxA` `0x00443120` and quit-confirm is the modal pump
