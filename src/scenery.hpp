@@ -20,5 +20,5 @@ PlacedEvents place_dzhr(const CourseSection&,int level,std::function<uint32_t()>
 // Billboard construction from 0x0044b630 / 0x00450960. Caller supplies the
 // interpolated road centre/elevation and terrain ground height at the object.
 DrawNode scenery_node(const AnimationFrame&,const SceneryObject&,int32_t road_x,
-    int32_t road_y,int32_t ground_y,int32_t depth,const Camera&,const DepthTable&);
+    int32_t road_y,int32_t ground_y,int32_t depth,const Camera&,const DepthTable&,int32_t logical_width=320);
 }

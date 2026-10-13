@@ -11,6 +11,7 @@ namespace rr {
 enum class DisplayMode : uint8_t { windowed = 0, fullscreen = 1 };       // fullscreen = borderless desktop
 enum class ScaleMode : uint8_t { fit = 0, integer = 1, stretch = 2 };    // letterbox, whole multiples, fill
 enum class FilterMode : uint8_t { sharp = 0, smooth = 1 };               // nearest, linear
+enum class Widescreen : uint8_t { off = 0, mode16x10 = 1, mode16x9 = 2, match = 3 };  // plan 21 Task 8: 0 = 4:3
 struct Settings {
     Language language = Language::english;
     bool metric = false;             // original: LOCALE_IMEASURE != "1" (0x0042f490)
@@ -41,6 +42,7 @@ struct Settings {
     bool vsync = true;
     bool show_fps = false;
     int render_scale = 1;                // plan 19 Task 8: 0 = match display, 1..4 fixed
+    Widescreen widescreen = Widescreen::off;  // plan 21 Task 8: Hor+ logical width
     int touch_opacity = 50;          // 0..100, Android touch overlay (plan 14 Task 3)
     bool haptics = true;             // Android rumble on crash/hit where the device supports it
 };

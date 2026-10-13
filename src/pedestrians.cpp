@@ -34,7 +34,7 @@ void PedestrianSystem::apply_template(Bike& b) const {
 }
 
 std::optional<DrawNode> pedestrian_node(const Pedestrian& p,const RoadSlice& near,const RoadSlice& far,int road,
-    const RouteSample& sample,const Camera& camera,const DepthTable& depths,int32_t ceiling) {
+    const RouteSample& sample,const Camera& camera,const DepthTable& depths,int32_t ceiling,int32_t logical_width) {
     if(!p.active || !p.look || !p.animation.selected)return std::nullopt;
     const auto selected=*p.animation.selected;
     if(selected[0]<0 || size_t(selected[0])>=p.look->bank.size() || !p.look->bank[size_t(selected[0])])return std::nullopt;
@@ -54,6 +54,6 @@ std::optional<DrawNode> pedestrian_node(const Pedestrian& p,const RoadSlice& nea
     ActorProjection projection;projection.road_x=orientation.road_x;projection.far_x=f.road_x+camera.x;projection.road_y=a.world_y;projection.far_y=f.world_y;
     projection.lateral=orientation.lateral_q8/256;projection.ground=(b.i32(0x20)>>8)+b.i32(0x24);projection.depth=near.depth;
     projection.fraction=uint8_t(b.i32(0x1c));projection.size=0x200;projection.flags=cell.flags;projection.occlusion=ceiling;
-    return actor_node(frame,frame.texture.get(),projection,camera,depths);
+    return actor_node(frame,frame.texture.get(),projection,camera,depths,logical_width);
 }
 }

@@ -1,12 +1,16 @@
 #include "display.hpp"
+#include "view.hpp"
 
 namespace rr {
 DisplayConfig display_config(const Settings& s, int logical_h, bool mobile) {
     DisplayConfig c;
     c.fullscreen = mobile || s.display_mode == DisplayMode::fullscreen;
+    // Menus/videos stay 640 wide; the race widens its presentation
+    // separately (plan 21 Task 8: SDL_SetRenderLogicalPresentation per frame
+    // is expensive, so run_race sets it once at startup from race_config).
     c.logical_w = 640;
     c.logical_h = logical_h;
-    c.window_w = 640 * s.window_scale;
+    c.window_w = c.logical_w * s.window_scale;
     c.window_h = logical_h * s.window_scale;
     c.presentation = s.scale_mode == ScaleMode::integer ? SDL_LOGICAL_PRESENTATION_INTEGER_SCALE
                    : s.scale_mode == ScaleMode::stretch ? SDL_LOGICAL_PRESENTATION_STRETCH

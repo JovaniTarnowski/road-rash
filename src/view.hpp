@@ -1,4 +1,5 @@
 #pragma once
+#include "settings.hpp"
 #include <cstdint>
 #include <cstring>
 #include <stdexcept>
@@ -51,6 +52,32 @@ inline ViewMode view_mode_scaled(int s) {
 // Already-built 4:3 display lists must be rebuilt at the new width, not
 // translated: translation cannot reveal side actors/scenery the original
 // culled. Odd widths keep half-pixel precision (427 -> 213.5 logical).
+// Hor+ widescreen (plan 21 Task 8): logical width 320 (4:3), 384 (16:10),
+// 426 (16:9); surface is logical_w*2s x 480s (2 surface px per logical px
+// at the original high mode's map, times the render scale). Builders centre
+// at wide_width/2 via view_center_q16; map() adds no origin.
+inline int logical_width_for(Widescreen w,int display_w=0,int display_h=0) {
+    switch (w) {
+        case Widescreen::off: return 320;
+        case Widescreen::mode16x10: return 384;
+        case Widescreen::mode16x9: return 426;
+        case Widescreen::match: {
+            if (display_w > 0 && display_h > 0) {
+                const int wide = 240 * display_w / display_h;
+                if (wide < 320) return 320;
+                return wide > 426 ? 426 : wide;
+            }
+            return 426;
+        }
+    }
+    return 320;
+}
+inline ViewMode view_mode_wide(int s,int logical_width) {
+    if (logical_width < 320 || logical_width > 4096) throw std::runtime_error("Logical width out of range");
+    ViewMode mode = view_mode_scaled(s);
+    mode.surface_width = mode.display_width = logical_width * 2 * s;
+    return mode;
+}
 inline int32_t view_center_q16(int logical_width) {
     if (logical_width<=0 || logical_width>4096) throw std::runtime_error("Logical width out of range");
     return int32_t(int64_t(logical_width)*65536/2);

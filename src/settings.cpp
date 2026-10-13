@@ -109,6 +109,7 @@ Settings parse_settings(const std::string& text) {
         else if (k == "vsync") flag(s.vsync);
         else if (k == "show_fps") flag(s.show_fps);
         else if (k == "render_scale") { if (parse_int(v, 0, 4, x)) s.render_scale = x; }
+        else if (k == "widescreen") { if (parse_int(v, 0, 3, x)) s.widescreen = Widescreen(x); }
         else if (k == "touch_opacity") { if (parse_int(v, 0, 100, x)) s.touch_opacity = x; }
         else if (k == "haptics") flag(s.haptics);
         else if (k == "swap_punch_kick") flag(s.swap_punch_kick);
@@ -138,7 +139,7 @@ std::string format_settings(const Settings& s) {
       << "\nswap_speakers=" << s.swap_speakers
       << "\ndisplay_mode=" << int(s.display_mode) << "\nwindow_scale=" << s.window_scale << "\nscale_mode=" << int(s.scale_mode)
       << "\nfilter=" << int(s.filter) << "\nvsync=" << s.vsync << "\nshow_fps=" << s.show_fps
-      << "\nrender_scale=" << s.render_scale << "\ntouch_opacity=" << s.touch_opacity << "\nhaptics=" << s.haptics
+      << "\nrender_scale=" << s.render_scale << "\nwidescreen=" << int(s.widescreen) << "\ntouch_opacity=" << s.touch_opacity << "\nhaptics=" << s.haptics
       << "\nswap_punch_kick=" << s.swap_punch_kick << "\nstick_deadzone=" << s.stick_deadzone
       << "\nleft_handed=" << s.left_handed << "\nalias=" << s.alias << "\n";
     return o.str();

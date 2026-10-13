@@ -14,7 +14,7 @@ public:
     const ActorAnimationLibrary& library()const{return library_;}
     std::vector<DrawNode> rider(const ActorAnimationFrame&,size_t bank,int32_t colour,
         const ActorOrientation&,ActorProjection,const Camera&,const DepthTable&,int32_t vertical_q8=0,
-        const int32_t* body_roll_override=nullptr)const;
+        const int32_t* body_roll_override=nullptr,int32_t logical_width=320)const;
     const CelTexture* texture(size_t graphics_bank,uint32_t frame,int32_t colour)const;
 private:
     ActorAnimationLibrary library_;

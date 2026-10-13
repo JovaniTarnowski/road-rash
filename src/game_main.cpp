@@ -161,6 +161,8 @@ struct Game {
     std::vector<std::string> rider_names;
     std::string course_name;
     int bike = 0;
+    rr::Widescreen widescreen = rr::Widescreen::off;  // plan 21 Task 8: live setting
+    int32_t logical_width() const { return rr::logical_width_for(widescreen); }
     std::unique_ptr<rr::Race> race;
     int countdown = countdown_ticks;
     std::vector<rr::Image8> bobs;
@@ -259,12 +261,12 @@ struct Game {
         for(const auto& item:visible) {
             const size_t i=item.index;
             if(item.pedestrian) {
-                if(auto node=rr::pedestrian_node(pedestrians->pool()[i],near,far,road,race->route().at(near.sample),race->camera(),depth,ceiling))output.push_back(*node);
+                if(auto node=rr::pedestrian_node(pedestrians->pool()[i],near,far,road,race->route().at(near.sample),race->camera(),depth,ceiling,logical_width()))output.push_back(*node);
                 continue;
             }
             if(item.car) {
                 const auto& car=traffic->cars()[i];
-                if(auto node=rr::traffic_car_node(traffic->library().vehicles().at(car.vehicle),car,near,far,road,race->route().at(near.sample),race->camera(),depth,int32_t(race->camera_position()),ceiling))output.push_back(*node);
+                if(auto node=rr::traffic_car_node(traffic->library().vehicles().at(car.vehicle),car,near,far,road,race->route().at(near.sample),race->camera(),depth,int32_t(race->camera_position()),ceiling,logical_width()))output.push_back(*node);
                 continue;
             }
             const auto& rd=race->riders()[i];const auto& bike=item.body?rd.crash_actor.motion:rd.bike;
@@ -274,7 +276,7 @@ struct Game {
             rr::ActorProjection projection;projection.road_x=orientation.road_x;projection.far_x=b.road_x+camera.x;projection.road_y=a.world_y;projection.far_y=b.world_y;projection.lateral=orientation.lateral_q8/256;projection.ground=bike.i32(0x24);projection.depth=near.depth;projection.fraction=uint8_t(orientation.position);projection.occlusion=ceiling;
             const auto& state=rd.crash_active?(item.body?rd.crash_actor.animation:rd.crash_bike_animation):actor_states[i];
             const auto selected=*state.selected;const auto& descriptor=actors->library().playback[0].at(size_t(selected[0]))->at(size_t(selected[1]));
-            const auto nodes=actors->rider(descriptor,0,rd.colour,orientation,projection,camera,depth,bike.i32(0x20));output.insert(output.end(),nodes.begin(),nodes.end());
+            const auto nodes=actors->rider(descriptor,0,rd.colour,orientation,projection,camera,depth,bike.i32(0x20),nullptr,logical_width());output.insert(output.end(),nodes.begin(),nodes.end());
         }
         return output;
     }
@@ -494,14 +496,16 @@ struct CourseCanvas {
     rr::Framebuffer frame{640,480};
     std::vector<uint8_t> rgba=std::vector<uint8_t>(640*480*4);
     int scale_w=640,scale_h=480;   // plan 19 Task 4: 640s x 480s surface
+    int wide_w=320;                // plan 21 Task 8: logical width of the surface
     SDL_Texture* texture=nullptr;
     SDL_ScaleMode scale = crisp_scale;   // plan 18 Task 3: from DisplayDriver (filter setting)
     ~CourseCanvas(){clear();}
     void clear(){SDL_DestroyTexture(texture);texture=nullptr;}
-    void resize(int s) {
+    void resize(int s,int logical_width=320) {
         if (s < 1 || s > 4) throw std::runtime_error("Render scale out of range 1..4");
-        if (640 * s == scale_w && 480 * s == scale_h) return;
-        scale_w = 640 * s; scale_h = 480 * s;
+        if (logical_width * 2 * s == scale_w && 480 * s == scale_h) return;
+        wide_w = logical_width;
+        scale_w = logical_width * 2 * s; scale_h = 480 * s;
         frame = rr::Framebuffer(scale_w, scale_h);
         rgba.assign(size_t(scale_w) * size_t(scale_h) * 4, 0);
         clear();
@@ -510,7 +514,12 @@ struct CourseCanvas {
     std::unique_ptr<rr::RenderThreads> workers;
     int worker_count = 0;
     void draw(SDL_Renderer* renderer,const Game& game,const std::vector<rr::RoadSlice>& slices,int s,int threads) {
-        resize(s);
+        const int32_t wide = game.logical_width();
+        resize(s,wide);
+        // Hor+ (plan 21 Task 8): builders centre at wide/2; the 4:3 picture
+        // is the centre crop. Shift node coords by the side margin so the
+        // 4:3-tuned projection lands centred on the wide surface.
+        const int32_t margin = (wide - 320) / 2;
         // Plan 19 Task 8: the dashboard composes at the race scale (Task 5).
         // The quick-race boot path has no HUD (dashboard is a career-mode
         // surface); without one the scene stands alone as in Task 4 shots.
@@ -519,8 +528,11 @@ struct CourseCanvas {
             // RgbImage pixels are palette-mapped into the indexed frame.
             const auto dash = game.hud->compose(game.hud->state(*game.race, game.player_name, game.rider_names),
                                                 game.physics, rr::DashMode::full, s);
+            // Centred 4:3 dashboard (plan 21 Task 8): offset by the side
+            // margin so it sits in the middle of the wide frame.
+            const int xoff = margin * 2 * s;
             for (int y = 0; y < dash.height && y < frame.height(); ++y)
-                for (int x = 0; x < dash.width && x < frame.width(); ++x) {
+                for (int x = 0; x < dash.width && x + xoff < frame.width(); ++x) {
                     const uint32_t c = dash.at(x, y);
                     if (c == 0x01000000) continue;
                     uint8_t best = 0;
@@ -533,12 +545,41 @@ struct CourseCanvas {
                         const int d = dr * dr + dg * dg + db * db;
                         if (d < best_d) { best_d = d; best = uint8_t(i); }
                     }
-                    frame.row(y)[x] = best;
+                    frame.row(y)[x + xoff] = best;
                 }
+            // Side panels: stretched + darkened edge columns (generated at
+            // runtime from the user's own dash art, no shipped assets).
+            if (margin > 0) {
+                const int side_w = margin * 2 * s;
+                for (int y = 0; y < dash.height && y < frame.height(); ++y) {
+                    const uint32_t lc = dash.at(0, y), rc = dash.at(dash.width - 1, y);
+                    if (lc == 0x01000000 && rc == 0x01000000) continue;
+                    for (int x = 0; x < side_w; ++x) {
+                        const uint32_t c = x < side_w / 2 ? lc : rc;
+                        if (c == 0x01000000) continue;
+                        // Darken by halving each channel via the palette.
+                        const int r = int((c >> 16) & 0xff) / 2, gg = int((c >> 8) & 0xff) / 2, bb = int(c & 0xff) / 2;
+                        uint8_t best = 0;
+                        int best_d = INT_MAX;
+                        for (int i = 1; i < 256; ++i) {
+                            const uint8_t* rgb = &game.palette.rgbx[size_t(4 * i)];
+                            const int dr = int(rgb[0]) - r, dg = int(rgb[1]) - gg, db = int(rgb[2]) - bb;
+                            const int d = dr * dr + dg * dg + db * db;
+                            if (d < best_d) { best_d = d; best = uint8_t(i); }
+                        }
+                        if (x < side_w / 2) frame.row(y)[x] = best;
+                        else frame.row(y)[xoff + dash.width + (x - side_w / 2)] = best;
+                    }
+                }
+            }
         }
         if (!workers || worker_count != threads) { workers = std::make_unique<rr::RenderThreads>(threads); worker_count = threads; }
-        game.scene->draw_horizon(frame,game.race->horizon_scroll());
-        rr::render_nodes_threaded(frame,game.scene->draw_nodes(game.race->route(),slices,game.race->camera(),game.depth,[&](const rr::RoadSlice& near,const rr::RoadSlice& far,int road,int32_t ceiling,bool back){return game.rider_nodes(near,far,road,ceiling,back);}),rr::view_mode_scaled(s),16,*workers);
+        game.scene->draw_horizon(frame,game.race->horizon_scroll(),wide);
+        auto nodes=game.scene->draw_nodes(game.race->route(),slices,game.race->camera(),game.depth,[&](const rr::RoadSlice& near,const rr::RoadSlice& far,int road,int32_t ceiling,bool back){return game.rider_nodes(near,far,road,ceiling,back);},wide);
+        if (margin) for (auto& n:nodes) for (auto& v:n.view_points) v.x+=margin*65536;
+        // The dashboard stays a centred 4:3 image (plan 21 Task 8); side
+        // panels are drawn from its edge columns below.
+        rr::render_nodes_threaded(frame,nodes,rr::view_mode_wide(s,wide),16,*workers);
         frame.to_rgba(game.palette,rgba.data(),scale_w*4);
         if(!texture) {
             texture=SDL_CreateTexture(renderer,SDL_PIXELFORMAT_RGBA32,SDL_TEXTUREACCESS_STREAMING,scale_w,scale_h);
@@ -546,9 +587,10 @@ struct CourseCanvas {
             SDL_SetTextureScaleMode(texture,scale);
         }
         if(!SDL_UpdateTexture(texture,nullptr,rgba.data(),scale_w*4))throw std::runtime_error(SDL_GetError());
-        // Logical presentation stays 640x480: the GPU scales the 640s x 480s
-        // surface to the drawable (supersampling when the drawable is smaller).
-        const SDL_FRect dst{0,0,640,480};
+        // Hor+ (plan 21 Task 8): logical presentation is wide*2 x 480,
+        // set once per resize below; the texture fills it exactly.
+        const SDL_FRect dst{0,0,float(scale_w),float(scale_h)};
+        SDL_SetRenderLogicalPresentation(renderer,float(scale_w),float(scale_h),SDL_LOGICAL_PRESENTATION_LETTERBOX);
         if(!SDL_RenderTexture(renderer,texture,nullptr,&dst))throw std::runtime_error(SDL_GetError());
     }
 };
@@ -1049,6 +1091,7 @@ RaceEnd run_race(Game& g, SDL_Renderer* renderer, const RaceOptions& opt, Displa
             if (display.window) SDL_GetWindowSize(display.window, &dw, &dh);
             const int race_scale = opt.menu && opt.settings ? rr::effective_render_scale(*opt.settings, dw, dh, kMobileDisplay)
                                                             : opt.render_scale;
+            if (opt.settings) g.widescreen = opt.settings->widescreen;
             if (g.scene) course_canvas.draw(renderer, g, slices, race_scale, display.render_threads);
             else rr::draw_road(renderer, slices);
             draw_opponents(renderer, g, sprites, slices);
@@ -1609,7 +1652,7 @@ int main(int argc, char** argv) {
                 }
                 boot.frame = 0;
                 boot.apply(480);
-                run_race(g, renderer, {.auto_drive = auto_drive, .start_paused = start_paused, .screenshot = screenshot, .key_codes = boot_settings.controls, .custom_keys = boot_settings.custom_controls, .swap_punch_kick = boot_settings.swap_punch_kick, .stick_deadzone = boot_settings.stick_deadzone, .left_handed = boot_settings.left_handed, .show_fps = boot_settings.show_fps, .assets = &assets, .render_scale = render_scale}, boot);
+                run_race(g, renderer, {.auto_drive = auto_drive, .start_paused = start_paused, .screenshot = screenshot, .key_codes = boot_settings.controls, .custom_keys = boot_settings.custom_controls, .swap_punch_kick = boot_settings.swap_punch_kick, .stick_deadzone = boot_settings.stick_deadzone, .left_handed = boot_settings.left_handed, .show_fps = boot_settings.show_fps, .assets = &assets, .render_scale = render_scale, .settings = &boot_settings}, boot);
                 g.mixer = nullptr; g.sound = nullptr; g.race_music = nullptr;
             }
         }

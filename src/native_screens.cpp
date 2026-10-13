@@ -62,6 +62,8 @@ void add_native_screens(FrontendData& data, bool mobile) {
     rows.push_back({ns::filtering, ns::d_filtering, native_popup::filtering});
     // Plan 19 Task 8: RENDER RESOLUTION row (both desktop and mobile).
     rows.push_back({ns::render_resolution, ns::d_render_resolution, native_popup::resolution});
+    // Plan 21 Task 8: WIDESCREEN row (both desktop and mobile).
+    rows.push_back({ns::widescreen, ns::d_widescreen, native_popup::widescreen});
     if (!mobile) {
         rows.push_back({ns::vsync, ns::d_vsync, native_popup::on_off});
         rows.push_back({ns::fps, ns::d_fps, native_popup::on_off});
@@ -108,6 +110,9 @@ void add_native_screens(FrontendData& data, bool mobile) {
     // Plan 19 Task 8: match + 1x..4x. Choice index maps to render_scale - 1 (see the setter).
     data.popups[native_popup::resolution] = build_popup(rtpl, ns::render_resolution,
         {{1, ns::res_match}, {2, ns::scale_1x}, {3, ns::scale_2x}, {4, ns::scale_3x}, {5, ns::scale_4x}});
+    // Plan 21 Task 8: 4:3 + 16:10/16:9/match.
+    data.popups[native_popup::widescreen] = build_popup(rtpl, ns::widescreen,
+        {{1, ns::wide_off}, {2, ns::wide_16x10}, {3, ns::wide_16x9}, {4, ns::wide_match}});
     // Sound screen (plan 18 Task 6): dialog-300 order — master + six channels as sliders,
     // mute + swap as direct toggles, Back to the restroom. Same button template/column.
     {

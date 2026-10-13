@@ -26,7 +26,7 @@ const CelTexture* ActorNodes::texture(size_t bank,uint32_t frame,int32_t colour)
 }
 std::vector<DrawNode> ActorNodes::rider(const ActorAnimationFrame& descriptor,size_t bank,int32_t colour,
     const ActorOrientation& orientation,ActorProjection projection,const Camera& camera,const DepthTable& depths,int32_t vertical_q8,
-    const int32_t* body_roll_override)const {
+    const int32_t* body_roll_override,int32_t logical_width)const {
     if(bank>=2)throw std::runtime_error("Invalid rider animation bank");
     const auto angles=actor_angles(orientation,camera.x);
     const auto view=select_actor_view(descriptor,library_.views[bank],angles.yaw,angles.roll);
@@ -38,7 +38,7 @@ std::vector<DrawNode> ActorNodes::rider(const ActorAnimationFrame& descriptor,si
     // Bodies with nonzero roll take the 0x00450ad0 rotated path.
     projection.clip_ground=false;
     const auto& shadow=library_.graphics[bank+2].frames.at(cell.frame);
-    if(auto node=actor_node(shadow,texture(bank+2,cell.frame,colour),projection,camera,depths))result.push_back(*node);
+    if(auto node=actor_node(shadow,texture(bank+2,cell.frame,colour),projection,camera,depths,logical_width))result.push_back(*node);
     projection.ground+=vertical_q8>>8;projection.clip_ground=true;
     const auto& body=library_.graphics[bank].frames.at(cell.frame);
     int32_t body_roll=body_roll_override ? *body_roll_override : view.roll;
@@ -47,8 +47,8 @@ std::vector<DrawNode> ActorNodes::rider(const ActorAnimationFrame& descriptor,si
     else if(angles.yaw<-0xe0000)body_roll=-0x50000;
     }
     if(body_roll) {
-        if(auto node=actor_node_rotated(body,texture(bank,cell.frame,colour),projection,camera,depths,sin_table_,body_roll))result.push_back(*node);
-    } else if(auto node=actor_node(body,texture(bank,cell.frame,colour),projection,camera,depths))result.push_back(*node);
+        if(auto node=actor_node_rotated(body,texture(bank,cell.frame,colour),projection,camera,depths,sin_table_,body_roll,logical_width))result.push_back(*node);
+    } else if(auto node=actor_node(body,texture(bank,cell.frame,colour),projection,camera,depths,logical_width))result.push_back(*node);
     return result;
 }
 }

@@ -27,6 +27,8 @@ const std::array<std::string, ns::count - native_slot_base> kNativeStrings = {
     "Render Resolution", "Match display",
     "Race and menu pixel resolution. 640x480 is the original-exact mode; higher costs GPU time.",
     "Locked to 640x480 while Graphics Options Resolution is Low or Inset.",
+    "Widescreen", "Off (4:3)", "16:10", "16:9", "Match display",
+    "Hor+ wide race view. 4:3 is the original-exact mode; the centre is unchanged.",
 };
 const std::string kEmpty;
 }

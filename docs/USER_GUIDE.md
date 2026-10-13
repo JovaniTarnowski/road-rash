@@ -107,6 +107,11 @@ Hotkeys: Alt+Enter or Cmd+F toggles fullscreen; F10 cycles the MiniDash
 display; `/` in menus toggles the opponent list; the FPS row shows frames and
 simulation ticks per second in the race's top-right corner.
 
+Widescreen (Display screen): Off keeps the original 4:3 view; 16:10,
+16:9 and Match display widen it (Hor+: same height, more road at the
+sides, centre unchanged). The dashboard stays centred with darkened side
+panels; menus and videos stay 4:3. 4:3 is the original-exact mode.
+
 Render Resolution (Display screen): Match display picks the largest of
 640x480, 1280x960, 1920x1440, 2560x1920 fitting the window; the fixed
 choices pin one. 640x480 is the original-exact mode; higher scales cost

@@ -62,13 +62,13 @@ PlacedEvents place_dzhr(const CourseSection& section,int level,std::function<uin
     return placed;
 }
 DrawNode scenery_node(const AnimationFrame& frame,const SceneryObject& object,int32_t road_x,
-    int32_t road_y,int32_t ground_y,int32_t depth,const Camera& camera,const DepthTable& depths) {
+    int32_t road_y,int32_t ground_y,int32_t depth,const Camera& camera,const DepthTable& depths,int32_t logical_width) {
     if(!frame.texture)return {};
     const uint32_t index=(uint32_t(depth+128)&~1u)/2;
     if(index>=depths.scale.size())throw std::runtime_error("Scenery depth outside table");
     const int32_t projection=depths.scale[index],scale=wrap(int64_t(object.size)*projection)>>2;
     const auto& bounds=frame.texture->bounds;const int32_t width=bounds[2]-bounds[0],height=bounds[3]-bounds[1];
-    const int32_t anchor_x=wrap(int64_t(road_x+object.lateral-camera.x)*projection+160*65536);
+    const int32_t anchor_x=wrap(int64_t(road_x+object.lateral-camera.x)*projection+(logical_width&~1)*32768);
     const int32_t x=wrap(int64_t(anchor_x)+(object.mirror?1:-1)*int64_t(frame.hotspot[0])*scale);
     const int32_t y=wrap(int64_t(camera.height-road_y-ground_y)*projection-int64_t(frame.hotspot[1])*scale+90*65536);
     const int32_t right=wrap(int64_t(x)+(object.mirror?-1:1)*int64_t(width)*scale),bottom=wrap(int64_t(y)+int64_t(height+1)*scale);

@@ -311,7 +311,7 @@ int main(int argc, char** argv) {
     check(fe.screen() == screen_id::native_display, "display screen");
     snap("display");
     if (focus_item(2)) key("select");   // Scaling row opens its popup
-    check(fe.items().size() == 8 + 4, "scaling popup opens");
+    check(fe.items().size() == 9 + 4, "scaling popup opens");
     key("down");   // Integer row (popup header + Fit, Integer, ...)
     key("select");
     check(settings.scale_mode == rr::ScaleMode::integer, "scaling choice applies to settings");
@@ -320,7 +320,7 @@ int main(int argc, char** argv) {
         const std::string text((std::istreambuf_iterator<char>(settings_file)), std::istreambuf_iterator<char>());
         check(text.find("scale_mode=1") != std::string::npos, "scaling choice saved to settings file");
     }
-    if (focus_item(7)) key("select");   // Back row
+    if (focus_item(8)) key("select");   // Back row
     check(fe.screen() == 0x13 && fe.focus() == 2, "back returns to the Display item");
     // Plan 19 Task 8: RENDER RESOLUTION row — popup choice persists; Low/Inset disables it.
     fe.enter(screen_id::native_display);
@@ -341,6 +341,21 @@ int main(int argc, char** argv) {
     key("down"); key("down"); key("down");   // last choice (2560x1920)
     key("select");
     check(settings.render_scale == 4, "2560x1920 choice persists");
+    // Plan 21 Task 8: WIDESCREEN row — popup choice persists.
+    int wide_row = -1;
+    for (size_t i = 0; i < fe.items().size(); ++i)
+        if (fe.items()[i].caption == rr::ns::widescreen) wide_row = int(i);
+    check(wide_row >= 0, "display screen has the widescreen row");
+    if (focus_item(size_t(wide_row))) key("select");
+    check(fe.items().size() == 9 + 5, "widescreen popup opens with four choices");
+    key("down"); key("down");   // 16:9 row (popup header + Off, 16:10, 16:9, ...)
+    key("select");
+    check(settings.widescreen == rr::Widescreen::mode16x9, "16:9 choice persists");
+    {
+        std::ifstream settings_file((std::filesystem::path(saves).parent_path() / "settings.txt").string());
+        const std::string text((std::istreambuf_iterator<char>(settings_file)), std::istreambuf_iterator<char>());
+        check(text.find("widescreen=2") != std::string::npos, "widescreen choice saved to settings file");
+    }
     settings.high_resolution = false;
     fe.enter(screen_id::native_display);
     bool res_disabled = false;

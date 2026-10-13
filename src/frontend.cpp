@@ -620,6 +620,7 @@ int Frontend::native_current(uint32_t popup) const {
     case native_popup::on_off: return 1;   // caller overrides per item; see open_native_popup
     case native_popup::touch: return settings_.touch_opacity / 25 + 1;
     case native_popup::resolution: return settings_.render_scale + 1;   // match = 1, 1x..4x = 2..5
+    case native_popup::widescreen: return int(settings_.widescreen) + 1;
     default: return 1;
     }
 }
@@ -636,6 +637,7 @@ void Frontend::open_native_popup(uint32_t popup) {
     case native_popup::filtering: setter = native_setter::filtering; break;
     case native_popup::touch: setter = native_setter::touch_opacity; break;
     case native_popup::resolution: setter = native_setter::render_resolution; break;
+    case native_popup::widescreen: setter = native_setter::widescreen; break;
     case native_popup::on_off: {
         // Which bool this popup edits: the focused value item's caption.
         const int cap = focus_ >= 0 && size_t(focus_) < items_.size() ? items_[size_t(focus_)].caption : 0;
@@ -663,6 +665,8 @@ std::string Frontend::native_value_text(int caption) const {
     case ns::render_resolution:   // plan 19 Task 8: match + 640x480..2560x1920
         return settings_.render_scale == 0 ? native_string(ns::res_match)
                                            : native_string(ns::scale_1x + settings_.render_scale - 1);
+    case ns::widescreen:
+        return native_string(ns::wide_off + int(settings_.widescreen));
     default: return {};
     }
 }
@@ -1079,6 +1083,7 @@ int Frontend::run_handler(size_t index) {
         case native_setter::touch_opacity: settings_.touch_opacity = std::min(100, std::max(0, (target - 1) * 25)); apply_native_setting(); break;
         case native_setter::haptics: settings_.haptics = target == 2; apply_native_setting(); break;
         case native_setter::render_resolution: settings_.render_scale = std::min(4, std::max(0, target - 1)); apply_native_setting(); break;
+        case native_setter::widescreen: settings_.widescreen = Widescreen(std::min(3, std::max(0, target - 1))); apply_native_setting(); break;
         }
         return 0;
     }

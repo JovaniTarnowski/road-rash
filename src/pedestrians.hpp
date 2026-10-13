@@ -72,5 +72,5 @@ private:
 // ground (height >> 8) + ground). Shadows (+0xa8 second billboard) are not
 // drawn yet.
 std::optional<DrawNode> pedestrian_node(const Pedestrian&,const RoadSlice& near,const RoadSlice& far,int road,
-    const RouteSample&,const Camera&,const DepthTable&,int32_t ceiling);
+    const RouteSample&,const Camera&,const DepthTable&,int32_t ceiling,int32_t logical_width=320);
 }

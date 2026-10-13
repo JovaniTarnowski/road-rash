@@ -563,7 +563,7 @@ void TrafficSystem::append_snapshot(std::vector<FieldValue>& out) const {
 
 std::optional<DrawNode> traffic_car_node(const Vehicle& vehicle,const TrafficCar& car,
     const RoadSlice& near,const RoadSlice& far,int road,const RouteSample& sample,
-    const Camera& camera,const DepthTable& depths,int32_t camera_q8,int32_t ceiling) {
+    const Camera& camera,const DepthTable& depths,int32_t camera_q8,int32_t ceiling,int32_t logical_width) {
     if(vehicle.playback.size()!=3)return std::nullopt;
     const int64_t distance=std::abs(int64_t(car.position)-camera_q8);
     const size_t code=distance>0xa00 && vehicle.playback[2]?2:distance>0x500 && vehicle.playback[1]?1:0;
@@ -574,11 +574,11 @@ std::optional<DrawNode> traffic_car_node(const Vehicle& vehicle,const TrafficCar
     const auto selected=select_actor_view(sequence->front(),vehicle.views,angles.yaw,angles.roll);
     const auto& cell=vehicle.views.at(selected.group).at(selected.subframe);const auto& frame=vehicle.animation.frames.at(cell.frame);
     ActorProjection projection;projection.road_x=orientation.road_x;projection.far_x=b.road_x+camera.x;projection.road_y=a.world_y;projection.far_y=b.world_y;projection.lateral=orientation.lateral_q8/256;projection.depth=near.depth;projection.fraction=uint8_t(car.position);projection.size=0x500;projection.flags=cell.flags;projection.occlusion=ceiling;
-    return actor_node(frame,frame.texture.get(),projection,camera,depths);
+    return actor_node(frame,frame.texture.get(),projection,camera,depths,logical_width);
 }
 std::vector<DrawNode> traffic_draw_nodes(const TrafficSystem& system,
     const std::vector<RouteSample>& route,const std::vector<RoadSlice>& slices,
-    const Camera& camera,const DepthTable& depths,int32_t camera_q8,uint32_t tick) {
+    const Camera& camera,const DepthTable& depths,int32_t camera_q8,uint32_t tick,int32_t logical_width) {
     std::vector<DrawNode> result;
     if(slices.empty())return result;
     struct Visible {const TrafficCar* car;int32_t depth;int32_t road_x;int32_t world_y;};
@@ -617,7 +617,7 @@ std::vector<DrawNode> traffic_draw_nodes(const TrafficSystem& system,
         const int32_t width=bounds[2]-bounds[0],height=bounds[3]-bounds[1];
         // Same projection as the verified scenery path (scenery_node). The
         // interpolated road centre is already relative to the camera.
-        const int32_t anchor_x=wrap(int64_t(v.road_x+(v.car->lateral>>8))*projection+160*65536);
+        const int32_t anchor_x=wrap(int64_t(v.road_x+(v.car->lateral>>8))*projection+(logical_width&~1)*32768);
         const int32_t x=wrap(int64_t(anchor_x)-int64_t(frame.hotspot[0])*scale);
         const int32_t y=wrap(int64_t(camera.height-v.world_y)*projection-int64_t(frame.hotspot[1])*scale+90*65536);
         const int32_t right=wrap(int64_t(x)+int64_t(width)*scale),bottom=wrap(int64_t(y)+int64_t(height+1)*scale);

@@ -157,18 +157,23 @@ const CelTexture* CourseScene::material(uint32_t section,uint32_t local,uint8_t 
     const auto group=family->second.groups.find(*offset);if(group==family->second.groups.end())return nullptr;
     return &group->second.select(width,height,logarithms_).texture;
 }
-void CourseScene::draw_horizon(Framebuffer& fb,int32_t scroll) const {
+void CourseScene::draw_horizon(Framebuffer& fb,int32_t scroll,int32_t logical_width) const {
     // Plan 19 Task 4: rows and scroll offsets scale with the surface; the
     // 720x320 source is nearest-neighbour sampled until plan 20 upscales it.
-    const int s = fb.width() / 640;
-    if (s < 1 || fb.width() != 640 * s || fb.height() != 480 * s) throw std::runtime_error("Horizon needs a 640s x 480s surface");
+    // Plan 21 Task 8: the surface is logical_w*2s x 480s; the horizon spans
+    // the full wide surface (Hor+: same rows, more columns).
+    const int s = fb.height() / 480;
+    if (s < 1 || fb.height() != 480 * s || fb.width() != logical_width * 2 * s)
+        throw std::runtime_error("Horizon needs a wide*2s x 480s surface");
     const int32_t start = int32_t(((-int64_t(scroll) % 720) + 720) % 720);
     fb.clear(0);
+    // Centre the 720-wide source: the 4:3 picture is the centre crop.
+    const int xoff = (720 - logical_width * 2) / 2;
     for (int y = 0; y < 320 * s; ++y) for (int x = 0; x < fb.width(); ++x)
-        fb.row(y)[x] = horizon_[size_t(y / s) * 720 + (x / s + start) % 720];
+        fb.row(y)[x] = horizon_[size_t(y / s) * 720 + ((x / s + xoff + start) % 720 + 720) % 720];
 }
 std::vector<DrawNode> CourseScene::draw_nodes(const std::vector<RouteSample>& route,
-    const std::vector<RoadSlice>& slices,const Camera& camera,const DepthTable& depths,ActorEmitter actors) const {
+    const std::vector<RoadSlice>& slices,const Camera& camera,const DepthTable& depths,ActorEmitter actors,int32_t logical_width) const {
     struct Road {const PathSample* path;const TerrainSlice* terrain;uint32_t section,local;HillRoad hill[2];BuildingRoad building[2];int32_t ceiling;};
     std::vector<std::array<Road,2>> roads(slices.size());
     // Plan 19 Task 4: the ceiling stays logical (240 Q16 view rows); only
@@ -221,7 +226,7 @@ std::vector<DrawNode> CourseScene::draw_nodes(const std::vector<RouteSample>& ro
             const int32_t ny=near.hill[side].world[0].y+(side?near.path->height_right:near.path->height_left),fy=far.hill[side].world[0].y+(side?far.path->height_right:far.path->height_left);
             const int32_t x=nx+(wrap(int64_t(fx-nx)*fraction)>>8);
             const int32_t y=ny+(wrap(int64_t(fy-ny)*fraction)>>8);
-            near.building[side].transition={wrap(int64_t(x-camera.x)*scale+160*65536),wrap(int64_t(camera.height-y)*scale+90*65536)};
+            near.building[side].transition={wrap(int64_t(x-camera.x)*scale+(logical_width&~1)*32768),wrap(int64_t(camera.height-y)*scale+90*65536)};
         }
     }
     std::vector<DrawNode> result;
@@ -247,9 +252,9 @@ std::vector<DrawNode> CourseScene::draw_nodes(const std::vector<RouteSample>& ro
             panels.second_left=wrap(near.screen_x(r,whole_left));panels.second_y=b.screen_y;panels.second_lane_width=wrap(int64_t(250)*near.scale);
             panels.left_lanes_q8=path.left_q8;panels.right_lanes_q8=path.right_q8;panels.left_lane_count=uint8_t((path.left_q8+255)/256);panels.right_lane_count=uint8_t((path.right_q8+255)/256);
             panels.marking_flags=path.marking_flags;panels.terrain_type=road.terrain->type;panels.next_terrain_type=old.terrain->type;panels.visible=visible;
-            append(road_draw_nodes(road_panels(panels),roads_));
+            append(road_draw_nodes(road_panels(panels,logical_width),roads_));
             if(path.marking_flags&32)for(int side=0;side<2;++side) {
-                MarkedGroundInput ground{{wrap(near.screen_x(r,side?b.right:b.left)),b.screen_y},{wrap(far.screen_x(r,side?a.right:a.left)),a.screen_y},near.scale,far.scale,320,uint8_t(side),path.marking_flags,road.terrain->type==0?8:16};
+                MarkedGroundInput ground{{wrap(near.screen_x(r,side?b.right:b.left)),b.screen_y},{wrap(far.screen_x(r,side?a.right:a.left)),a.screen_y},near.scale,far.scale,logical_width,uint8_t(side),path.marking_flags,road.terrain->type==0?8:16};
                 append(marked_ground_nodes(ground,[&](uint8_t index){return index==3?&*roads_.entries[0].texture:&*roads_.terrain.at(index).texture;}));
             }
             if(i==count-1){append(pending);pending.clear();}
@@ -278,7 +283,7 @@ std::vector<DrawNode> CourseScene::draw_nodes(const std::vector<RouteSample>& ro
                 const auto* frame=object_frame(road.section,road.local,object);if(!frame || !frame->texture)continue;
                 int32_t ground=terrain_height(*road.terrain,path,*old.terrain,*old.path,object.lateral*256,128,a.road_x-b.road_x);
                 if(ground>998)ground=0;
-                auto draw=scenery_node(*frame,object,(a.road_x+b.road_x)/2+camera.x,(a.world_y+b.world_y)/2,ground,near.depth,camera,depths);
+                auto draw=scenery_node(*frame,object,(a.road_x+b.road_x)/2+camera.x,(a.world_y+b.world_y)/2,ground,near.depth,camera,depths,logical_width);
                 if(draw.view_points[0].y<road.ceiling)result.push_back(draw);
             }
             if(actors){const auto nodes=actors(near,far,r,road.ceiling,false);front.insert(front.end(),nodes.begin(),nodes.end());}

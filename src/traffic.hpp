@@ -215,7 +215,7 @@ private:
 // sequences by distance; 0x00446830 emits the actor billboard.
 std::optional<DrawNode> traffic_car_node(const Vehicle&,const TrafficCar&,
     const RoadSlice&,const RoadSlice&,int road,const RouteSample&,
-    const Camera&,const DepthTable&,int32_t camera_q8,int32_t ceiling);
+    const Camera&,const DepthTable&,int32_t camera_q8,int32_t ceiling,int32_t logical_width=320);
 
 // Display nodes for the active cars, ordered far to near. The projection
 // follows the verified scenery path (scenery_node) with the depth-table scale
@@ -224,6 +224,6 @@ std::optional<DrawNode> traffic_car_node(const Vehicle&,const TrafficCar&,
 // ported.
 std::vector<DrawNode> traffic_draw_nodes(const TrafficSystem&,
     const std::vector<RouteSample>& route, const std::vector<RoadSlice>& slices,
-    const Camera&, const DepthTable&, int32_t camera_q8, uint32_t tick);
+    const Camera&, const DepthTable&, int32_t camera_q8, uint32_t tick, int32_t logical_width=320);
 
 }
