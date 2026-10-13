@@ -258,6 +258,7 @@ speed, `+0x1bc` base speed, `+0x1dc/+0x1e0/+0x1e4/+0x1e8` lookahead
 The state dispatch table `0x00465980` maps 0→`0x00408e30`, 1→`0x00409000`
 (racing), 2→`0x004092d0`, 3→`0x00409460`, 4→`0x00409ca0`, 5→`0x0040a4f0`,
 6→`0x0040a560` (read from the reference EXE `.data` at file offset `0x63f80`).
+  - Replan + brain-init REA verification (October 12, 2026; plan 10 Task 5/6 merge `36c03dc`): pinned REA 6.4.0 pseudocode whitespace-identical for `0x004082f0` replan (10023 chars) and `0x00407990` brain init (1171: lane-bias `+0x190` + target `+0x194` stores the merge ports). The merge's tick-207 parity claim is behavioral and stands on its own replay test; this note covers export fidelity only. Files: `analysis/oracle/rea-4082f0-replan.md`, `rea-407990-braininit.md` (disc-derived, git-ignored).
 Solo-capture evidence: the demo rider runs state 1 with `target_x` 18688 until
 tick 182, then `0x00408ad0` moves it to state 5 and `0x0040a4f0`→`0x00408e40`
 writes `target_x` 43264; bike `+0x288` ramps +165/tick from tick 183 and
