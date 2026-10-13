@@ -152,7 +152,7 @@ Native port: `src/bike.cpp`, `src/race.cpp`.
   - `0x00438c70` traction: grip from the surface table `0x0046dce8`, skid when demand exceeds grip, steering damping `0x0046dd08`/gain `0x0046dcf8`, rough-surface curve factors `0x0046dd28`
   - `0x004390c0` speed: `v += dt·(drive − drag − |lateral|/16)`, drag = aero·(v>>8)>>8 + surface drag `0x0046dce4` + rolling
   - `0x004391d0` gear shift
-  - `0x004395e0` movement: distance `(2v − a·dt)·dt/2 >> 8`; curves push outward via the bend swept (`0x004394c0`, `×400/dt`); lateral `+0x28 += dt·+0x10c`
+  - Integrator REA re-confirmation (October 12, 2026; plan 10/16 port input): pinned REA 6.4.0 pseudocode whitespace-identical for `0x00438c70` traction (5976 chars: surface-class grip, skid-vs-demand with `+0x15c` clamp, yaw from `sin(steer)·speed` table, low/high-speed steer taper at 4000/8000), `0x004390c0` speed (1488: drive−drag−|lat|/16 with aero/surface/rolling terms) and `0x004395e0` movement (4255: trapezoidal distance, curve-push via bend swept, lateral `+= dt·+0x10c`). No RNG in the tick physics — divergences are deterministic given the same inputs. Files: `analysis/oracle/rea-438c70-traction.md`, `rea-4390c0-speed.md`, `rea-4395e0-move.md` (disc-derived, git-ignored).
   - `0x0043a610` wall/terrain collision (not ported)
   - `0x0043a190` vertical motion over ground height `0x00439b10`: crests launch the bike when the ground drops faster than its vertical speed; landing rebound and wobble
 - **Surface class** (`0x0043a0c0`): 0 road, 1 shoulder (type 0 terrain), 2 rough, 3 beyond the shoulder.
