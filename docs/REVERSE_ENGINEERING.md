@@ -544,6 +544,7 @@ The course screens share one item array; the sixth item is copied from `0x004691
 - The first timer tick re-arms for 1.5 s, then the roll scrolls `0x00468f50` (1) pixels every 15 ms. '+'/'-' double or halve the speed. When the table ends, the screen's item (handler `0x004241e0`) leads to `0x0041f6d0`. Escape skips.
 
 **Race end** (`0x00416010`): finishing (`0x00434660`, code `0x7f`), wrecking (`0x0040a600`/`0x0043a190`, code 5) and being busted (`0x00407f30`, code 4) set the outcome once. The race then keeps running for 0xb4 ticks (`0x00442e10`). Confirming the in-race Escape prompt (string 316) while still racing sets outcome 5, so quitting counts as wrecked (`0x00423408`).
+  - Outcome + step-driver REA re-confirmation (October 12, 2026; plan 10/15 port input): pinned REA 6.4.0 pseudocode whitespace-identical for `0x00416010` outcome (1272 chars: first-write-wins on `DAT_004c5d7c`, 0x7f→place-gated 2/3, network name copy), `0x0044b3b0` step (1844: 2/3-timers, rider pass, scheduler, stamp-gated camera, 0x100-chunked ring advance, traffic timers on moved distance, same-sample distance accumulator) and `0x0044b250` race start (511). Files: `analysis/oracle/rea-416010-outcome.md`, `rea-44b3b0-step.md`, `rea-44b250-start.md` (disc-derived, git-ignored).
 
 ## Sound effects, engines and soundtrack (October 2, 2026, session 20)
 
