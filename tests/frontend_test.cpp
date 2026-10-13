@@ -211,6 +211,45 @@ int main(int argc, char** argv) {
     key("right");
     key("select");   // No
     check(event(FrontendEvent::Kind::quit), "go home quits");
+    // Jukebox (plan 13 Task 4 Step 1): 0x00445600 track list, 0x00445730 video popup, 0x004456d0 video play.
+    // Note: open_popup appends to items_, so a 3-row popup on screen 0x11 (9 items) gives 12.
+    auto focus_item = [&](int want) {
+        for (int guard = 0; guard < 16 && fe.focus() != want; ++guard) key("down");
+        return fe.focus() == want;
+    };
+    fe.enter(0x11);
+    check(fe.screen() == 0x11, "jukebox screen");
+    snap("jukebox");
+    {   // Videos item (caption 431) opens the 3-item video popup (0x473fa0); focus lands on JESSIE.
+        int videos = -1;
+        for (size_t i = 0; i < fe.items().size(); ++i) if (fe.items()[i].caption == 431) videos = int(i);
+        check(videos >= 0, "jukebox videos item present");
+        if (focus_item(videos)) key("select");
+        check(fe.items().size() == 12, "jukebox video popup opens");
+        key("select");   // JESSIE row already focused
+        check(event_video("VIDEO/JESSIE.AVI"), "jukebox plays JESSIE");
+    }
+    {   // VideoMode force: with videos off, the jukebox still plays and restores the setting.
+        settings.video_mode = 0;
+        fe.enter(0x11);
+        int videos = -1;
+        for (size_t i = 0; i < fe.items().size(); ++i) if (fe.items()[i].caption == 431) videos = int(i);
+        if (focus_item(videos)) key("select");
+        key("down");     // DUEL row
+        key("select");
+        check(event_video("VIDEO/DUEL.AVI") && settings.video_mode == 0, "jukebox forces VideoMode2 then restores");
+        settings.video_mode = 2;
+    }
+    {   // Track list: first band item opens its track popup; choosing a track selects the soundtrack.
+        fe.enter(0x11);
+        if (focus_item(0)) key("select");
+        check(fe.items().size() == 12, "jukebox track popup opens (Hammerbox, 3 rows)");
+        key("select");   // first track row already focused
+        FrontendEvent se;
+        bool soundtrack = false;
+        while (fe.poll(se)) if (se.kind == FrontendEvent::Kind::select_soundtrack && se.group == 0 && se.track == 0) soundtrack = true;
+        check(soundtrack && settings.music_group == 0 && settings.music_track == 0, "jukebox track select emits soundtrack event");
+    }
     // Key rebinding storage + conflict rule (0x0040fbf0: same-code rows unbound).
     check(default_keyboard_controls()[0] == 0x9400 && default_joystick_controls()[0] == 0x0025, "control defaults match EXE");
     { std::array<uint16_t, 11> kb, joy; read_control_tables(exe, kb, joy); check(kb == default_keyboard_controls() && joy == default_joystick_controls(), "control tables read from EXE"); }

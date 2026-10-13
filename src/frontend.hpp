@@ -64,9 +64,10 @@ struct MenuInput {
 };
 
 struct FrontendEvent {
-    enum class Kind { none, play_video, start_race, quit } kind = Kind::none;
+    enum class Kind { none, play_video, start_race, quit, select_soundtrack } kind = Kind::none;
     std::string video;   // path relative to the ROADRASH directory, e.g. VIDEO/START3.AVI
     int course = 0;      // 1..5
+    int group = 0, track = 0;      // select_soundtrack: 0-based group (menu caption - 0xe1) and track (caption - 0xf1)
 };
 
 // One finisher in the race results (0x00420e30 rows).

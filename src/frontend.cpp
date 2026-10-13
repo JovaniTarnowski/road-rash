@@ -1,5 +1,6 @@
 #include "frontend.hpp"
 #include "assets.hpp"
+#include "race_music.hpp"
 #include "exe_tables.hpp"
 #include "rri.hpp"
 #include <algorithm>
@@ -40,7 +41,11 @@ std::vector<MenuItem> read_items(const std::vector<uint8_t>& exe, uint32_t addre
 // Popup tables passed to 0x004224b0 and the setter each popup applies (0x0049e0a8).
 enum Setter { none = 0, set_mode = 1, setter_level = 2, set_resolution = 3, set_biker = 4, set_videos = 5, set_load = 6 };
 constexpr uint32_t popup_mode = 0x004735c0, popup_level = 0x004736a0, popup_name = 0x004737f0,
-                   popup_resolution = 0x00474240, popup_biker = 0x00474320, popup_videos = 0x004743c8;
+                   popup_resolution = 0x00474240, popup_biker = 0x00474320, popup_videos = 0x004743c8,
+                   popup_jukebox_video = 0x00473fa0;
+// Jukebox track-list tables by menu caption 0xe1..0xe6 (0x00445600): address and row count.
+constexpr uint32_t jukebox_tracks[6][2] = {{0x00473b38, 3}, {0x00473be0, 2}, {0x00473c50, 4},
+                                           {0x00473d30, 5}, {0x00473e48, 3}, {0x00473ef0, 3}};
 
 // Dialog kinds and the action that follows a confirmed "save before continuing?" (0x004450e0).
 enum Then { then_none = 0, then_quit = 1, then_load = 2, then_mode = 3, then_characters = 4 };
@@ -141,8 +146,10 @@ FrontendData read_frontend_data(const std::vector<uint8_t>& exe) {
         if (address && count) d.screens[size_t(s)].items = read_items(exe, address, count);
     }
     for (const auto& [address, count] : std::vector<std::pair<uint32_t, uint32_t>>{
-             {popup_mode, 4}, {popup_level, 6}, {popup_name, 2}, {popup_resolution, 4}, {popup_biker, 3}, {popup_videos, 4}})
+             {popup_mode, 4}, {popup_level, 6}, {popup_name, 2}, {popup_resolution, 4}, {popup_biker, 3}, {popup_videos, 4},
+             {popup_jukebox_video, 3}})
         d.popups[address] = read_items(exe, address, count);
+    for (const auto& t : jukebox_tracks) d.popups[t[0]] = read_items(exe, t[0], t[1]);
     d.course_extra[0] = read_item(exe, 0x00469130);   // Thrash: Restroom
     d.course_extra[1] = read_item(exe, 0x00469168);   // mano-a-mano: Disconnect
     d.course_extra[2] = read_item(exe, 0x004690f8);   // Big Game: Der Panzer Klub
@@ -753,7 +760,44 @@ int Frontend::run_handler(size_t index) {
         character_return_ = 0x0f;
         return r == 0x0f ? 0x19 : r;
     }
-    case 0x00401df0: case 0x0040fd90: case 0x00445600: case 0x00445730: return 0;   // sound mix, controls, jukebox: not ported
+    case 0x00401df0: case 0x0040fd90: return 0;   // sound mix, controls: not ported (plan 18 Tasks 6-7)
+    case 0x00445600: {
+        // Jukebox track list: popup per focused band caption 0xe1..0xe6; current row = saved track when the group matches.
+        const int group = m.caption >= 0xe1 && m.caption <= 0xe6 ? m.caption - 0xe1 : 0;
+        const auto& table = jukebox_tracks[size_t(group)];
+        int current = 1;
+        if (settings_.music_group == group) current = settings_.music_track + 1;
+        last_focus_[0] = focus_;
+        open_popup(data_.popups.at(table[0]), current, none);
+        return 0;
+    }
+    case 0x004455b0: {
+        // Jukebox track select: target - 0xe1 = group, caption - 0xf1 = track (0x00424080 persists Group/Track).
+        const int group = m.target - 0xe1, track = m.caption - 0xf1;
+        if (group < 0 || group > 5 || track < 0) { close_popup(); return 0; }
+        settings_.music_group = group;
+        settings_.music_track = track;
+        events_.push_back({FrontendEvent::Kind::select_soundtrack, {}, 0, group, track});
+        close_popup();   // 0x004225e0
+        return 0;
+    }
+    case 0x00445730: {
+        // Jukebox video popup (0x473fa0: JESSIE/DUEL). The two "%s : %s" header lines have no native
+        // popup-header concept; the EXE item captions (slots 160/161) are shown as-is.
+        last_focus_[0] = focus_;
+        open_popup(data_.popups.at(popup_jukebox_video), 1, none);
+        return 0;
+    }
+    case 0x004456d0: {
+        // Jukebox video play: table 0x473f98[target]; forces VideoMode 2 when off, restores after.
+        const std::string path = jukebox_video_path(m.target);
+        const int saved = settings_.video_mode;
+        if (saved == 0) settings_.video_mode = 2;
+        if (!path.empty()) queue_video(path.substr(0, 6) == "VIDEO/" ? path.substr(6, path.size() - 10) : path, 0);
+        settings_.video_mode = saved;
+        close_popup();   // 0x004225e0 (restroom redraws from current state)
+        return 0;
+    }
     // Graphics options.
     case 0x004457b0: last_focus_[0] = focus_; open_popup(data_.popups.at(popup_resolution), settings_.high_resolution ? 3 : settings_.inset ? 2 : 1, set_resolution); return 0;
     case 0x004458a0: last_focus_[0] = focus_; open_popup(data_.popups.at(popup_biker), settings_.high_res_bikers ? 2 : 1, set_biker); return 0;
