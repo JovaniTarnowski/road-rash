@@ -463,6 +463,7 @@ All 343 panels emitted by 128 original calls match coordinates/material/PRE0/fli
 - +0x28: 10 × 3 dwords. Each is the triple at `+personality*12` in each runtime personality copy (`0x004c6b40`, 0x204 bytes each; defaults are the first 0x78 bytes of `0x00464558` records). These are the relationship values Schmooze reads (`0x00420bb0`).
 - The reader checks magic (error string slot 369), then checksum (slot 370). It then restores the personalities, copies the state and relations, and forces Big Game mode.
 - The native reader additionally rejects out-of-range state bytes; the original performs no range checks.
+  - Save-file trio REA re-confirmation (October 12, 2026; plan 13 Task 5 input — via 3 parallel subagents, MATCH claims independently re-verified, CLEAN SWEEP): pinned REA 6.4.0 pseudocode whitespace-identical for `0x0042efc0` checksum (408 chars: sum + weighted + alternating-sign triple accumulator), `0x0042f000` writer (1464: 0xa0-byte record + `0xcafedead` magic + checksum + WriteFile) and `0x0042f110` reader (1775: magic/checksum validation + state/relationship restore + Big Game force). Save format fully double-confirmed for the port. Files: `analysis/oracle/rea-42efc0-savecrc.md`, `rea-42f000-savewrite.md`, `rea-42f110-saveread.md` (disc-derived, git-ignored).
 
 **String slots used:** 192/195/199/200 are the results captions; 201+place is "%s finished in …"; 197/194 are the fine/repair formats; 193/196 the Thrash penalty texts; 198 game over.
 
