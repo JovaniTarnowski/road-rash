@@ -570,6 +570,7 @@ The course screens share one item array; the sixth item is copied from `0x004691
 - A retrigger restarts only that slot's buffer, so there is no voice stealing.
 
 **Event queue** (`0x00436830` → `0x004367f0`): 10 records of {code, lateral, height, position, speed}. Codes and their call sites:
+  - Queue + consumer REA re-confirmation (October 12, 2026; plan 13 Task 1 input): pinned REA 6.4.0 pseudocode whitespace-identical for `0x004351f0` event consumer (5040 chars: siren-19 fast path, per-code volume/frequency/dispatch switch, the finish-yell and female-grunt branches) and `0x004367f0` queue pop (312). (A redundant `0x00436830` re-fetch was compared with a truncated window and deleted without claim; the prior turn's 965-char confirmation stands.) The full queue→consumer path now has exact source text. Files: `analysis/oracle/rea-4351f0-consumer.md`, `rea-4367f0-queue.md` (disc-derived, git-ignored).
 - 0/1/2 crash light/medium/hard, and 3/4 grunts, from contact `0x004049c0` (player only). Below 0x1771 impulse it is a grunt (rand&1)+3 plus crash rand&1; above, grunt +4 and crash +1, and nothing when below 0x7d1 with a small +0x188.
 - 5 wall grunt (`0x0043a610`).
 - 6/7 chain/club swish (`0x004096f0`).
