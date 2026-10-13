@@ -311,7 +311,7 @@ int main(int argc, char** argv) {
     check(fe.screen() == screen_id::native_display, "display screen");
     snap("display");
     if (focus_item(2)) key("select");   // Scaling row opens its popup
-    check(fe.items().size() == 10 + 4, "scaling popup opens");
+    check(fe.items().size() == 11 + 4, "scaling popup opens");
     key("down");   // Integer row (popup header + Fit, Integer, ...)
     key("select");
     check(settings.scale_mode == rr::ScaleMode::integer, "scaling choice applies to settings");
@@ -320,7 +320,7 @@ int main(int argc, char** argv) {
         const std::string text((std::istreambuf_iterator<char>(settings_file)), std::istreambuf_iterator<char>());
         check(text.find("scale_mode=1") != std::string::npos, "scaling choice saved to settings file");
     }
-    if (focus_item(9)) key("select");   // Back row
+    if (focus_item(10)) key("select");   // Back row
     check(fe.screen() == 0x13 && fe.focus() == 2, "back returns to the Display item");
     // Plan 19 Task 8: RENDER RESOLUTION row — popup choice persists; Low/Inset disables it.
     fe.enter(screen_id::native_display);
@@ -347,7 +347,7 @@ int main(int argc, char** argv) {
         if (fe.items()[i].caption == rr::ns::widescreen) wide_row = int(i);
     check(wide_row >= 0, "display screen has the widescreen row");
     if (focus_item(size_t(wide_row))) key("select");
-    check(fe.items().size() == 10 + 5, "widescreen popup opens with four choices");
+    check(fe.items().size() == 11 + 5, "widescreen popup opens with four choices");
     key("down"); key("down");   // 16:9 row (popup header + Off, 16:10, 16:9, ...)
     key("select");
     check(settings.widescreen == rr::Widescreen::mode16x9, "16:9 choice persists");
@@ -363,7 +363,7 @@ int main(int argc, char** argv) {
         if (fe.items()[i].caption == rr::ns::visual_style) style_row = int(i);
     check(style_row >= 0, "display screen has the visual style row");
     if (focus_item(size_t(style_row))) key("select");
-    check(fe.items().size() == 10 + 4, "visual style popup opens with three choices");
+    check(fe.items().size() == 11 + 4, "visual style popup opens with three choices");
     key("down");   // Enhanced row (popup opens focused on current = Original)
     key("select");
     check(settings.enhancements == rr::enhanced_preset(), "Enhanced sets exactly the preset");

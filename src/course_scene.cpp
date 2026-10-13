@@ -1,4 +1,6 @@
 #include "course_scene.hpp"
+#include <cstdio>
+#include "upscale_import.hpp"
 #include "exe_tables.hpp"
 #include "terrain_ground.hpp"
 #include <algorithm>
@@ -103,6 +105,26 @@ CourseScene::CourseScene(const Assets& assets,const std::vector<uint8_t>& exe,
 
 }
 const TerrainSlice& CourseScene::terrain(uint32_t section,uint32_t local) const {return terrain_.at(section).at(local);}
+void CourseScene::attach_upscaled(const UpscaleCache& cache) {
+    const UpscaleIndex index = cache.content_index({2, 4}, {UpscaleMethod::mmpx, UpscaleMethod::ai});
+    auto one = [&](CelTexture& tex) { attach_upscaled_indexed(tex, index); };
+    for (auto& [id, family] : families_)
+        for (auto& [offset, group] : family.groups)
+            for (auto& cell : group.cells) one(cell.texture);
+    for (auto& entry : roads_.entries)
+        if (entry.texture) one(*entry.texture);
+    for (auto& terrain : roads_.terrain)
+        if (terrain.texture) one(*terrain.texture);
+}
+void CourseScene::clear_upscaled() {
+    for (auto& [id, family] : families_)
+        for (auto& [offset, group] : family.groups)
+            for (auto& cell : group.cells) cell.texture.upscaled.clear();
+    for (auto& entry : roads_.entries)
+        if (entry.texture) entry.texture->upscaled.clear();
+    for (auto& terrain : roads_.terrain)
+        if (terrain.texture) terrain.texture->upscaled.clear();
+}
 const std::vector<SceneryObject>& CourseScene::objects(uint32_t section,uint32_t local) const {return objects_.at(section).at(local);}
 const AnimationFrame* CourseScene::object_frame(uint32_t section,uint32_t local,const SceneryObject& object) const {
     const uint16_t id=family_slots_.at(section).at(local)[object.selector>>6];

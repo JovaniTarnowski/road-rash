@@ -10,6 +10,7 @@
 #include <functional>
 
 namespace rr {
+class UpscaleCache;
 // A pedestrian family's FAMILIES.RSC category-2 resources, as 0x00440b80
 // loads them: resource 0 RRAN graphics, resource 1 CANS views, and the
 // animation codes 0..6 built from the EXE descriptor tables 0x0046de48,
@@ -29,6 +30,11 @@ public:
     CourseScene(const Assets&,const std::vector<uint8_t>& exe,const Course&,
                 const std::string& course_name,uint32_t terrain_seed=1,int level=0);
     const TerrainSlice& terrain(uint32_t section,uint32_t local) const;
+    // Plan 20 Task 3: family textures for generation (read-only walk).
+    const std::map<uint32_t, Family>& families() const { return families_; }
+    // Plan 20 Task 3: attach cached MMPX levels to every family texture.
+    void attach_upscaled(const class UpscaleCache& cache);
+    void clear_upscaled();
     const CelTexture* material(uint32_t section,uint32_t local,uint8_t selector,
         uint8_t category,std::optional<uint32_t> frame,int32_t width,int32_t height) const;
     // Emits imported road, shoulder, hill, building and scenery geometry.

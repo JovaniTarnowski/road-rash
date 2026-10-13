@@ -27,6 +27,8 @@
 #include "fog.hpp"
 #include "framebuffer_rgb.hpp"
 #include "post_chain.hpp"
+#include "upscale_cache.hpp"
+#include "upscale_import.hpp"
 #include "raster_rgb.hpp"
 #include "view_state.hpp"
 #include "sound.hpp"
@@ -43,6 +45,7 @@
 #include <limits>
 #include <string>
 
+std::string pref_directory();  // defined below; plan 20 Task 3 cache root
 namespace {
 const char* const course_names[] = {"NAPA", "CITY", "HIWAY", "CANYN", "MEDLY"};
 // The 640x480 original frames are scaled to arbitrary window sizes. Nearest
@@ -166,6 +169,8 @@ struct Game {
     std::vector<std::string> rider_names;
     std::string course_name;
     int bike = 0;
+    int texture_detail = 0;  // plan 20 Task 3: 0 original, 1 enhanced (MMPX)
+    mutable bool upscaled_attached = false;  // scene textures carry MMPX levels
     rr::Widescreen widescreen = rr::Widescreen::off;  // plan 21 Task 8: live setting
     rr::Enhancements enhancements;  // plan 21 Task 1: synced per frame; all-off = original
     mutable bool post_teleported = true;  // plan 21 Task 7: first frame seeds blur history
@@ -209,6 +214,7 @@ struct Game {
         {
             try { scene=std::make_unique<rr::CourseScene>(assets,exe,course,course_name,1,level); }
             catch(const std::exception& e) { SDL_Log("%s scene unavailable: %s",course_name.c_str(),e.what()); }
+            // (Plan 20 Task 3 attach happens lazily in the draw path.)
             hud=std::make_unique<rr::Hud>(assets,exe,bike,metric);
             actors=std::make_unique<rr::ActorNodes>(assets,exe,true);
             crash_config=rr::read_crash_config(exe);
@@ -625,6 +631,16 @@ struct CourseCanvas {
         const bool use_rgb = game.enhancements.full_colour ||
                              game.enhancements.filter != rr::TextureFilter::nearest ||
                              game.enhancements.fog > 0 || game.enhancements.grade != rr::Grade::none;
+        // Plan 20 Task 3: lazy attach/detach on detail flips (load_course runs
+        // before the settings sync, so attach here where the setting is live).
+        if (game.texture_detail && !game.upscaled_attached && game.scene) {
+            rr::UpscaleCache cache((std::filesystem::path(pref_directory()) / "upscaled").string());
+            game.scene->attach_upscaled(cache);
+            game.upscaled_attached = true;
+        } else if (!game.texture_detail && game.upscaled_attached && game.scene) {
+            game.scene->clear_upscaled();
+            game.upscaled_attached = false;
+        }
         auto nodes=game.scene->draw_nodes(game.race->route(),slices,game.race->camera(),game.depth,[&](const rr::RoadSlice& near,const rr::RoadSlice& far,int road,int32_t ceiling,bool back){return game.rider_nodes(near,far,road,ceiling,back);},wide);
         if (margin) for (auto& n:nodes) for (auto& v:n.view_points) v.x+=margin*65536;
         if (use_rgb) {
@@ -1208,7 +1224,11 @@ RaceEnd run_race(Game& g, SDL_Renderer* renderer, const RaceOptions& opt, Displa
             if (display.window) SDL_GetWindowSize(display.window, &dw, &dh);
             const int race_scale = opt.menu && opt.settings ? rr::effective_render_scale(*opt.settings, dw, dh, kMobileDisplay)
                                                             : opt.render_scale;
-            if (opt.settings) { g.widescreen = opt.settings->widescreen; g.enhancements = opt.settings->enhancements; }
+            if (opt.settings) {
+                g.widescreen = opt.settings->widescreen;
+                g.enhancements = opt.settings->enhancements;
+                g.texture_detail = opt.settings->texture_detail;
+            }
             if (g.scene) course_canvas.draw(renderer, g, slices, race_scale, display.render_threads);
             else rr::draw_road(renderer, slices);
             draw_opponents(renderer, g, sprites, slices);

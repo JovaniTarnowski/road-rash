@@ -136,6 +136,7 @@ Settings parse_settings(const std::string& text) {
         else if (k == "show_fps") flag(s.show_fps);
         else if (k == "render_scale") { if (parse_int(v, 0, 4, x)) s.render_scale = x; }
         else if (k == "widescreen") { if (parse_int(v, 0, 3, x)) s.widescreen = Widescreen(x); }
+        else if (k == "texture_detail") { if (parse_int(v, 0, 1, x)) s.texture_detail = x; }
         else if (k == "enh_interpolate") flag(s.enhancements.interpolate);
         else if (k == "enh_perspective") flag(s.enhancements.perspective);
         else if (k == "enh_full_colour") flag(s.enhancements.full_colour);
@@ -176,7 +177,7 @@ std::string format_settings(const Settings& s) {
       << "\nswap_speakers=" << s.swap_speakers
       << "\ndisplay_mode=" << int(s.display_mode) << "\nwindow_scale=" << s.window_scale << "\nscale_mode=" << int(s.scale_mode)
       << "\nfilter=" << int(s.filter) << "\nvsync=" << s.vsync << "\nshow_fps=" << s.show_fps
-      << "\nrender_scale=" << s.render_scale << "\nwidescreen=" << int(s.widescreen)
+      << "\nrender_scale=" << s.render_scale << "\nwidescreen=" << int(s.widescreen) << "\ntexture_detail=" << s.texture_detail
       << "\nenh_interpolate=" << s.enhancements.interpolate << "\nenh_perspective=" << s.enhancements.perspective
       << "\nenh_full_colour=" << s.enhancements.full_colour << "\nenh_filter=" << int(s.enhancements.filter)
       << "\nenh_fog=" << s.enhancements.fog << "\nenh_grade=" << int(s.enhancements.grade)

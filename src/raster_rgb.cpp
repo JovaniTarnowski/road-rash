@@ -451,13 +451,31 @@ static void render_nodes_rgb_impl(FramebufferRgb& fb, const std::vector<DrawNode
         const uint16_t uu[4] = {u0, u1, u1, u0}, vv[4] = {v0, v0, v1, v1};
         const auto& mips = rgba_mips(texture, palette, generation);
         if (mips.empty()) continue;
-        const size_t level = texture_mip_level(uint32_t(maxx - minx + 1), uint32_t(maxy - miny + 1), src_w, src_h,
-                                               mips.size());
+        // Plan 20 Task 3: upscaled levels serve projections >= 2x the source
+        // (same signed rule as the indexed path); uv scales by 2^(-level).
+        const int signed_level = texture_mip_level_signed(uint32_t(maxx - minx + 1), uint32_t(maxy - miny + 1),
+                                                           src_w, src_h, texture.mips.size(),
+                                                           texture.upscaled.size());
+        std::vector<RgbaMip> up_rgba;
+        const std::vector<RgbaMip>* mip_set = &mips;
+        size_t level = 0;
+        unsigned uv_scale = 1;
+        if (signed_level < 0) {
+            const size_t up = size_t(-signed_level - 1);
+            const auto& um = texture.upscaled.at(up);
+            up_rgba = rgba_mips_for_test(
+                [&] { CelMip c; c.width = um.width; c.height = um.height; c.stride_shift = um.stride_shift; c.pixels = um.pixels; return c; }(),
+                palette);
+            // rgba_mips_for_test assumes stride == width; upscaled mips are dense.
+            mip_set = &up_rgba;
+            level = 0;
+            uv_scale = unsigned(1) << (up + 1);
+        } else {
+            level = size_t(signed_level);
+        }
         for (size_t i = 0; i < 4; ++i) {
-            const float s = float(1u << level);
-            pts[i].u = float(uu[i] >> level);
-            pts[i].v = float(vv[i] >> level);
-            (void)s;
+            pts[i].u = float(uu[i] >> level) * uv_scale;
+            pts[i].v = float(vv[i] >> level) * uv_scale;
         }
         const bool transparent = (texture.flags & 2) != 0;
         if (enh.filter == TextureFilter::trilinear && mips.size() > 1) {
@@ -466,14 +484,36 @@ static void render_nodes_rgb_impl(FramebufferRgb& fb, const std::vector<DrawNode
             const double src = double(std::max(src_w, src_h));
             const float lod = float(std::max(0.0, std::log2(src / std::max(1.0, proj))));
             FogState tex_fog{fog_on && (pts[0].fog_q8 | pts[1].fog_q8 | pts[2].fog_q8 | pts[3].fog_q8), fog_colour};
-            draw_rgb_quad_trilinear(fb, pts, mips, transparent, clip, lod, tex_fog);
+            draw_rgb_quad_trilinear(fb, pts, *mip_set, transparent, clip, lod, tex_fog);
         } else if (enh.filter == TextureFilter::nearest) {
             // Fogged nearest goes through the float path (no exactness claim
             // with fog on); unfogged keeps the Q16-exact walk.
             const bool node_fog = fog_on && (pts[0].fog_q8 | pts[1].fog_q8 | pts[2].fog_q8 | pts[3].fog_q8);
             if (node_fog) {
                 FogState nf{true, fog_colour};
-                draw_rgb_impl(fb, pts, mips, level, level, 0.0, transparent, clip, sample_nearest, nf);
+                draw_rgb_impl(fb, pts, *mip_set, level, level, 0.0, transparent, clip, sample_nearest, nf);
+                continue;
+            }
+            // Upscaled active: Q16 walk over the upscaled index pixels.
+            if (signed_level < 0) {
+                const auto& srcmip = texture.upscaled.at(size_t(-signed_level - 1));
+                if (fb.width() > 640 || fb.height() > 480) {
+                    std::array<TextureVertexWide, 4> nv;
+                    for (size_t i = 0; i < 4; ++i)
+                        nv[i] = {pts[i].x, pts[i].y, uint16_t(uint16_t(uu[i] >> level) * uv_scale),
+                                 uint16_t(uint16_t(vv[i] >> level) * uv_scale)};
+                    RasterScratch64 scratch(fb.height());
+                    draw_rgb_quad_nearest_wide(fb, nv, srcmip.pixels, srcmip.stride_shift, palette, transparent,
+                                               clip, scratch);
+                } else {
+                    std::array<TextureVertex, 4> nv;
+                    for (size_t i = 0; i < 4; ++i)
+                        nv[i] = {int16_t(std::max(-32768, std::min(32767, pts[i].x))),
+                                 int16_t(std::max(-32768, std::min(32767, pts[i].y))),
+                                 uint16_t(uint16_t(uu[i] >> level) * uv_scale),
+                                 uint16_t(uint16_t(vv[i] >> level) * uv_scale)};
+                    draw_rgb_quad_nearest_q16(fb, nv, srcmip.pixels, srcmip.stride_shift, palette, transparent, clip);
+                }
                 continue;
             }
             // Nearest-exact: Q16 walk over the index pixels (byte-identical).
@@ -497,7 +537,7 @@ static void render_nodes_rgb_impl(FramebufferRgb& fb, const std::vector<DrawNode
             }
         } else {
             FogState bi_fog{fog_on && (pts[0].fog_q8 | pts[1].fog_q8 | pts[2].fog_q8 | pts[3].fog_q8), fog_colour};
-            draw_rgb_quad_bilinear(fb, pts, mips, transparent, clip, bi_fog);
+            draw_rgb_quad_bilinear(fb, pts, *mip_set, transparent, clip, bi_fog);
         }
     }
 }

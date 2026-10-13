@@ -869,3 +869,8 @@ Owned edits: `src/import_job.hpp/.cpp` (new), `src/sha256.hpp/.cpp`
   | 16:9 wide | 1.30 |
   | ALL ON | 1.67 (+37%) |
 - Every single enhancement and the all-on combination are far under the 8.3 ms budget, so the preset includes the largest set: everything except `draw_slices` (Task 6 dropped — stays 33) and `full_colour` (implied by trilinear). Preset: interpolate, perspective, trilinear, fog 40, dusk, bloom, vignette, motion blur, match-display widescreen.
+
+## Plan 20 Task 2 Step 4 + Task 3 (October 13, 2026): MMPX timing + upscale shots
+
+- MMPX 4x generation over all 5 courses' family cells + road materials + rider sheets (Release-equivalent local run): 1,239 textures, ~15 s wall, 223 MB cache (2x + 4x levels). Under the 20 s target.
+- Scale-4 Napa off/on: 29,295 sampled pixels differ (indexed path, nearest); road grain and lane edges visibly cleaner. RGB path also routes through upscaled levels.

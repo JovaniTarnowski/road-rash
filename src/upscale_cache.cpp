@@ -25,7 +25,7 @@ bool parse_method(const std::string& s,UpscaleMethod& m) {
 // method/version, palette/remap policy, alpha policy and scale.
 std::filesystem::path entry_path(const std::string& root,const std::string& asset,
     uint32_t index,int scale,UpscaleMethod m) {
-    if (asset.empty() || asset.size()>256 || index>1000000 || scale<1 || scale>4)
+    if (asset.empty() || asset.size()>256 || scale<1 || scale>4)
         throw std::runtime_error("Invalid upscale cache key");
     for (char c:asset)
         if (c=='\0'||c=='/'||c=='\\'||c==':'||(unsigned char)c<32) {
@@ -114,6 +114,7 @@ std::optional<UpscaledImage> decode_rrup(const std::vector<uint8_t>& bytes,
         return img;
     } catch (const std::runtime_error&) { return fail(); }
 }
+std::array<uint8_t, 32> hash_source32(const std::vector<uint8_t>& source) { return source_hash32(source); }
 UpscaleCache::UpscaleCache(std::string root):root_(std::move(root)) {}
 std::optional<UpscaledImage> UpscaleCache::find(const std::string& asset,uint32_t index,int scale,
     const std::vector<uint8_t>& source,std::initializer_list<UpscaleMethod> methods) const {
@@ -132,6 +133,58 @@ std::optional<UpscaledImage> UpscaleCache::find(const std::string& asset,uint32_
         return img;
     }
     return std::nullopt;
+}
+std::optional<UpscaledImage> UpscaleCache::find_by_content(const std::vector<uint8_t>& source, int scale,
+    std::initializer_list<UpscaleMethod> methods) const {
+    const auto want = source_hash32(source);
+    for (UpscaleMethod m : methods) {
+        const std::string mdir = m == UpscaleMethod::mmpx ? "mmpx" : "ai";
+        std::error_code ec;
+        const std::filesystem::path base = std::filesystem::path(root_) / mdir / std::to_string(scale);
+        if (!std::filesystem::is_directory(base, ec)) continue;
+        for (std::filesystem::recursive_directory_iterator it(base, ec), end; it != end; it.increment(ec)) {
+            if (ec) break;
+            if (!it->is_regular_file(ec) || it->path().extension() != ".rrup") continue;
+            const auto bytes = read_file(it->path());
+            if (bytes.empty()) continue;
+            UpscaleMethod got{};
+            uint32_t mv = 0;
+            std::array<uint8_t, 32> h{};
+            auto img = decode_rrup(bytes, &got, &mv, &h);
+            if (!img || got != m || h != want) continue;
+            const uint32_t current = (m == UpscaleMethod::mmpx) ? mmpx_version : 1;
+            if (mv != current) continue;
+            return img;
+        }
+    }
+    return std::nullopt;
+}
+std::map<std::pair<std::array<uint8_t, 32>, int>, UpscaledImage> UpscaleCache::content_index(
+    std::initializer_list<int> scales, std::initializer_list<UpscaleMethod> methods) const {
+    std::map<std::pair<std::array<uint8_t, 32>, int>, UpscaledImage> out;
+    for (UpscaleMethod m : methods) {
+        const std::string mdir = m == UpscaleMethod::mmpx ? "mmpx" : "ai";
+        for (int scale : scales) {
+            std::error_code ec;
+            const std::filesystem::path base = std::filesystem::path(root_) / mdir / std::to_string(scale);
+            if (!std::filesystem::is_directory(base, ec)) continue;
+            for (std::filesystem::recursive_directory_iterator it(base, ec), end; it != end; it.increment(ec)) {
+                if (ec) break;
+                if (!it->is_regular_file(ec) || it->path().extension() != ".rrup") continue;
+                const auto bytes = read_file(it->path());
+                if (bytes.empty()) continue;
+                UpscaleMethod got{};
+                uint32_t mv = 0;
+                std::array<uint8_t, 32> h{};
+                auto img = decode_rrup(bytes, &got, &mv, &h);
+                if (!img || got != m) continue;
+                const uint32_t current = (m == UpscaleMethod::mmpx) ? mmpx_version : 1;
+                if (mv != current) continue;
+                out.emplace(std::make_pair(h, scale), *img);
+            }
+        }
+    }
+    return out;
 }
 bool UpscaleCache::store(const std::string& asset,uint32_t index,int scale,
     const std::vector<uint8_t>& source,UpscaleMethod m,const UpscaledImage& img) const {

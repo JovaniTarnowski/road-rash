@@ -101,6 +101,10 @@ def run_gate(args):
                 with zipfile.ZipFile(apk) as z:
                     if any(x.startswith('assets/game/') for x in z.namelist()):
                         raise RuntimeError('commercial game data packaged in APK')
+                    # Plan 20 Task 1 Step 4: upscaled cache entries are generated
+                    # locally and must never ship in the APK.
+                    if any('upscaled/' in x or x.endswith('.rrup') for x in z.namelist()):
+                        raise RuntimeError('upscaled cache entry packaged in APK')
                 report['artifact'] = str(apk)
                 report['coverage']['hardware'] = 'not run'
                 manifests = ROOT.glob(f'android/app/.cxx/{report["configuration"]}/*/*/build-info.json')

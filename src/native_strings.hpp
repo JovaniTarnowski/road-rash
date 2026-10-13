@@ -20,5 +20,6 @@ namespace ns { enum : int { display_title = native_slot_base, display_mode, wind
                             visual_style, style_original, style_enhanced, style_custom, d_visual_style,
                             enh_title, enh_interp, enh_persp, enh_colour, enh_filter, enh_fog, enh_grade,
                             enh_bloom, enh_vig, enh_mb, enh_wide, d_enh, filt_nearest, filt_bilinear, filt_trilinear,
-                            grade_none, grade_warm, grade_vivid, grade_dusk, count }; }
+                            grade_none, grade_warm, grade_vivid, grade_dusk,
+                            tex_detail, tex_original, tex_enhanced, d_tex_detail, count }; }
 }

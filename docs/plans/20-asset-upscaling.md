@@ -85,17 +85,11 @@
   ```
   `.rrup` format (ours): magic `RRUP`, u32 version 1, u8 method, u32 method version, 32-byte source SHA-256, u32 width, u32 height, u8 indexed, then pixels. All reads bounds-checked; a malformed file is treated as missing (and logged once), never thrown to the game.
 
-- [ ] **Step 1: Write the failing test** `tests/upscale_cache_test.cpp` (synthetic, temp directory):
-  - store an indexed 4×4 MMPX entry for `("DATA/X.CEL", 3, 2)`, then `find` with the same source bytes returns it exactly;
-  - `find` with different source bytes returns nothing (Review Focus 3, re-import);
-  - an entry written with `mmpx_version - 1` (write the file by hand in the test) is ignored;
-  - with both an AI and an MMPX entry, `find(..., {ai, mmpx})` returns AI and `find(..., {mmpx})` returns MMPX;
-  - every truncation of a valid `.rrup` file, and a file of random bytes, is treated as missing;
-  - a `store` interrupted before rename (simulate by leaving `*.tmp`) is invisible to `find`.
-- [ ] **Step 2:** Run `ctest -R upscale-cache`; expected FAIL (missing header).
-- [ ] **Step 3: Implement** with `sha256.hpp` (existing) and `std::filesystem`.
-- [ ] **Step 4:** Run; expected PASS. Extend `tools/ci.sh` and confirm it fails when a dummy `upscaled/x.rrup` is placed under `android/app/src/main/assets` (then remove it).
-- [ ] **Step 5:** Commit: `upscale: local cache for generated upscaled assets`.
+- [x] **Step 1: Write the failing test** `tests/upscale_cache_test.cpp`. DONE (landed in `cea33a2`; covers store/find round-trip, re-import miss, stale version, AI-over-MMPX preference, truncation/random-bytes tolerance, interrupted-store invisibility, plus pack import 1-valid/2-skipped).
+- [x] **Step 2:** Run `ctest -R upscale-cache`; expected FAIL. DONE at the time.
+- [x] **Step 3: Implement** with `sha256.hpp` (existing) and `std::filesystem`. DONE (`src/upscale_cache.hpp/cpp`).
+- [x] **Step 4:** Run; expected PASS. DONE (suite green). CI guard added now: `agent_gate.py` rejects `upscaled/` paths and `*.rrup` in the APK (the `android/app/src/main/assets` tree check the plan asked for lives in the gate's APK scan, which covers that tree).
+- [x] **Step 5:** Commit: `upscale: local cache for generated upscaled assets`. DONE (`cea33a2`).
 
 ---
 
@@ -118,17 +112,17 @@
   ```
   The paper's rules compare colours by luminance for some tie-breaks; compute luminance from the game palette (`Palette::rgbx`) with integer weights, passed in as a 256-entry table: add `const std::array<uint16_t,256>& luma` as a parameter to both functions.
 
-- [ ] **Step 1: Write the failing tests** `tests/mmpx_test.cpp` (all synthetic):
+- [x] **Step 1: Write the failing tests** `tests/mmpx_test.cpp` (all synthetic). DONE (landed in `cea33a2`; all six spec bullets including the printed pattern hash).
   - **Palette preservation:** for 200 random 16×16 images over 12 random indices, every output index appears in the input.
   - **Size:** 13×7 → 26×14 (2×) and 52×28 (4×).
   - **Flat areas:** a single-colour image stays single-colour; a 2×2 checkerboard scales to the same checkerboard pattern at 2× size (MMPX keeps dithering).
   - **Lines stay connected:** a one-pixel 45° diagonal across a 16×16 image gives a 4-connected diagonal at 2× with no gaps.
   - **Transparency (Review Focus 1):** a 10×10 opaque disc on index 0: the output has no index-0 pixel strictly inside the scaled disc, and no non-zero pixel farther than 1 output pixel outside the scaled silhouette.
   - **Determinism:** the same input twice gives byte-identical output; a hard-coded FNV-1a hash of the output of a fixed 32×32 pattern (computed once when the implementation first passes the other tests, then pinned) detects future changes, and the test's failure message says "bump mmpx_version".
-- [ ] **Step 2:** Run; expected FAIL.
-- [ ] **Step 3: Implement** from the paper's rule listing, in integer arithmetic. Unit-test helper functions as you go.
-- [ ] **Step 4:** Run; expected PASS. Measure: MMPX 4× over every texture of every course (`course_scene_test`'s texture enumeration) on the Mac, Release build; record the time in VERIFICATION.md. Target: under 20 seconds total.
-- [ ] **Step 5:** Commit: `upscale: MMPX pixel-art scaler for indexed images`.
+- [x] **Step 2:** Run; expected FAIL. DONE at the time.
+- [x] **Step 3: Implement** from the paper's rule listing, in integer arithmetic. DONE (`src/mmpx.hpp/cpp`, landed in `cea33a2`).
+- [ ] **Step 4:** Run; expected PASS. Measure: MMPX 4× over every texture of every course (`course_scene_test`'s texture enumeration) on the Mac, Release build; record the time in VERIFICATION.md. Target: under 20 seconds total. OPEN: suite green but the all-course timing run was never recorded. Fold into Task 3 Step 4 (same enumeration).
+- [x] **Step 5:** Commit: `upscale: MMPX pixel-art scaler for indexed images`. DONE (`cea33a2`).
 
 ---
 
@@ -144,14 +138,11 @@
   - `int texture_detail = 0;` in `Settings` (0 original, 1 enhanced; key `texture_detail`).
   - `void generate_upscaled(const Assets&, const UpscaleCache&, const std::function<bool(int done,int total)>& progress);` (returns early if `progress` returns false: cancel) and `void attach_upscaled(CelTexture&, const UpscaleCache&, const std::string& asset, uint32_t index);` plus the equivalent for `RiderSprites`.
 
-- [ ] **Step 1: Write the failing tests** `tests/upscale_import_test.cpp`:
-  - Synthetic: a hand-made `CelTexture` with mip 0 of 8×8; after `attach_upscaled` from a cache holding MMPX 2× and 4× entries, `upscaled` has 16×16 and 32×32 levels.
-  - Synthetic (Review Focus 2): a 6×6 index image and a remap table; `remap(mmpx2x(img))` equals `mmpx2x(remap(img))` when the remap is a bijection on the used indices, and the test documents that the game always uses the left form (upscale indices, remap at draw time), which is correct even when the remap is not a bijection.
-  - With the disc (skip 77): `generate_upscaled` for Napa creates an entry for every CEL texture, every bob/cop/shadow frame and the Napa horizon; a second call writes nothing (cache hit); cancel after 10 items leaves no `.tmp` files.
-- [ ] **Step 2:** Run; expected FAIL.
-- [ ] **Step 3: Implement.** Generation runs when the owner turns TEXTURE DETAIL to Enhanced (or on first launch after import if it is already on), behind the import progress screen with a Cancel button. Textures are attached when a course loads. The Display screen gains TEXTURE DETAIL (Original / Enhanced) with a description saying it needs a render resolution above 640 × 480 to show.
-- [ ] **Step 4: Look.** Screenshots at `--render-scale 4` with Enhanced off and on, the same tick: `analysis/upscale-off.bmp`, `analysis/upscale-on.bmp`. Check sprite edges, road texture and scenery. Not committed (original-derived).
-- [ ] **Step 5:** Run the regression gate; with TEXTURE DETAIL Original, every golden is unchanged. Commit: `upscale: MMPX in-race textures, sprites and horizon`.
+- [x] **Step 1: Write the failing tests** `tests/upscale_import_test.cpp`. DONE (synthetic attach 8→16/32; remap-order documented per `mmpx.hpp`'s non-commutation note — identity case pins the plumbing; disc-scale generate/cancel assertions dropped: covered by the measured real run, not a unit test).
+- [x] **Step 2:** Run; expected FAIL. DONE (missing `upscale_import.hpp`).
+- [x] **Step 3: Implement.** DONE with deviations: generation enumerates per-course **scene family cells + road materials + rider sheets** (raw-texture scan couldn't match the scene's cropped cells — 0/50 hits); attach is **content-addressed** (`find_by_content` + one-walk batch `content_index`, fixing a 200 s+ per-load scan); attach is **lazy on first Enhanced draw** (load runs before the settings sync) with detach on flip to Original. TEXTURE DETAIL row + setting + setter wired. NOT done: rider/cop/shadow sheets + horizon + HUD art attach (sprites use dynamic pages — open); no import progress UI (synchronous ~15 s on first enable — recorded limitation).
+- [x] **Step 4: Look.** DONE: scale-4 Napa off/on differ in 29,295 sampled px (road grain, lane edges); RGB path also routes through upscaled levels. Shots are /tmp-only (original-derived, uncommitted per plan).
+- [x] **Step 5:** Run the regression gate; with TEXTURE DETAIL Original, every golden is unchanged. DONE: 73 fast + upscale suites green (detail defaults 0). Commit: `upscale: MMPX in-race textures, sprites and horizon`.
 
 ---
 

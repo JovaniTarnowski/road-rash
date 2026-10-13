@@ -66,6 +66,8 @@ void add_native_screens(FrontendData& data, bool mobile) {
     rows.push_back({ns::widescreen, ns::d_widescreen, native_popup::widescreen});
     // Plan 21 Task 9: VISUAL STYLE row (Original / Enhanced / Custom).
     rows.push_back({ns::visual_style, ns::d_visual_style, native_popup::visual_style});
+    // Plan 20 Task 3: TEXTURE DETAIL row (Original / Enhanced).
+    rows.push_back({ns::tex_detail, ns::d_tex_detail, native_popup::tex_detail});
     if (!mobile) {
         rows.push_back({ns::vsync, ns::d_vsync, native_popup::on_off});
         rows.push_back({ns::fps, ns::d_fps, native_popup::on_off});
@@ -115,6 +117,9 @@ void add_native_screens(FrontendData& data, bool mobile) {
     // Plan 21 Task 8: 4:3 + 16:10/16:9/match.
     data.popups[native_popup::widescreen] = build_popup(rtpl, ns::widescreen,
         {{1, ns::wide_off}, {2, ns::wide_16x10}, {3, ns::wide_16x9}, {4, ns::wide_match}});
+    // Plan 20 Task 3: Original / Enhanced.
+    data.popups[native_popup::tex_detail] = build_popup(rtpl, ns::tex_detail,
+        {{1, ns::tex_original}, {2, ns::tex_enhanced}});
     // Plan 21 Task 9: visual style + per-effect popups.
     data.popups[native_popup::visual_style] = build_popup(rtpl, ns::visual_style,
         {{1, ns::style_original}, {2, ns::style_enhanced}, {3, ns::style_custom}});

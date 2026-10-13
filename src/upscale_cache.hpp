@@ -1,5 +1,7 @@
 #pragma once
+#include <array>
 #include <cstdint>
+#include <map>
 #include <functional>
 #include <optional>
 #include <string>
@@ -18,6 +20,8 @@ struct UpscaledImage {
 // tree, fixtures, the APK or a release archive. A stale or missing entry
 // falls back to the next method, finally to the original image; a broken
 // cache can never stop the game.
+// Raw SHA-256 of source bytes (matches the recorded entry hash).
+std::array<uint8_t, 32> hash_source32(const std::vector<uint8_t>& source);
 class UpscaleCache {
 public:
     explicit UpscaleCache(std::string root); // <pref>/upscaled
@@ -28,6 +32,15 @@ public:
     std::optional<UpscaledImage> find(const std::string& asset, uint32_t index, int scale,
         const std::vector<uint8_t>& source,
         std::initializer_list<UpscaleMethod> methods) const;
+    // Content-addressed lookup (plan 20 Task 3): first entry under root whose
+    // recorded source hash equals sha256(source), any asset/index. Lets the
+    // scene attach without tracking the generator's enumeration identity.
+    std::optional<UpscaledImage> find_by_content(const std::vector<uint8_t>& source, int scale,
+        std::initializer_list<UpscaleMethod> methods) const;
+    // Batch index (plan 20 Task 3): hash -> image for every entry matching
+    // (scale, methods). One walk serves a whole scene attach.
+    std::map<std::pair<std::array<uint8_t, 32>, int>, UpscaledImage> content_index(
+        std::initializer_list<int> scales, std::initializer_list<UpscaleMethod> methods) const;
     // Writes <root>/<method>/<scale>/<asset>/<index>.rrup via a temp file and
     // rename. Returns false (never throws) on I/O failure.
     bool store(const std::string& asset, uint32_t index, int scale,

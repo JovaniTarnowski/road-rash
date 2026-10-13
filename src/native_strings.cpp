@@ -35,6 +35,8 @@ const std::array<std::string, ns::count - native_slot_base> kNativeStrings = {
     "Distance Fog", "Colour Grade", "Bloom", "Vignette", "Motion Blur", "Widescreen",
     "Per-effect options. Anything non-default shows Visual Style as Custom.",
     "Nearest", "Bilinear", "Trilinear", "None", "Warm", "Vivid", "Dusk",
+    "Texture Detail", "Original", "Enhanced",
+    "MMPX-upscaled in-race textures. Needs a render resolution above 640x480 to show.",
 };
 const std::string kEmpty;
 }
