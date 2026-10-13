@@ -866,6 +866,7 @@ contains ours", set in the forward-overlap prologue), and previous-position
 copies `+0x30..+0x44` to choose the separation axis. Longitudinal moves go
 through course-ring traversal `0x00439270`, which has no scratch equivalent,
 so the oracle fixture pre-seeds impulses instead (documented approximation).
+  - Motion-pair REA verification (October 12, 2026; plan 10 Task 5/6 merge `36c03dc`): pinned REA 6.4.0 pseudocode whitespace-identical for `0x00439920` motion integration (2526 chars: impulse halves into `+0xf0/+0xf4/+0xec`, heading-split `+0x108/+0x10c`, position history shift) and `0x00439270` road advance (1439: course-ring traversal the fixture pre-seeds around). (Requested `0x00439a80`, but that address resolves to `0x00439920` in REA's database and the file was renamed to `rea-439920-motion.md` to match content; the actual `0x00449a80` follow choke was confirmed in an earlier turn.) The merge's contact-walk motion rests on these. Files: `analysis/oracle/rea-439920-motion.md`, `rea-439270-roadadv.md` (disc-derived, git-ignored).
 
 The bike-side handler `0x004049c0` against cars (`+0xc4 == 0x10`): crashed
 riders (`+0x2f4 != 0`) never take a new crash. Live riders with the tall-car
