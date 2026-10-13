@@ -7,10 +7,13 @@
 #include "crash.hpp"
 #include "exe_tables.hpp"
 #include "golden.hpp"
+#include "pedestrians.hpp"
 #include "race.hpp"
+#include "track_ring.hpp"
 #include "traffic.hpp"
 #include <cstring>
 #include <filesystem>
+#include <optional>
 #include <iostream>
 
 // Plan 10 task 5 step 2a (+ replay-harness corrections, Oct 12): DEFAULT is a
@@ -44,6 +47,8 @@ struct RaceBundle {
     std::unique_ptr<rr::VehicleLibrary> vehicles;
     std::unique_ptr<rr::TrafficSystem> traffic;
     std::unique_ptr<rr::ActorNodes> actors;
+    std::unique_ptr<rr::PedestrianSystem> pedestrians;
+    std::unique_ptr<rr::TrackRing> ring;
     rr::CrashConfig crash_config;
 };
 int32_t exe_i32(const std::vector<uint8_t>& exe, uint32_t va) {
@@ -87,7 +92,12 @@ RaceBundle make_race_bundle(rr::Assets& assets, const std::vector<uint8_t>& exe,
     b.spec = specs[bike];
     const RiderRow row = read_rider_row(exe, rider);
     b.rider_value = row.value;
-    b.opponents = solo ? std::vector<rr::Opponent>{} : rr::original_opponents(exe, specs, level, 7);
+    // Solo captures still build the full original field (0x00405600:
+    // DAT_004642d4 = 0x10, slots 1..14) and freeze every node but the
+    // player's; the frozen bikes stay on the grid where the demo AI's ring
+    // scans find them (measured: frame-0 node dump, 14 bike/half pairs).
+    b.opponents = rr::original_opponents(exe, specs, level, solo ? 14 : 7);
+    if (solo) for (auto& o : b.opponents) o.frozen = true;
     if (course_name == "NAPA") {
         b.scene = std::make_unique<rr::CourseScene>(assets, exe, b.course, course_name, 1, level);
         b.actors = std::make_unique<rr::ActorNodes>(assets, exe, true);
@@ -411,7 +421,9 @@ int main(int argc, char** argv) {
         const int base = dbase >= 0 ? int(dbase)
             : !personalities.empty() ? personalities[size_t(brain_row)].cur_levels[0] : 95;
         const int lane = dlane >= 0 ? int(dlane) : 1;
-        const int32_t bias = dbias >= 0 ? int32_t(dbias) : 7;
+        // Unmeasured: the grid offset the ctor stored (0x00405990 -> +0x190;
+        // the human-era golden reads brain_190 = 16384 = the level-0 word).
+        const int32_t bias = dbias >= 0 ? int32_t(dbias) : race.riders().at(0).brain.bias;
         const int weapon = dweapon >= 0 ? int(dweapon) : row.weapon0;
         const rr::RiderStats stats{dstr >= 0 ? int32_t(dstr) : row.stats.strength,
                                   dbas >= 0 ? int32_t(dbas) : row.stats.base,
@@ -430,6 +442,31 @@ int main(int argc, char** argv) {
             brain.reach = p.reach;
         }
         race.set_demo_hold(true, base, lane, bias, weapon, stats);
+    }
+    // Track ring (plan 10 Task 5): the original builds it inside the setup
+    // stream, srand(seed) + ring.pre_draws (9,098 on the Napa solo
+    // captures, measured by ring-probe), then 0x00405600 and the countdown
+    // consume ring.post_draws (11) before green. Pedestrians take the ring's
+    // DZHR spawns (pool only: the actor source is the ring); solo freezes
+    // them like every non-player scheduler node.
+    std::optional<uint32_t> ring_end_state;
+    int64_t ring_post = -1;
+    if (bundle.scene) {
+        auto* scene = bundle.scene.get();
+        static const std::vector<rr::DzhrActor> no_actors;
+        bundle.pedestrians = std::make_unique<rr::PedestrianSystem>(
+            [](const rr::RouteSample&) -> const std::vector<rr::DzhrActor>& { return no_actors; },
+            [scene](const rr::RouteSample& s, uint8_t selector) { return scene->pedestrian_look(s.section, s.local, selector); }, exe);
+        race.set_pedestrians(bundle.pedestrians.get());
+        if (solo) race.set_freeze_actors(true);
+        const int64_t pre = h.count("ring.pre_draws") ? h.at("ring.pre_draws") : 9098;
+        ring_post = h.count("ring.post_draws") ? h.at("ring.post_draws") : 11;
+        uint32_t state = uint32_t(h.count("seed") ? h.at("seed") : 1);
+        for (int64_t k = 0; k < pre; ++k) state = state * 0x343fdu + 0x269ec3u;
+        race.set_rng_state(state);
+        bundle.ring = std::make_unique<rr::TrackRing>(bundle.course, level);
+        race.set_track_ring(bundle.ring.get());
+        ring_end_state = race.rng_state();
     }
     if (bundle.scene) race.set_terrain_source([&](const rr::RouteSample& s) -> const rr::TerrainSlice& { return bundle.scene->terrain(s.section, s.local); });
     if (bundle.traffic) race.set_traffic(bundle.traffic.get());
@@ -516,6 +553,17 @@ int main(int argc, char** argv) {
             return 1;
         }
         (void)calls;
+        if (ring_end_state) {
+            // Closure: the ring setup must end exactly ring.post_draws draws
+            // before the green pre-step state.
+            uint32_t x = *ring_end_state;
+            for (int64_t k = 0; k < ring_post; ++k) x = x * 0x343fdu + 0x269ec3u;
+            if (x != uint32_t(anchor)) {
+                std::cout << "ring setup does not close on the green anchor (" << ring_post << " post draws)\n";
+                return 1;
+            }
+            std::cout << "ring setup closes on the green anchor (+" << ring_post << " draws)\n";
+        }
         race.set_rng_state(uint32_t(anchor));
         std::cout << (reanchor ? "[reanchor] " : "[single-anchor] ") << "start-hold: " << green << " frozen frames, green at tick " << (tick0 + int64_t(green))
                   << " driver=" << (demo ? "demo" : "human") << (driver_cli.empty() ? " (measured player.demo_hold=" + std::to_string(measured_hold) + ")" : " (cli override)")
@@ -542,7 +590,55 @@ int main(int argc, char** argv) {
         // Demo goldens ignore control words (AI branch never reads them);
         // human goldens consume them through apply_controls (0x00434660).
         race.step(demo ? 0 : uint32_t(fc->second));
-        const auto snap = race.snapshot();
+        auto snap = race.snapshot();
+        // Frozen opponents never move and the solo dump names only the
+        // player's bike and half (rider.0/rider.1): drop their rows.
+        if (solo) {
+            std::vector<rr::FieldValue> kept;
+            for (auto& f : snap.fields) {
+                const bool frozen_row = f.name.rfind("rider.", 0) == 0 && f.name.rfind("rider.0.", 0) != 0;
+                if (!frozen_row) kept.push_back(std::move(f));
+            }
+            snap.fields = std::move(kept);
+        }
+        // Diagnostic: RR_SIM_TRACE=<prefix> prints every native field with
+        // that prefix beside its golden value (same key) each replayed tick.
+        if (const char* trace = std::getenv("RR_SIM_TRACE")) {
+            std::cout << "tick " << tick0 + int64_t(i) << ':';
+            for (const auto& f : snap.fields) {
+                if (f.name.rfind(trace, 0) != 0) continue;
+                auto it = frame.find(f.name);
+                std::cout << ' ' << f.name.substr(f.name.rfind('.') + 1) << '=' << f.value;
+                if (it != frame.end() && it->second != f.value) std::cout << "/orig " << it->second;
+            }
+            // Brain state beside the golden brain window; golden object
+            // pointers print as the dumped node's grid position.
+            const auto& br = race.riders()[0].brain;
+            auto pos_of = [&](int idx) -> int64_t { return idx < 0 ? -1 : race.riders()[size_t(idx)].bike.i32(0x1c); };
+            auto gnode = [&](const char* key) -> int64_t {
+                auto it = frame.find(key); if (it == frame.end()) return -2;
+                if (it->second == 0) return -1;
+                for (const auto& kv : h) {
+                    if (kv.first.rfind("nodeaddr.", 0) != 0 || kv.second != it->second) continue;
+                    const std::string n = kv.first.substr(9);
+                    if (n.find('.') != std::string::npos) continue;
+                    auto p = h.find("nodeaddr." + n + ".position");
+                    if (p != h.end()) return p->second;
+                }
+                return it->second;
+            };
+            auto gval = [&](const char* key) -> int64_t { auto it = frame.find(key); return it == frame.end() ? -2 : it->second; };
+            std::cout << "  brain state=" << br.state << "/" << gval("rider.0.brain_160")
+                      << " target=" << pos_of(br.target_rider) << "/" << gnode("rider.0.brain_168")
+                      << " ahead=" << pos_of(br.nbr_ahead) << "/" << gnode("rider.0.brain_16c")
+                      << " behind=" << pos_of(br.nbr_behind) << "/" << gnode("rider.0.brain_170")
+                      << " step=" << br.target_step << "/" << gval("rider.0.brain_174")
+                      << " ov=" << br.ov_ahead << "," << br.ov_behind << "/" << gval("rider.0.brain_178") << "," << gval("rider.0.brain_17c")
+                      << " cur2=" << br.current2 << "/" << gval("rider.0.brain_1a0")
+                      << " cur=" << br.current_speed << "/" << gval("rider.0.brain_1a4")
+                      << " tx=" << br.target_x << "/" << gval("rider.0.brain_194")
+                      << " tspd=" << br.target_speed << "/" << gval("rider.0.brain_19c") << '\n';
+        }
         const auto fr = frame.find("rng");
         const uint64_t want_rng = fr == frame.end() ? 0 : uint64_t(fr->second);
         rng_history.push_back({want_rng, snap.rng});
@@ -555,6 +651,10 @@ int main(int argc, char** argv) {
         // RNG is compared first every tick (plan 10 review focus 1): a
         // stream-position break is reported before any field, with the
         // last-8-ticks history for both sides.
+        // Diagnostic: RR_SIM_CONTINUE=1 keeps replaying past divergences
+        // (each tick re-anchors nothing; use with RR_SIM_TRACE).
+        static const bool keep_going = std::getenv("RR_SIM_CONTINUE") != nullptr;
+        if (keep_going) continue;
         if (want_rng != snap.rng) {
             std::cout << "first divergence at frame " << i << " (tick " << tick0 + int64_t(i) << "): rng original " << want_rng << " native " << snap.rng << '\n';
             std::cout << "rng history (last " << rng_history.size() << " ticks, golden vs native):";

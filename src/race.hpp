@@ -16,6 +16,8 @@ struct TrafficCar;
 class PedestrianSystem;
 struct Pedestrian;
 struct DzhrActor;
+class TrackRing;
+struct RingActor;
 // Original timing: 0x004163d0 steps the simulation at QueryPerformanceFrequency/0x3c,
 // at most 0x14 steps per frame.
 constexpr int ticks_per_second = 60;
@@ -206,6 +208,16 @@ public:
     // ring builds their slice, thought/moved on the scheduler cadence of
     // 0x00437e60, and hit by riders and cars through the 0x004368f0 pass.
     void set_pedestrians(PedestrianSystem* p) { pedestrians_ = p; }
+    // Track ring (src/track_ring.hpp): attaching runs the 0x004552e0 setup
+    // on the current RNG state with the player not yet built (0x0044b250
+    // builds the ring before 0x00405600); each step then advances it at the
+    // 0x00454120 point, and its DZHR actors replace the precomputed
+    // pedestrian walk. Attach pedestrians first: their pool takes the
+    // 0x004409e0 spawns. The ring must outlive the race.
+    void set_track_ring(TrackRing* ring);
+    // Oracle solo captures (RR_ORACLE_SOLO) freeze every scheduler node but
+    // the player's: pedestrians spawn from the ring but never think.
+    void set_freeze_actors(bool v) { freeze_actors_ = v; }
     void set_crash_library(const ActorAnimationLibrary&,const CrashConfig&);
     void set_ride_library(const ActorAnimationLibrary* library,
                           const std::array<std::array<std::array<int8_t,4>,2>,2>* attacks) {
@@ -333,7 +345,8 @@ private:
     void attach_terrain_type();   // traffic's 0x0041eca0 short-phase test reads the terrain type
     // Pedestrians (src/race_pedestrians.cpp).
     void build_pedestrian_slices();                                   // 0x00454120/0x004552e0 ring builds -> 0x004520d0
-    void spawn_pedestrian(const RouteSample&, size_t sample, const DzhrActor&);  // 0x004520d0 actor record -> 0x004409e0
+    void spawn_pedestrian(const RouteSample&, size_t sample, const DzhrActor&, uint32_t jitter);  // 0x004520d0 actor record -> 0x004409e0
+    void ring_actor(const RingActor&, uint32_t jitter);              // TrackRing DZHR sink
     void step_pedestrians();                                          // scheduler cadence 0x00437e60 for type 0x20
     void think_pedestrian(Pedestrian&);                               // 0x00440dd0
     void move_pedestrian(Pedestrian&);                                // 0x00440990
@@ -360,6 +373,11 @@ private:
     std::function<const TerrainSlice&(const RouteSample&)> terrain_source_;
     TrafficSystem* traffic_ = nullptr;
     PedestrianSystem* pedestrians_ = nullptr;
+    TrackRing* ring_ = nullptr;
+    bool ring_setup_ = false;      // inside 0x004552e0: no player object yet
+    bool freeze_actors_ = false;
+    std::function<uint32_t()> ring_random_;
+    std::function<void(const RingActor&, uint32_t)> ring_sink_;
     const ActorAnimationLibrary* crash_library_ = nullptr;
     const ActorAnimationLibrary* ride_library_ = nullptr;
     const std::array<std::array<std::array<int8_t,4>,2>,2>* attack_codes_ = nullptr;

@@ -1,4 +1,5 @@
 #include "race.hpp"
+#include "track_ring.hpp"
 #include "terrain_ground.hpp"
 #include "traffic.hpp"
 #include "pedestrians.hpp"
@@ -144,6 +145,9 @@ Race::Race(std::vector<RouteSample> a, std::vector<RouteSample> b, const Physics
         // frame (ctor param); the default 0 keeps synthetic routes exact.
         const int32_t lat = grid_pos ? grid_lat : grid_lateral[slot % 4];
         r.bike.i32(0x28) = routes_[0][r.sample].offset * 256 + lat + road_base_;
+        // 0x00405990 passes the same grid offset to 0x00407990 as the
+        // brain's lane bias (+0x190), which 0x004091f0 adds to its target.
+        r.brain.bias = lat;
         r.bike.i32(0x2f0) = r.bike.i32(0x2ec);   // bike condition (0x00405c80)
         return r;
     };
@@ -1523,6 +1527,7 @@ void Race::ai_state_fight(Rider& r) {
 
 void Race::step_rider(Rider& r, uint32_t controls, bool player) {
     Bike& b = r.bike;
+    if (r.frozen) return;   // solo oracle: the scheduler never runs this node
     if (r.finished) {   // coast to a stop past the line
         drive_mode(b, 0);
         integrate_speed(b, tables_, 0);
@@ -1837,6 +1842,7 @@ int32_t Race::nitro_throttle_force(Rider&, int32_t force) {
 // own states. Contact animation 9 (knock_off reason 4) and attack swing
 // codes (fight start) select here; crash states are owned by step_crash.
 void Race::advance_ride_animation(Rider& r, bool player) {
+    if (r.frozen) return;
     // The pending contact selection (knock_off reason 4 -> animation 9) is
     // consumed in the tick even without a ride bank; selection itself needs
     // the bank. Crash states stay owned by step_crash.
@@ -1935,7 +1941,9 @@ void Race::step(uint32_t controls) {
     update_camera();
     const auto& player=riders_[0];const auto& road=route_of(player);
     camera_heading_=advance_heading(camera_heading_,previous_camera_position_,camera_position(),road[player.previous_sample].path.bend,road[player.sample].path.bend,(player.bike.u8(0xc0)&16)!=0);
-    build_pedestrian_slices();   // 0x00454120 ring builds walk DZHR (0x004520d0) before 0x0044dd90
+    // 0x00454120 ring advance (terrain/BORR/DZHR draws) before 0x0044dd90.
+    if (ring_) ring_->advance(int32_t(camera_position()) - int32_t(previous_camera_position_), ring_random_, ring_sink_);
+    else build_pedestrian_slices();
     if (traffic_) {
         // Lane-scan obstacles for 0x0044a070 (mask 0x3f): bikes, riders on
         // foot and pedestrians on the cars' (camera) roadway.
