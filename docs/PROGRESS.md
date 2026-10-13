@@ -695,7 +695,24 @@ a worker while SDL rendering/event pumping stays on the main thread; the
 non-threaded web build presents a static loading label. Menu/sound preparation
 also presents a stage label.
 
-Pause and wipeout visuals are **not exact matches**: pause is a native dark
-overlay instead of the original Windows modal message; `WIPEOUT!` is still
-a debug-text overlay. Original crash-frame pixel acceptance and a finished
-native pause menu remain open. Details/checks: [playtest handoff](agent-handoffs/playtest-audio-ai-loading.md).
+Pause and wipeout visuals are **not exact matches**: the in-race pause menu
+(plan 18 Task 8: RESUME/SOUND/DISPLAY/CONTROLS/QUIT RACE over the darkened
+race frame) is native, not the original Windows modal message; `WIPEOUT!` is
+still a debug-text overlay. Original crash-frame pixel acceptance remains
+open. Details/checks: [playtest handoff](agent-handoffs/playtest-audio-ai-loading.md).
+
+### October 13, 2026 — settings screens done (plan 18 Tasks 7–9)
+
+Configure Input keeps the original nine rebind rows with live key labels;
+press-a-key binds through the traced `0x0040fbf0` conflict rule (Escape
+cancels), storing keyboard codes low-byte-first per `0x0040e760`. Native
+Gamepad (swap punch+kick, 10–40 % dead zone) and Touch (opacity, left-handed
+mirror) pages hang off it; the race honors custom tables, swap, zone and
+handedness. The in-race pause menu (RESUME/SOUND/DISPLAY/CONTROLS/QUIT RACE
+with confirmation) opens over the darkened captured frame from
+P/Esc/Start/Android Back and lifecycle freezes; `draw_pause` is gone. The
+`show_fps` row draws FPS + ticks/sec top-right (Futura Bold 24, `#DEFFF0`,
+shadowed, transparent background, twice a second). USER_GUIDE has a Settings
+section. `tools/ci.sh` (native + android-debug) and 73/73 ctests pass; the
+macOS bundle is refreshed. Deviations: rebinding stays available while
+racing; sliders apply levels live with no preview click.

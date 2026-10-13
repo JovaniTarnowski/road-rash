@@ -1,9 +1,9 @@
 # Using the development port
 
 The port is under active development. It currently provides a playable race,
-verified disc import, native cutscene playback, menus, career/shop/saves and
-race effects/engine sounds. Original world scene construction, traffic/police,
-race MIDI and several menu settings remain unfinished.
+verified disc import, native cutscene playback, menus, career/shop/saves,
+race effects/engine sounds and the full settings/pause screens. Original
+world scene construction, traffic/police and race MIDI remain unfinished.
 [PROGRESS.md](PROGRESS.md) records the exact gaps.
 
 ## Requirements and installation
@@ -73,10 +73,39 @@ Braking takes priority over touch auto-throttle. A tap resumes while paused
 or restarts after a finish. Android Back pauses. Background/focus loss or
 controller disconnect pauses; returning requires explicit resume.
 
-The original control bindings and configurable rebinding/settings are still
-open. Current race HUD and several behaviors are provisional, as documented
+Rebinding: Graphics Options → Configure Input lists the nine original key
+bindings with the currently bound key each. Select a row and press the new
+key; Escape cancels. Binding a key that is already used unbinds the other
+action (the original rule). The joystick defaults are restored from the
+Defaults rows. Gamepad mapping is fixed as in the table above; the Gamepad
+page offers "Swap punch and kick" and a stick dead-zone slider (10–40 %).
+The Touch page (touch devices) sets overlay opacity and a left-handed layout
+that mirrors the touch zones.
+
+Current race HUD and several behaviors are provisional, as documented
 in PROGRESS.md. Career saves use the recovered original format; compatibility
 with a save written by the original game has not been measured.
+
+## Settings
+
+Graphics Options in the restroom menu holds the original settings plus three
+native screens, all saved to `settings.txt` beside the saves folder (old
+files still load; unknown key codes fall back per action):
+
+| Screen | Original options | Native additions |
+| --- | --- | --- |
+| Graphics | Resolution, Bikers, Videos | Display screen: window/fullscreen, window size, scaling, filtering, VSync, FPS counter, touch opacity, haptics |
+| Sound | — (dialog 300) | Sound screen: master + six channel sliders (music, effects, engines, others, sirens, interface), mute, swap speakers |
+| Configure Input | Nine key bindings, Defaults | Gamepad page (swap punch+kick, dead zone), Touch page (opacity, left-handed) |
+
+In-race pause (P/Esc/Start, Android Back): RESUME, SOUND, DISPLAY, CONTROLS
+and QUIT RACE over the darkened race frame. QUIT RACE asks for confirmation
+and leaves the race as a wrecked result. Sub-screen Back returns to the pause
+menu. Sound sliders apply live while paused.
+
+Hotkeys: Alt+Enter or Cmd+F toggles fullscreen; F10 cycles the MiniDash
+display; `/` in menus toggles the opponent list; the FPS row shows frames and
+simulation ticks per second in the race's top-right corner.
 
 ## Menu controls
 

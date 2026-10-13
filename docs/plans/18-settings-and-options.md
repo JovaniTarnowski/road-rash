@@ -436,10 +436,10 @@ Moved here from plan 13 Task 3.
 **Files:**
 - Modify: `src/game_main.cpp`, `docs/USER_GUIDE.md`, `docs/PROGRESS.md`, `docs/VERIFICATION.md`, `README.md`
 
-- [ ] **Step 1:** `show_fps` draws frames per second and simulation ticks per second in the top-right corner with `TextRenderer` (Futura Condensed Bold 24, `#DEFFF0`, 2-pixel black shadow like all original text). It is updated twice per second.
-- [ ] **Step 2:** USER_GUIDE gains a "Settings" section: where each option lives (screen map above), what each does, which are original and which native, the settings file location per platform, and the hotkeys (Alt+Enter, Cmd+F).
-- [ ] **Step 3:** Run the regression gate and `tools/ci.sh`. Refresh the macOS `.app` (`tools/build_macos_app.sh`, `tools/verify_macos_app.py`).
-- [ ] **Step 4:** Commit: `docs: settings guide; game: FPS counter`.
+- [x] **Step 1:** `show_fps` draws frames per second and simulation ticks per second in the top-right corner with `TextRenderer` (Futura Condensed Bold 24, `#DEFFF0`, 2-pixel black shadow like all original text). It is updated twice per second.
+- [x] **Step 2:** USER_GUIDE gains a "Settings" section: where each option lives (screen map above), what each does, which are original and which native, the settings file location per platform, and the hotkeys (Alt+Enter, Cmd+F).
+- [x] **Step 3:** Run the regression gate and `tools/ci.sh`. Refresh the macOS `.app` (`tools/build_macos_app.sh`, `tools/verify_macos_app.py`).
+- [x] **Step 4:** Commit: `docs: settings guide; game: FPS counter`.
 
 ## Exit criteria
 

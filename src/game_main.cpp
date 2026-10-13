@@ -722,6 +722,8 @@ struct RaceOptions {
     bool left_handed = false;                // plan 18 Task 7: native touch page
     rr::Frontend* menu = nullptr;            // plan 18 Task 8: pause menu; null keeps the old freeze
     std::function<void()> apply_settings;    // host applies display+mixer levels on menu events
+    bool show_fps = false;                   // plan 18 Task 9: FPS + ticks/sec overlay
+    const rr::Assets* assets = nullptr;      // fonts for the overlay; null disables it
 };
 
 // One race: the playable loop. In career mode the race is decided by the player finishing
@@ -821,6 +823,14 @@ RaceEnd run_race(Game& g, SDL_Renderer* renderer, const RaceOptions& opt, Displa
     SDL_Gamepad* pad = open_first_gamepad();
     SDL_Texture* pause_tex = nullptr;   // plan 18 Task 8: presents the 640x480 pause menu
     rr::RgbImage pause_img;
+    // Plan 18 Task 9: FPS + ticks/sec overlay, refreshed twice a second.
+    const bool fps_on = opt.show_fps && opt.assets;
+    std::unique_ptr<rr::TextRenderer> fps_text;
+    SDL_Texture* fps_tex = nullptr;
+    rr::RgbImage fps_img;
+    uint64_t fps_next = 0, fps_last = 0;
+    int fps_frames = 0, fps_tick_acc = 0, fps_v = 0, tps_v = 0;
+    std::vector<uint32_t> fps_argb;   // upload buffer: transparent bg, opaque ink
     bool running = true, decided = false;
     int end_ticks = 0;
     uint64_t last = SDL_GetTicksNS();
@@ -970,6 +980,7 @@ RaceEnd run_race(Game& g, SDL_Renderer* renderer, const RaceOptions& opt, Displa
                                                     : rr::RaceOutcome::wrecked;
             } else if (decided && --end_ticks <= 0) running = false;
         }
+        if (fps_on) fps_tick_acc += steps;
         if (lifecycle.state.background()) { SDL_Delay(20); continue; }
         if (menu_pause && opt.menu) {
             // Plan 18 Task 8: the pause menu draws over the captured frame.
@@ -1011,6 +1022,44 @@ RaceEnd run_race(Game& g, SDL_Renderer* renderer, const RaceOptions& opt, Displa
                 }
             }
         }
+        // Plan 18 Task 9: FPS + simulation ticks/sec, top-right, Futura Bold 24
+        // #DEFFF0 with a 2-pixel black shadow like all original text, twice a second.
+        if (fps_on && opt.assets) {
+            ++fps_frames;
+            const uint64_t now_ms = now / 1000000;
+            if (now_ms >= fps_next) {
+                const uint64_t span = now_ms >= fps_last ? now_ms - fps_last : 1;
+                fps_v = int(uint64_t(fps_frames) * 1000 / span);
+                tps_v = int(uint64_t(fps_tick_acc) * 1000 / span);
+                fps_frames = 0; fps_tick_acc = 0; fps_last = now_ms; fps_next = now_ms + 500;
+                if (!fps_text) fps_text = std::make_unique<rr::TextRenderer>(*opt.assets);
+                if (fps_text->has(rr::Face::futura_bold)) {
+                    const std::string s = std::to_string(fps_v) + " FPS " + std::to_string(tps_v) + " TPS";
+                    const int w = fps_text->width(rr::Face::futura_bold, 24, s) + 4;
+                    fps_img = rr::RgbImage(w, 30, 0);
+                    fps_text->draw(fps_img, rr::Face::futura_bold, 24, 2, 2, 0x404040, s);
+                    fps_text->draw(fps_img, rr::Face::futura_bold, 24, 0, 0, 0xdefff0, s);
+                    // Opaque ink over a transparent background (straight-alpha
+                    // ARGB8888) so the sky shows through.
+                    fps_argb.assign(size_t(w) * 30, 0);
+                    for (size_t i = 0; i < fps_argb.size(); ++i)
+                        if (fps_img.pixels[i]) fps_argb[i] = 0xff000000u | fps_img.pixels[i];
+                    if (fps_tex) { float tw = 0, th = 0; SDL_GetTextureSize(fps_tex, &tw, &th); if (int(tw) != w || int(th) != 30) { SDL_DestroyTexture(fps_tex); fps_tex = nullptr; } }
+                    if (!fps_tex) {
+                        fps_tex = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STREAMING, w, 30);
+                        if (fps_tex) SDL_SetTextureBlendMode(fps_tex, SDL_BLENDMODE_BLEND);
+                    }
+                    if (fps_tex) SDL_UpdateTexture(fps_tex, nullptr, fps_argb.data(), w * 4);
+                }
+            }
+            if (fps_tex) {
+                // Logical space is 640 wide in the race; pin to its top-right.
+                float tw = 0, th = 0;
+                SDL_GetTextureSize(fps_tex, &tw, &th);
+                const SDL_FRect dst{640.f - tw - 8.f, 8.f, tw, th};
+                SDL_RenderTexture(renderer, fps_tex, nullptr, &dst);
+            }
+        }
         if (!opt.screenshot.empty()) {
             SDL_Surface* capture = SDL_RenderReadPixels(renderer, nullptr);
             if (!capture || !SDL_SaveBMP(capture, opt.screenshot.c_str())) throw std::runtime_error(SDL_GetError());
@@ -1023,6 +1072,7 @@ RaceEnd run_race(Game& g, SDL_Renderer* renderer, const RaceOptions& opt, Displa
     }
     if (pad) SDL_CloseGamepad(pad);
     if (pause_tex) SDL_DestroyTexture(pause_tex);
+    if (fps_tex) SDL_DestroyTexture(fps_tex);
     if (g.mixer) g.mixer->pause(false);
     return result;
 }
@@ -1153,7 +1203,7 @@ int run_game(const rr::Assets& assets, SDL_Window* window, SDL_Renderer* rendere
                     music.stop();
                     race_music.play_race(ev.course, fe.player_name());
                     g.race_music = &race_music;
-                    const RaceEnd demo_end = run_race(g, renderer, {.demo = true, .key_codes = settings.controls, .custom_keys = settings.custom_controls, .swap_punch_kick = settings.swap_punch_kick, .stick_deadzone = settings.stick_deadzone, .left_handed = settings.left_handed, .menu = &fe, .apply_settings = apply_levels}, display);
+                    const RaceEnd demo_end = run_race(g, renderer, {.demo = true, .key_codes = settings.controls, .custom_keys = settings.custom_controls, .swap_punch_kick = settings.swap_punch_kick, .stick_deadzone = settings.stick_deadzone, .left_handed = settings.left_handed, .menu = &fe, .apply_settings = apply_levels, .show_fps = settings.show_fps, .assets = &assets}, display);
                     menu_stick.suspend();
                     race_music.stop();
                     g.race_music = nullptr;
@@ -1173,7 +1223,7 @@ int run_game(const rr::Assets& assets, SDL_Window* window, SDL_Renderer* rendere
                 race_music.set_music_level(settings.mute ? 0 : settings.music_volume * settings.master_volume / 100);
                 g.sound = sound.get();
                 if (sound) sound->start_race(career.state.bike, career.state.character);
-                const RaceEnd end = run_race(g, renderer, {.key_codes = settings.controls, .custom_keys = settings.custom_controls, .swap_punch_kick = settings.swap_punch_kick, .stick_deadzone = settings.stick_deadzone, .left_handed = settings.left_handed, .menu = &fe, .apply_settings = [&] { apply_levels(); race_music.set_music_level(settings.mute ? 0 : settings.music_volume * settings.master_volume / 100); }}, display);
+                const RaceEnd end = run_race(g, renderer, {.key_codes = settings.controls, .custom_keys = settings.custom_controls, .swap_punch_kick = settings.swap_punch_kick, .stick_deadzone = settings.stick_deadzone, .left_handed = settings.left_handed, .menu = &fe, .apply_settings = [&] { apply_levels(); race_music.set_music_level(settings.mute ? 0 : settings.music_volume * settings.master_volume / 100); }, .show_fps = settings.show_fps, .assets = &assets}, display);
                 menu_stick.suspend();
                 if (sound) sound->stop_race();
                 race_music.stop();  // race end
@@ -1501,7 +1551,7 @@ int main(int argc, char** argv) {
                 }
                 boot.frame = 0;
                 boot.apply(480);
-                run_race(g, renderer, {.auto_drive = auto_drive, .start_paused = start_paused, .screenshot = screenshot, .key_codes = boot_settings.controls, .custom_keys = boot_settings.custom_controls, .swap_punch_kick = boot_settings.swap_punch_kick, .stick_deadzone = boot_settings.stick_deadzone, .left_handed = boot_settings.left_handed}, boot);
+                run_race(g, renderer, {.auto_drive = auto_drive, .start_paused = start_paused, .screenshot = screenshot, .key_codes = boot_settings.controls, .custom_keys = boot_settings.custom_controls, .swap_punch_kick = boot_settings.swap_punch_kick, .stick_deadzone = boot_settings.stick_deadzone, .left_handed = boot_settings.left_handed, .show_fps = boot_settings.show_fps, .assets = &assets}, boot);
                 g.mixer = nullptr; g.sound = nullptr; g.race_music = nullptr;
             }
         }

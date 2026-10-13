@@ -44,7 +44,9 @@ build/rr-game --assets ../cdrom/ROADRASH            # Napa; --course 0-4, --bike
 
 Arrows or WASD: Up accelerates, Down brakes, Left/Right steer; Z punches, X kicks, C backhands. Gamepad: A or right trigger accelerates, B or left trigger brakes, D-pad or left stick steers; X punches, Y kicks, RB backhands. Touch: top third punches, left/right thirds below it steer, bottom middle brakes; other zones accelerate. Multiple fingers can steer and punch together; a braking finger overrides touch auto-throttle. Enter, A or a tap restarts after the finish.
 
-P/Esc or gamepad Start toggles pause. Android Back opens pause. Enter, Start or a tap resumes. Q or closing the desktop window quits. Backgrounding, losing window focus or disconnecting the active gamepad pauses the race and clears touch input. Returning to the app requires an explicit resume. `--paused` starts the presentation paused (after any `--ticks` verification run).
+P/Esc, gamepad Start or Android Back opens the pause menu (RESUME, SOUND, DISPLAY, CONTROLS, QUIT RACE with confirmation) over the darkened race frame. Backgrounding, losing window focus or disconnecting the active gamepad opens it too. Q or closing the desktop window quits. `--paused` starts the presentation paused (after any `--ticks` verification run).
+
+Graphics Options holds Display, Sound (master + six channels, mute, swap), Configure Input (nine rebindable keys plus gamepad/touch pages) and the FPS counter. See `docs/USER_GUIDE.md` for the Settings section.
 
 The race uses the original 60 Hz bike physics ported from the executable (throttle, brakes, 7-gear shifting, drag, traction, steering, curve drift, crests and jumps) on the original course geometry. You race seven original AI opponents with punches, kicks and weapons, drawn with the original rider sprites. Road shading is a placeholder; traffic, police, race audio and gameplay menus are not done yet. See `docs/PROGRESS.md` for what is simplified.
 
