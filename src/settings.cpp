@@ -20,6 +20,17 @@ bool parse_int(const std::string& v, int lo, int hi, int& out) {
 }
 }
 
+bool operator==(const Enhancements& a, const Enhancements& b) {
+    return a.interpolate == b.interpolate && a.perspective == b.perspective && a.full_colour == b.full_colour &&
+           a.filter == b.filter && a.fog == b.fog && a.grade == b.grade && a.draw_slices == b.draw_slices &&
+           a.bloom == b.bloom && a.vignette == b.vignette && a.motion_blur == b.motion_blur &&
+           a.widescreen == b.widescreen;
+}
+bool Enhancements::any() const {
+    return !(*this == Enhancements{});
+}
+Enhancements enhanced_preset() { return {}; }
+
 Settings default_settings() {
     Settings s;
     int count = 0;
@@ -110,6 +121,17 @@ Settings parse_settings(const std::string& text) {
         else if (k == "show_fps") flag(s.show_fps);
         else if (k == "render_scale") { if (parse_int(v, 0, 4, x)) s.render_scale = x; }
         else if (k == "widescreen") { if (parse_int(v, 0, 3, x)) s.widescreen = Widescreen(x); }
+        else if (k == "enh_interpolate") flag(s.enhancements.interpolate);
+        else if (k == "enh_perspective") flag(s.enhancements.perspective);
+        else if (k == "enh_full_colour") flag(s.enhancements.full_colour);
+        else if (k == "enh_filter") { if (parse_int(v, 0, 2, x)) s.enhancements.filter = TextureFilter(x); }
+        else if (k == "enh_fog") { if (parse_int(v, 0, 100, x)) s.enhancements.fog = x; }
+        else if (k == "enh_grade") { if (parse_int(v, 0, 3, x)) s.enhancements.grade = Grade(x); }
+        else if (k == "enh_draw_slices") { if (v == "33" || v == "48" || v == "64") s.enhancements.draw_slices = std::stoi(v); }
+        else if (k == "enh_bloom") flag(s.enhancements.bloom);
+        else if (k == "enh_vignette") flag(s.enhancements.vignette);
+        else if (k == "enh_motion_blur") flag(s.enhancements.motion_blur);
+        else if (k == "enh_widescreen") { if (parse_int(v, 0, 3, x)) s.enhancements.widescreen = Widescreen(x); }
         else if (k == "touch_opacity") { if (parse_int(v, 0, 100, x)) s.touch_opacity = x; }
         else if (k == "haptics") flag(s.haptics);
         else if (k == "swap_punch_kick") flag(s.swap_punch_kick);
@@ -139,7 +161,14 @@ std::string format_settings(const Settings& s) {
       << "\nswap_speakers=" << s.swap_speakers
       << "\ndisplay_mode=" << int(s.display_mode) << "\nwindow_scale=" << s.window_scale << "\nscale_mode=" << int(s.scale_mode)
       << "\nfilter=" << int(s.filter) << "\nvsync=" << s.vsync << "\nshow_fps=" << s.show_fps
-      << "\nrender_scale=" << s.render_scale << "\nwidescreen=" << int(s.widescreen) << "\ntouch_opacity=" << s.touch_opacity << "\nhaptics=" << s.haptics
+      << "\nrender_scale=" << s.render_scale << "\nwidescreen=" << int(s.widescreen)
+      << "\nenh_interpolate=" << s.enhancements.interpolate << "\nenh_perspective=" << s.enhancements.perspective
+      << "\nenh_full_colour=" << s.enhancements.full_colour << "\nenh_filter=" << int(s.enhancements.filter)
+      << "\nenh_fog=" << s.enhancements.fog << "\nenh_grade=" << int(s.enhancements.grade)
+      << "\nenh_draw_slices=" << s.enhancements.draw_slices << "\nenh_bloom=" << s.enhancements.bloom
+      << "\nenh_vignette=" << s.enhancements.vignette << "\nenh_motion_blur=" << s.enhancements.motion_blur
+      << "\nenh_widescreen=" << int(s.enhancements.widescreen)
+      << "\ntouch_opacity=" << s.touch_opacity << "\nhaptics=" << s.haptics
       << "\nswap_punch_kick=" << s.swap_punch_kick << "\nstick_deadzone=" << s.stick_deadzone
       << "\nleft_handed=" << s.left_handed << "\nalias=" << s.alias << "\n";
     return o.str();

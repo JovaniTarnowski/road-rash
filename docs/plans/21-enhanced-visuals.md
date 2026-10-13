@@ -106,9 +106,9 @@
     }
 ```
 
-- [ ] **Step 2:** Run `ctest -R settings`; expected compile failure.
-- [ ] **Step 3: Implement** the struct, `any()` (compare with a default-constructed `Enhancements`), parsing with the ranges above (`draw_slices` accepts exactly 33, 48, 64), formatting, and `enhanced_preset()` returning all-off for now.
-- [ ] **Step 4:** Run; expected PASS. Commit: `settings: enhanced-visuals options (all off by default)`.
+- [x] **Step 2:** Run `ctest -R settings`; expected compile failure. DONE (no member `enhancements`/`TextureFilter`).
+- [x] **Step 3: Implement** the struct, `any()` (compare with a default-constructed `Enhancements`), parsing with the ranges above (`draw_slices` accepts exactly 33, 48, 64), formatting, and `enhanced_preset()` returning all-off for now. DONE. Deviation: `widescreen` is `Widescreen` enum, not `int` (reuses the Task-8 setting; `enh_widescreen` key; `Game::logical_width` prefers it when `any()`).
+- [x] **Step 4:** Run; expected PASS. DONE: settings green; 67 fast suites green. Commit: `settings: enhanced-visuals options (all off by default)`.
 
 ---
 

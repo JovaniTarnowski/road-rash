@@ -12,6 +12,22 @@ enum class DisplayMode : uint8_t { windowed = 0, fullscreen = 1 };       // full
 enum class ScaleMode : uint8_t { fit = 0, integer = 1, stretch = 2 };    // letterbox, whole multiples, fill
 enum class FilterMode : uint8_t { sharp = 0, smooth = 1 };               // nearest, linear
 enum class Widescreen : uint8_t { off = 0, mode16x10 = 1, mode16x9 = 2, match = 3 };  // plan 21 Task 8: 0 = 4:3
+enum class TextureFilter : uint8_t { nearest = 0, bilinear = 1, trilinear = 2 };  // plan 21 Task 1
+enum class Grade : uint8_t { none = 0, warm = 1, vivid = 2, dusk = 3 };           // plan 21 Task 1
+struct Enhancements {
+    bool interpolate = false;          // Task 2
+    bool perspective = false;          // Task 3
+    bool full_colour = false;          // Task 4 (implied by filter != nearest)
+    TextureFilter filter = TextureFilter::nearest;
+    int fog = 0;                       // Task 5: 0..100 strength
+    Grade grade = Grade::none;         // Task 5
+    int draw_slices = 33;              // Task 6: 33 (original), 48, 64
+    bool bloom = false, vignette = false, motion_blur = false;   // Task 7
+    Widescreen widescreen = Widescreen::off;  // Task 8: backed by the Task-8 setting
+    bool any() const;
+};
+bool operator==(const Enhancements&, const Enhancements&);
+Enhancements enhanced_preset();        // the measured "Enhanced" preset (Task 9 fills it)
 struct Settings {
     Language language = Language::english;
     bool metric = false;             // original: LOCALE_IMEASURE != "1" (0x0042f490)
@@ -43,6 +59,7 @@ struct Settings {
     bool show_fps = false;
     int render_scale = 1;                // plan 19 Task 8: 0 = match display, 1..4 fixed
     Widescreen widescreen = Widescreen::off;  // plan 21 Task 8: Hor+ logical width
+    Enhancements enhancements;                // plan 21 Task 1: all off = original renderer
     int touch_opacity = 50;          // 0..100, Android touch overlay (plan 14 Task 3)
     bool haptics = true;             // Android rumble on crash/hit where the device supports it
 };

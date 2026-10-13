@@ -61,6 +61,22 @@ int main() {
         check(c.stick_deadzone == 37, "dead zone rejects out-of-range values");
     }
     {
+        // Plan 21 Task 1: enhancement options round-trip; out-of-range falls back.
+        // (widescreen maps to the existing Widescreen enum from Task 8.)
+        rr::Settings e;
+        e.enhancements.interpolate = true; e.enhancements.filter = rr::TextureFilter::trilinear; e.enhancements.fog = 40;
+        e.enhancements.grade = rr::Grade::dusk; e.enhancements.draw_slices = 64; e.enhancements.widescreen = rr::Widescreen::mode16x9;
+        const rr::Settings f = rr::parse_settings(rr::format_settings(e));
+        check(f.enhancements.interpolate && f.enhancements.filter == rr::TextureFilter::trilinear && f.enhancements.fog == 40 &&
+              f.enhancements.grade == rr::Grade::dusk && f.enhancements.draw_slices == 64 && f.enhancements.widescreen == rr::Widescreen::mode16x9,
+              "enhancements round trip");
+        const rr::Settings g2 = rr::parse_settings("enh_draw_slices=40\nenh_fog=101\nenh_filter=3\nenh_widescreen=9\n");
+        check(g2.enhancements.draw_slices == 33 && g2.enhancements.fog == 0 && g2.enhancements.filter == rr::TextureFilter::nearest &&
+              g2.enhancements.widescreen == rr::Widescreen::off, "only 33/48/64 slices and in-range values accepted");
+        check(!rr::default_settings().enhancements.any(), "defaults are the original renderer");
+        check(!rr::enhanced_preset().any(), "preset is all-off until Task 9 measures it");
+    }
+    {
         // Plan 19 Task 8: render_scale round-trips; 5 and -1 fall back to default.
         rr::Settings p;
         p.render_scale = 3;

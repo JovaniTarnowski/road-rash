@@ -162,7 +162,11 @@ struct Game {
     std::string course_name;
     int bike = 0;
     rr::Widescreen widescreen = rr::Widescreen::off;  // plan 21 Task 8: live setting
-    int32_t logical_width() const { return rr::logical_width_for(widescreen); }
+    rr::Enhancements enhancements;  // plan 21 Task 1: synced per frame; all-off = original
+    int32_t logical_width() const {
+        const rr::Widescreen w = enhancements.any() ? enhancements.widescreen : widescreen;
+        return rr::logical_width_for(w);
+    }
     std::unique_ptr<rr::Race> race;
     int countdown = countdown_ticks;
     std::vector<rr::Image8> bobs;
@@ -1091,7 +1095,7 @@ RaceEnd run_race(Game& g, SDL_Renderer* renderer, const RaceOptions& opt, Displa
             if (display.window) SDL_GetWindowSize(display.window, &dw, &dh);
             const int race_scale = opt.menu && opt.settings ? rr::effective_render_scale(*opt.settings, dw, dh, kMobileDisplay)
                                                             : opt.render_scale;
-            if (opt.settings) g.widescreen = opt.settings->widescreen;
+            if (opt.settings) { g.widescreen = opt.settings->widescreen; g.enhancements = opt.settings->enhancements; }
             if (g.scene) course_canvas.draw(renderer, g, slices, race_scale, display.render_threads);
             else rr::draw_road(renderer, slices);
             draw_opponents(renderer, g, sprites, slices);
