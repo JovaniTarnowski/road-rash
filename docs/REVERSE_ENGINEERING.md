@@ -1076,3 +1076,17 @@ matches `analysis/inventory.json`. No legacy Android executable was used.
 **Port mapping (for plan 21 Task 8):** `road.hpp:view_width` (=320) feeds `RoadSlice::screen_x` centre; `course_scene.cpp` hardcodes `160·65536` (building transition) and `320` (marked-ground width); `actor_render.cpp` takes `logical_width` as a parameter already and culls `right<=0 || left>=w`. The Hor+ change is: `logical_width` 320→426 (or 384/427/match), `origin_q16_x = (w−320)/2·65536` subtracted in `map` before scaling, and every `DAT_0046667c` cull widened. Vertical FOV unchanged. Native probe (Napa @50.5 samples: 236 nodes, 75 spanning an edge) confirms side content exists to reveal.
 
 **Decision input for the owner:** road and hills extend naturally (same strips, wider clip); scenery/riders at the sides appear rather than pop in — they are sim-built every tick and only emit-skipped today, so no pop-in mechanism exists beyond the edge; HUD is a centred 4:3 dashboard with runtime-generated side panels (plan 21 Task 8). Recommend proceeding on explicit yes.
+
+## Plan 21 Task 4: palette-change trace (October 13, 2026)
+
+**Question:** does the original change the palette during a race, or use palette ranges for shading? (Determines whether the RGB path needs a `palette_generation` counter with per-generation texture re-conversion.)
+
+**Evidence:** REA 6.4.0 trace of `0x00448f90` (palette/audio init); project exports `00448f90.c`, `00415e90.c`, `00415e9c.c`, `00415d90.c`, `004163d0.c`, `0041e710.c`, `00442e10.c`, `004431d0.c`.
+
+**Answer:** the palette is loaded once and never animated during a race.
+- `0x00448f90` reads 1,024 palette bytes via `0x0044c730` into `DAT_004b8490`, zeroes entry 0, and builds the half-brightness copy at `DAT_004b8030` (`>> 1` per channel). One-shot init.
+- Runtime `SetEntries(0,0,0x100,...)` calls: `0x004431d0` (main loop: full-bright `0x4b8030` at startup, half-bright `0x4b8490` after MiniDash F10 switches), `0x004163d0` (race setup paths), `0x00442e10` (race loop: restores full palette only when the `0x4753c0` fade timer expires — a screen-fade transition, not per-frame shading).
+- `0x00415e90`/`0x00415e9c`/`0x00415d90` are the 0x40-step crossfade workers (copy base to `0x482358`, then float-scale each step, uploading per step): menu/screen transitions, never invoked per race tick.
+- No crash/arrest/sky code writes palette memory. No palette-range shading.
+
+**Port rule:** `palette_generation` increments only on (a) course load (new base palette), (b) MiniDash mode switch (full/half select), (c) fade-transition completion. RGB mip caches key on the generation; no per-frame invalidation. The race steady state never re-converts.

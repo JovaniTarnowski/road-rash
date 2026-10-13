@@ -24,6 +24,8 @@
 #include "pe_strings.hpp"
 #include "settings.hpp"
 #include "display.hpp"
+#include "framebuffer_rgb.hpp"
+#include "raster_rgb.hpp"
 #include "view_state.hpp"
 #include "sound.hpp"
 #include "race_music.hpp"
@@ -536,6 +538,7 @@ struct CourseCanvas {
     int scale_w=640,scale_h=480;   // plan 19 Task 4: 640s x 480s surface
     int wide_w=320;                // plan 21 Task 8: logical width of the surface
     SDL_Texture* texture=nullptr;
+    bool texture_is_rgb = false;  // plan 21 Task 4: RGB path needs ARGB8888 upload
     SDL_ScaleMode scale = crisp_scale;   // plan 18 Task 3: from DisplayDriver (filter setting)
     ~CourseCanvas(){clear();}
     void clear(){SDL_DestroyTexture(texture);texture=nullptr;}
@@ -551,6 +554,7 @@ struct CourseCanvas {
 
     std::unique_ptr<rr::RenderThreads> workers;
     int worker_count = 0;
+    rr::FramebufferRgb rgb;  // plan 21 Task 4: full-colour frame (resized with frame)
     void draw(SDL_Renderer* renderer,const Game& game,const std::vector<rr::RoadSlice>& slices,int s,int threads) {
         const int32_t wide = game.logical_width();
         resize(s,wide);
@@ -612,19 +616,55 @@ struct CourseCanvas {
             }
         }
         if (!workers || worker_count != threads) { workers = std::make_unique<rr::RenderThreads>(threads); worker_count = threads; }
-        game.scene->draw_horizon(frame,game.race->horizon_scroll(),wide);
+        // Plan 21 Task 4: the game uses the RGB path when full_colour is on
+        // or filter != nearest; otherwise the indexed path (bit-identical).
+        const bool use_rgb = game.enhancements.full_colour ||
+                             game.enhancements.filter != rr::TextureFilter::nearest;
         auto nodes=game.scene->draw_nodes(game.race->route(),slices,game.race->camera(),game.depth,[&](const rr::RoadSlice& near,const rr::RoadSlice& far,int road,int32_t ceiling,bool back){return game.rider_nodes(near,far,road,ceiling,back);},wide);
         if (margin) for (auto& n:nodes) for (auto& v:n.view_points) v.x+=margin*65536;
+        if (use_rgb) {
+            if (rgb.width() != scale_w || rgb.height() != scale_h) rgb.resize(scale_w, scale_h);
+            rgb.clear(0);
+            // Horizon into RGB: convert the indexed horizon rows via palette.
+            {
+                rr::Framebuffer hz(scale_w, scale_h);
+                game.scene->draw_horizon(hz,game.race->horizon_scroll(),wide);
+                for (int y = 0; y < scale_h; ++y)
+                    for (int x = 0; x < scale_w; ++x) {
+                        const uint8_t* c = &game.palette.rgbx[4 * hz.row(y)[x]];
+                        rgb.row(y)[x] = (255u << 24) | (uint32_t(c[0]) << 16) | (uint32_t(c[1]) << 8) | uint32_t(c[2]);
+                    }
+            }
+            rr::render_nodes_rgb(rgb,nodes,rr::view_mode_wide(s,wide),16,game.palette,game.enhancements,*workers);
+            // Dashboard composited directly (no palette round-trip).
+            if (game.hud) {
+                const auto dash = game.hud->compose(game.hud->state(*game.race, game.player_name, game.rider_names),
+                                                    game.physics, rr::DashMode::full, s);
+                const int xoff = margin * 2 * s;
+                for (int y = 0; y < dash.height && y < scale_h; ++y)
+                    for (int x = 0; x < dash.width && x + xoff < scale_w; ++x) {
+                        const uint32_t c = dash.at(x, y);
+                        if (c == 0x01000000) continue;
+                        rgb.row(y)[x + xoff] = 0xff000000u | (c & 0xffffffu);
+                    }
+            }
+        } else {
+        game.scene->draw_horizon(frame,game.race->horizon_scroll(),wide);
         // The dashboard stays a centred 4:3 image (plan 21 Task 8); side
         // panels are drawn from its edge columns below.
         rr::render_nodes_threaded(frame,nodes,rr::view_mode_wide(s,wide),16,*workers,game.enhancements.perspective);
         frame.to_rgba(game.palette,rgba.data(),scale_w*4);
-        if(!texture) {
-            texture=SDL_CreateTexture(renderer,SDL_PIXELFORMAT_RGBA32,SDL_TEXTUREACCESS_STREAMING,scale_w,scale_h);
+        }
+        if(!texture || texture_is_rgb != use_rgb) {
+            SDL_DestroyTexture(texture);
+            texture=SDL_CreateTexture(renderer,use_rgb?SDL_PIXELFORMAT_ARGB8888:SDL_PIXELFORMAT_RGBA32,SDL_TEXTUREACCESS_STREAMING,scale_w,scale_h);
             if(!texture)throw std::runtime_error(SDL_GetError());
             SDL_SetTextureScaleMode(texture,scale);
+            texture_is_rgb = use_rgb;
         }
-        if(!SDL_UpdateTexture(texture,nullptr,rgba.data(),scale_w*4))throw std::runtime_error(SDL_GetError());
+        if(use_rgb) {
+            if(!SDL_UpdateTexture(texture,nullptr,rgb.row(0),scale_w*4))throw std::runtime_error(SDL_GetError());
+        } else if(!SDL_UpdateTexture(texture,nullptr,rgba.data(),scale_w*4))throw std::runtime_error(SDL_GetError());
         // Hor+ (plan 21 Task 8): logical presentation is wide*2 x 480,
         // set once per resize below; the texture fills it exactly.
         const SDL_FRect dst{0,0,float(scale_w),float(scale_h)};

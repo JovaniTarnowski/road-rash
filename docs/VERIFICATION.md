@@ -841,3 +841,13 @@ Owned edits: `src/import_job.hpp/.cpp` (new), `src/sha256.hpp/.cpp`
   | 4 (2560x1920) | 1.79/1.92/1.85 | 1.99–2.13 |
 - Match-display rule: every scale's end-to-end p95-equivalent is under 12 ms on this machine, so no scale is excluded. Headless ticks render synchronously (no vsync); on-display frame pacing is governed by VSync, not this table.
 - Gate (Debug tree, October 13, 2026): `hires-render`, `view`, `race-soak`, `settings`, `display`, `frontend`, `native-screen` suites all pass (6/6 in the named subset run; `hires-render` re-confirmed separately). UBSan/Release trees: not re-run in this slice — Task 3–8 code paths are shared and allocation-free by construction; CI covers the remaining trees.
+
+## Plan 21 Task 4 Step 4 (October 13, 2026): RGB filter frame times
+
+- End-to-end headless race cost (Apple M3 Pro; Debug tree; 900 autopilot ticks, triplicate; wall/900 per tick):
+  | scale | nearest (indexed) | bilinear (RGB) | trilinear (RGB) |
+  | --- | --- | --- | --- |
+  | 1 (640x480) | 1.22–1.43 ms | 1.10–1.18 ms | 1.14–1.30 ms |
+  | 2 (1280x960) | 1.32–1.46 ms | 1.41–1.44 ms | 1.49–1.50 ms |
+  | 4 (2560x1920) | 1.99–2.13 ms | 2.57–2.60 ms | 2.87–2.90 ms |
+- RGB-nearest equivalence holds exactly (raster-rgb suite); the RGB path only runs when `full_colour` is on or `filter != nearest`.
