@@ -60,6 +60,15 @@ int main() {
         const rr::Settings c = rr::parse_settings("stick_deadzone=9\nstick_deadzone=41\n");
         check(c.stick_deadzone == 37, "dead zone rejects out-of-range values");
     }
+    {
+        // Plan 19 Task 8: render_scale round-trips; 5 and -1 fall back to default.
+        rr::Settings p;
+        p.render_scale = 3;
+        const rr::Settings q = rr::parse_settings(rr::format_settings(p));
+        check(q.render_scale == 3, "render_scale round trips");
+        const rr::Settings bad = rr::parse_settings("render_scale=5\nrender_scale=-1\n");
+        check(bad.render_scale == rr::default_settings().render_scale, "render_scale rejects out-of-range values");
+    }
     std::cout << failures << " failures\n";
     return failures ? 1 : 0;
 }

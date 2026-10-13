@@ -470,6 +470,21 @@ void Frontend::prepare_screen(int previous, int screen) {
     case 10: case 12: case 0x1b: prepare_courses(screen); break;
     case 0x0e: prepare_characters(); break;
     case 0x10: apply_restroom_pattern(); break;
+    case screen_id::native_display: {
+        // Plan 19 Task 8: the RENDER RESOLUTION row is disabled with an
+        // explanatory description when Graphics Options' Resolution is Low
+        // or Inset (the original choice forces render scale 1).
+        auto& items = data_.screens[size_t(screen_id::native_display)].items;
+        const bool hires = settings_.high_resolution && !settings_.inset;
+        for (auto& m : items)
+            if (m.caption == ns::render_resolution) {
+                m.enabled = hires;
+                if (hires) m.flags &= ~item_flag::light;
+                else m.flags |= item_flag::light;
+                m.desc = hires ? ns::d_render_resolution : ns::d_render_lowres;
+            }
+        break;
+    }
     case 0x12: {
         // Plan 18 Task 7: key labels (caps 160-168) show the bound key per action.
         auto& items = data_.screens[0x12].items;
@@ -604,6 +619,7 @@ int Frontend::native_current(uint32_t popup) const {
     case native_popup::filtering: return settings_.filter == FilterMode::smooth ? 2 : 1;
     case native_popup::on_off: return 1;   // caller overrides per item; see open_native_popup
     case native_popup::touch: return settings_.touch_opacity / 25 + 1;
+    case native_popup::resolution: return settings_.render_scale + 1;   // match = 1, 1x..4x = 2..5
     default: return 1;
     }
 }
@@ -619,6 +635,7 @@ void Frontend::open_native_popup(uint32_t popup) {
     case native_popup::scaling: setter = native_setter::scaling; break;
     case native_popup::filtering: setter = native_setter::filtering; break;
     case native_popup::touch: setter = native_setter::touch_opacity; break;
+    case native_popup::resolution: setter = native_setter::render_resolution; break;
     case native_popup::on_off: {
         // Which bool this popup edits: the focused value item's caption.
         const int cap = focus_ >= 0 && size_t(focus_) < items_.size() ? items_[size_t(focus_)].caption : 0;
@@ -643,6 +660,9 @@ std::string Frontend::native_value_text(int caption) const {
     case ns::fps: return native_string(settings_.show_fps ? ns::on : ns::off);
     case ns::touch_opacity: return native_string(ns::touch_0 + settings_.touch_opacity / 25);
     case ns::haptics: return native_string(settings_.haptics ? ns::on : ns::off);
+    case ns::render_resolution:   // plan 19 Task 8: match + 640x480..2560x1920
+        return settings_.render_scale == 0 ? native_string(ns::res_match)
+                                           : native_string(ns::scale_1x + settings_.render_scale - 1);
     default: return {};
     }
 }
@@ -1058,6 +1078,7 @@ int Frontend::run_handler(size_t index) {
         case native_setter::fps: settings_.show_fps = target == 2; apply_native_setting(); break;
         case native_setter::touch_opacity: settings_.touch_opacity = std::min(100, std::max(0, (target - 1) * 25)); apply_native_setting(); break;
         case native_setter::haptics: settings_.haptics = target == 2; apply_native_setting(); break;
+        case native_setter::render_resolution: settings_.render_scale = std::min(4, std::max(0, target - 1)); apply_native_setting(); break;
         }
         return 0;
     }

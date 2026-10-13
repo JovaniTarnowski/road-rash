@@ -14,5 +14,6 @@ namespace ns { enum : int { display_title = native_slot_base, display_mode, wind
                             touch_0, touch_25, touch_50, touch_75, touch_100,
                             gamepad_title, pad_map1, pad_map2, pad_map3, pad_map4,
                             pad_swap, pad_deadzone, d_swap, d_deadzone,
-                            touch_title, touch_left, d_lefthand, count }; }
+                            touch_title, touch_left, d_lefthand,
+                            render_resolution, res_match, d_render_resolution, d_render_lowres, count }; }
 }

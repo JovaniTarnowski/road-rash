@@ -24,6 +24,9 @@ const std::array<std::string, ns::count - native_slot_base> kNativeStrings = {
     "Swap Punch+Kick", "Stick Dead Zone", "South and West trade punch and kick.",
     "Stick deflection needed before steering, in percent.",
     "TOUCH", "Left-Handed Layout", "Mirror the touch zones for left thumbs.",
+    "Render Resolution", "Match display",
+    "Race and menu pixel resolution. 640x480 is the original-exact mode; higher costs GPU time.",
+    "Locked to 640x480 while Graphics Options Resolution is Low or Inset.",
 };
 const std::string kEmpty;
 }

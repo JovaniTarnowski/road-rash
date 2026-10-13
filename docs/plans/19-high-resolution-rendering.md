@@ -218,15 +218,15 @@ inline ViewMode view_mode_scaled(int s) {
 - Consumes: plan 18's `Settings`, `DisplayConfig`, Display screen and native popups.
 - Produces: `int render_scale = 1;` in `Settings` (0 = match display, 1–4; key `render_scale`); `int effective_render_scale(const Settings&, int drawable_w, int drawable_h, bool mobile)` in `display.hpp`.
 
-- [ ] **Step 1: Write the failing tests.**
+- [x] **Step 1: Write the failing tests.**
   - `settings_test`: `render_scale` round-trips; `render_scale=5` and `=-1` fall back to the default.
   - `display_test`: `effective_render_scale` with setting 0 picks the largest `s ≤ 4` with `640s ≤ drawable_w` and `480s ≤ drawable_h` (2560×1600 → 3; 1920×1080 → 2; 800×600 → 1); a fixed setting is returned unchanged; the original Low or Inset resolution choice (`high_resolution == false`) forces 1. When the render surface is larger than the drawable, `DisplayConfig::texture_scale` is linear for the race texture whatever the filter setting (supersampling, Review Focus 4).
   - `frontend_test`: the Display screen has a RENDER RESOLUTION item with choices "640 × 480 (original)", "1280 × 960", "1920 × 1440", "2560 × 1920", "Match display"; when Graphics Options' Resolution is Low or Inset the item is shown disabled (`item_flag::light`) with a description saying why.
   - Review Focus 1: a scripted race opens the pause menu at tick 300, steps the render scale 1→2→3→4→0, resumes, and the next frame is complete at each step (no black or partial rows) and the tick counter is unchanged.
-- [ ] **Step 2:** Run; expected FAIL.
-- [ ] **Step 3: Implement.** The race, menu and video paths query `effective_render_scale` each time the drawable size or the setting changes, and reallocate their framebuffers and SDL textures between frames. The logical presentation becomes `640s × 480s` (510s for the race).
-- [ ] **Step 4:** Run the tests and the regression gate. USER_GUIDE: the setting, its cost, and that 640 × 480 is the original-exact mode.
-- [ ] **Step 5:** Commit: `settings: render resolution up to 2560x1920 and match-display`.
+- [x] **Step 2:** Run; expected FAIL.
+- [x] **Step 3: Implement.** The race, menu and video paths query `effective_render_scale` each time the drawable size or the setting changes, and reallocate their framebuffers and SDL textures between frames. The logical presentation becomes `640s × 480s` (510s for the race).
+- [x] **Step 4:** Run the tests and the regression gate. USER_GUIDE: the setting, its cost, and that 640 × 480 is the original-exact mode.
+- [x] **Step 5:** Commit: `settings: render resolution up to 2560x1920 and match-display`.
 
 ---
 

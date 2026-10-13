@@ -40,6 +40,7 @@ struct Settings {
     FilterMode filter = FilterMode::sharp;
     bool vsync = true;
     bool show_fps = false;
+    int render_scale = 1;                // plan 19 Task 8: 0 = match display, 1..4 fixed
     int touch_opacity = 50;          // 0..100, Android touch overlay (plan 14 Task 3)
     bool haptics = true;             // Android rumble on crash/hit where the device supports it
 };

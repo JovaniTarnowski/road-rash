@@ -16,6 +16,16 @@ DisplayConfig display_config(const Settings& s, int logical_h, bool mobile) {
     return c;
 }
 
+int effective_render_scale(const Settings& s, int drawable_w, int drawable_h, bool mobile) {
+    (void)mobile;
+    if (!s.high_resolution || s.inset) return 1;   // original Low/Inset choice
+    if (s.render_scale >= 1 && s.render_scale <= 4) return s.render_scale;
+    int best = 1;
+    for (int q = 4; q >= 1; --q)
+        if (640 * q <= drawable_w && 480 * q <= drawable_h) { best = q; break; }
+    return best;
+}
+
 void apply_display(SDL_Window* window, SDL_Renderer* renderer, const DisplayConfig& c) {
     const bool is_full = (SDL_GetWindowFlags(window) & SDL_WINDOW_FULLSCREEN) != 0;
     if (is_full != c.fullscreen) SDL_SetWindowFullscreen(window, c.fullscreen);
@@ -33,6 +43,6 @@ void apply_display(SDL_Window* window, SDL_Renderer* renderer, const DisplayConf
 }
 
 void apply_texture_scale(SDL_Texture* texture, const DisplayConfig& c) {
-    if (texture) SDL_SetTextureScaleMode(texture, c.texture_scale);
+    if (texture) SDL_SetTextureScaleMode(texture, c.supersampling ? SDL_SCALEMODE_LINEAR : c.texture_scale);
 }
 }

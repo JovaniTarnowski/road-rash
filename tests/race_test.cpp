@@ -125,6 +125,51 @@ int main() {
         check(snapshots_match, "pause gaps change no snapshot");
         check(plain.position() == paused.position() && plain.rng_state() == paused.rng_state(), "pause gaps keep final state");
     }
+    // Render-scale switching inserts no simulation state (plan 19 Task 8
+    // Review Focus 1, sim-level half): the same controls stepped while an
+    // external scale variable walks 1->2->3->4->0 produce identical snapshots
+    // and tick counts — the scale never reaches Race.
+    {
+        auto run = [&](std::vector<int>& scales_seen) {
+            rr::Race r(straight(2000), straight(2000), t, spec, 90);
+            std::vector<rr::RaceSnapshot> snaps;
+            int scale = 1;
+            for (int i = 0; i < 900; ++i) {
+                if (i == 300) scale = 2;
+                else if (i == 450) scale = 3;
+                else if (i == 600) scale = 4;
+                else if (i == 750) scale = 0;
+                scales_seen.push_back(scale);
+                const uint32_t c = rr::control_accelerate | ((i / 60) % 2 ? rr::control_left : rr::control_right);
+                r.step(c);
+                snaps.push_back(r.snapshot());
+            }
+            return snaps;
+        };
+        std::vector<int> walk, flat;
+        const auto a = run(walk);
+        std::vector<rr::RaceSnapshot> b;
+        {
+            rr::Race r(straight(2000), straight(2000), t, spec, 90);
+            for (int i = 0; i < 900; ++i) {
+                flat.push_back(1);
+                const uint32_t c = rr::control_accelerate | ((i / 60) % 2 ? rr::control_left : rr::control_right);
+                r.step(c);
+                b.push_back(r.snapshot());
+            }
+        }
+        auto same = [&](const rr::RaceSnapshot& x, const rr::RaceSnapshot& y) {
+            if (x.tick != y.tick || x.rng != y.rng || x.fields.size() != y.fields.size()) return false;
+            for (size_t i = 0; i < x.fields.size(); ++i)
+                if (x.fields[i].name != y.fields[i].name || x.fields[i].value != y.fields[i].value) return false;
+            return true;
+        };
+        bool match = a.size() == b.size();
+        for (size_t i = 0; match && i < a.size(); ++i) match &= same(a[i], b[i]);
+        check(match, "render-scale walk keeps snapshots identical");
+        check(walk != flat, "scale walk actually visited several scales");
+        check(a.back().tick == b.back().tick, "tick counter unchanged by scale walk");
+    }
 
     // Camera is one sample behind the rider and at least 150 high (0x00437c30).
     check(race.camera_position() == race.position() - 0x100, "camera one sample behind");

@@ -94,7 +94,7 @@ files still load; unknown key codes fall back per action):
 
 | Screen | Original options | Native additions |
 | --- | --- | --- |
-| Graphics | Resolution, Bikers, Videos | Display screen: window/fullscreen, window size, scaling, filtering, VSync, FPS counter, touch opacity, haptics |
+| Graphics | Resolution, Bikers, Videos | Display screen: window/fullscreen, window size, scaling, filtering, render resolution, VSync, FPS counter, touch opacity, haptics |
 | Sound | — (dialog 300) | Sound screen: master + six channel sliders (music, effects, engines, others, sirens, interface), mute, swap speakers |
 | Configure Input | Nine key bindings, Defaults | Gamepad page (swap punch+kick, dead zone), Touch page (opacity, left-handed) |
 
@@ -106,6 +106,13 @@ menu. Sound sliders apply live while paused.
 Hotkeys: Alt+Enter or Cmd+F toggles fullscreen; F10 cycles the MiniDash
 display; `/` in menus toggles the opponent list; the FPS row shows frames and
 simulation ticks per second in the race's top-right corner.
+
+Render Resolution (Display screen): Match display picks the largest of
+640x480, 1280x960, 1920x1440, 2560x1920 fitting the window; the fixed
+choices pin one. 640x480 is the original-exact mode; higher scales cost
+GPU time (roughly 4x pixels per step). The original Low/Inset Resolution
+choice locks it to 640x480. Applies live in menus and in the pause menu;
+the next race frame is complete and the tick counter never moves.
 
 ## Menu controls
 

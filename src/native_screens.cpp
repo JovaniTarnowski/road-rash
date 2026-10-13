@@ -18,14 +18,19 @@ MenuItem value_item(const MenuItem& t, int y, int caption, int desc, uint32_t po
     m.enabled = true;
     return m;
 }
-// One popup choice row copied from the template choice.
-MenuItem choice_item(const MenuItem& t, int y, int target, int caption) {
+// One popup choice row copied from the template choice. The nav chain is
+// rewired for the new table: template rows carry the original popup's links.
+MenuItem choice_item(const MenuItem& t, int y, int target, int caption, size_t index, size_t count) {
     MenuItem m = t;
     m.y = y;
     m.target = target;   // 1-based choice for the 0x00445440 confirm handler
     m.caption = caption;
     m.handler = 0x00445440;
     m.enabled = true;
+    m.nav[2] = uint8_t((index + count - 1) % count);
+    m.nav[3] = uint8_t((index + 1) % count);
+    m.nav[4] = uint8_t((index + 1) % count);
+    m.nav[5] = uint8_t((index + count - 1) % count);
     return m;
 }
 std::vector<MenuItem> build_popup(const std::vector<MenuItem>& tpl, int header_caption,
@@ -36,7 +41,7 @@ std::vector<MenuItem> build_popup(const std::vector<MenuItem>& tpl, int header_c
     out.push_back(header);
     for (size_t i = 0; i < choices.size(); ++i) {
         const MenuItem& t = tpl[1 + (i % (tpl.size() - 1))];
-        out.push_back(choice_item(t, t.y + int(i) * t.h, choices[i].first, choices[i].second));
+        out.push_back(choice_item(t, t.y + int(i) * t.h, choices[i].first, choices[i].second, i + 1, choices.size() + 1));
     }
     return out;
 }
@@ -55,6 +60,8 @@ void add_native_screens(FrontendData& data, bool mobile) {
     }
     rows.push_back({ns::scaling, ns::d_scaling, native_popup::scaling});
     rows.push_back({ns::filtering, ns::d_filtering, native_popup::filtering});
+    // Plan 19 Task 8: RENDER RESOLUTION row (both desktop and mobile).
+    rows.push_back({ns::render_resolution, ns::d_render_resolution, native_popup::resolution});
     if (!mobile) {
         rows.push_back({ns::vsync, ns::d_vsync, native_popup::on_off});
         rows.push_back({ns::fps, ns::d_fps, native_popup::on_off});
@@ -86,6 +93,8 @@ void add_native_screens(FrontendData& data, bool mobile) {
         screen.items[i].nav[5] = uint8_t((i + n - 1) % n);
     }
     // Native popups from the resolution popup template (header + choice rows).
+    // The template has 4 rows (header + 3 choices); popups needing more
+    // choices cycle the choice rows (plan 19 Task 8: resolution needs 5).
     const auto& rtpl = data.popups.at(0x00474240);
     data.popups[native_popup::display_mode] = build_popup(rtpl, ns::display_mode, {{1, ns::windowed}, {2, ns::fullscreen}});
     data.popups[native_popup::window_size] = build_popup(rtpl, ns::window_size,
@@ -96,6 +105,9 @@ void add_native_screens(FrontendData& data, bool mobile) {
     data.popups[native_popup::on_off] = build_popup(rtpl, ns::fps, {{1, ns::off}, {2, ns::on}});
     data.popups[native_popup::touch] = build_popup(rtpl, ns::touch_opacity,
         {{1, ns::touch_0}, {2, ns::touch_25}, {3, ns::touch_50}, {4, ns::touch_75}, {5, ns::touch_100}});
+    // Plan 19 Task 8: match + 1x..4x. Choice index maps to render_scale - 1 (see the setter).
+    data.popups[native_popup::resolution] = build_popup(rtpl, ns::render_resolution,
+        {{1, ns::res_match}, {2, ns::scale_1x}, {3, ns::scale_2x}, {4, ns::scale_3x}, {5, ns::scale_4x}});
     // Sound screen (plan 18 Task 6): dialog-300 order — master + six channels as sliders,
     // mute + swap as direct toggles, Back to the restroom. Same button template/column.
     {

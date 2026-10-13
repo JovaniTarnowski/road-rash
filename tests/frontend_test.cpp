@@ -1,6 +1,7 @@
 #include "assets.hpp"
 #include "frontend.hpp"
 #include "native_screens.hpp"
+#include "native_strings.hpp"
 #include "pe_strings.hpp"
 #include "rri.hpp"
 #include <SDL3/SDL_scancode.h>
@@ -310,7 +311,7 @@ int main(int argc, char** argv) {
     check(fe.screen() == screen_id::native_display, "display screen");
     snap("display");
     if (focus_item(2)) key("select");   // Scaling row opens its popup
-    check(fe.items().size() == 7 + 4, "scaling popup opens");
+    check(fe.items().size() == 8 + 4, "scaling popup opens");
     key("down");   // Integer row (popup header + Fit, Integer, ...)
     key("select");
     check(settings.scale_mode == rr::ScaleMode::integer, "scaling choice applies to settings");
@@ -319,8 +320,34 @@ int main(int argc, char** argv) {
         const std::string text((std::istreambuf_iterator<char>(settings_file)), std::istreambuf_iterator<char>());
         check(text.find("scale_mode=1") != std::string::npos, "scaling choice saved to settings file");
     }
-    if (focus_item(6)) key("select");   // Back row
+    if (focus_item(7)) key("select");   // Back row
     check(fe.screen() == 0x13 && fe.focus() == 2, "back returns to the Display item");
+    // Plan 19 Task 8: RENDER RESOLUTION row — popup choice persists; Low/Inset disables it.
+    fe.enter(screen_id::native_display);
+    int res_row = -1;
+    for (size_t i = 0; i < fe.items().size(); ++i)
+        if (fe.items()[i].caption == rr::ns::render_resolution) res_row = int(i);
+    check(res_row >= 0, "display screen has the resolution row");
+    // The resolution row starts disabled, so the nav chain skips it;
+    // enable hires first (default), then walk down to it via row 3.
+    settings.high_resolution = true;
+    settings.inset = false;
+    fe.enter(screen_id::native_display);
+    if (focus_item(3)) key("down");
+    check(fe.focus() == res_row, "resolution row focused");
+    const size_t base_items = fe.items().size();
+    key("select");
+    check(fe.items().size() == base_items + 6, "resolution popup opens with five choices");
+    key("down"); key("down"); key("down");   // last choice (2560x1920)
+    key("select");
+    check(settings.render_scale == 4, "2560x1920 choice persists");
+    settings.high_resolution = false;
+    fe.enter(screen_id::native_display);
+    bool res_disabled = false;
+    for (const auto& m : fe.items())
+        if (m.caption == rr::ns::render_resolution) res_disabled = !m.enabled && (m.flags & rr::item_flag::light);
+    check(res_disabled, "low resolution disables the row with explanation");
+    settings.high_resolution = true;
     // Native Sound screen (plan 18 Task 6): restroom sound row -> sliders, Left/End, Mute, Back.
     {
         // The slider bit is never set on an original EXE item or popup row
