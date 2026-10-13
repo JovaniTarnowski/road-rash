@@ -59,13 +59,13 @@
 **Files:**
 - Modify: `docs/REVERSE_ENGINEERING.md` ("Race MIDI and SBK banks"), `third_party/` (only after the decision)
 
-- [ ] **Step 1:** Dump the RIFF chunk tree of each `GRUNGE*.SBK` and of the Klown bank (`python3 -c` over `../cdrom/ROADRASH/AUDIO/MUSIC/*.SBK`). Confirm whether they are SoundFont 1 (`sfbk` with `ifil` major 1) or SoundFont 2. Record the sample format, the number of presets and instruments, and whether the MIDI files reference General MIDI programs or bank-specific ones.
+- [X] **Step 1:** Dump the RIFF chunk tree of each `GRUNGE*.SBK` and of the Klown bank (`python3 -c` over `../cdrom/ROADRASH/AUDIO/MUSIC/*.SBK`). Confirm whether they are SoundFont 1 (`sfbk` with `ifil` major 1) or SoundFont 2. Record the sample format, the number of presets and instruments, and whether the MIDI files reference General MIDI programs or bank-specific ones.
 - [ ] **Step 2:** Trace how `0x00433bb0` passes the bank and song to `AWEMAN32.DLL` (the oracle proxy already forwards it). Record which MIDI channels and programs are used, and whether the game sends extra controller messages (volume, reverb).
-- [ ] **Step 3: Decide**, and record the reasoning in REVERSE_ENGINEERING.md:
+- [X] **Step 3: Decide**, and record the reasoning in REVERSE_ENGINEERING.md:
   - **A (preferred):** convert SF1 to SF2 in memory (`sbk.cpp`) and render with TinySoundFont + TinyMidiLoader. These are MIT-licensed single headers; pin the commit and add the licence file.
   - **B:** if conversion turns out lossy for these banks, write a minimal native sampler in `synth.cpp`: the generators the banks actually use, with linear interpolation and the volume envelope only.
   - **C (fallback if both overrun):** play race music from the RRA soundtrack instead. This is an explicit, documented deviation from the original and needs the owner's approval in chat before implementation.
-- [ ] **Step 4:** Commit: `docs: SBK bank structure and race music synthesis decision`.
+- [X] **Step 4:** Commit: `docs: SBK bank structure and race music synthesis decision`.
 
 ---
 
