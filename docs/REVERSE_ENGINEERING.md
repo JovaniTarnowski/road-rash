@@ -576,6 +576,7 @@ The course screens share one item array; the sixth item is copied from `0x004691
 - 8/9/10/11 impacts chain/club/kick/punch; kick alternates 10/11 on the tick parity (`0x00409ad0`).
 - 12 footstep, 13/17 skid on/off road (`0x00434bd0`, +0x164 > 0x32 and surface class ≤ byte `0x0046dce5`), 16 slide (`0x00434a80`).
 - 14/21 nitro on/off (`0x0040b110`/`0x0040b170`), 18 car horn (`0x0044efa0`), 19 siren (`0x00435ae0`), 20 landing bounce (`0x0043a190`), 22 speech.
+  - Siren REA re-confirmation + capture-probe outcome (October 12, 2026; plan 24 Task 2 / plan 13 Task 1 input): pinned REA 6.4.0 pseudocode whitespace-identical for `0x00435ae0` siren (2077 chars: dual-buffer alternation at 0x2b11 Hz, `0x259/0x79`-tick phase counters, distance/volume via `0x00435840`). No RNG in the siren path (pure phase machine). Smoke capture `smoke-napa-default` (SIM=1, seed 1, drive 2, 300 frames, 420 s) still fails exit 124 with the known signature (2 frames, course 0, tick frozen at 2 + Wine page fault) — pipeline still down; proxy `g_race_started` fix still blocked on shared ownership. File: `analysis/oracle/rea-435ae0-siren.md` (disc-derived, git-ignored).
 
 **Event consumer** (`0x004351f0`): most effects play once at volume `(rand%0x1001+0x3fff)/100 × effects` and frequency `rand%0xbb9 + 0x214d` Hz. Footsteps, skids, slides and speech use their own constants. The finish yell (M_YEAH or F_YEAH) plays once when the player's bike gets flag 0x10. Grunts use the female set (+3) for characters 3, 5 and 6 (`0x00435da0`).
 
