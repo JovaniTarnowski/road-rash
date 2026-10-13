@@ -113,6 +113,9 @@ void Race::spawn_pedestrian(const RouteSample& sample, size_t s, const DzhrActor
     p.side = lateral < 1 ? 1 : 3;
     p.trigger = player + int32_t(random() % 0x4fb1);
     p.serial = system.next_serial();
+    // Scan-list ties: ring-setup spawns exist before 0x00405600 builds the
+    // riders; later spawns come after every rider.
+    p.order = (ring_setup_ ? 0u : 0x40000000u) + spawn_order_++;
     p.last_tick = ticks_ - b.i32(0x14);            // 0x00438930: +0x10 = tick - interval, +0xc = tick
     p.next_tick = ticks_;
     p.look = system.look(sample, p.selector);
@@ -417,49 +420,29 @@ void Race::contact_pedestrian(Rider& self, Pedestrian& p) {
     s.i32(0xf4) = std::clamp(s.i32(0xf4), -10000, 10000);
 }
 
+void Race::contact_rider_pedestrian(Rider& r, Pedestrian& p, bool rider_outer) {
+    // 0x004368f0 pair of a bike (4) and a pedestrian (0x20): separation
+    // 0x00436a40 in walk orientation (mass +0x194: pedestrian 100), then the
+    // outer node's handler first: the rider's 0x004049c0 path, the
+    // pedestrian's 0x00440760.
+    const int32_t hitter_speed = r.bike.i32(0xec);
+    if (rider_outer) separate(r, 4, p.body, 0x20);
+    else separate(p.body, 0x20, r, 4);
+    if (rider_outer) {
+        contact_pedestrian(r, p);
+        hit_pedestrian(p, hitter_speed, ai_attack_anim(r) != 0, false);
+    } else {
+        hit_pedestrian(p, hitter_speed, ai_attack_anim(r) != 0, false);
+        contact_pedestrian(r, p);
+    }
+}
+
 void Race::collide_pedestrians() {
-    // 0x004368f0 pairs with a pedestrian: bounds +0x178/+0x174/+0x17c,
-    // separation 0x00436a40 by mass (bike +0x194 against pedestrian 100),
-    // then the rider's handler and the pedestrian's 0x00440760.
-    if (!pedestrians_) return;
+    // Pedestrian against free cars (the rider pairs run in contact_pass).
+    if (!pedestrians_ || !traffic_) return;
     for (auto& p : pedestrians_->pool()) {
         if (!p.active) continue;
         Bike& q = p.body.bike;
-        for (auto& r : riders_) {
-            if (r.finished || r.bike.i32(0x2f4) != 0) continue;
-            if (route_of(r)[r.sample].dual && r.route != p.body.route) continue;
-            Bike& s = r.bike;
-            const int32_t length = s.i32(0x178) + q.i32(0x178), width = s.i32(0x174) + q.i32(0x174);
-            if (std::abs(s.i32(0x1c) - q.i32(0x1c)) > length) continue;
-            if (std::abs(s.i32(0x28) - q.i32(0x28)) > width) continue;
-            if (std::abs(s.i32(0x20) - q.i32(0x20)) > s.i32(0x17c) + q.i32(0x17c)) continue;
-            const int32_t ms = s.i32(0x194), mq = q.i32(0x194), total = ms + mq;
-            const bool forward = length < std::abs(s.i32(0x30) - q.i32(0x30));
-            const bool lateral = width < std::abs(s.i32(0x3c) - q.i32(0x3c));
-            if (forward) {
-                const int32_t depth = (length - std::abs(s.i32(0x1c) - q.i32(0x1c))) + 8;
-                const int32_t push = depth * mq / total + 3, back = depth * ms / total + 3;
-                const bool rider_ahead = q.i32(0x1c) < s.i32(0x30);
-                move_along(r, rider_ahead ? push : -push, false);
-                move_along(p.body, rider_ahead ? -back : back, false);
-                s.i32(0x184) = ((q.i32(0x108) - s.i32(0x108)) * mq * 2) / total;
-            } else s.i32(0x184) = 0;
-            if (lateral) {
-                const int32_t depth = (width - std::abs(s.i32(0x28) - q.i32(0x28))) + 0x800;
-                const int32_t push = depth * mq / total + 3, back = depth * ms / total + 3;
-                if (q.i32(0x28) < s.i32(0x3c)) { s.i32(0x28) += push; q.i32(0x28) -= back; }
-                else { s.i32(0x28) -= push; q.i32(0x28) += back; }
-                s.i32(0x188) = ((q.i32(0x10c) - s.i32(0x10c)) * mq * 2) / total;
-            } else s.i32(0x188) = 0;
-            s.i32(0x18c) = 0;
-            s.u8(0x19c) = uint8_t((forward ? (q.i32(0x1c) < s.i32(0x30) ? 1 : 2) : 0) |
-                                  (lateral ? (q.i32(0x28) < s.i32(0x3c) ? 4 : 8) : 0));
-            for (int k = 0; k < 5; ++k) s.i32(0x30 + 4 * k) = s.i32(0x1c + 4 * k);
-            const int32_t hitter_speed = s.i32(0xec);
-            contact_pedestrian(r, p);
-            hit_pedestrian(p, hitter_speed, ai_attack_anim(r) != 0, false);
-        }
-        if (!traffic_) continue;
         for (auto& car : traffic_->cars_mut()) {
             if (!car.active || !car.collides) continue;
             const int32_t car_half_width = TrafficSystem::car_half_width(car);

@@ -1,12 +1,12 @@
 # cc-plan10-task5: player physics replay (plan 10 Task 5)
 
 Task: plan 10 Task 5 Step 1–2, first divergences of the solo replay.
-Baseline: `49db329`. Worktree `/Users/archit/Dev/rr/native-port-cc`, branch
-`cc/plan10-task5`, build directory `native-port-cc/build`. `analysis/oracle`
-and `analysis/decompiled` are symlinks to the main checkout (read-only use).
-Not merged into `port/playable-napa`: another session had uncommitted edits
-to `src/race.cpp`/`src/traffic.*` in the main checkout. The integrator
-cherry-picks this branch.
+Baseline: `49db329`. Changes 1-3 were developed on branch `cc/plan10-task5`
+and merged into `port/playable-napa` (`cbd1b54`). Change 4 was finished in the
+shared checkout (owner request) with a private build directory `build-cc`,
+verified in an isolated HEAD export, and staged without the other session's
+uncommitted edits (its `race.cpp` overtake/demo-hold hunks, `race_test.cpp`
+cases and `bike.cpp` guards stay unstaged in the working tree).
 
 ## Change 1: AI lane bias (commit 7695b06, corrected here)
 
@@ -80,88 +80,105 @@ builds `original_opponents(..., 14)` frozen; `Race::step_rider` and
 `advance_ride_animation` skip frozen riders, which stay visible to scans and
 contacts. `Race::set_freeze_actors` stops pedestrian thinking.
 
-## Next divergence: tick 184, AI state machine
+## Change 4: AI state machine, countdown, contact walk (plan 10 Task 6 slice)
 
-The human-era capture (`sim-napa-solo-human.tsv`, AI branch, same run)
-exposes the brain. The original thinks during the 59 countdown ticks:
-`+0x188` counts, replan at tick 59 latches neighbours (13056), sets current
-81, and at tick 60 `0x00408ad0` moves to state 2. Native starts at green in
-state 1 with no target. Frame 0 also carries stale brain words (`+0x194`
-10240, `+0x198` 14016, `+0x1a4` 108, `+0x180` latched) from the global
-brain copy's previous use. Later the native AI enters state 4 (not
-dispatched natively) while the original stays in 1 and enters state 5
-against the frozen bike at 13312 at tick 183 (target x 43264).
+All against the decompiled functions (REA-confirmed in the sibling handoffs):
 
-Further findings (no code kept; plan 10 Task 6 inputs):
+- Replan `0x004082f0`: easing clamps each word to its own target; both
+  neighbour scans use cap 0xa00 (0x5000 is the police rider's); the scan
+  `0x00408cd0` walks rider halves (mask 8) and accepts the first strictly
+  inside its slice's road edges `+0xe0/+0xe4`; the overtake rating's
+  near-finish term reads the player's 1-based place (player half `+0x1fc`,
+  measured 15 -> 1); equal ratings tie-break as the original (nearer only
+  when both present).
+- Overtake `0x00408e40`/`0x00449e90`: scans every scheduler object ahead in
+  list order (bikes, halves, pedestrians, cars; window 0x960 from the last
+  object visited; stops at the first object outside the lateral window);
+  latching the replan target or nothing returns false (AL cleared); target
+  writes and speed cases ported. Native list order = position, then creation
+  (ring-setup pedestrians, then riders bike/half in build order, then later
+  spawns), measured from the frame-0 node dump.
+- Transition `0x00408ad0` step 2 checks the two lanes independently; lane
+  index uses the route centre without `road_base_` (opponent halves sit on
+  their exact grid words, so the AI frame is the route frame).
+  `0x00408df0` resets `+0x164` and the per-state tick `+0x138 + 4*state`.
+- Dispatch `0x00465980`: 1/2 racing, 3/4 follow `0x00409ca0` (state 3's
+  attack rolls `0x00409460`/`0x004095d0` not ported: the fight() stand-in
+  remains), 5 fight, 6 shadow `0x0040a560`, 0 none. Follow uses
+  `0x00449a80` speed matching. The native-only idle fallback is gone.
+- Opponent brains: slots 9..14 use row-0 copies (`0x004078f0` at career
+  start, speeds jittered by rand()%13-6 then: not reproduced) with `+0x165`
+  = slot + 1 (`0x00407990`); native read past the 10-row table before.
+- Countdown: `Race::countdown_step()` runs the AI think without movement.
+  The player's first scheduled tick has dt 2 (`0x00438930`: last run =
+  creation - interval). The harness seeds frozen bike/half laterals and the
+  brain window from frame 0 when the capture has them, then compares the
+  brain every countdown tick (equal for all 58 ticks on
+  `sim-napa-solo-human.tsv`).
+- Contact `0x004368f0`: one walk over the position-sorted list. Outer nodes
+  are those scheduled this tick (frozen never); partners follow in list order;
+  the walk stops at the first partner whose gap exceeds the summed
+  half-lengths (template `+0x48`: bike 64, pedestrian 16). A ring-setup
+  pedestrian at 13824 therefore delays the first frozen-bike contact to tick
+  208, as in the capture. Hazards (`0x004373f0`) run only within the bike's
+  half-length of mid-slice. Separation `0x00436a40` is ported line for line
+  (`Race::separate`, incl. height stacking and the rule that bikes are never
+  pushed sideways when overlapping on every axis). Cars stay in
+  `collide_traffic` (11a owner's area; list order approximate there);
+  pedestrian pairs are not ported.
 
-- Frame-0 brain words are not all stale. `+0x180` is the frozen bike at
-  13056 (node 30) latched by `0x00408e40` in the first countdown tick;
-  `+0x198` = 13056 + 0x3c0 and `+0x194` = 43008 - 0x8000 are its target
-  writes. `+0x1a0` = 70 and `+0x1a4` = 108 do not come from personality row
-  0 (zero there) and look like the global brain copy's previous use.
-- Dispatch table `0x00465980`: 0 no-op `0x00408e30`; 1 `0x00409000`; 2
-  `0x004092d0` = thunk to `0x00409000`; 3 `0x00409460` (two rand draws,
-  `0x004095d0` attack start); 4 `0x00409ca0` (follow target, speed through
-  `0x00449a80`); 5 `0x0040a4f0`; 6 `0x0040a560`. Native runs fight for 5
-  and racing for every other state. The capture visits 1, 2, 5, 4.
-- `0x00408ad0` step 2 checks independently: self lane valid and
-  `0x004092e0` -> 3; else target lane valid and `0x0040a4a0` -> 5; else 1.
-  Native nests both lane checks. `0x00408df0` resets `+0x164` and the
-  per-state timer `+0x138 + 4*state` on change (native keeps no timers).
-- Native `ai_overtake` is a stub (never writes targets). The original
-  `0x00449e90` walks objects ahead in position order (`0x00449ce0`, mask
-  0x3f: bikes, halves, pedestrians, cars, window 0x960) and stops at the
-  first one outside the lateral window; native sorts riders by lateral.
-- Frozen field geometry (frame-0 node dump): halves sit on the grid words,
-  bikes do not. Bike lateral = grid word + (position - 0x2b00) for samples
-  50..54 and 57 (player 1792 = its `road_base`, 13056 -> +2048, 13312 ->
-  +2304, ...); 55, 56 and later rows carry an extra lane (+64000) or other
-  shifts. The placement field `*(slot+0x14)+0xcc` in `0x00405990` is not
-  yet traced. Until it is, a replay must seed frozen bike/half laterals from
-  the dump.
+Result (single anchor, `--driver=demo`): `sim-napa-solo-human.tsv` matches
+every compared field and the brain window through tick 207; tick 208 (first
+contact) matches speed, position, lateral, steer rate and lateral velocity,
+diverging on `rider.0.steer` (original 2392, native 504) in the contact
+handler `0x004049c0`. `sim-napa-solo.tsv` (no node dump) reaches tick 208
+too, diverging on position because its frozen bikes keep native grid
+laterals (pinned in `tools/sim_known_divergences.json`).
 
-Next actions (plan 10 Task 6 / plan 11 Task 5 scope):
-1. trace the `0x00405990` placement field; meanwhile seed frozen bike and
-   half laterals and the demo brain from the frame-0 dump, then run native
-   countdown ticks (AI think and contact pass, no movement, no draws) for
-   the hold frames;
-2. port `0x00408e40`/`0x00449e90` over all scheduler objects (needs a
-   separate half lateral per rider), fix `0x00408ad0` step 2, then the
-   state handlers `0x004092d0` (2), `0x00409460` (3), `0x00409ca0`
-   (4), `0x0040a560` (6) and drop the native-only "idle" fallback in
-   `ai_state_racing`;
-3. re-run `RR_SIM_CONTINUE=1 RR_SIM_TRACE=rider.0. oracle-sim-test
-   --driver=demo sim-napa-solo-human.tsv`: the brain line prints native vs
-   golden state, target, neighbours, steps and speeds per tick.
+Open:
+- frozen bike placement: bike lateral = grid word + (position - 0x2b00)
+  for rows 50..54/57; other rows add a lane or more (field not traced);
+- `+0x1a0`/`+0x1a4` at frame 0 (70/108) are left over from the global brain's
+  previous use;
+- the post-ring setup draws (11 measured) are fewer than `0x00405600`'s 16;
+- `game_main.cpp` still counts down without `countdown_step()` (shared file:
+  coordinate); AI riders there start without their countdown replans.
+
+Next action: trace the steer kick in `0x004049c0` for a bike-bike contact
+(tick 208), then state 3 attacks (`0x00409460`, `0x004095d0`, `0x00408d50`).
 
 ## Tooling
 
 - `RR_SIM_TRACE=<prefix>` on `oracle-sim-test` prints each replayed tick's
   native fields with that prefix, marks golden mismatches `/orig <value>`,
   and prints the player brain against the golden brain window.
-- `RR_SIM_CONTINUE=1` keeps replaying past divergences (diagnostic).
+- `RR_SIM_CONTINUE=1` keeps replaying past divergences (diagnostic); the
+  countdown lines print as `countdown tick N:` with the brain comparison.
 - `build/ring-probe <golden> <disc> [maxK] [police]` locates the ring setup
   in the setup stream.
 
 ## Checks
 
-- `cmake --build build --parallel`: pass.
-- `ctest --test-dir build --output-on-failure`: 70/70 pass, none skipped
-  (new `track_ring` synthetic test).
-- Sanitizer tree `build-san` (`-fsanitize=undefined,address
-  -fno-sanitize-recover=undefined`): `track_ring`, `race`, `pedestrian`,
-  `oracle-sim`, `terrain`, `course` pass.
-- `oracle-sim` diagnostic pin updated to the tick-184 output
-  (`tools/sim_known_divergences.json`).
-- `verify-sim` acceptance still fails (no true human-branch golden, no
-  capture receipt): expected.
+Change 4, isolated HEAD export plus only these changes:
+- Debug build: 70/70 pass, none skipped.
+- UBSan/ASan tree: `race`, `pedestrian`, `track_ring`, `oracle-sim`,
+  `race_setup` pass. `crash` stops on a pre-existing division by zero in
+  `apply_spec` (`src/bike.cpp:104`, zeroed spec; unchanged by this work; the
+  web-port session's uncommitted `bike.cpp` guards it).
+- Shared tree (with the other session's edits): 70/71, `oracle-sim` differs
+  because their uncommitted physics edits move the solo divergence.
+- `verify-sim` acceptance still fails (no true human-branch golden).
 
 ## Files
 
-Changed: `src/race.cpp`, `src/race.hpp`, `src/race_pedestrians.cpp`,
+Changes 1-3: `src/race.cpp`, `src/race.hpp`, `src/race_pedestrians.cpp`,
 `src/track_ring.{hpp,cpp}` (new), `tests/oracle_sim_test.cpp`,
 `tests/track_ring_test.cpp` (new), `tests/ring_probe.cpp` (new),
 `CMakeLists.txt`, `tools/sim_known_divergences.json`, this handoff.
+Change 4: `src/race.cpp`, `src/race.hpp`, `src/race_pedestrians.cpp`,
+`src/pedestrians.hpp`, `tests/oracle_sim_test.cpp`, `tests/race_test.cpp`
+(hazard cases moved mid-slice), `tests/pedestrian_test.cpp` (countdown and
+personality tables), `tools/sim_known_divergences.json`, this handoff.
 No processes or locks held. Shared docs (PROGRESS, VERIFICATION,
 REVERSE_ENGINEERING, SIM_SCENARIOS) are left to the integrator: merge the
 sections above.

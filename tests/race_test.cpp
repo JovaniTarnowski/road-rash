@@ -191,6 +191,8 @@ int main() {
         std::vector<std::vector<rr::RoadHazard>> h0(4000), h1(4000);
         h0[s].push_back({uint32_t(s), centre - 1000, centre + 1000});
         hz.set_hazards(std::move(h0), std::move(h1));
+        // 0x004368f0 runs 0x004373f0 only within the bike's half-length of mid-slice.
+        me.bike.i32(0x1c) = int32_t(s) * 256 + 0x80; me.bike.i32(0x30) = me.bike.i32(0x1c);
         me.bike.i32(0x2f0) = 1000;
         me.bike.i32(0x188) = 0; me.bike.i32(0x2d8) = 0; me.bike.i32(0x288) = 0;
         me.bike.i32(0x29c) = 0x2e00;
@@ -208,6 +210,8 @@ int main() {
         std::vector<std::vector<rr::RoadHazard>> h0(4000), h1(4000);
         h0[s].push_back({uint32_t(s), centre - 1000, centre + 1000});
         hz.set_hazards(std::move(h0), std::move(h1));
+        // 0x004368f0 runs 0x004373f0 only within the bike's half-length of mid-slice.
+        me.bike.i32(0x1c) = int32_t(s) * 256 + 0x80; me.bike.i32(0x30) = me.bike.i32(0x1c);
         me.bike.i32(0x2f0) = 1000;
         me.stamina.current = 5; me.stamina.max = 5;
         me.bike.i32(0x184) = 0x4000; me.bike.i32(0x188) = 0x4000; me.bike.i32(0x18c) = 0;
@@ -221,6 +225,7 @@ int main() {
         std::vector<std::vector<rr::RoadHazard>> h0(4000), h1(4000);
         h0[s].push_back({uint32_t(s), 900 * 256, 1000 * 256});   // outside the 500-unit road edge
         hz.set_hazards(std::move(h0), std::move(h1));
+        me.bike.i32(0x1c) = int32_t(s) * 256 + 0x80; me.bike.i32(0x30) = me.bike.i32(0x1c);
         me.bike.i32(0x2f0) = 1000;
         me.bike.i32(0x184) = 0x2000; me.bike.i32(0x188) = 0; me.bike.i32(0x18c) = 0;
         const int32_t st0 = me.stamina.current;

@@ -13,6 +13,9 @@
 #include "traffic.hpp"
 #include <cstring>
 #include <filesystem>
+#include <cstdio>
+#include <functional>
+#include <sstream>
 #include <optional>
 #include <iostream>
 
@@ -505,6 +508,7 @@ int main(int argc, char** argv) {
     // build, 11,461 calls) is not reproduced: a single anchor at green covers
     // it (known limitation until the setup consumers are ported).
     const int64_t tick0 = get("tick");
+    std::function<std::string(const std::map<std::string, int64_t>&)> brain_line;
     // Start-hold: the golden's leading frames run during the original's
     // pre-green countdown (menu-layer, wall-clock); rider state is frozen and
     // rng unconsumed. The port holds its countdown outside Race (game_main),
@@ -580,6 +584,145 @@ int main(int argc, char** argv) {
     // Tick values stay absolute (original ticks): animation deadlines
     // accumulate from absolute tick counts, so a rebased local zero would
     // silently shift every deadline comparison.
+    // Golden object pointers (brain +0x168/+0x16c/+0x170/+0x180) resolve
+    // through the frame-0 node dump to a (position, type) pair; native riders
+    // are matched by bike position.
+    std::map<int64_t, std::pair<int64_t, int64_t>> node_at;   // address -> (position, type)
+    std::map<int64_t, int64_t> half_lat_at, bike_lat_at;      // position -> lateral
+    for (const auto& kv : h) {
+        if (kv.first.rfind("nodeaddr.", 0) != 0) continue;
+        const std::string n = kv.first.substr(9);
+        if (n.find('.') != std::string::npos) continue;
+        auto p = h.find("nodeaddr." + n + ".position"), t = h.find("nodeaddr." + n + ".type"), l = h.find("nodeaddr." + n + ".lateral");
+        if (p == h.end() || t == h.end()) continue;
+        node_at[kv.second] = {p->second, t->second};
+        if (l != h.end() && t->second == 8) half_lat_at[p->second] = l->second;
+        if (l != h.end() && t->second == 4) bike_lat_at[p->second] = l->second;
+    }
+    auto rider_at = [&](int64_t position) -> int {
+        for (size_t k = 0; k < race.riders().size(); ++k)
+            if (race.riders()[k].bike.i32(0x1c) == position) return int(k);
+        return -1;
+    };
+    auto golden_rider = [&](const std::map<std::string, int64_t>& f, const char* key) -> int {
+        auto it = f.find(key);
+        if (it == f.end() || it->second == 0) return -1;
+        auto n = node_at.find(it->second);
+        return n == node_at.end() ? -2 : rider_at(n->second.first);
+    };
+    auto gpos = [&](const std::map<std::string, int64_t>& f, const char* key) -> int64_t {
+        auto it = f.find(key);
+        if (it == f.end()) return -2;
+        if (it->second == 0) return -1;
+        auto n = node_at.find(it->second);
+        return n == node_at.end() ? it->second : n->second.first;
+    };
+    auto gval = [](const std::map<std::string, int64_t>& f, const std::string& key) -> int64_t {
+        auto it = f.find(key); return it == f.end() ? -2 : it->second;
+    };
+    auto pos_of = [&](int idx) -> int64_t { return idx < 0 ? -1 : race.riders()[size_t(idx)].bike.i32(0x1c); };
+    brain_line = [&](const std::map<std::string, int64_t>& frame) {
+        const auto& br = race.riders()[0].brain;
+        std::ostringstream o;
+        o << "brain state=" << br.state << "/" << gval(frame, "rider.0.brain_160")
+          << " target=" << pos_of(br.target_rider) << "/" << gpos(frame, "rider.0.brain_168")
+          << " ahead=" << pos_of(br.nbr_ahead) << "/" << gpos(frame, "rider.0.brain_16c")
+          << " behind=" << pos_of(br.nbr_behind) << "/" << gpos(frame, "rider.0.brain_170")
+          << " latched=" << (br.overtake_type ? br.overtake_position : -1) << "/" << gpos(frame, "rider.0.brain_180")
+          << " step=" << br.target_step << "/" << gval(frame, "rider.0.brain_174")
+          << " ov=" << br.ov_ahead << "," << br.ov_behind << "/" << gval(frame, "rider.0.brain_178") << "," << gval(frame, "rider.0.brain_17c")
+          << " cur2=" << br.current2 << "/" << gval(frame, "rider.0.brain_1a0")
+          << " cur=" << br.current_speed << "/" << gval(frame, "rider.0.brain_1a4")
+          << " tx=" << br.target_x << "/" << gval(frame, "rider.0.brain_194")
+          << " tpos=" << br.target_position << "/" << gval(frame, "rider.0.brain_198")
+          << " tspd=" << br.target_speed << "/" << gval(frame, "rider.0.brain_19c")
+          << " replan=" << br.replan_ticks << "/" << gval(frame, "rider.0.brain_188");
+        return o.str();
+    };
+    // First brain word that differs from the golden window (empty if the
+    // golden carries no brain window or everything matches).
+    auto brain_diff = [&](const std::map<std::string, int64_t>& f) -> std::string {
+        if (f.find("rider.0.brain_160") == f.end()) return {};
+        const auto& br = race.riders()[0].brain;
+        const std::pair<const char*, int64_t> words[] = {
+            {"160", br.state}, {"174", br.target_step}, {"178", br.ov_ahead}, {"17c", br.ov_behind},
+            {"188", br.replan_ticks}, {"18c", br.lane}, {"190", br.bias}, {"194", br.target_x},
+            {"198", br.target_position}, {"19c", br.target_speed}, {"1a0", br.current2}, {"1a4", br.current_speed}};
+        for (const auto& w : words) {
+            const int64_t want = gval(f, std::string("rider.0.brain_") + w.first);
+            if (want != w.second) return std::string("brain +0x") + w.first + " original " + std::to_string(want) + " native " + std::to_string(w.second);
+        }
+        for (int st = 0; st < 10; ++st) {
+            char key[32]; std::snprintf(key, sizeof key, "rider.0.brain_%x", 0x138 + 4 * st);
+            const int64_t want = gval(f, key);
+            if (want != -2 && want != br.state_ticks[size_t(st)])
+                return std::string("brain +0x") + (key + 14) + " original " + std::to_string(want) + " native " + std::to_string(br.state_ticks[size_t(st)]);
+        }
+        const std::pair<const char*, int> ptrs[] = {{"rider.0.brain_168", br.target_rider}, {"rider.0.brain_16c", br.nbr_ahead}, {"rider.0.brain_170", br.nbr_behind}};
+        for (const auto& p : ptrs) {
+            const int want = golden_rider(f, p.first);
+            if (want != p.second) return std::string(p.first + 8) + " original rider " + std::to_string(want) + " native " + std::to_string(p.second);
+        }
+        const int64_t latched = gpos(f, "rider.0.brain_180");
+        const int64_t mine = race.riders()[0].brain.overtake_type ? race.riders()[0].brain.overtake_position : -1;
+        if (latched != -2 && latched != mine) return "brain_180 original position " + std::to_string(latched) + " native " + std::to_string(mine);
+        return {};
+    };
+    // Countdown (plan 10 Task 5): the original thinks through the hold frames.
+    // Captures with a brain window seed the frozen field and the demo brain
+    // from frame 0 (post tick 1: the global brain copy carries words from its
+    // previous use, and frozen bikes sit off their grid words), then run the
+    // native countdown ticks, comparing the brain every frame.
+    // Older captures without node laterals or a brain window keep the native
+    // grid placement and the ctor brain, and run the countdown from tick 1.
+    const bool brain_window = h.find("rider.0.brain_160") != h.end();
+    if (demo && solo) {
+        if (!bike_lat_at.empty()) for (auto& r : race.riders()) {
+            if (!r.frozen) continue;
+            const int64_t pos = r.bike.i32(0x1c);
+            auto bl = bike_lat_at.find(pos), hl = half_lat_at.find(pos);
+            if (bl == bike_lat_at.end() || hl == half_lat_at.end()) {
+                std::cout << "frozen rider at " << pos << " missing from the node dump\n";
+                return 1;
+            }
+            r.bike.i32(0x28) = int32_t(bl->second);
+            for (int k = 0; k < 5; ++k) r.bike.i32(0x30 + 4 * k) = r.bike.i32(0x1c + 4 * k);   // previous-position copies
+            r.half_detached = true;
+            r.half_lateral = int32_t(hl->second);
+        }
+        auto& br = race.riders()[0].brain;
+        auto w = [&](const char* k) { return int32_t(gval(h, std::string("rider.0.brain_") + k)); };
+        if (brain_window) {
+        br.state = w("160"); br.target_step = w("174"); br.ov_ahead = w("178"); br.ov_behind = w("17c");
+        br.replan_ticks = w("188"); br.lane = w("18c"); br.bias = w("190"); br.target_x = w("194");
+        br.target_position = w("198"); br.target_speed = w("19c"); br.current2 = w("1a0"); br.current_speed = w("1a4");
+        br.state_flag = uint8_t(w("164"));
+        for (int st = 0; st < 10; ++st) { char key[16]; std::snprintf(key, sizeof key, "%x", 0x138 + 4 * st); br.state_ticks[size_t(st)] = w(key); }
+        br.target_rider = golden_rider(h, "rider.0.brain_168");
+        br.nbr_ahead = golden_rider(h, "rider.0.brain_16c");
+        br.nbr_behind = golden_rider(h, "rider.0.brain_170");
+        }
+        // Frame 0 is post tick 1: seeded captures resume at tick 2, others
+        // run tick 1 natively too.
+        race.set_ticks(int32_t(brain_window ? tick0 : tick0 - 1));
+        const uint32_t rng_before = race.rng_state();
+        if (!brain_window) race.countdown_step();
+        for (size_t i = 1; i < green; ++i) {
+            race.countdown_step();
+            if (std::getenv("RR_SIM_TRACE")) std::cout << "countdown tick " << tick0 + int64_t(i) << ": " << brain_line(g.frames[i]) << '\n';
+            const std::string d = brain_diff(g.frames[i]);
+            if (!d.empty()) {
+                std::cout << "first divergence at frame " << i << " (tick " << tick0 + int64_t(i) << ", countdown): " << d << '\n';
+                if (!std::getenv("RR_SIM_CONTINUE")) return 1;
+            }
+        }
+        if (race.rng_state() != rng_before) { std::cout << "countdown consumed draws\n"; return 1; }
+        if (std::getenv("RR_SIM_SIZES")) for (const auto& r : race.riders())
+            std::cout << "sizes slot " << r.slot << " pos " << r.bike.i32(0x1c) << " w " << r.bike.i32(0x174) << " l " << r.bike.i32(0x178) << " h " << r.bike.i32(0x17c) << '\n';
+        std::cout << "countdown: " << green - 1 << " native ticks, brain equal\n";
+    } else {
+        race.set_ticks(int32_t(tick0 + int64_t(green) - 1));
+    }
     std::vector<std::pair<int64_t, uint64_t>> rng_history;  // (golden, native)
     size_t uncovered = 0;  // native fields no golden era dumps (acceptance gaps, counted not skipped)
     for (size_t i = green; i < g.frames.size(); ++i) {
@@ -611,33 +754,7 @@ int main(int argc, char** argv) {
                 std::cout << ' ' << f.name.substr(f.name.rfind('.') + 1) << '=' << f.value;
                 if (it != frame.end() && it->second != f.value) std::cout << "/orig " << it->second;
             }
-            // Brain state beside the golden brain window; golden object
-            // pointers print as the dumped node's grid position.
-            const auto& br = race.riders()[0].brain;
-            auto pos_of = [&](int idx) -> int64_t { return idx < 0 ? -1 : race.riders()[size_t(idx)].bike.i32(0x1c); };
-            auto gnode = [&](const char* key) -> int64_t {
-                auto it = frame.find(key); if (it == frame.end()) return -2;
-                if (it->second == 0) return -1;
-                for (const auto& kv : h) {
-                    if (kv.first.rfind("nodeaddr.", 0) != 0 || kv.second != it->second) continue;
-                    const std::string n = kv.first.substr(9);
-                    if (n.find('.') != std::string::npos) continue;
-                    auto p = h.find("nodeaddr." + n + ".position");
-                    if (p != h.end()) return p->second;
-                }
-                return it->second;
-            };
-            auto gval = [&](const char* key) -> int64_t { auto it = frame.find(key); return it == frame.end() ? -2 : it->second; };
-            std::cout << "  brain state=" << br.state << "/" << gval("rider.0.brain_160")
-                      << " target=" << pos_of(br.target_rider) << "/" << gnode("rider.0.brain_168")
-                      << " ahead=" << pos_of(br.nbr_ahead) << "/" << gnode("rider.0.brain_16c")
-                      << " behind=" << pos_of(br.nbr_behind) << "/" << gnode("rider.0.brain_170")
-                      << " step=" << br.target_step << "/" << gval("rider.0.brain_174")
-                      << " ov=" << br.ov_ahead << "," << br.ov_behind << "/" << gval("rider.0.brain_178") << "," << gval("rider.0.brain_17c")
-                      << " cur2=" << br.current2 << "/" << gval("rider.0.brain_1a0")
-                      << " cur=" << br.current_speed << "/" << gval("rider.0.brain_1a4")
-                      << " tx=" << br.target_x << "/" << gval("rider.0.brain_194")
-                      << " tspd=" << br.target_speed << "/" << gval("rider.0.brain_19c") << '\n';
+            std::cout << "  " << brain_line(frame) << '\n';
         }
         const auto fr = frame.find("rng");
         const uint64_t want_rng = fr == frame.end() ? 0 : uint64_t(fr->second);
@@ -660,6 +777,10 @@ int main(int argc, char** argv) {
             std::cout << "rng history (last " << rng_history.size() << " ticks, golden vs native):";
             for (const auto& e : rng_history) std::cout << " (" << e.first << "," << e.second << ")";
             std::cout << '\n';
+            return 1;
+        }
+        if (const std::string d = brain_diff(frame); !d.empty() && h.find("rider.0.brain_160") != h.end() && demo && solo) {
+            std::cout << "first divergence at frame " << i << " (tick " << tick0 + int64_t(i) << "): " << d << '\n';
             return 1;
         }
         std::string missing;

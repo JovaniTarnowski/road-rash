@@ -139,8 +139,12 @@ struct AiState {
     int overtake_index = 0;      // brain +0x165
     int32_t spd_a[5] = {};       // brain +0x1a8 levels (current2 source)
     int32_t spd_b[5] = {};       // brain +0x1bc levels (current source)
-    int overtake_latched = -1;   // brain +0x180: latched overtake node (riders_ index, -1 null)
+    int overtake_latched = -1;   // brain +0x180: latched overtake node (riders_ index, -1 null or non-rider)
+    uint32_t overtake_type = 0;  // its object type (0 when null)
+    int32_t overtake_position = 0;
     int32_t reach = 0;           // brain +0x1d4: overtake distance scale
+    std::array<int32_t,10> state_ticks{}; // brain +0x138 + 4*state: ticks in each state (0x00407bd0)
+    uint8_t state_flag = 0;      // brain +0x164: cleared on a state change (0x00408df0)
 };
 
 struct Rider {
@@ -151,6 +155,11 @@ struct Rider {
     size_t sample = 0, previous_sample = 0; // bike +0x140 / +0x13c
     bool ai = false;
     bool frozen = false;                    // solo oracle: think/move nulled, scanned but never stepped
+    // Rider half (type 8 scheduler object): rides with the bike, so its
+    // lateral is the bike's unless detached (frozen solo nodes keep the
+    // placement lateral while the bike's differs; measured from the dump).
+    bool half_detached = false;
+    int32_t half_lateral = 0;
     AiState brain;
     bool finished = false;
     int32_t finish_tick = -1;
@@ -248,6 +257,11 @@ public:
     void set_demo_hold(bool v, int base_speed = 0, int lane = 0, int32_t bias = 0,
                        int weapon = 0, RiderStats stats = {});
     void step(uint32_t controls);      // one simulation tick
+    // Pre-green countdown tick (0x0044b3b0 while DAT_004c5d7c != 1): the
+    // rider-half thinks run their AI branch (0x00434660 -> 0x00407bd0) but
+    // nothing moves along the road. No draws were measured in the
+    // countdown frames of the solo captures.
+    void countdown_step();
     const std::vector<Rider>& riders() const { return riders_; }
     std::vector<Rider>& riders() { return riders_; }
     const Bike& bike() const { return riders_[0].bike; }
@@ -280,6 +294,7 @@ public:
     // (0x00455eb0) and dump every snapshotted field.
     uint32_t rng_state() const { return seed_; }
     void set_rng_state(uint32_t s) { seed_ = s; }
+    void set_ticks(int32_t t) { ticks_ = t; }   // oracle: align with the capture's absolute tick
     RaceSnapshot snapshot() const;
     int place(size_t rider) const;      // 1-based race order (finished riders by finish tick)
     int last_target() const { return last_target_; }   // rider most recently hit by the player
@@ -304,6 +319,24 @@ private:
     void crash(Rider&);
     void step_crash(Rider&,bool player,uint32_t controls);
     void step_rider(Rider&, uint32_t controls, bool player);
+    void collide_riders();                  // 0x004368f0 list walk: bikes, pedestrians, hazard gate
+    void contact_rider_pedestrian(Rider&, Pedestrian&, bool rider_outer);
+    void separate(Rider& outer, uint32_t outer_type, Rider& partner, uint32_t partner_type);   // 0x00436a40
+    // Position-ordered scheduler list (0x00438aa0 insert sort, ties in
+    // creation order) for the AI ring scans: rider bikes (type 4) and halves
+    // (8), pedestrians (0x20), free cars (1).
+    struct ScanObject {
+        int32_t position = 0, lateral = 0, speed = 0;   // +0x1c, +0x28, +0x108
+        uint32_t type = 0, order = 0;
+        int rider = -1, pedestrian = -1, car = -1;
+        const RouteSample* sample = nullptr;      // the object's slice (+0x2c)
+    };
+    void build_scan_list() const;
+    int scan_find(int rider, uint32_t type) const;
+    int scan_next(int from, uint32_t mask, bool forward, int32_t window) const;   // 0x00449ce0
+    int32_t half_x(const Rider& r) const { return r.half_detached ? r.half_lateral : r.bike.i32(0x28); }
+    void ai_state_follow(Rider&);           // 0x00409ca0 (state 4; state 3 starts with it)
+    void ai_state_shadow(Rider&);           // 0x0040a560 (state 6)
     void ai_think(Rider&);
     void ai_replan(Rider&);                 // 0x004082f0
     void ai_transition(Rider&);             // 0x00408ad0
@@ -373,6 +406,9 @@ private:
     std::function<const TerrainSlice&(const RouteSample&)> terrain_source_;
     TrafficSystem* traffic_ = nullptr;
     PedestrianSystem* pedestrians_ = nullptr;
+    mutable std::vector<ScanObject> scan_;  // reused by build_scan_list (no tick allocation after warm-up)
+    uint32_t spawn_order_ = 0;              // creation counter for pedestrians
+    bool countdown_started_ = false;        // first countdown tick seen (player dt 2)
     TrackRing* ring_ = nullptr;
     bool ring_setup_ = false;      // inside 0x004552e0: no player object yet
     bool freeze_actors_ = false;

@@ -1,8 +1,8 @@
 {
   "sim-napa-solo.tsv": {
     "trace_sha256": "3ab614a032666d75d6cf241efd9c0dd7148c958fc969c95579a531ffaec7e2a6",
-    "divergence": "first divergence at frame 183 (tick 184): rider.0.lateral original 17073 native 16953",
-    "reason": "Driver-axis replay (--driver=demo), single green anchor. TrackRing reproduces the ring setup (srand(seed)+9098 draws, 2352 draws, closes 11 draws before green) and every slice crossing; RNG equal through tick 184. Tick 184: the original demo AI enters state 5 against the frozen opponent at 13312 after a countdown replan (tick 59) native does not run; native lacks the countdown AI ticks, the stale brain image and the state 2/3/4 handlers. Diagnostic only.",
-    "output_sha256": "5698615712dcbfcad7aebfb29a7e5abb3cb47fe2efaa4475653b64a2fdc77461"
+    "divergence": "first divergence at frame 207 (tick 208): rider.0.position original 13746 native 13778",
+    "reason": "Driver-axis replay (--driver=demo), single green anchor, native countdown (59 ticks, player dt 2 at tick 1). Ring RNG, AI replan/overtake/transitions, the 0x004368f0 list walk and 0x00436a40 separation reproduce the original through tick 207. Tick 208: first contact with a frozen bike; this capture has no node laterals, so frozen bikes keep native grid laterals (the original places them at grid + position - 0x2b00, untraced). The human-era capture with a node dump reaches tick 208 on rider.0.steer instead. Diagnostic only.",
+    "output_sha256": "f03e56e981936a5323496c90cb057033aefbc6cb7cadf38f5dd1834700bbab79"
   }
 }

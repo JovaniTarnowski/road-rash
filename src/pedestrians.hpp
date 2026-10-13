@@ -25,6 +25,7 @@ struct Pedestrian {
     int32_t heading=0;                 // +0x1f0
     int32_t pace=0;                    // +0x1f4: speed cap and acceleration are pace*100
     int32_t trigger=0;                 // +0x1f8: player position that releases the wait
+    uint32_t order=0;                  // creation order (scan-list ties, Race::build_scan_list)
     int8_t lane=0;                     // +0x1fc: lane at the start of the crossing step
     int32_t voice_tick=0;              // +0x200: last scream tick (one per 0xb4 ticks)
     int32_t anchor=0;                  // +0x1c8: spawn position; 0x00440990 keeps within 0x1ff of it

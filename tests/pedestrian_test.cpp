@@ -1,3 +1,4 @@
+#include <cstdlib>
 #include "pedestrians.hpp"
 #include "traffic.hpp"
 #include <SDL3/SDL.h>
@@ -31,7 +32,7 @@ struct Fixture {
     }
     std::unique_ptr<rr::Race> race(int opponents) const {
         auto r=std::make_unique<rr::Race>(rr::make_route(course,false),rr::make_route(course,true),physics,specs.at(0),90,
-            rr::original_opponents(exe,specs,0,opponents),0);
+            rr::original_opponents(exe,specs,0,opponents),0,0,rr::read_personalities(exe),exe);   // personality speed tables (replan resets from them)
         r->set_terrain_source([this](const rr::RouteSample& s)->const rr::TerrainSlice&{return scene->terrain(s.section,s.local);});
         return r;
     }
@@ -47,8 +48,12 @@ Summary natural_race(const Fixture& f,const char* frame_path) {
     Summary out;
     std::map<uint16_t,int32_t> start_lateral;std::map<uint16_t,int32_t> furthest;
     bool saved=false;
+    // Pre-green countdown: the AI thinks (replan, first targets) before the
+    // race starts, as in the original (the solo captures hold 59 ticks).
+    for(int tick=0;tick<59;++tick)race->countdown_step();
     for(int tick=0;tick<12000 && !race->finished();++tick) {
         race->step(0);
+        if(std::getenv("RR_PED_DEBUG") && tick%600==0){const auto& b=race->riders()[0].brain;std::cerr<<"tick "<<tick<<" pos "<<race->riders()[0].bike.i32(0x1c)<<" speed "<<race->riders()[0].bike.i32(0xec)<<" state "<<b.state<<" tspd "<<b.target_speed<<" tgt "<<b.target_rider<<" latched "<<b.overtake_latched<<"\n";}
         int active=0;
         for(const auto& p:pedestrians->pool()) {
             if(!p.active)continue;
