@@ -3,6 +3,13 @@
 #include <iostream>
 int main(int argc,char**) {
     if (argc>1) {
+#ifdef __EMSCRIPTEN__
+        // Needs a real audio callback clock; Node has no WebAudio and the
+        // SDL dummy driver does not advance playback. The dummy-driver path
+        // is covered by the native mixer-device run (plan 23 Task 2).
+        std::cout << "mixer-device needs audio hardware; skipping under Node\n";
+        return 77;
+#endif
         if (!SDL_Init(SDL_INIT_AUDIO)) { std::cerr << SDL_GetError() << '\n';return 1; }
         int result=0;
         {

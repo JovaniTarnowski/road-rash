@@ -1,0 +1,17 @@
+# Use LLVM 22.x for reproducible formatting.
+BasedOnStyle: LLVM
+Language: Cpp
+Standard: c++17
+IndentWidth: 4
+ContinuationIndentWidth: 4
+ColumnLimit: 110
+NamespaceIndentation: None
+BreakBeforeBraces: Attach
+PointerAlignment: Left
+DerivePointerAlignment: false
+AllowShortFunctionsOnASingleLine: Inline
+AllowShortIfStatementsOnASingleLine: WithoutElse
+AllowShortLoopsOnASingleLine: true
+# Preserve include order and address/evidence comments in this reverse-engineered port.
+SortIncludes: Never
+ReflowComments: false

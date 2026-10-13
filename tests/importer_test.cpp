@@ -42,7 +42,10 @@ int main() {
     const auto canceled=rr::import_game((root/"disc.iso").string(),(root/"canceled").string(),{hashes[0]},
         [](const rr::ImportProgress&) { throw std::runtime_error("canceled by test"); });
     check(!canceled.ok && canceled.error=="canceled by test" && !fs::exists(root/"canceled"),"cancellation discards partial import");
-#ifndef _WIN32
+#if !defined(_WIN32) && !defined(__EMSCRIPTEN__)
+    // OS pipe + writer thread. Emscripten's filesystem has no FIFOs and the
+    // single-threaded web build has no pthreads; nonseekable ISO input on
+    // the web goes through the pull-based ImportJob instead (plan 23 Task 4).
     const auto pipe=root/"disc-pipe";
     if (mkfifo(pipe.string().c_str(),0600)!=0) check(false,"create nonseekable source");
     else {

@@ -26,7 +26,12 @@ include(cmake/sdl3_static.cmake)
 # flag at link time only, every catch block is dead code and any thrown
 # std::runtime_error escapes to JS as an unhandled rejection.
 add_compile_options(-O3 -msimd128 -sDISABLE_EXCEPTION_CATCHING=0)
-add_link_options(-O3 -flto -msimd128 -sALLOW_MEMORY_GROWTH=1 -sENVIRONMENT=node -sDISABLE_EXCEPTION_CATCHING=0)
+# The sim's value-type call chains (Race construction + stepping) need more
+# than Emscripten's 64 KiB default stack: race-test overruns the stack cookie
+# under Node but passes natively and with 1 MiB (plan 23 Task 2, Oct 2026).
+# The future game target steps the same paths every frame, so this is set
+# for all web links, not just the tests.
+add_link_options(-O3 -flto -msimd128 -sSTACK_SIZE=1MB -sALLOW_MEMORY_GROWTH=1 -sENVIRONMENT=node -sDISABLE_EXCEPTION_CATCHING=0)
 
 # CTest runs the cross-built tests under the Node.js bundled with the pinned
 # emsdk (.tools/emsdk). The glob keeps working across emsdk updates; the
@@ -36,6 +41,16 @@ list(SORT RR_WEB_NODE_CANDIDATES)
 list(GET RR_WEB_NODE_CANDIDATES -1 RR_WEB_NODE)
 set(CMAKE_CROSSCOMPILING_EMULATOR "${RR_WEB_NODE}" CACHE FILEPATH "Run wasm tests under emsdk Node")
 message(STATUS "Web tests run under ${CMAKE_CROSSCOMPILING_EMULATOR}")
+
+# Plan 23 Task 2 Step 1: tests read the real disc (../cdrom/ROADRASH) and
+# the analysis/oracle/ goldens through Node's filesystem. Native tests use
+# host paths (RR_SOURCE_DIR, std::filesystem), which are invisible inside
+# the default wasm sandbox. NODERAWFS is applied per test executable, never
+# globally: the future browser game target must use the sandboxed/IDBFS
+# filesystem, and NODERAWFS only works under Node.
+function(rr_web_hostfs target)
+    target_link_options(${target} PRIVATE -sNODERAWFS=1)
+endfunction()
 
 # Web-planning microbenchmark for the Task 1 speed measurements.
 set(RR_BENCH_WEB ON CACHE BOOL "Build the rr-bench-web microbenchmark" FORCE)

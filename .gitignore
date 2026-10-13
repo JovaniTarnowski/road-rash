@@ -16,6 +16,7 @@ analysis/*.bmp
 oracle/build/
 .DS_Store
 .superpowers/
+.cache/
 
 analysis/native-video.png
 analysis/frontend/
@@ -24,3 +25,4 @@ analysis/playtest/
 # Agent-tooling receipts and local evidence index (no transcripts/assets committed).
 analysis/agent-gates/
 analysis/agent-tools/
+.vercel

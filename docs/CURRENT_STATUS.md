@@ -15,9 +15,9 @@ Generated from `agent-status.json`. Historical entries describe their own checkp
 
 ## Latest gate receipts
 
-- **android-debug**: passed; source `0f31a63359bf`; commit `b76ffc899e20`; receipt `/Users/archit/Dev/rr/native-port/analysis/agent-gates/p0-p1-android-debug-final/receipt.json`.
+- **android-debug**: passed; source `c231b349b122`; commit `25daed6d1f41`; receipt `/Users/archit/Dev/rr/native-port/analysis/agent-gates/playtest-audio-ai-loading-android/receipt.json`.
 - **android-release**: passed; source `50298bc9812a`; commit `b76ffc899e20`; receipt `/Users/archit/Dev/rr/native-port/analysis/agent-gates/p0-p1-android-release-final/receipt.json`.
-- **native**: passed; source `0f31a63359bf`; commit `b76ffc899e20`; receipt `/Users/archit/Dev/rr/native-port/analysis/agent-gates/p0-p1-native-final/receipt.json`.
+- **native**: passed; source `c231b349b122`; commit `25daed6d1f41`; receipt `/Users/archit/Dev/rr/native-port/analysis/agent-gates/playtest-audio-ai-loading-final/receipt.json`.
 - **oracle**: failed; source `c326c2b97d5a`; commit `b76ffc899e20`; receipt `/Users/archit/Dev/rr/native-port/analysis/agent-gates/p0-p1-strict-final/receipt.json`.
 - **package**: passed; source `0f31a63359bf`; commit `b76ffc899e20`; receipt `/Users/archit/Dev/rr/native-port/analysis/agent-gates/p0-p1-package-final/receipt.json`.
-- **sanitizers**: passed; source `0f31a63359bf`; commit `b76ffc899e20`; receipt `/Users/archit/Dev/rr/native-port/analysis/agent-gates/p0-p1-sanitizers-final/receipt.json`.
+- **sanitizers**: passed; source `c231b349b122`; commit `25daed6d1f41`; receipt `/Users/archit/Dev/rr/native-port/analysis/agent-gates/playtest-audio-ai-loading-asan-final/receipt.json`.

@@ -1,4 +1,5 @@
 #include "importer.hpp"
+#include "import_job.hpp"
 #include "iso9660.hpp"
 #include "sha256.hpp"
 #include <SDL3/SDL.h>
@@ -19,6 +20,7 @@ void validate_path(const std::string& path) {
     if (path==".rr-import" || path==".rr-source.iso") throw std::runtime_error("Reserved import metadata path");
     for (const auto& part:fs::path(path)) if (part==".." || part=="." || part.empty())
         throw std::runtime_error("Import reference escapes destination");
+    // (The ImportJob constructor re-validates the table with the same rules.)
 }
 std::vector<uint8_t> load_file(const fs::path& path) {
     IO io(SDL_IOFromFile(path.string().c_str(),"rb"));
@@ -29,6 +31,51 @@ std::vector<uint8_t> load_file(const fs::path& path) {
     if (SDL_ReadIO(io.get(),result.data(),result.size())!=result.size()) throw std::runtime_error("Truncated source file: "+path.string());
     return result;
 }
+// ImportSink writing verified files into the staging directory. commit()
+// writes the marker and renames staging to the destination, exactly as the
+// former blocking import_game did; abort() removes the staging tree.
+class FilesystemSink : public ImportSink {
+public:
+    FilesystemSink(fs::path staging, fs::path destination, size_t file_count)
+        : staging_(std::move(staging)), destination_(std::move(destination)), file_count_(file_count) {}
+    void begin_file(const std::string& path, uint64_t) override {
+        current_.clear();
+        const auto output=staging_/path;
+        fs::create_directories(output.parent_path());
+        stream_.open(output,std::ios::binary);
+        if (!stream_) throw std::runtime_error("Cannot write imported file: "+path);
+        current_=path;
+    }
+    void write(const uint8_t* data, size_t size) override {
+        stream_.write(reinterpret_cast<const char*>(data),std::streamsize(size));
+        if (!stream_) throw std::runtime_error("Cannot write imported file: "+current_);
+    }
+    void end_file(bool ok) override {
+        stream_.close();
+        if (!ok) { std::error_code error; fs::remove(staging_/current_,error); }
+        current_.clear();
+    }
+    bool commit() override {
+        std::error_code error;
+        fs::remove(staging_/".rr-source.iso",error);
+        std::ofstream marker(staging_/".rr-import",std::ios::binary);
+        marker << "rr-import 1\n" << file_count_ << '\n';
+        marker.close();
+        if (!marker) throw std::runtime_error("Cannot write import marker");
+        if (fs::exists(destination_)) fs::remove(destination_); // previously checked empty; remove refuses a raced-in nonempty directory
+        fs::rename(staging_,destination_);
+        return true;
+    }
+    void abort() override {
+        std::error_code error;
+        if (!staging_.empty()) fs::remove_all(staging_,error);
+    }
+private:
+    fs::path staging_, destination_;
+    size_t file_count_ = 0;
+    std::ofstream stream_;
+    std::string current_;
+};
 }
 const std::vector<ReferenceHash>& reference_hashes() {
     static const std::vector<ReferenceHash> hashes={
@@ -76,7 +123,6 @@ ImportResult import_game(const std::string& source,const std::string& dest,
         fs::path source_root(source);
         if (folder && fs::is_directory(source_root/"ROADRASH")) source_root/="ROADRASH";
         IO iso_io;
-        std::unique_ptr<Iso9660> iso;
         if (!folder) {
             iso_io.reset(SDL_IOFromFile(source.c_str(),"rb"));
             if (!iso_io) throw std::runtime_error(std::string("Cannot open ISO: ")+SDL_GetError());
@@ -107,43 +153,45 @@ ImportResult import_game(const std::string& source,const std::string& dest,
                 iso_io.reset(SDL_IOFromFile(cache.string().c_str(),"rb"));
                 if (!iso_io) throw std::runtime_error("Cannot reopen cached disc image");
             }
-            iso=std::make_unique<Iso9660>([&](uint64_t offset,uint8_t* out,size_t size) {
-                if (offset>INT64_MAX || SDL_SeekIO(iso_io.get(),Sint64(offset),SDL_IO_SEEK_SET)!=Sint64(offset)) return size_t(0);
-                return SDL_ReadIO(iso_io.get(),out,size);
-            });
         }
-        size_t done=0;
-        for (const auto& entry:hashes) {
-            if (progress) progress({done,hashes.size(),entry.path});
-            std::vector<uint8_t> bytes;
-            try { bytes=folder ? load_file(source_root/entry.path) : iso->read("ROADRASH/"+entry.path); }
-            catch (const std::exception& e) {
-                result.missing.push_back(entry.path+": "+e.what());
-                ++done;
-                continue;
+        // The import itself runs as a pull-based job: the driver below
+        // answers byte-range/file needs from SDL_IOStream reads (the browser
+        // will answer them from picked files instead). A throwing progress
+        // callback cancels with its message, as before.
+        FilesystemSink sink(staging,destination,hashes.size());
+        ImportJob job(hashes,sink,!folder);
+        std::vector<uint8_t> chunk;
+        try {
+            for (int guard=0;guard<10000000 && !job.done();++guard) {
+                if (progress) progress(job.progress());
+                if (auto file=job.need_file()) {
+                    try {
+                        const auto bytes=load_file(source_root/ *file);
+                        job.supply(bytes.data(),bytes.size());
+                    } catch (const std::exception& e) {
+                        job.missing_file(e.what());
+                    }
+                    continue;
+                }
+                auto range=job.need_range();
+                if (!range) break;
+                chunk.assign(range->size,0);
+                size_t got=0;
+                if (range->size) {
+                    if (range->offset<=uint64_t(INT64_MAX) &&
+                        SDL_SeekIO(iso_io.get(),Sint64(range->offset),SDL_IO_SEEK_SET)==Sint64(range->offset))
+                        got=SDL_ReadIO(iso_io.get(),chunk.data(),chunk.size());
+                }
+                chunk.resize(got);
+                job.supply(chunk.data(),chunk.size());
             }
-            if (sha256(bytes)!=entry.hash) { result.mismatched.push_back(entry.path); ++done; continue; }
-            const auto output=staging/entry.path;
-            fs::create_directories(output.parent_path());
-            std::ofstream stream(output,std::ios::binary);
-            stream.write(reinterpret_cast<const char*>(bytes.data()),std::streamsize(bytes.size()));
-            stream.close();
-            if (!stream) throw std::runtime_error("Cannot write imported file: "+entry.path);
-            ++done;
-        }
-        if (progress) progress({done,hashes.size(),{}});
-        if (result.missing.empty() && result.mismatched.empty()) {
-            iso.reset();
-            iso_io.reset();
-            fs::remove(staging/".rr-source.iso");
-            std::ofstream marker(staging/".rr-import",std::ios::binary);
-            marker << "rr-import 1\n" << hashes.size() << '\n';
-            marker.close();
-            if (!marker) throw std::runtime_error("Cannot write import marker");
-            if (fs::exists(destination)) fs::remove(destination); // previously checked empty; remove refuses a raced-in nonempty directory
-            fs::rename(staging,destination);
-            staging.clear();
-            result.ok=true;
+            if (progress) progress(job.progress());
+            if (!job.done()) throw std::runtime_error("Import stalled with no pending need");
+            result=job.result();
+            if (result.ok) staging.clear();  // committed: owned by the destination now
+        } catch (const std::exception& e) {
+            job.fail_source(e.what());
+            result=job.result();
         }
     } catch (const std::exception& e) { result.error=e.what(); }
     if (!staging.empty()) { std::error_code error; fs::remove_all(staging,error); }

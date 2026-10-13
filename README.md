@@ -10,6 +10,11 @@ Progress summary, timeline and next steps: [docs/PROGRESS.md](docs/PROGRESS.md).
 
 Native C++17 / SDL3 work targeting macOS ARM64 and Android ARM64. `rr-game` is a **playable race against seven AI opponents** with the original bike physics and combat; `rr-viewer` is the asset research viewer. It does not execute the Windows binary, use Wine, or emulate x86.
 
+C++ formatting and static analysis: `make format FILES='src/foo.cpp src/foo.hpp'`,
+`make format-check FILES='src/foo.cpp src/foo.hpp'`, and
+`make lint BUILD_DIR=build FILES='src/foo.cpp'` use LLVM 22.
+See [docs/CPP_QUALITY.md](docs/CPP_QUALITY.md) for setup, checks and rollout.
+
 ## Current implementation
 
 - Original executable imported and analyzed in Ghidra: 1,585 functions exported as address-keyed pseudocode.

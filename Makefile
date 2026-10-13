@@ -13,7 +13,8 @@ JAVA_HOME  ?= /opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home
 .PHONY: help all configure build run run-first viewer video test corpus smoke \
         import app apk apk-release decompile inventory ci clean distclean \
         doctor gate-native gate-sanitizers verify-sim gate-android-debug \
-        gate-android-release gate-package agent-status analysis-index
+        gate-android-release gate-package agent-status analysis-index agent-sessions lsp-check agent-tools-test \
+        format format-check lint
 
 help:
 	@echo "Targets:"
@@ -39,8 +40,23 @@ help:
 	@echo "  gate-android-debug|gate-android-release|gate-package  logged artifact checks"
 	@echo "  agent-status regenerate docs/CURRENT_STATUS.md from its evidence manifest"
 	@echo "  analysis-index build the address/evidence lookup cache"
+	@echo "  agent-sessions inventory retained local histories into analysis/agent-sessions.json"
+	@echo "  lsp-check    read-only compile database freshness check"
+	@echo "  agent-tools-test synthetic tooling regressions (no native build)"
+	@echo "  format       clang-format 22 (FILES='src/foo.cpp src/foo.hpp'; default all src/tests C++)"
+	@echo "  format-check read-only formatting gate (same FILES selection)"
+	@echo "  lint         clang-tidy 22 (FILES='src/foo.cpp'; configured BUILD_DIR required)"
 
 all: build
+
+format:
+	python3 tools/cpp_quality.py format $(FILES)
+
+format-check:
+	python3 tools/cpp_quality.py format-check $(FILES)
+
+lint:
+	python3 tools/cpp_quality.py lint --build-dir "$(BUILD_DIR)" $(FILES)
 
 configure:
 	cmake -S . -B $(BUILD_DIR) -DCMAKE_BUILD_TYPE=$(BUILD_TYPE)
@@ -117,6 +133,16 @@ agent-status:
 
 analysis-index:
 	python3 tools/analysis_index.py
+
+agent-sessions:
+	python3 tools/agent_sessions.py --out analysis/agent-sessions.json
+
+lsp-check:
+	python3 tools/agent_lsp.py
+
+agent-tools-test:
+	python3 tests/agent_tooling_test.py
+	python3 tests/agent_sessions_test.py
 
 clean:
 	rm -rf $(BUILD_DIR)

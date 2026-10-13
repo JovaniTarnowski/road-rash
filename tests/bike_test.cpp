@@ -133,6 +133,23 @@ int main() {
         check(b.i32(0x2dc) == 0x6000, "rpm rate-limited to -0x2000 per update");
     }
 
+    // Plan 23 Task 2: a zeroed spec divides by zero in 0x00405ea0 (steer
+    // rates 0x2a8/0x2ac, gear-rate divisors). ARM64 silently yields zero;
+    // wasm32 traps. apply_spec guards every divisor to zero so both compute
+    // the same thing. Real specs never hit a zero divisor.
+    {
+        rr::BikeSpec zero{};
+        rr::Bike z;
+        rr::apply_spec(z, zero, 90);
+        check(z.i32(0x250) == 0 && z.i32(0x26c) == 0, "zero spec throttle/brake max");
+        check(z.i32(0x2a0) == 0 && z.i32(0x2a4) == 0, "zero spec steer numerators");
+        check(z.i32(0x2a8) == 0 && z.i32(0x2ac) == 0, "zero spec steer rates defined");
+        check(z.i32(0x260) == 0 && z.i32(0x27c) == 0, "zero spec max rates");
+        check(z.i32(0x264) == 0 && z.i32(0x268) == 0 && z.i32(0x280) == 0 && z.i32(0x284) == 0,
+            "zero spec rate divisors defined");
+        check(z.i32(0x29c) == 0x2e00 && z.i32(0x2c4) == 0x14, "zero spec constants intact");
+    }
+
     std::cout << failures << " failures\n";
     return failures ? 1 : 0;
 }

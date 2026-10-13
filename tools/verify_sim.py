@@ -1,13 +1,38 @@
 #!/usr/bin/env python3
 """Separate exact known diagnostics from strict, complete simulation acceptance."""
 import argparse
+import glob
 import hashlib
 import json
 import os
 from pathlib import Path
+import shutil
 import subprocess
 from agent_common import ROOT, atomic_json, sha256
 from oracle_capture import reference_hash, validate_trace
+
+
+def node_prefix():
+    """Node.js that runs a .js (Emscripten) replay binary. Plan 23 Task 2:
+    verify_sim.py executes the binary directly, which fails for wasm output.
+    Prefers RR_WEB_NODE, then the pinned emsdk bundle, then PATH."""
+    env = os.environ.get('RR_WEB_NODE')
+    if env:
+        return [env]
+    candidates = sorted(glob.glob(str(ROOT / '.tools/emsdk/node/*/bin/node')))
+    if candidates:
+        return [candidates[-1]]
+    found = shutil.which('node')
+    if found:
+        return [found]
+    raise FileNotFoundError('no Node.js for the .js replay binary (set RR_WEB_NODE)')
+
+
+def run_binary(binary, args, timeout):
+    cmd = [str(binary)] + args
+    if Path(binary).suffix == '.js':
+        cmd = node_prefix() + cmd
+    return subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
 
 
 def classify(code, output, rule, digest):
@@ -38,10 +63,10 @@ def verify(binary, fixtures, assets, mode='acceptance', rules=None, timeout=120,
                     raise ValueError('capture does not prove player.demo_hold=0 throughout')
                 # Current binary hardwires solo to demo-hold. Require an explicit
                 # replay capability marker before claiming human-control acceptance.
-                capabilities = subprocess.run([str(binary), '--capabilities'], capture_output=True, text=True, timeout=timeout)
+                capabilities = run_binary(binary, ['--capabilities'], timeout)
                 if capabilities.returncode != 0 or 'human-controls-single-anchor' not in capabilities.stdout.splitlines():
                     raise ValueError('replay binary has not declared human-controls-single-anchor support')
-            result = subprocess.run([str(binary), f'--driver={driver}', str(fixture), str(assets)], capture_output=True, text=True, timeout=timeout)
+            result = run_binary(binary, [f'--driver={driver}', str(fixture), str(assets)], timeout)
             output = result.stdout + result.stderr
             row.update({'exit_code': result.returncode, 'output': output})
             row['status'] = classify(result.returncode, output, (rules or {}).get(Path(fixture).name), info['trace_sha256'])

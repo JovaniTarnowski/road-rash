@@ -1,5 +1,6 @@
 #include "race.hpp"
 #include "assets.hpp"
+#include "race_setup.hpp"
 #include <filesystem>
 #include <iostream>
 
@@ -122,6 +123,47 @@ int main() {
     check(ob.i32(0x1c) > 0x3200 + 0x4000, "opponent makes progress");
     check(shown > 80 && shown < 115, "opponent holds its target speed");
     check(field.place(0) == 2, "player behind the moving opponent is second");
+
+    // A replan target can remain selected while the overtake scan is empty.
+    // 0x408fe7 returns AL=0 here: choose a fresh point ahead, even when the
+    // previous point is now behind the rider (formerly froze the racing line).
+    {
+        rr::Race replanned(straight(4000), straight(4000), t, spec, 90, {opp});
+        auto& ai = replanned.riders()[1].brain;
+        ai.target_rider = 0;
+        ai.target_step = 1;
+        ai.target_position = 0;
+        ai.target_x = 600 * 256;
+        ai.target_speed = 0;
+        replanned.riders()[0].bike.i32(0x28) = -600 * 256;
+        replanned.step(0);
+        check(ai.target_position > replanned.riders()[1].bike.i32(0x1c), "AI refreshes stale target with no overtake candidate");
+        check(ai.target_speed > 0 && std::abs(ai.target_x) < 500 * 256, "AI resumes its road line and speed");
+    }
+
+    // A distinct nearby scan candidate needs the passing point written this
+    // tick, rather than returning success from an unfinished steering stub.
+    {
+        rr::Race passing(straight(4000), straight(4000), t, spec, 90, {opp});
+        passing.riders()[0].bike.i32(0x28) = 0;
+        passing.riders()[0].bike.i32(0x1c) += 1500;
+        auto& ai = passing.riders()[1].brain;
+        ai.target_rider = -1;
+        ai.target_position = 0;
+        ai.target_x = 0;
+        passing.step(0);
+        check(ai.overtake_latched == 0, "AI detects nearby passing candidate");
+        check(ai.target_position > passing.riders()[1].bike.i32(0x1c), "passing point advances ahead of candidate");
+        check(std::abs(ai.target_x) == 0x8000, "passing point uses recovered lateral clearance");
+    }
+
+    {
+        rr::Race demo(straight(4000), straight(4000), t, spec, 90);
+        demo.set_demo_hold(true, 95);
+        for (int tick = 0; tick < 600; ++tick) demo.step(0);
+        check(demo.riders()[0].brain.current_speed > 0 && demo.speed() > 0,
+              "scalar demo speed survives the sixty-tick replan");
+    }
 
     // Rider contact (0x004368f0 detection, 0x00436a40 separation): a rider driving straight into
     // a slower one does not pass through it, and the two end up apart.
@@ -300,6 +342,23 @@ int main() {
         rr::Assets assets(game);
         const auto exe = assets.read("ROADRASH.EXE");
         const auto specs = rr::read_bike_specs(assets.read("DATA/BIKESPEC.RSC"));
+        // Napa live setup: all seven racers must continue advancing after
+        // their first replans, rather than parking at an obsolete target.
+        rr::RaceConfig config;
+        config.course = "NAPA";
+        config.opponents = 7;
+        auto napa = rr::make_race_setup(assets, exe, config);
+        std::array<int32_t, 8> halfway{};
+        for (int tick = 0; tick < 3600; ++tick) {
+            napa.race->step(rr::control_accelerate);
+            if (tick == 2999) for (size_t i = 1; i < 8; ++i) halfway[i] = napa.race->riders()[i].bike.i32(0x1c);
+        }
+        for (size_t i = 1; i < 8; ++i) {
+            const auto& rider = napa.race->riders()[i];
+            std::cout << "Napa AI " << i << " pos " << rider.bike.i32(0x1c)
+                      << " last-ten-seconds " << rider.bike.i32(0x1c) - halfway[i] << "\n";
+            check(rider.bike.i32(0x1c) - halfway[i] > 0x100, "Napa opponent continues driving after replans");
+        }
         auto field0 = rr::original_opponents(exe, specs, 0, 7);
         check(field0.size() == 7 && field0[0].slot == 1 && field0[6].slot == 7, "seven opponents in slots 1..7");
         check(field0[0].base_speed == 99 && field0[0].lane == 1, "personality 1 level 1 speed and lane (0x00464558)");

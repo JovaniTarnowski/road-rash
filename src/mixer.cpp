@@ -108,6 +108,15 @@ void Mixer::retire(const PcmSound* sound) noexcept {
     for (size_t i=0;i<voices_.size();++i) if (voices_[i].sound==sound) { voices_[i].sound=nullptr; voices_[i].stream=nullptr; cursors_[i].active.store(false,std::memory_order_release); }
     if (stream_) SDL_UnlockAudioStream(stream_);
 }
+void Mixer::retire_stream(MusicStream* music) noexcept {
+    if (stream_ && !SDL_LockAudioStream(stream_)) close_device();
+    consume();
+    for (size_t i=0;i<voices_.size();++i) if (voices_[i].stream==music) {
+        voices_[i].stream=nullptr;
+        cursors_[i].active.store(false,std::memory_order_release);
+    }
+    if (stream_) SDL_UnlockAudioStream(stream_);
+}
 void Mixer::consume() {
     unsigned tail=tail_.load(std::memory_order_relaxed);
     while (tail!=head_.load(std::memory_order_acquire)) {

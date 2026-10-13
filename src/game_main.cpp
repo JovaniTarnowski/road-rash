@@ -26,6 +26,8 @@
 #include "race_music.hpp"
 #include "text.hpp"
 #include <filesystem>
+#include <future>
+#include <chrono>
 #include <algorithm>
 #include <cstdio>
 #include <memory>
@@ -42,6 +44,46 @@ constexpr SDL_ScaleMode crisp_scale = SDL_SCALEMODE_PIXELART;
 constexpr SDL_ScaleMode crisp_scale = SDL_SCALEMODE_NEAREST;
 #endif
 constexpr int countdown_ticks = 3 * rr::ticks_per_second;
+
+// Native startup feedback, available before any disc fonts/art are decoded.
+void draw_loading(SDL_Renderer* renderer, const char* stage) {
+    SDL_SetRenderDrawColor(renderer, 15, 18, 22, 255);
+    SDL_RenderClear(renderer);
+    SDL_SetRenderDrawColor(renderer, 225, 225, 128, 255);
+    SDL_SetRenderScale(renderer, 2, 2);
+    SDL_RenderDebugText(renderer, 92, 102, "LOADING ROAD RASH");
+    SDL_SetRenderScale(renderer, 1, 1);
+    SDL_RenderDebugText(renderer, 180, 250, stage);
+    SDL_FRect track{180, 282, 280, 4};
+    SDL_SetRenderDrawColor(renderer, 50, 55, 60, 255);
+    SDL_RenderFillRect(renderer, &track);
+    SDL_FRect pulse{180 + float((SDL_GetTicks() / 4) % 232), 282, 48, 4};
+    SDL_SetRenderDrawColor(renderer, 225, 225, 128, 255);
+    SDL_RenderFillRect(renderer, &pulse);
+    SDL_RenderPresent(renderer);
+}
+
+template<class Work>
+auto load_with_indicator(SDL_Renderer* renderer, const char* stage, Work work) {
+    draw_loading(renderer, stage);
+#ifdef __EMSCRIPTEN__
+    // The web build does not enable pthreads. Native platforms animate while
+    // loading; the single-thread web build still presents the loading label.
+    return work();
+#else
+    auto pending = std::async(std::launch::async, std::move(work));
+    bool quit = false;
+    while (pending.wait_for(std::chrono::milliseconds(0)) != std::future_status::ready) {
+        SDL_Event event;
+        while (SDL_PollEvent(&event)) if (event.type == SDL_EVENT_QUIT) quit = true;
+        draw_loading(renderer, stage);
+        SDL_Delay(16);
+    }
+    auto result = pending.get();
+    if (quit) { SDL_Event event{}; event.type = SDL_EVENT_QUIT; SDL_PushEvent(&event); }
+    return result;
+#endif
+}
 
 SDL_Gamepad* open_first_gamepad() {
     int count = 0;
@@ -84,6 +126,7 @@ struct Game {
     bool career = false;        // race ends after the finish delay instead of restarting
     std::string quit_prompt;    // string 316, shown after Escape in a career race
     bool quitting = false;
+    rr::RaceMusicPlayer* race_music = nullptr;
     rr::SoundSystem* sound = nullptr;   // race effects and engines (0x00434980)
     rr::Mixer* mixer = nullptr;
 
@@ -578,7 +621,10 @@ void play_video(const rr::Assets& assets,const std::string& path,SDL_Renderer* r
                 const std::string& screenshot,long ticks) {
     rr::Mixer mixer(32);
     if (ticks<0 && SDL_InitSubSystem(SDL_INIT_AUDIO) && !mixer.open_device()) SDL_Log("Audio unavailable: %s",SDL_GetError());
-    rr::VideoPlayer player(assets,path,mixer);
+    auto loaded = load_with_indicator(renderer, "Preparing video...", [&] {
+        return std::make_unique<rr::VideoPlayer>(assets, path, mixer);
+    });
+    auto& player = *loaded;
     LifecycleWatch lifecycle(&mixer);
     std::unique_ptr<SDL_Gamepad,decltype(&SDL_CloseGamepad)> pad(open_first_gamepad(),SDL_CloseGamepad);
     bool running=true;
@@ -746,6 +792,7 @@ RaceEnd run_race(Game& g, SDL_Renderer* renderer, const RaceOptions& opt) {
         if (lifecycle.state.take_clock_reset()) { touch.clear(); clock.reset(); last = now; }
         const bool frozen = lifecycle.state.paused() || g.quitting;
         if (g.mixer) g.mixer->pause(frozen || lifecycle.state.background());
+        if (g.race_music && !frozen && !lifecycle.state.background()) g.race_music->update();
         const int steps = clock.advance(now - last, frozen);
         last = now;
         for (int step = 0; step < steps && !frozen; ++step) {
@@ -817,6 +864,7 @@ int run_game(const rr::Assets& assets, SDL_Window* window, SDL_Renderer* rendere
     const std::string pref = pref_directory();
     const std::string settings_path = (std::filesystem::path(pref) / "settings.txt").string();
     rr::Settings settings = rr::load_settings(settings_path);
+    draw_loading(renderer, "Preparing menus and sound...");
     const rr::TextRenderer text(assets);
     const auto tables = rr::read_career_tables(exe);
     rr::Career career;
@@ -849,7 +897,10 @@ int run_game(const rr::Assets& assets, SDL_Window* window, SDL_Renderer* rendere
         music.set_volume(settings.mute ? 0 : 127 * settings.music_volume / 100 * settings.master_volume / 100);
     };
     apply_levels();
-    if (menu_frames < 0) music.play(settings.music_track);
+    if (menu_frames < 0) load_with_indicator(renderer, "Loading menu music...", [&] {
+        music.play(settings.music_track);
+        return 0;
+    });
     g.mixer = &mixer;
     LifecycleWatch audio_lifecycle(&mixer);
     SDL_Texture* texture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_XRGB8888, SDL_TEXTUREACCESS_STREAMING, 640, 480);
@@ -897,6 +948,8 @@ int run_game(const rr::Assets& assets, SDL_Window* window, SDL_Renderer* rendere
                 // Plan 11 race-start point: race MIDI replaces the RRA soundtrack.
                 // ev.course is the original 1..5 index (0x0046df58 order), matching race_song_name.
                 race_music.play_race(ev.course, fe.player_name());
+                g.race_music = &race_music;
+                race_music.set_music_level(settings.mute ? 0 : settings.music_volume * settings.master_volume / 100);
                 g.sound = sound.get();
                 if (sound) sound->start_race(career.state.bike, career.state.character);
                 const RaceEnd end = run_race(g, renderer, {});
@@ -904,6 +957,7 @@ int run_game(const rr::Assets& assets, SDL_Window* window, SDL_Renderer* rendere
                 if (sound) sound->stop_race();
                 race_music.stop();  // race end
                 g.sound = nullptr;
+                g.race_music = nullptr;
                 settings.music_track = music.track();
                 music.play(music.track());
                 SDL_SetRenderLogicalPresentation(renderer, 640, 480, SDL_LOGICAL_PRESENTATION_LETTERBOX);
@@ -1104,13 +1158,16 @@ int main(int argc, char** argv) {
             SDL_DestroyRenderer(renderer);SDL_DestroyWindow(window);SDL_Quit();return 0;
         }
         Game g;
-        const auto exe = assets.read("ROADRASH.EXE");
-        g.depth = rr::read_depth_table(exe);
-        g.physics = rr::read_physics_tables(exe);
-        g.specs = rr::read_bike_specs(assets.read("DATA/BIKESPEC.RSC"));
-        g.bobs = rr::read_bobs(assets.read("DATA/BIKERS/HIBOB.DAT"), rr::bob_frames);
-        g.remaps = rr::read_rider_remaps(exe, 9);
-        g.palette = rr::Palette::from_raw(assets.read("DATA/PALETTE.RAW"));
+        const auto exe = load_with_indicator(renderer, "Reading game data...", [&] {
+            auto bytes = assets.read("ROADRASH.EXE");
+            g.depth = rr::read_depth_table(bytes);
+            g.physics = rr::read_physics_tables(bytes);
+            g.specs = rr::read_bike_specs(assets.read("DATA/BIKESPEC.RSC"));
+            g.bobs = rr::read_bobs(assets.read("DATA/BIKERS/HIBOB.DAT"), rr::bob_frames);
+            g.remaps = rr::read_rider_remaps(bytes, 9);
+            g.palette = rr::Palette::from_raw(assets.read("DATA/PALETTE.RAW"));
+            return bytes;
+        });
         if (!quick_race) {
             SDL_SetRenderLogicalPresentation(renderer, 640, 480, SDL_LOGICAL_PRESENTATION_LETTERBOX);
             result = run_game(assets, window, renderer, g, exe, screenshot, menu_frames);
@@ -1181,7 +1238,29 @@ int main(int argc, char** argv) {
                 }
                 std::fflush(stdout);
             }
-            if (!into_traffic) run_race(g, renderer, {auto_drive, start_paused, screenshot});
+            if (!into_traffic) {
+                rr::Mixer mixer(48);
+                rr::RaceMusicPlayer race_music(assets, mixer);
+                std::unique_ptr<rr::SoundSystem> sound;
+                if (run_ticks < 0) {
+                    const auto settings = rr::load_settings((std::filesystem::path(pref_directory()) / "settings.txt").string());
+                    if (!SDL_InitSubSystem(SDL_INIT_AUDIO) || !mixer.open_device()) SDL_Log("Audio unavailable: %s", SDL_GetError());
+                    sound = std::make_unique<rr::SoundSystem>(assets, mixer, rr::read_volume_curve(exe), int(rr::read_exe_data(exe, 0x0046dce5, 1)[0]));
+                    rr::SoundLevels levels;
+                    levels.master = settings.master_volume; levels.engine = settings.engine_volume;
+                    levels.effects = settings.effects_volume; levels.others = settings.others_volume;
+                    levels.mute = settings.mute; levels.swap_speakers = settings.swap_speakers;
+                    sound->set_levels(levels);
+                    sound->start_race(bike, 0);
+                    // Public quick-race order differs from the original course index.
+                    const int original_index[] = {4, 1, 2, 5, 3};
+                    race_music.set_music_level(settings.mute ? 0 : settings.music_volume * settings.master_volume / 100);
+                    race_music.play_race(original_index[course], "");
+                    g.mixer = &mixer; g.sound = sound.get(); g.race_music = &race_music;
+                }
+                run_race(g, renderer, {auto_drive, start_paused, screenshot});
+                g.mixer = nullptr; g.sound = nullptr; g.race_music = nullptr;
+            }
         }
     } catch (const std::exception& e) { SDL_Log("%s", e.what()); result = 1; }
     SDL_DestroyRenderer(renderer);

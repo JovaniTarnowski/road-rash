@@ -235,3 +235,12 @@ The animation core is ported and unit-tested, but nothing compares a running rid
 - Every row in the Part 1 tables reads **verified**, or **not applicable** with the trace evidence, or names a later plan that owns a non-Napa item.
 - `napa-contact`, `napa-contact-double`, `napa-contact-cop`, `napa-crash-scenery` (if applicable), `napa-weapon-steal`, `napa-weapon-crash`, `napa-solo-offroad`, `napa-solo-reverse` and `napa-solo-finish-crash` pass with a single RNG anchor; the animation fields match on every scenario; `race-soak` passes in all three build trees.
 - PROGRESS.md "Assumptions" lists no AI, physics, collision, animation or graphics stand-in for Napa.
+
+#### October 12 AI playtest follow-up
+
+The overtake gate's null/equal-target return now follows AL=0 at 0x00408fe7;
+the distinct-candidate passing point writes are implemented. Seven Napa AI
+riders keep advancing through a one-minute live-setup regression. Scalar-only
+demo setup now supplies missing per-level speed fallback. Full-field original
+parity and the remaining AI states/scan semantics are still open; these checks
+do not complete this plan's simulation acceptance.

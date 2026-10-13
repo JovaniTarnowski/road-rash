@@ -205,3 +205,42 @@ Current integration outcomes and limitations are recorded in the implementation
 Wine capture, Ghidra import, handheld test or owner-signed release is implied by
 these synthetic checks. P2 session exporters and C++20/fuzzing/TSan remain separate
 work from this P0/P1 implementation.
+
+## Session inventories and LSP checks
+
+The [follow-up review](agent-review/REFRESH-2026-10-12.md) includes the later OMP
+threads and applies the shared-tree, research-supersession and budget lessons to
+AGENTS. OMP remains the primary development client; read its current handoff and
+coordinate source ownership before implementation.
+
+```sh
+make agent-sessions
+make lsp-check
+make agent-tools-test
+```
+
+Inventory output defaults to ignored `analysis/agent-sessions.json`. To preserve
+a review snapshot and exclude the reviewing conversation, use:
+
+```sh
+python3 tools/agent_sessions.py --exclude-id REVIEW_SESSION_ID --out analysis/review-inventory.json
+```
+
+`--project` and `--home` can select another project/local store root. Filtering
+uses project cwd metadata or OpenCode project IDs. Histories with unrelated cwd,
+deleted/cloud-only data and attachments remain outside coverage. Appending
+JSONL is read to a fixed observed byte count; incomplete final records are
+reported separately. OpenCode reads a WAL-aware read-only transaction and checks
+legacy session JSON. Inventory is metadata, not an automatic assessment of the
+agent's decisions. Review the relevant histories before writing findings.
+
+`--local-text-dir /private/path` explicitly exports user/assistant text for local
+inspection, excluding tool arguments and binary attachments. The directory must
+be outside the Git repository; raw histories can contain private information and
+must not be committed. Defaults never export conversation text.
+
+LSP preflight checks the ignored compile database for missing sources and newer
+CMake files; nonzero status means refresh/check it, not that clangd is impossible
+to use. `python3 tools/agent_lsp.py --check src/bike.cpp` adds an optional parse
+with a 60-second bound. See [TOOLING](TOOLING.md) for the owned-build and client
+reload recipe. Neither command configures builds or changes client preferences.

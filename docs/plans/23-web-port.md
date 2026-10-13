@@ -84,10 +84,10 @@
 **Files:**
 - Modify: `cmake/emscripten.cmake` (all test executables; `-sNODERAWFS=1` for tests so they read the real disc and `analysis/oracle/` goldens through Node's filesystem), `CMakeLists.txt`, `tools/ci.sh` (`RR_WEB=1` stage), `docs/VERIFICATION.md`
 
-- [ ] **Step 1:** Build every CTest executable for Emscripten. Tests that need SDL video (screenshot tests) are skipped under Node with exit 77 and a message; list them.
-- [ ] **Step 2:** Run `ctest --test-dir build-web --output-on-failure` with the disc mounted and the goldens present. Expected: every test that passes natively passes under Node, with the same skip set (apart from Step 1's list). A difference is a real portability bug (integer width, `size_t` being 32-bit in wasm32, undefined behaviour the native compiler happened to tolerate): fix it in the shared code, with a native test that pins the fixed behaviour.
-- [ ] **Step 3:** Pay special attention to `size_t`/`long` being 32 bits in wasm32: grep for `long` used as a 64-bit type and for `size_t` arithmetic on file offsets above 2 GB (none should exist, but the ISO is 518 MB and offsets are computed as `uint64_t` in `Iso9660::ReadAt`; confirm).
-- [ ] **Step 4:** Add the stage to `tools/ci.sh` behind `RR_WEB=1`. Record results in VERIFICATION.md. Commit: `web: full test suite and goldens pass under Node`.
+- [x] **Step 1:** Build every CTest executable for Emscripten. Tests that need SDL video (screenshot tests) are skipped under Node with exit 77 and a message; list them.
+- [x] **Step 2:** Run `ctest --test-dir build-web --output-on-failure` with the disc mounted and the goldens present. Expected: every test that passes natively passes under Node, with the same skip set (apart from Step 1's list). A difference is a real portability bug (integer width, `size_t` being 32-bit in wasm32, undefined behaviour the native compiler happened to tolerate): fix it in the shared code, with a native test that pins the fixed behaviour.
+- [x] **Step 3:** Pay special attention to `size_t`/`long` being 32 bits in wasm32: grep for `long` used as a 64-bit type and for `size_t` arithmetic on file offsets above 2 GB (none should exist, but the ISO is 518 MB and offsets are computed as `uint64_t` in `Iso9660::ReadAt`; confirm).
+- [x] **Step 4:** Add the stage to `tools/ci.sh` behind `RR_WEB=1`. Record results in VERIFICATION.md. Commit: `web: full test suite and goldens pass under Node`.
 
 ---
 
@@ -156,16 +156,16 @@
   ```
   For an ISO the job first requests the volume descriptor (sector 16) and directory sectors, then each referenced file's extent in chunks of at most 1 MiB, hashing as it goes; nothing is committed unless every hash matches (same rule as today's staging directory).
 
-- [ ] **Step 1: Write the failing tests** `tests/import_job_test.cpp`, using `tests/iso_fixture.hpp` and a small test reference table:
+- [x] **Step 1: Write the failing tests** `tests/import_job_test.cpp`, using `tests/iso_fixture.hpp` and a small test reference table:
   - a sync driver feeding exact ranges from the fixture produces the same files and `ImportResult` as today's `import_game` on the same fixture;
   - feeding ranges with random delays between `need` and `supply` (the async case, simulated by interleaving two jobs) still succeeds;
   - a fixture with one modified byte fails with that file in `mismatched` and the sink's `abort` called, `commit` never called (Review Focus 3);
   - `cancel()` mid-file aborts the sink;
   - `fail_source` ends the job with the message in `result().error`;
   - a directory record pointing past the end of the image fails cleanly (`std::runtime_error` caught into `error`, no crash).
-- [ ] **Step 2:** Run; expected FAIL.
-- [ ] **Step 3: Implement**, then reimplement `import_game` as a loop over the job with `SDL_IOStream` reads and a filesystem sink. The existing `importer_test` must pass unchanged.
-- [ ] **Step 4:** Run all tests natively and under Node. Commit: `import: pull-based import job shared by native and web`.
+- [x] **Step 2:** Run; expected FAIL.
+- [x] **Step 3: Implement**, then reimplement `import_game` as a loop over the job with `SDL_IOStream` reads and a filesystem sink. The existing `importer_test` must pass unchanged.
+- [x] **Step 4:** Run all tests natively and under Node. Commit: `import: pull-based import job shared by native and web`.
 
 ---
 

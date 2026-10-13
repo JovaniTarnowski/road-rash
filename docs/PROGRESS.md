@@ -50,6 +50,26 @@ Detailed evidence is in [REVERSE_ENGINEERING.md](REVERSE_ENGINEERING.md) and tes
 
 ## Timeline
 
+### October 12, 2026: web port Tasks 2 and 4 (plan 23)
+
+- **Task 2 (full suite under Node):** `ctest --test-dir build-web` is 68/68
+  (67 pass + `mixer-device` environment skip). Fixed a genuine UB
+  (`apply_spec` divided by zero on zeroed specs, `src/bike.cpp`, guarded to
+  the ARM64 result with a `bike_test` pin), the 64 KiB wasm stack
+  (`-sSTACK_SIZE=1MB` for web links), the FIFO/pthread gate
+  (`importer_test`), the audio-hardware gate (`mixer_test --device` exits
+  77), and the `verify_sim.py` Node prefix; `-sNODERAWFS=1` per test
+  executable un-skipped all 12 corpus/oracle tests, which pass.
+- **Task 4 (pull-based import):** new `ImportJob`/`ImportSink`
+  (`src/import_job.*`, `tests/import_job_test.cpp` six cases) plus streaming
+  `Sha256Stream`; `import_game` reimplemented as a sync driver with
+  unchanged semantics (`importer_test` untouched, green). Native 70/70, web
+  69/69, ASan/UBSan clean.
+- **Remaining gaps:** Task 3 (SDL main callbacks) is blocked on another
+  worker's uncommitted `game_main.cpp` changes; Task 5 touches dirty
+  `src/sound.cpp` (coordinate); Tasks 6–9 open (Vercel placeholder scaffold
+  in `vercel.json`/`tools/build_web.sh` only).
+
 ### October 12, 2026: traffic lights and crossing traffic, second pass (plan 24 Task 1, `6eaab29`)
 
 A review of the first intersection port against the decompile found it placed crossing cars past the intersection (end-based base), always used kind 1 with the wrong lane range, thought every tick, and moved crossing cars 0x78000 per tick.
@@ -653,3 +673,29 @@ UI cleanup (October 11, 2026): removed the bottom keyboard-instructions overlay 
   playtest-visual-fixes session), visual-session-owned files untouched.
 - No pixel/frame equality with the original is claimed beyond the measured
   fixtures cited above.
+
+### October 12, 2026 — audio, AI and launch playtest fixes
+
+Fixed the engine disappearing as the camera left the start: the audio listener
+now follows the camera. Race MIDI is now pumped from the live race render loop
+(independent of the effects channel), buffered with backpressure, paused with
+the mixer and safely detached before its stream is freed. Normal menus and
+interactive `--race` both play race audio; deterministic `--ticks` runs remain
+silent. Quick races now honor saved engine/effects/music levels and mute.
+
+Corrected the original overtake gate's AL return and implemented its passing
+point writes, so a selected replan target no longer suppresses a fresh racing
+line. Added a scalar demo-speed fallback exposed by this correction. Napa's
+seven opponents all advance during the final ten seconds of a one-minute
+regression. This does not establish original simulation parity.
+
+Launch now presents a loading label and moving activity bar before disc-data,
+menu-music and video decoding. Native data/video/menu-music decoding runs on
+a worker while SDL rendering/event pumping stays on the main thread; the
+non-threaded web build presents a static loading label. Menu/sound preparation
+also presents a stage label.
+
+Pause and wipeout visuals are **not exact matches**: pause is a native dark
+overlay instead of the original Windows modal message; `WIPEOUT!` is still
+a debug-text overlay. Original crash-frame pixel acceptance and a finished
+native pause menu remain open. Details/checks: [playtest handoff](agent-handoffs/playtest-audio-ai-loading.md).

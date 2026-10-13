@@ -658,3 +658,113 @@ Default gate runs Napa L0 twice (~30 s Debug). `RR_SOAK_FULL=1` runs all
 - HIWAY/MEDLY/NAPA/CANYN L0–L4: 108000 ticks each
 - NAPA L0 hash `dec5230d1d4adf99` (representative; per-run hashes printed
   by the test, not pinned — any sim change re-baselines them)
+
+### October 12, 2026 — audio/AI/loading playtest checks
+
+Owned Debug build: `build-agent-playtest-audio-ai-loading`. Source fingerprint
+`c231b349b122a14f1c21e0a6dadb31189b89966d863f27ac0aa7131b9a8806db`.
+
+- `cmake -S . -B build-agent-playtest-audio-ai-loading -DCMAKE_BUILD_TYPE=Debug`
+  and `cmake --build build-agent-playtest-audio-ai-loading --parallel`: pass.
+- Focused `ctest` (`race|pedestrian|sound|music`): 4/4 pass after corrections.
+  Engine test renders at native audio cadence for 2,400 ticks and checks that
+  the player remains audible beyond the start listener's hearing radius.
+  Napa MIDI test pumps/consumes thirty seconds, checks buffer backpressure and
+  silence after stream detach. AI tests cover a stale replan target, a distinct
+  passing candidate, scalar demo speed surviving replans and all seven riders
+  making progress over the last 600 ticks of a 3,600-tick Napa setup.
+- `python3 tools/agent_gate.py sanitizers --build-dir build-agent-playtest-audio-ai-loading-asan --tests '^(race|sound|music|mixer|pedestrian)$' --output analysis/agent-gates/playtest-audio-ai-loading-asan-final --session playtest-audio-ai-loading`: **5/5 pass**, no skips.
+- `python3 tools/agent_gate.py android-debug --output analysis/agent-gates/playtest-audio-ai-loading-android --session playtest-audio-ai-loading`: **pass**, including APK asset inspection. Hardware not run.
+- Normal `build/rr-game` was rebuilt to the same source fingerprint.
+- UI smoke: `rr-game --menu-frames 2 --screenshot analysis/playtest-menu.bmp`,
+  `rr-game --video VIDEO/INTRO.AVI --ticks 600 --screenshot analysis/playtest-intro.bmp`,
+  and interactive-audio `rr-game --race --paused --screenshot analysis/playtest-pause.bmp`
+  all exit 0 (with `--assets ../cdrom/ROADRASH`). The pause PNG was inspected at
+  `analysis/oracle/playtest-audio-ai-loading/playtest-pause.png`: native dimmed
+  frame/debug glyphs, not an original Windows modal dialog. Startup loading is
+  exercised by these paths; its animation was not independently screen-captured.
+
+Initial full CTest caught the scalar demo's absent speed table: 68/69, with
+CITY pedestrian crossing stalled at the start. The fallback correction restores
+the test without changing its assertions. Initial ASan caught an existing
+music-test fixture reading 1,024 stereo frames from only 1,024 samples; its
+input buffer now holds 2,048 samples. One intermediate native receipt was
+invalidated by edits during the gate; use the `-final` receipts only.
+
+No new original runtime capture, human simulation acceptance, crash pixel
+comparison, Android device observation, Android release assembly or standalone
+macOS packaging was performed. AI changes are assembly-backed and have native
+regressions; full AI/scheduler/RNG parity remains open. The existing `oracle-sim`
+CTest diagnostic records a known divergence; a passing diagnostic is not strict
+simulation acceptance. Visual audit/implementation details are in
+[the handoff](agent-handoffs/playtest-audio-ai-loading.md).
+
+Final integration receipt:
+`python3 tools/agent_gate.py native --build-dir build-agent-playtest-audio-ai-loading --output analysis/agent-gates/playtest-audio-ai-loading-final --session playtest-audio-ai-loading`: **pass, 69/69 CTests**, no skips, 214.74 seconds. The receipt confirms a stable source fingerprint. The included `oracle-sim` pass is the documented known-divergence diagnostic, not simulation parity.
+
+## Web port Task 2 (October 12, 2026): full suite under Node
+
+Baseline `e2dce9a` plus other workers' uncommitted sim/audio changes
+(`src/game_main.cpp`, `src/race.cpp`, `src/mixer.*`, `src/sound.cpp` — untouched).
+Owned edits: `src/bike.cpp`, `tests/bike_test.cpp`, `tests/importer_test.cpp`,
+`tests/mixer_test.cpp`, `cmake/emscripten.cmake`, `CMakeLists.txt`,
+`tools/verify_sim.py`, `tools/ci.sh`, `docs/WEB.md`.
+
+- Configure/build: `source .tools/emsdk/emsdk_env.sh` (with Homebrew python on
+  PATH), `.tools/emsdk/upstream/emscripten/emcmake cmake -S . -B build-web
+  -DCMAKE_BUILD_TYPE=Release`, `cmake --build build-web --parallel` — exit 0.
+- `ctest --test-dir build-web`: **68/68 pass** (67 pass + `mixer-device`
+  skipped 77, no audio clock under Node). Former Task 1 failures resolved:
+  `race` (wasm 64 KiB stack too small for sim call chains; `-sSTACK_SIZE=1MB`
+  for web links), `sim_fields` (real UB: `apply_spec` divided by zero on
+  zeroed specs — `src/bike.cpp:104-115`; every divisor now guarded to zero,
+  matching ARM64; real specs never hit a zero divisor), `importer` (FIFO test
+  gated out under `__EMSCRIPTEN__`; web nonseekable input goes through the
+  Task 4 ImportJob), `mixer-device` (binary exits 77 under Emscripten;
+  ctest maps 77 to skip), `oracle-sim` (`verify_sim.py` runs `.js` through
+  Node). The 12 Task 1 skips are gone: `-sNODERAWFS=1` per test executable
+  (`rr_web_hostfs` in `cmake/emscripten.cmake`) exposes the mounted disc and
+  `analysis/oracle/` goldens; `oracle-patch/road/scene/raster` and all corpus
+  tests pass. `oracle-sim` diagnostic records `known-divergence` (the pinned
+  demo-hold trace), same as native — not acceptance.
+- Native gate after the `bike.cpp` fix: `ctest --test-dir build` (Debug)
+  **69/69 pass** (includes `first-run-smoke`, excluded for EMSCRIPTEN by
+  design). ASan/UBSan tree `build-asan`: `bike/race/sim_fields/importer/mixer`
+  all exit 0 with **zero** `division by zero` reports (previously 6 in
+  `bike.cpp`).
+- Step 3 audit: `Iso9660::ReadAt` offsets are `uint64_t` (ISO is 518 MB);
+  the only `long`-as-counter uses are `game_main.cpp` tick/frame locals owned
+  by the Task 3 refactor (file has another worker's uncommitted changes;
+  Task 3 stays blocked on that). `long()` casts elsewhere convert bounded
+  in-memory sizes (< 2 GB). No `size_t` file-offset arithmetic above 2 GB.
+- Skipped separately: `mixer-device` only (no audio under Node). No known divergences blessed: the `apply_spec` guards reproduce
+  native ARM64 values exactly on all previously-valid inputs.
+- Evidence: `build-web/ctest-full.log` (pre-skip-mapping run),
+  `build-web/oracle-diagnostic.json`, `build-asan-*.log`. Handoff:
+  `docs/agent-handoffs/2026-10-12-web-task2.md`.
+
+## Web port Task 4 (October 12, 2026): pull-based import job
+
+Owned edits: `src/import_job.hpp/.cpp` (new), `src/sha256.hpp/.cpp`
+(`Sha256Stream`; one-shot is now a wrapper), `src/importer.cpp`
+(`import_game` reimplemented as a sync driver over the job;
+`FilesystemSink` keeps staging/marker/rename semantics),
+`tests/import_job_test.cpp` (new, plan's six cases), `CMakeLists.txt`
+(`import_job` target + library source).
+
+- TDD: stub ran first — 19 failures (`import_job-test`); implementation
+  brings it to 0 failures, `sha256-test` still 0 failures (same vectors).
+- `importer_test.cpp` passes **unchanged** (all 8 cases: corrupt import
+  leaves no destination, missing file atomic, existing data preserved on
+  retry, traversal rejected, ISO/folder/cancel/FIFO paths, staging cleanup).
+- Full gates after the rework: native `ctest --test-dir build` (Debug)
+  **70/70**; `ctest --test-dir build-web` (emsdk Node 24.19.0) **69/69**
+  (incl. the new `import_job` test; `mixer-device` still the single
+  environment skip). ASan/UBSan `build-asan`: `importer`, `import_job`,
+  `sha256`, `iso9660` all exit 0 with no reports.
+- Deliberate interface extension beyond the plan sketch:
+  `missing_file(message)` (folder files absent/unreadable record per-file
+  `missing` and continue; `fail_source` would abort everything) and lazy
+  `mutable` need storage (observing the job stores the offer; transitions
+  happen in `supply()`).
+- Handoff: `docs/agent-handoffs/2026-10-12-web-task4.md`.

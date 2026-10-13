@@ -86,6 +86,12 @@ void init_bike_object(Bike& b, const PhysicsTables& t) {
 }
 
 void apply_spec(Bike& b, const BikeSpec& s, int32_t rider_value) {
+    // wasm32 traps integer division by zero; ARM64 silently yields zero and
+    // the original x86 build faults. Guard every divisor so synthetic inputs
+    // (e.g. a zeroed BikeSpec in tests) are defined and compute exactly what
+    // the native build computes (plan 23 Task 2). Real specs never hit a
+    // zero divisor, so oracle behaviour is unchanged.
+    auto div0 = [](int32_t n, int32_t d) { return d ? n / d : 0; };
     b.u8(0x1bc) = uint8_t(s.d[0]);
     b.i32(0x168) = s.d[1]; b.i32(0x16c) = s.d[2]; b.i32(0x170) = s.d[3];
     b.i32(0x1b4) = s.d[4]; b.i32(0x1b8) = s.d[5];
@@ -96,23 +102,23 @@ void apply_spec(Bike& b, const BikeSpec& s, int32_t rider_value) {
     const int32_t brake_max = b.i32(0x26c) * (mass + 0x4b) * 0x100;
     b.i32(0x26c) = brake_max;
     const int32_t steer_div = mass + div_pow2(rider_value, 2);
-    const int32_t r2a0 = (b.i32(0x2a0) * (mass + 0x4b)) / steer_div;
+    const int32_t r2a0 = div0(b.i32(0x2a0) * (mass + 0x4b), steer_div);
     b.i32(0x2a0) = r2a0;
     b.i32(0x29c) = 0x2e00;
-    const int32_t r2a4 = (b.i32(0x2a4) * (mass + 0x4b)) / steer_div;
+    const int32_t r2a4 = div0(b.i32(0x2a4) * (mass + 0x4b), steer_div);
     b.i32(0x2a4) = r2a4;
-    b.i32(0x2a8) = 0x2e00 / r2a0;
-    b.i32(0x2ac) = 0x2e00 / r2a4;
+    b.i32(0x2a8) = div0(0x2e00, r2a0);
+    b.i32(0x2ac) = div0(0x2e00, r2a4);
     const int32_t weight = mass + 0x4b + div_pow2(rider_value - 0x4b, 3);
-    const int32_t t = throttle_max / weight, br = brake_max / weight;
+    const int32_t t = div0(throttle_max, weight), br = div0(brake_max, weight);
     b.i32(0x260) = t;
     b.i32(0x27c) = br;
     auto clamp15 = [](int32_t v) { return v > 0xe ? 0xf : v; };
-    b.i32(0x264) = t / clamp15(b.i32(0x254));
-    b.i32(0x268) = t / clamp15(b.i32(0x258));
-    b.i32(0x280) = br / clamp15(b.i32(0x270));
+    b.i32(0x264) = div0(t, clamp15(b.i32(0x254)));
+    b.i32(0x268) = div0(t, clamp15(b.i32(0x258)));
+    b.i32(0x280) = div0(br, clamp15(b.i32(0x270)));
     b.i32(0x2c4) = 0x14;
-    b.i32(0x284) = br / clamp15(b.i32(0x274));
+    b.i32(0x284) = div0(br, clamp15(b.i32(0x274)));
     b.i32(0x248) = 0x2000;
     b.i32(0x2dc) = 0x2000;
 }

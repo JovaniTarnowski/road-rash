@@ -9,6 +9,7 @@ import re
 import subprocess
 from agent_common import ROOT, ResourceClaims, git, pid_alive, sha256
 from oracle_capture import reference_hash
+from agent_lsp import inspect_database
 
 
 def command(name, args=('--version',)):
@@ -67,6 +68,7 @@ def doctor(adb_serial=None):
                     'node_on_path_compatible': compatible_node,
                     'invocation': 'npx --yes rea-agents@6.4.0', 'executed': False},
             'adb': adb, 'instruction_files': instructions,
+            'compile_database': inspect_database(ROOT / 'compile_commands.json'),
             'instruction_loading': 'File/pointer presence only; actual per-client loading must be checked in that client.'}
 
 

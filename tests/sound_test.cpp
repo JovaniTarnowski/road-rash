@@ -42,6 +42,25 @@ int main(int argc, char** argv) {
         double energy = 0;
         for (auto s : out) energy += double(s) * s;
         check(energy > 0, "engine is audible");
+        // Exercise real audio cadence while travelling beyond the starting
+        // listener's 30-sample hearing radius (the old test stopped at 120 ticks).
+        rr::SoundLevels engine_only;
+        engine_only.effects = engine_only.others = 0;
+        sound.set_levels(engine_only);
+        bool audible = true;
+        for (int tick = 0; tick < 2400; ++tick) {
+            race.step(rr::control_accelerate);
+            sound.update(race);
+            mixer.render(out.data(), 368);
+            if (tick > 300) {
+                bool nonzero = false;
+                for (int i = 0; i < 736; ++i) nonzero |= out[size_t(i)] != 0;
+                audible &= nonzero;
+            }
+        }
+        check(race.position() > 0x3200 + 0x1e00, "sound regression travels beyond start hearing radius");
+        check(audible, "player engine stays audible as the camera travels");
+        sound.set_levels({});
         sound.post({rr::SoundEvent::crash_hard, 0, 0, race.bike().i32(0x1c), 0, 0});
         sound.update(race);
         mixer.render(out.data(), 2048);

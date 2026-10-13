@@ -169,3 +169,11 @@
 - Race MIDI plays per the original rule, or an owner-approved fallback C is documented.
 - No front-end handler returns the "not ported" stub. Mano-a-mano stays disabled unless plan 09 is approved.
 - Every video has a native trigger, and an original save round-trips.
+
+#### October 12 playtest follow-up
+
+Live race MIDI was present but unconnected to the game pump. It is now pumped
+per unpaused render frame, with PCM backpressure and synchronous mixer detach
+at stop. The thirty-second Napa streaming regression passes; exact AWE/MIDI
+audio fidelity remains subject to this plan's acceptance. See
+[handoff](../agent-handoffs/playtest-audio-ai-loading.md).

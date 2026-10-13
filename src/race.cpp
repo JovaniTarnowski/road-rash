@@ -221,6 +221,14 @@ void Race::set_demo_hold(bool v, int base_speed, int lane, int32_t bias,
         // rider's personality row. The demo rider's own value/weapon/stats
         // come from its rider-table row (0x00405990/0x00405c80).
         riders_[0].brain.base_speed = riders_[0].brain.current_speed = base_speed;
+        // Scalar-only demo fixtures have no imported personality speed tables.
+        // Match the opponent fallback; otherwise the first replan resets the
+        // demo player's speed to zero. Imported tables remain authoritative.
+        auto& brain = riders_[0].brain;
+        if (std::all_of(brain.spd_b, brain.spd_b + 5, [](int32_t v) { return v == 0; })) {
+            std::fill(brain.spd_b, brain.spd_b + 5, base_speed);
+            std::fill(brain.spd_a, brain.spd_a + 5, base_speed);
+        }
         riders_[0].brain.lane = lane;
         riders_[0].brain.bias = bias;
         riders_[0].stamina = stats;

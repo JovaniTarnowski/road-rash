@@ -343,7 +343,7 @@ int main(int argc, char** argv) {
         check(stream.available() == 0, "stop drains queued frames");
         check(stream.generation() != gen, "stop bumps the generation");
         size_t pushed = 0;
-        std::vector<int16_t> fill(1024, 7);
+        std::vector<int16_t> fill(2 * 1024, 7); // 1024 stereo frames
         while (stream.push(fill.data(), 1024)) {
             if (++pushed > 64) break;
         }
@@ -532,7 +532,20 @@ int main(int argc, char** argv) {
         double live_energy = 0;
         for (int16_t v : out) live_energy += double(v) * v;
         check(live_energy > 0, "play_race(4) streams audible frames");
+        // Repeated pumps with no consumer must not skip the song timeline.
+        const auto buffered_position = player.position_frames();
+        for (int i = 0; i < 120; ++i) player.update();
+        check(player.position_frames() <= buffered_position + 2048, "music producer respects buffered PCM");
+        int sounding_blocks = 0;
+        for (int i = 0; i < 1800; ++i) {
+            player.update();
+            mixer.render(out.data(), 368);
+            if (std::any_of(out.begin(), out.begin() + 736, [](int16_t v) { return v != 0; })) ++sounding_blocks;
+        }
+        check(sounding_blocks > 900, "live Napa music continues for thirty seconds");
         player.stop();
+        mixer.render(out.data(), 2048);
+        check(std::all_of(out.begin(), out.end(), [](int16_t v) { return v == 0; }), "stop detaches stream before freeing it");
         check(!player.active(), "stop silences");
         player.play_race(1, "krusty");
         check(player.active() && player.song() == "KLOWN", "krusty loads KLOWN");

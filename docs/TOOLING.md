@@ -7,21 +7,35 @@ part of the port itself. Cross-references: [ACTORS.md](ACTORS.md),
 
 ## clangd / C++ LSP
 
-No editor config is committed. To get go-to-definition/hover/diagnostics in
-an editor with clangd (Xcode's `/usr/bin/clangd` works):
+OMP's workspace-root `../lsp.json` points clangd at the native repository's
+markers. The October 12 OMP setup session verified status, symbols, diagnostics,
+definition and references through `xd://lsp`. That is historical client evidence;
+a new session must check its own server status. Other clients may expose a
+different LSP interface.
+
+Check the database without modifying it:
 
 ```sh
-cmake -S . -B build-clangd -DCMAKE_BUILD_TYPE=Debug -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
-ln -sfn build-clangd/compile_commands.json compile_commands.json
+python3 tools/agent_lsp.py
+python3 tools/agent_lsp.py --check src/bike.cpp
 ```
 
-`compile_commands.json` and `build*/` are git-ignored. Re-run the configure
-step after adding/removing sources so the DB stays current. The `omp`
-`xd://lsp` harness reports no servers configured for this project, so LSP
-queries through the agent channel stay unavailable; `clangd --check` is the
-verification (`--check=src/bike.cpp` parses clean).
+The check reports missing source entries and CMake files newer than the database.
+A successful check does not establish exact flag freshness or client loading.
+Configure a build directory you own, then point the ignored repository symlink
+at it (coordinate replacing the symlink if another client is using it):
 
-## REA (`npx rea-agents@latest`)
+```sh
+cmake -S . -B build-agent-MYSESSION -DCMAKE_BUILD_TYPE=Debug -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
+ln -sfn build-agent-MYSESSION/compile_commands.json compile_commands.json
+```
+
+Reconfigure after adding/removing sources or changing flags. In OMP, reload
+`xd://lsp`, then check status → diagnostics → definition → references. If the
+client has no LSP channel, `clangd --check` is a fallback, not proof of that
+client's integration. Do not delete another session's build to refresh LSP.
+
+## REA (`npx rea-agents@6.4.0`)
 
 REA 6.4.0 ("Reverse engineer anything") is used as an **independent second
 opinion** on the project's own Ghidra export. It re-imports and re-analyzes

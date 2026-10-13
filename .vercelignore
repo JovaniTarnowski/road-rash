@@ -1,0 +1,14 @@
+# Files uploaded by `vercel` / Vercel Git deploys. The build runs
+# tools/build_web.sh remotely and regenerates build-web/dist, so all of
+# these are local-only and must not be uploaded (they exceed Vercel's
+# 15,000-file upload limit: .tools/ alone is ~50k files).
+.tools/
+build*/
+analysis/
+android/app/build/
+android/build/
+android/.gradle/
+android/app/.cxx/
+Testing/
+.cache/
+.superpowers/

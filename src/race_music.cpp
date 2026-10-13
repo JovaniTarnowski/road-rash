@@ -579,6 +579,7 @@ void RaceMusicPlayer::play_race(int original_course_index, const std::string& al
 }
 void RaceMusicPlayer::stop() {
     if (stream_voice_ >= 0) mixer_.stop(stream_voice_);
+    if (stream_) mixer_.retire_stream(stream_);
     if (stream_) stream_->stop();  // generation handshake: no stale frames
     delete stream_;
     stream_ = nullptr;
@@ -621,6 +622,9 @@ void RaceMusicPlayer::update() {
     if (!playing_ || paused_ || !loaded_ || !melodic_ || !drums_ || !stream_) return;
     constexpr double kRate = 22050.0;
     constexpr size_t kBlock = 512;
+    // Backpressure: never advance the sequencer past PCM refused by the ring.
+    // Keep a short buffer and fill it on each game-frame pump.
+    for (int refill = 0; refill < 8 && stream_->available() < 2048; ++refill) {
     // Current tempo (microseconds per quarter note) at the playhead tick.
     uint32_t usec = 500000;
     for (const auto& t : song_data_.tempo) {
@@ -742,6 +746,7 @@ void RaceMusicPlayer::update() {
     }
     stream_->push(block, kBlock);
     position_frames_ += kBlock;
+    }
     if (stream_voice_ >= 0) mixer_.set(stream_voice_, 127 * music_level_ / 80, 0, 256);
 }
 

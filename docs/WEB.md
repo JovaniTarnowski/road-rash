@@ -56,27 +56,50 @@ and do not exist yet.
   explicit widths when Task 3 touches those signatures. `Iso9660::ReadAt`
   already uses `uint64_t` offsets.
 
-## Tests under Node (Task 1, Step 3)
+## Tests under Node (Tasks 1–2)
 
-`ctest --test-dir build-web` (emsdk Node 24.19.0), October 12, 2026:
-**63 tests: 46 pass, 12 skip, 5 fail.**
+Task 1 (October 12, 2026) ran 63 tests: 46 pass, 12 skip, 5 fail (table
+below, kept for the record). Task 2 closed all five and un-skipped the
+twelve; the suite is now **68/68** (67 pass + `mixer-device` skipped 77).
 
-Skips (all exit 77, host disc/oracle goldens invisible to the wasm
-sandbox without `-sNODERAWFS`; for Task 2): `oracle-patch`,
-`oracle-road`, `oracle-scene`, `oracle-raster`, `polygon`, `text`,
-`frontend`, `sound`, `music`, `pe-strings-corpus`, `career-corpus`,
-`wav-corpus`.
-
-Failures (all pass in the native Release build in `build-bench/`; all
-Task 2 work):
-
-| Test | Symptom under Node | Cause / Task 2 fix |
+| Test | Task 1 symptom under Node | Task 2 fix |
 | --- | --- | --- |
-| `oracle-sim` | `verify_sim.py` fails: `[Errno 13] Permission denied: 'build-web/oracle-sim-test.js'` | The script executes the `.js` directly; it must run it through Node (emulator prefix) with `-sNODERAWFS` goldens (Task 2 Steps 1–2). |
-| `race` | Uncaught C++ exception before any output; native passes | Genuine wasm32 portability bug in the pure-synthetic sim path (no files involved). Fix in shared code with a native pinning test (Task 2 Step 2). |
-| `importer` | Uncaught exception; native passes | `importer_test` spawns `std::thread` (FIFO test); the single-threaded build has no pthreads. Build tests with `-pthread` for Node, or gate the thread path (Task 2 Step 1). |
-| `sim_fields` | Uncaught exception, no output; native prints "sim field tables agree" | Same shape as `race` (touches `race.hpp`); possibly the same root cause (Task 2 Step 2). |
-| `mixer-device` | `mixer-test --device` prints "No audio context available" and fails | SDL audio under Node; skip without a device or drive the dummy driver (Task 2 Step 1). |
+| `oracle-sim` | `verify_sim.py` executed the `.js` directly (`Permission denied`) | Script runs `.js` through Node (`run_binary`/`node_prefix`: `RR_WEB_NODE`, emsdk bundle, `PATH`); binary links `-sNODERAWFS=1`. Diagnostic records the pinned `known-divergence`, same as native. |
+| `race` | Stack-cookie overwrite before any output; native passes | Call chains need more than the 64 KiB default stack. `-sSTACK_SIZE=1MB` for all web links. No smash: ASan natively clean, and 1 MiB passes. |
+| `sim_fields` | `RuntimeError: divide by zero`; native prints "sim field tables agree" | Genuine UB: `apply_spec` (`src/bike.cpp:104-115`) divides by zero on zeroed specs. UBSan natively reports 6 hits. Every divisor guarded to zero (= ARM64 result); real specs unaffected. Pinned by a zero-spec block in `tests/bike_test.cpp`. |
+| `importer` | `FAIL create nonseekable source` | No FIFOs/pthreads in the single-threaded build. FIFO block gated out under `__EMSCRIPTEN__`; web nonseekable input arrives via the Task 4 `ImportJob`. |
+| `mixer-device` | "No audio context available" | Binary exits 77 under Emscripten (no audio clock under Node) with a message; ctest maps 77 to skip. Native dummy-driver coverage unchanged. |
+
+Former skips (all exit 77 for invisible disc/goldens) now pass via
+`-sNODERAWFS=1` on every test executable (`rr_web_hostfs` in
+`cmake/emscripten.cmake`, called from `CMakeLists.txt`; per-target so the
+future browser game keeps the sandboxed filesystem):
+`oracle-patch/road/scene/raster`, `polygon`, `text`, `frontend`, `sound`,
+`music`, `pe-strings-corpus`, `career-corpus`, `wav-corpus`. Native-only by
+design: `first-run-smoke` (excluded for `EMSCRIPTEN` in `CMakeLists.txt`).
+
+Step 3 audit: `Iso9660::ReadAt` offsets are `uint64_t`; no `size_t`
+file-offset arithmetic above 2 GB. The only `long`-as-counter uses are the
+`game_main.cpp` tick/frame locals, owned by the Task 3 refactor. `long()`
+casts elsewhere convert bounded in-memory sizes.
+
+`tools/ci.sh` runs the web tree behind `RR_WEB=1` (`RR_WEB_DIR` overrides
+the build directory).
+
+## Import job (Task 4, October 12, 2026)
+
+`src/import_job.hpp/.cpp`: `ImportJob` (table validation, ISO descriptor →
+directory → ≤1 MiB file-chunk walk, per-file SHA-256 before delivery,
+commit-only-when-clean) plus `ImportSink`. `src/sha256.cpp` grew a
+`Sha256Stream` (the one-shot `sha256()` is now a thin wrapper; same
+vectors). `src/importer.cpp` reimplements `import_game` as a sync driver
+over the job (`FilesystemSink` keeps staging/marker/rename/cancel
+semantics; cancellation still surfaces the progress callback's message).
+`tests/import_job_test.cpp` covers the plan's six cases; the existing
+`importer_test.cpp` passes unchanged. Full gates: native 70/70, web 69/69
+(new `import_job` test in both), ASan/UBSan clean for
+`importer/import_job/sha256/iso9660`. Task 3 stays blocked on another
+worker's uncommitted `game_main.cpp` changes.
 
 ## Measurements (Task 1, Step 4)
 
@@ -102,6 +125,30 @@ Sizes (`build-web/rr-bench-web.*`, code only — the bench links the whole
 | --- | --- | --- | --- |
 | `rr-bench-web.js` | 14,125 B | — | — |
 | `rr-bench-web.wasm` | 54,538 B | 23,151 B | 19,879 B |
+
+## Deployment (Vercel scaffold, October 12, 2026)
+
+Early Task 9 Steps 1–2 scaffold; the playable game target does not exist
+yet (Tasks 3–6 open), so there is nothing playable to deploy.
+
+- `vercel.json` (repo root): `buildCommand: tools/build_web.sh`,
+  `outputDirectory: build-web/dist`, static (`framework: null`), caching
+  headers for future hashed `.js`/`.wasm`, no-cache `index.html`. No
+  COOP/COEP headers on purpose: the baseline single-threaded build works
+  on any static host without them; Task 7 adds them with the threaded build.
+- `tools/build_web.sh`: writes a status placeholder `index.html` (with the
+  non-affiliation notice the plan requires) plus `LICENSES.txt`, then runs
+  the no-game-data bundle check (game extensions + SHA-256 against
+  `src/reference_hashes.inc`). `RR_WEB_WASM=1` is reserved for the Task 3+
+  game target. Verified locally: bundle builds, `vercel.json` parses,
+  placeholder serves 200 over a local static server.
+- `.vercelignore`: excludes local-only trees from uploads (`.tools/`
+  ~50k files, `build*/`, `analysis/`, Android build outputs); without it
+  `vercel` fails with "files should NOT have more than 15000 items".
+  `installCommand` is a no-op (no npm dependencies).
+- Not done: preview-deploy check, custom domain, `--prod`. Per plan 23,
+  deploying publicly needs the owner's explicit yes (Task 9 Steps 3–4),
+  including how the page names the project.
 
 ## Notes for later tasks
 

@@ -51,6 +51,7 @@ public:
     // Game-thread lifetime boundary: drain commands under SDL's stream lock
     // before releasing a sound. The callback never takes a user mutex.
     void retire(const PcmSound*) noexcept;
+    void retire_stream(MusicStream*) noexcept;
     void render(int16_t* out,int frames);
     void pause(bool value) { paused_=value; }
     bool open_device();

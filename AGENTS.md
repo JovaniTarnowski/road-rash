@@ -9,7 +9,8 @@ Run Git and native build commands from this repository.
 The deliverable is native C++/SDL3 on macOS ARM64 and Android ARM64. Wine is
 used only to inspect/capture the original for this port. The opening Napa race
 is the current fidelity milestone; consult `docs/plans/00-INDEX.md` for current
-dependencies before implementation or planning. Match plans to the actual
+dependencies before implementation or planning. Read `docs/CURRENT_STATUS.md` for the
+latest evidence; dated plan overviews are historical snapshots. Match plans to the actual
 interfaces before using their snippets. Plans 02–07 describe older architecture;
 plan 12 is superseded by 17.
 
@@ -22,6 +23,10 @@ coverage, and the relevant plan for acceptance. Read what the task needs.
 - Check `git status --short` and recent commits before editing. Existing changes
   may belong to another agent. Preserve them; do not reset, restore or delete
   unfamiliar changes to make your task easier.
+- OMP is the main development client. Check its latest handoff and file claims
+  before taking a plan slice; read-only research can proceed independently. The
+  owner has requested shared-tree work in some sessions: respect that choice and
+  serialize overlapping files rather than silently moving the work elsewhere.
 - Before parallel implementation, establish file ownership. Give each worker a
   separate worktree when practical. Serialize edits to shared simulation headers,
   `game_main.cpp`, the oracle proxy and shared documentation. One integrator
@@ -30,6 +35,13 @@ coverage, and the relevant plan for acceptance. Read what the task needs.
   build directory, not source files, Wine installs or Ghidra databases. Coordinate
   those shared resources separately. Never remove another worker's lock merely
   because it is old; verify its owner is gone.
+- Do not stash the whole shared tree (including `--include-untracked`) to test
+  pristine HEAD, merge, or isolate your change. Use an isolated checkout for
+  baseline comparisons; otherwise have the integrator coordinate the merge.
+  A private build directory does not isolate edits to its source checkout.
+- Re-read shared headers immediately before a narrow edit, inspect the resulting
+  diff for dropped declarations/scopes, and compile an affected target before
+  handing off. Register new CMake sources/tests only once their files exist.
 - When committing is in scope, stage explicit paths and inspect the staged diff.
   Avoid `git add -A` and commits of another worker's in-flight changes. Do not
   rewrite shared history to untangle interleaved work.
@@ -39,6 +51,10 @@ coverage, and the relevant plan for acceptance. Read what the task needs.
 - Use the unmodified disc binary at `../cdrom/ROADRASH/ROADRASH.EXE` as reference;
   check its hash against `analysis/inventory.json`. The parent's `android/`
   executable is patched and is not a reference.
+- When evidence conflicts, read supersession notes and current recovered facts
+  before reusing an old worker message. Validate actor identity through spawn,
+  think/draw dispatch and asset family, not a guessed pool name or EXE string
+  absence. Record which earlier conclusion changed and why.
 - Trace behavior to addresses and field widths. Decompiler pointer indexing is
   element-scaled; verify byte offsets, signedness and wraparound against assembly.
   Suspect or empty pseudocode needs a disassembly check.
@@ -59,6 +75,13 @@ coverage, and the relevant plan for acceptance. Read what the task needs.
   of source/APK/app packages. Use synthetic committed parser fixtures.
 
 ## Verification and tools
+
+- Prefer `rg` and `fd` for search. Use the client's C++ LSP for definitions,
+  references, diagnostics and symbol renames when available. Check
+  `python3 tools/agent_lsp.py`; refresh an owned compilation database after
+  source/config changes. OMP's workspace `lsp.json` routes to `native-port/`;
+  reload its LSP after marker changes. If LSP is unavailable, record the limit
+  and use `clangd --check` plus text inspection; see `docs/TOOLING.md`.
 
 - Normal native gate: `cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug`,
   `cmake --build build --parallel`, then
@@ -103,3 +126,9 @@ skills. If a named skill is unavailable, carry out the equivalent workflow and
 record the limitation. Continue authorized work through validation and documentation;
 when interrupted, leave a concrete next action and distinguish partial work from
 completion.
+
+Keep a resumable handoff before a request/context budget stop. Include the first
+failing command and unfinished edits, not just a success summary. If one slice
+is blocked, advance an independent authorized slice; do not repeatedly emit
+identical no-change audits. Do not expand scope or mark acceptance complete just
+to avoid waiting.

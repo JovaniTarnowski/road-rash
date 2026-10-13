@@ -18,6 +18,14 @@ fi
 if [ "${RR_TSAN:-0}" = 1 ]; then
     sh tools/tsan.sh
 fi
+if [ "${RR_WEB:-0}" = 1 ]; then
+    web_dir=${RR_WEB_DIR:-"$root/build-web"}
+    # shellcheck disable=SC1091
+    . "$root/.tools/emsdk/emsdk_env.sh" >/dev/null 2>&1 || true
+    "$root/.tools/emsdk/upstream/emscripten/emcmake" cmake -S "$root" -B "$web_dir" -DCMAKE_BUILD_TYPE=Release
+    cmake --build "$web_dir" --parallel
+    ctest --test-dir "$web_dir" --output-on-failure
+fi
 if [ "${RR_STANDALONE_APP:-0}" = 1 ]; then
     python3 tools/agent_gate.py package --build-dir "$root/build-agent-ci-package"
 elif [ -d "build-release/Road Rash Native.app" ]; then

@@ -247,6 +247,7 @@ void SoundSystem::update(Race& race) {
     // Listener: the camera (0x00437c30).
     const int32_t camera_position = int32_t(race.camera_position());
     listener_speed_ = (camera_position - listener_position_) * 0x100;
+    listener_position_ = camera_position;   // 0x00437c30: refresh before distance attenuation
     listener_lateral_ = race.camera_x();
     tunnel_ = false;   // sub-slice terrain type 3 (0x00434a80): type 2/3 assignment (0x00454240) not ported
     // 0x004349c0: the engine rpm lives on the bike (+0x2dc), so the
