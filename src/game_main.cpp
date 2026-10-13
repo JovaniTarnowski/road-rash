@@ -688,7 +688,7 @@ struct RaceEnd {
 };
 
 struct RaceOptions {
-    bool auto_drive = false, start_paused = false;
+    bool auto_drive = false, start_paused = false, demo = false;   // attract demo: any input exits quietly
     std::string screenshot;
 };
 
@@ -714,6 +714,10 @@ RaceEnd run_race(Game& g, SDL_Renderer* renderer, const RaceOptions& opt) {
             if (e.type == SDL_EVENT_QUIT) { running = false; result.quit_app = true; }
             if (!lifecycle_event(e.type)) lifecycle.state.handle(e);
             if (g.mixer && !g.mixer->handle(e)) SDL_Log("Audio reopen failed: %s", SDL_GetError());
+            const bool demo_exit = opt.demo && ((e.type == SDL_EVENT_KEY_DOWN && !e.key.repeat) ||
+                e.type == SDL_EVENT_GAMEPAD_BUTTON_DOWN || e.type == SDL_EVENT_GAMEPAD_ADDED ||
+                e.type == SDL_EVENT_FINGER_DOWN || e.type == SDL_EVENT_MOUSE_BUTTON_DOWN);
+            if (demo_exit) { running = false; continue; }   // attract demo: any input exits quietly
             if (e.type == SDL_EVENT_KEY_DOWN && !e.key.repeat) {
                 if (g.quitting) {
                     // 0x004227d0: a second Escape quits the race (outcome 5), any other key continues.
@@ -944,6 +948,24 @@ int run_game(const rr::Assets& assets, SDL_Window* window, SDL_Renderer* rendere
                 g.career = true;
                 g.quit_prompt = fe.string_slot(316);
                 g.restart();
+                if (ev.demo) {
+                    // Attract demo (plan 13 Task 5): AI drives (DAT_004753c8); any input exits to the menu.
+                    g.career = false;
+                    if (g.race) g.race->set_demo_hold(true, 95);
+                    music.stop();
+                    race_music.play_race(ev.course, fe.player_name());
+                    g.race_music = &race_music;
+                    const RaceEnd demo_end = run_race(g, renderer, {.demo = true});
+                    menu_stick.suspend();
+                    race_music.stop();
+                    g.race_music = nullptr;
+                    settings.music_track = music.track();
+                    music.play(music.track());
+                    SDL_SetRenderLogicalPresentation(renderer, 640, 480, SDL_LOGICAL_PRESENTATION_LETTERBOX);
+                    if (demo_end.quit_app) { running = false; break; }
+                    fe.enter(rr::screen_id::main_menu);   // re-arm the 60 s timer
+                    continue;
+                }
                 if (menu_frames >= 0) { running = false; break; }   // smoke run: stop at the first race
                 music.stop();                                         // 0x004160c0 -> 0x00402f50
                 // Plan 11 race-start point: race MIDI replaces the RRA soundtrack.
@@ -1259,7 +1281,7 @@ int main(int argc, char** argv) {
                     race_music.play_race(original_index[course], "");
                     g.mixer = &mixer; g.sound = sound.get(); g.race_music = &race_music;
                 }
-                run_race(g, renderer, {auto_drive, start_paused, screenshot});
+                run_race(g, renderer, {.auto_drive = auto_drive, .start_paused = start_paused, .screenshot = screenshot});
                 g.mixer = nullptr; g.sound = nullptr; g.race_music = nullptr;
             }
         }

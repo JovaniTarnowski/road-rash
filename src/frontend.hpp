@@ -68,6 +68,7 @@ struct FrontendEvent {
     std::string video;   // path relative to the ROADRASH directory, e.g. VIDEO/START3.AVI
     int course = 0;      // 1..5
     int group = 0, track = 0;      // select_soundtrack: 0-based group (menu caption - 0xe1) and track (caption - 0xf1)
+    bool demo = false;               // start_race: AI attract demo (any input exits, no results)
 };
 
 // One finisher in the race results (0x00420e30 rows).
@@ -167,6 +168,8 @@ private:
     bool qualified_overlay_ = false;
     bool dark_screen_ = false;             // standings: the darkened copy fills the screen
     uint64_t now_ = 0, timer_at_ = 0;
+    uint64_t attract_at_ = 0;            // 0x00421df0/WM_TIMER 9: 60 s main-menu idle starts the demo
+    int attract_course_ = 0;             // 0x46aff0: cycles 1..5 across idle windows
     // Scrolling credits (0x00424140 / 0x00424230): lines, y, first line, speed (0x00468f50), timer ticks.
     std::array<std::vector<std::string>, 2> credits_;
     int credit_set_ = -1, credit_y_ = 0, credit_line_ = 1, credit_speed_ = 1, credit_ticks_ = 0;

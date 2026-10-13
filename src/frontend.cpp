@@ -520,6 +520,7 @@ void Frontend::enter(int screen) {
         index = items_[index].nav[4] < items_.size() ? items_[index].nav[4] : 0;
     set_focus(index);
     timer_at_ = 0;
+    attract_at_ = screen == screen_id::main_menu ? now_ + 60000 : 0;   // WM_TIMER 9 re-arm
     credit_set_ = -1;
     if (screen == 7 || screen == 0x23) {
         // 0x00424140: string table 1000 scrolls from y 0x30 (left, tab stops); 2000 from 0x1c8 (centred).
@@ -925,6 +926,14 @@ void Frontend::update(const MenuInput& in, uint64_t now_ms) {
     if (timer_at_ && now_ >= timer_at_) {
         timer_at_ = 0;
         if (!items_.empty()) activate(0);
+        return;
+    }
+    if (attract_at_ && now_ >= attract_at_) {
+        // WM_TIMER 9: nothing disarms it on menu input (no KillTimer(9) on any input path; it fires
+        // 60 s after menu entry even mid-navigation). Start the AI demo on the next course.
+        attract_at_ = 0;
+        attract_course_ = attract_course_ >= 5 ? 1 : attract_course_ + 1;   // 0x46aff0 cycles 1..5
+        events_.push_back({FrontendEvent::Kind::start_race, {}, attract_course_, 0, 0, true});
         return;
     }
     if (editing_name_) {

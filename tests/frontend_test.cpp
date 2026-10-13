@@ -92,6 +92,29 @@ int main(int argc, char** argv) {
     key("back");
     check(fe.screen() == screen_id::main_menu, "Escape skips the credits to the main menu");
     snap("main");
+    // Attract demo (plan 13 Task 5 Step 2): 60 s idle on the main menu starts an AI demo race.
+    {   // Fresh menu idle: no input for 60 s emits a demo start_race event, course 1 first.
+        fe.enter(screen_id::main_menu);
+        now += 59999; fe.update({}, now);
+        FrontendEvent ae;
+        bool demo = false;
+        while (fe.poll(ae)) if (ae.kind == FrontendEvent::Kind::start_race) demo = true;
+        check(!demo, "no demo race before 60 s");
+        now += 1; fe.update({}, now);
+        int course = 0;
+        while (fe.poll(ae)) if (ae.kind == FrontendEvent::Kind::start_race && ae.demo) course = ae.course;
+        check(course == 1, "60 s idle starts demo race on course 1");
+    }
+    {   // Menu input does not disarm the timer (no KillTimer(9) on input paths); it fires anyway.
+        fe.enter(screen_id::main_menu);
+        now += 30000; fe.update({}, now);
+        key("down");
+        now += 30000; fe.update({}, now);
+        int course = 0;
+        FrontendEvent ae;
+        while (fe.poll(ae)) if (ae.kind == FrontendEvent::Kind::start_race && ae.demo) course = ae.course;
+        check(course == 2, "timer fires despite menu input; second window demos course 2");
+    }
     // Thrash: City at level 1, a win qualifies it.
     key("select");
     check(fe.screen() == screen_id::thrash_courses && career.mode == GameMode::thrash, "thrash course select");

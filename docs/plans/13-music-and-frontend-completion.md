@@ -150,8 +150,8 @@
 - Modify: `src/frontend.cpp`, `src/game_main.cpp`, `tests/frontend_test.cpp`
 
 - [X] **Step 1: Trace** the 60-second main-menu timer and attract mode 0 (`0x004753b0`): which course, which riders, and how input ends it. Mode 0 also routes the race outcome back to the main menu (`0x00416120`).
-- [ ] **Step 2: Write the failing test.** A scripted frontend run idles 60 s of frames, enters the demo race, receives a key and returns to the main menu. A second run connects a controller during the demo.
-- [ ] **Step 3:** Port, reusing `make_race_setup` with an AI-controlled player. Commit: `frontend: attract demo`.
+- [X] **Step 2: Write the failing test.** A scripted frontend run idles 60 s of frames, enters the demo race, receives a key and returns to the main menu. A second run connects a controller during the demo.
+- [X] **Step 3:** Port, reusing `make_race_setup` with an AI-controlled player. Commit: `frontend: attract demo`.
 
 ---
 
