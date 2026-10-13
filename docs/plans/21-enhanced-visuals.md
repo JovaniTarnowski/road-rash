@@ -264,10 +264,12 @@ int main() {
 **Files:**
 - Modify: `src/road.hpp/.cpp` (`view_slices` becomes a parameter), `src/course_scene.cpp` and panel builders, `src/scenery.cpp`, actor visibility in `game_main.cpp`, `tests/course_scene_test.cpp`, `tests/hires_render_test.cpp`, `docs/REVERSE_ENGINEERING.md`
 
-- [ ] **Step 1: Trace (time box: one session).** How is the 33-slice limit built in: `0x00443a00` projection, the depth table length and its values (`read_depth_table`), the far-depth and occlusion row logic (`src/scene.hpp`: `far_depth`, `occlusion_row`), terrain and building panel construction ranges, scenery visibility, and actor visibility. Can the depth table be extended with the same law the original's values follow (fit the existing entries; record the formula and its maximum error over the original entries, which must be zero for the extension to be trusted)? Record the findings.
-- [ ] **Step 2: Write the failing tests.** `project_road(..., slices = 33)` equals today's output for every Napa sweep view. With 48 and 64 slices, the sweep over every course and branch at level 0 and 4 (Review Focus 4) renders without exceptions; far slices past the course end are not projected; inside split/merge windows both roadways continue to the new far limit.
-- [ ] **Step 3:** Run; expected FAIL. **Implement** the parameter, the extended depth table (only if Step 1 found an exact law; otherwise stop and report), and widen terrain, building, scenery and actor ranges to the new far limit. With 33 slices, every golden is unchanged.
-- [ ] **Step 4:** Measure frame times at 33/48/64 slices and record them. Commit: `render: optional longer draw distance (48/64 slices)`.
+- [x] **Step 1: Trace (time box: one session).** DONE (October 13, 2026): slice count is a `0x21` parameter at `0x00443a00`; depth table `0x0046f098` (4,352 entries) covers exactly 33 slices (index 4352 OOB); no exact law (linear-reciprocal fit errs 7.2%; `K/(k+c)` errs 1.3%). Findings in REVERSE_ENGINEERING.md.
+- [ ] **Step 2: Write the failing tests.** DROPPED with the task (owner decision, October 13, 2026).
+- [x] **Step 3:** Run; expected FAIL. **Implement** — STOP-AND-REPORT per the plan's trust rule: table extension without an exact law is forbidden. Owner chose drop over approximate extension. Fog's far-fade (Task 5) already softens the 33-slice edge.
+- [ ] **Step 4:** Measure frame times at 33/48/64 slices and record them. DROPPED with the task.
+
+**Status: DROPPED as infeasible (owner-approved). `draw_slices` remains parsed-but-unused (33 default); Task 9's preset must not include it.**
 
 ---
 

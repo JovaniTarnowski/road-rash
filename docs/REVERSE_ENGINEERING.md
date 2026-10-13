@@ -1090,3 +1090,17 @@ matches `analysis/inventory.json`. No legacy Android executable was used.
 - No crash/arrest/sky code writes palette memory. No palette-range shading.
 
 **Port rule:** `palette_generation` increments only on (a) course load (new base palette), (b) MiniDash mode switch (full/half select), (c) fade-transition completion. RGB mip caches key on the generation; no per-frame invalidation. The race steady state never re-converts.
+
+## Plan 21 Task 6: 33-slice limit trace (October 13, 2026)
+
+**Question:** how is the 33-slice limit built in, and can the depth table be extended with the original's own law (exact fit required)?
+
+**Evidence:** REA 6.4.0 trace of `0x00443a00` (projection driver); EXE-data reads of the depth table at `0x0046f098` (4,352 int32 entries); port `read_depth_table` corroboration (`scale[0] = 163840`, `scale[256] = 32768`, strictly decreasing, positive).
+
+**Findings:**
+- The slice count is a call parameter: `0x00443a00` calls `0x00443d70(..., 0x21 /* 33 */, ...)`. The scene-build loop `0x00443af0` walks a fixed 0x1f+1 strips per call (depth-windowed registration in `0x00438450`, cap 50 nodes) — widening slices would need registration + cursor changes too.
+- The depth table has 4,352 entries for depth indices 0..4351 (depth Q8 = index*2). Slice `n` uses `index = depth&~1/2` with `depth = 256-frac+256n`: 33 slices reach index ~4224; the table covers exactly one more slice (index 4352 is out of bounds for frac=0). The table's natural limit IS 33 slices.
+- No exact law: near field clamped at 163840 to k=138; mid-range linear-reciprocal fit (`1/scale = 1.98e-7·k + 1.74e-6` over k=256..2048) errs up to 7.2% (13,704 absolute at k=256). Two-point `K/(k+c)` errs 1.3%. The table is empirical/tuned, not a closed form.
+- Per the plan's own trust rule ("maximum error must be zero"), the table MUST NOT be extended with invented values.
+
+**Conclusion (stop-and-report per Step 3):** 48/64 slices are infeasible without fabricating projection data. Task 6 cannot proceed as specified. Options: (a) drop it (recommended — fog's far-fade already softens the 33-slice pop-in); (b) revisit only with an oracle-measured extension (out of scope).
