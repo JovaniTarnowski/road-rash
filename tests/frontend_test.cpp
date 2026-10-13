@@ -67,7 +67,7 @@ int main(int argc, char** argv) {
         std::string s = k;
         if (s == "down") in.down = true; else if (s == "up") in.up = true; else if (s == "left") in.left = true;
         else if (s == "right") in.right = true; else if (s == "select") in.select = true; else if (s == "back") in.back = true;
-        else if (s == "tab") in.tab = true;
+        else if (s == "tab") in.tab = true; else if (s == "slash") in.opponent_key = true;
         press(in);
     };
     auto event = [&](FrontendEvent::Kind kind) {
@@ -320,6 +320,11 @@ int main(int argc, char** argv) {
     settings.opponent_list = false;
     check(fe.toggle_opponent_list() && settings.opponent_list, "opponent list toggles on");
     check(!fe.toggle_opponent_list() && !settings.opponent_list, "opponent list toggles off");
+    settings.opponent_list = false;
+    key("slash");
+    check(settings.opponent_list, "menu `/` key toggles the opponent list on");
+    key("slash");
+    check(!settings.opponent_list, "menu `/` key toggles the opponent list off");
     std::cout << failures << " failures\n";
     return failures ? 1 : 0;
 }

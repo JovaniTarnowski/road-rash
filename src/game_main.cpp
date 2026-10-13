@@ -1027,6 +1027,7 @@ int run_game(const rr::Assets& assets, SDL_Window* window, SDL_Renderer* rendere
                 case SDLK_ESCAPE: case SDLK_AC_BACK: if (!e.key.repeat) in.back = true; break;
                 case SDLK_BACKSPACE: in.backspace = true; break;
                 case SDLK_A: if (!text_input && !e.key.repeat) in.alternate_artwork = true; break;
+                case SDLK_SLASH: if (!text_input && !e.key.repeat) in.opponent_key = true; break;
                 case SDLK_KP_PLUS: case SDLK_EQUALS: if (!text_input) in.text += '+'; break;
                 case SDLK_KP_MINUS: case SDLK_MINUS: if (!text_input) in.text += '-'; break;
                 default: break;

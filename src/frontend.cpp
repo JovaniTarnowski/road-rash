@@ -945,6 +945,7 @@ void Frontend::update(const MenuInput& in, uint64_t now_ms) {
         settings_.alternate_artwork = !settings_.alternate_artwork;
         if ((screen_ == 10 || screen_ == 12 || screen_ == 0x1b) && focus_ >= 0) { background_name_.clear(); set_focus(size_t(focus_)); }
     }
+    if (in.opponent_key && !editing_name_) toggle_opponent_list();
     if (focus_ < 0) return;
     if (in.pointer_moved || in.pointer_click) {
         for (size_t i = items_.size(); i-- > 0;) {

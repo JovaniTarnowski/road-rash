@@ -58,6 +58,7 @@ struct MenuInput {
     bool left = false, right = false, up = false, down = false, tab = false, shift_tab = false;
     bool home = false, end = false, select = false, back = false, backspace = false;
     bool alternate_artwork = false;      // 'A' key (0x004227d0)
+    bool opponent_key = false;           // '/' key toggles the opponent list (0x00423777)
     bool pointer_moved = false, pointer_click = false;
     int pointer_x = -1, pointer_y = -1;  // 640x480 coordinates
     std::string text;                    // typed characters (Windows-1252)
