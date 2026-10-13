@@ -203,9 +203,9 @@ inline ViewMode view_mode_scaled(int s) {
 **Files:**
 - Modify: `tests/race_soak_test.cpp` (plan 16 Task 7; create a minimal version if that task has not landed), plus whatever Task 1 Step 3 found
 
-- [ ] **Step 1:** If Task 1 found render-time `rand()` use, move it to the tick that builds the scene state, keeping the original call order (that is a plan 11 Task 3 rule; coordinate if it is in progress), so drawing extra or fewer frames cannot move the random stream.
-- [ ] **Step 2: Write the test.** Run a 3,600-tick Napa race with seven opponents twice: once rendering every tick at `s = 1`, once at `s = 4` with frames skipped randomly (render on 50 % of ticks). The per-tick snapshot hashes must be identical.
-- [ ] **Step 3:** Run; fix until it passes. Commit: `test: race results independent of render scale and frame rate`.
+- [x] **Step 1:** If Task 1 found render-time `rand()` use, move it to the tick that builds the scene state, keeping the original call order (that is a plan 11 Task 3 rule; coordinate if it is in progress), so drawing extra or fewer frames cannot move the random stream.
+- [x] **Step 2: Write the test.** Run a 3,600-tick Napa race with seven opponents twice: once rendering every tick at `s = 1`, once at `s = 4` with frames skipped randomly (render on 50 % of ticks). The per-tick snapshot hashes must be identical.
+- [x] **Step 3:** Run; fix until it passes. Commit: `test: race results independent of render scale and frame rate`.
 
 ---
 

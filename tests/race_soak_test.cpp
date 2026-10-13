@@ -7,9 +7,14 @@
 // Full matrix (all courses x levels) with RR_SOAK_FULL=1 (CI Release);
 // default runs Napa L0 twice (determinism core).
 #include "assets.hpp"
+#include "course_scene.hpp"
 #include "golden.hpp"
 #include "input.hpp"
 #include "race_setup.hpp"
+#include "render_threads.hpp"
+#include "road.hpp"
+#include "view.hpp"
+#include "world_renderer.hpp"
 #include <cstdlib>
 #include <filesystem>
 #include <iostream>
@@ -58,6 +63,37 @@ static SoakResult soak(rr::RaceSetup& setup, uint32_t controls) {
     out.finished = setup.race->finished();
     return out;
 }
+// Plan 19 Task 7: race results are independent of render scale and frame
+// rate. A 3,600-tick Napa race with seven opponents runs twice with the same
+// controls: once rendering every tick at s = 1, once at s = 4 with frames
+// skipped randomly (render on ~50% of ticks). Per-tick snapshot hashes must
+// be identical (Task 1 Step 3 found no render-time RNG to relocate).
+static uint64_t render_soak(rr::RaceSetup& setup, const std::vector<uint8_t>& exe, uint32_t controls, int scale, uint64_t render_mask) {
+    if (!setup.scene) throw std::runtime_error("render soak needs the course scene");
+    const auto depths = rr::read_depth_table(exe);
+    uint64_t hash = 1469598103934665603ULL;
+    uint64_t lcg = 0x12345678u;
+    rr::Framebuffer fb(640 * scale, 480 * scale);
+    rr::RenderThreads pool(2);
+    const rr::ViewMode mode = scale == 1 ? rr::view_mode(true) : rr::view_mode_scaled(scale);
+    for (int tick = 0; tick < 3600 && !setup.race->finished(); ++tick) {
+        setup.race->step(controls);
+        lcg = lcg * 1103515245u + 12345u;
+        if ((lcg & render_mask) == 0) {
+            const auto slices = rr::project_road(setup.race->route(), setup.race->camera_position(),
+                                                 setup.race->camera(), depths);
+            setup.scene->draw_horizon(fb, setup.race->horizon_scroll());
+            rr::render_nodes_threaded(fb, setup.scene->draw_nodes(setup.race->route(), slices,
+                                                                  setup.race->camera(), depths),
+                                      mode, 16, pool);
+        }
+        const auto snap = setup.race->snapshot();
+        hash = fnv(hash, uint64_t(snap.tick));
+        hash = fnv(hash, uint64_t(snap.rng));
+        for (const auto& f : snap.fields) hash = fnv(hash, uint64_t(f.value));
+    }
+    return hash;
+}
 int main() {
     const std::string assets_root = std::string(RR_SOURCE_DIR) + "/../cdrom/ROADRASH";
     if (!std::filesystem::exists(assets_root + "/ROADRASH.EXE")) {
@@ -90,6 +126,21 @@ int main() {
         if (first.ticks != second.ticks) throw std::runtime_error("tick count diverged");
         std::cout << course << " L" << level << ": " << first.ticks << " ticks"
                   << (first.finished ? " finished" : "") << " hash=" << std::hex << first.hash << std::dec << "\n";
+    }
+    // Plan 19 Task 7: same controls, s = 1 rendering every tick vs s = 4
+    // rendering ~50% of ticks — snapshot hashes must be identical.
+    {
+        rr::RaceConfig config;
+        config.course = "NAPA";
+        config.level = 0;
+        config.career = false;
+        config.opponents = 7;
+        auto a = rr::make_race_setup(assets, exe, config);
+        const uint64_t every = render_soak(a, exe, controls, 1, 0);
+        auto b = rr::make_race_setup(assets, exe, config);
+        const uint64_t half = render_soak(b, exe, controls, 4, 1);
+        if (every != half) throw std::runtime_error("race depends on render scale/rate");
+        std::cout << "render-rate independence hash=" << std::hex << every << std::dec << "\n";
     }
     return 0;
 }
