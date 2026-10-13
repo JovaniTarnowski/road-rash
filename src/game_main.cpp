@@ -22,6 +22,7 @@
 #include "frontend.hpp"
 #include "pe_strings.hpp"
 #include "settings.hpp"
+#include "display.hpp"
 #include "sound.hpp"
 #include "race_music.hpp"
 #include "text.hpp"
@@ -44,6 +45,39 @@ constexpr SDL_ScaleMode crisp_scale = SDL_SCALEMODE_PIXELART;
 constexpr SDL_ScaleMode crisp_scale = SDL_SCALEMODE_NEAREST;
 #endif
 constexpr int countdown_ticks = 3 * rr::ticks_per_second;
+#ifdef __ANDROID__
+constexpr bool kMobileDisplay = true;
+#else
+constexpr bool kMobileDisplay = false;
+#endif
+// Display settings driver (plan 18 Task 3): owns the window/renderer state derived
+// from Settings. Each mode applies its logical height (480 menus/videos, 480 race:
+// the race composes the dashboard inside the 480 frame, so no 510 path exists yet).
+struct DisplayDriver {
+    SDL_Window* window = nullptr;
+    SDL_Renderer* renderer = nullptr;
+    rr::Settings* settings = nullptr;   // borrowed: single source of truth lives with the caller
+    std::string settings_path;
+    rr::DisplayConfig config;
+    long toggle_at = -1;   // debug: toggle fullscreen at this frame/tick count (--toggle-fullscreen-at)
+    long frame = 0;
+    void apply(int logical_h) {
+        config = rr::display_config(*settings, logical_h, kMobileDisplay);
+        rr::apply_display(window, renderer, config);
+    }
+    void toggle_fullscreen() {
+        settings->display_mode = settings->display_mode == rr::DisplayMode::fullscreen
+            ? rr::DisplayMode::windowed : rr::DisplayMode::fullscreen;
+        rr::save_settings(settings_path, *settings);
+        apply(config.logical_h);
+    }
+    void maybe_toggle() { if (toggle_at >= 0 && ++frame >= toggle_at) { toggle_at = -1; toggle_fullscreen(); } }
+};
+struct CliDisplayOverride { int fullscreen = -1; int window_scale = 0; long toggle_at = -1; };
+void apply_cli_overrides(rr::Settings& s, const CliDisplayOverride& o) {
+    if (o.fullscreen >= 0) s.display_mode = o.fullscreen ? rr::DisplayMode::fullscreen : rr::DisplayMode::windowed;
+    if (o.window_scale >= 1 && o.window_scale <= 4) s.window_scale = o.window_scale;
+}
 
 // Native startup feedback, available before any disc fonts/art are decoded.
 void draw_loading(SDL_Renderer* renderer, const char* stage) {
@@ -449,6 +483,7 @@ struct CourseCanvas {
     std::vector<uint8_t> rgba=std::vector<uint8_t>(640*480*4);
     SDL_Texture* texture=nullptr;
     SDL_Texture* dashboard=nullptr;
+    SDL_ScaleMode scale = crisp_scale;   // plan 18 Task 3: from DisplayDriver (filter setting)
     ~CourseCanvas(){clear();}
     void clear(){SDL_DestroyTexture(texture);texture=nullptr;SDL_DestroyTexture(dashboard);dashboard=nullptr;}
     void draw_dashboard(SDL_Renderer* renderer,const Game& game) {
@@ -457,7 +492,7 @@ struct CourseCanvas {
         if(!dashboard) {
             dashboard=SDL_CreateTexture(renderer,SDL_PIXELFORMAT_RGBA32,SDL_TEXTUREACCESS_STREAMING,640,480);
             if(!dashboard)throw std::runtime_error(SDL_GetError());
-            SDL_SetTextureScaleMode(dashboard,crisp_scale);SDL_SetTextureBlendMode(dashboard,SDL_BLENDMODE_BLEND);
+            SDL_SetTextureScaleMode(dashboard,scale);SDL_SetTextureBlendMode(dashboard,SDL_BLENDMODE_BLEND);
         }
         if(!SDL_UpdateTexture(dashboard,nullptr,rgba.data(),640*4))throw std::runtime_error(SDL_GetError());
         const SDL_FRect dst{0,0,640,480};SDL_RenderTexture(renderer,dashboard,nullptr,&dst);
@@ -469,7 +504,7 @@ struct CourseCanvas {
         if(!texture) {
             texture=SDL_CreateTexture(renderer,SDL_PIXELFORMAT_RGBA32,SDL_TEXTUREACCESS_STREAMING,640,480);
             if(!texture)throw std::runtime_error(SDL_GetError());
-            SDL_SetTextureScaleMode(texture,crisp_scale);
+            SDL_SetTextureScaleMode(texture,scale);
         }
         if(!SDL_UpdateTexture(texture,nullptr,rgba.data(),640*4))throw std::runtime_error(SDL_GetError());
         const SDL_FRect dst{0,0,640,480};
@@ -618,7 +653,7 @@ void draw_pause(SDL_Renderer* r) {
 }
 
 void play_video(const rr::Assets& assets,const std::string& path,SDL_Renderer* renderer,
-                const std::string& screenshot,long ticks) {
+                const std::string& screenshot,long ticks,DisplayDriver& display) {
     rr::Mixer mixer(32);
     if (ticks<0 && SDL_InitSubSystem(SDL_INIT_AUDIO) && !mixer.open_device()) SDL_Log("Audio unavailable: %s",SDL_GetError());
     auto loaded = load_with_indicator(renderer, "Preparing video...", [&] {
@@ -628,6 +663,7 @@ void play_video(const rr::Assets& assets,const std::string& path,SDL_Renderer* r
     LifecycleWatch lifecycle(&mixer);
     std::unique_ptr<SDL_Gamepad,decltype(&SDL_CloseGamepad)> pad(open_first_gamepad(),SDL_CloseGamepad);
     bool running=true;
+    display.frame = 0;
     player.update(ticks>=0 ? 0 : SDL_GetTicksNS());
     if (ticks>=0) player.update(uint64_t(ticks)*1000000000ull/rr::ticks_per_second);
     while (running) {
@@ -672,6 +708,7 @@ void play_video(const rr::Assets& assets,const std::string& path,SDL_Renderer* r
             SDL_DestroySurface(capture);running=false;
         }
         SDL_RenderPresent(renderer);
+        display.maybe_toggle();
         if (ticks>=0) running=false;
     }
 }
@@ -694,10 +731,11 @@ struct RaceOptions {
 
 // One race: the playable loop. In career mode the race is decided by the player finishing
 // (0x00434660: code 0x7f), wrecking or quitting (code 5), and runs on for 0xb4 ticks.
-RaceEnd run_race(Game& g, SDL_Renderer* renderer, const RaceOptions& opt) {
+RaceEnd run_race(Game& g, SDL_Renderer* renderer, const RaceOptions& opt, DisplayDriver& display) {
     RaceEnd result;
     SpriteCache sprites;
     CourseCanvas course_canvas;
+    course_canvas.scale = display.config.texture_scale;
     LifecycleWatch lifecycle(g.mixer);
     if (opt.start_paused) lifecycle.state.pause();
     rr::TouchInput touch;
@@ -706,7 +744,8 @@ RaceEnd run_race(Game& g, SDL_Renderer* renderer, const RaceOptions& opt) {
     bool running = true, decided = false;
     int end_ticks = 0;
     uint64_t last = SDL_GetTicksNS();
-    SDL_SetRenderLogicalPresentation(renderer, 640, 480, SDL_LOGICAL_PRESENTATION_LETTERBOX);
+    display.frame = 0;
+    display.apply(480);
     while (running) {
         SDL_Event e;
         bool restart = false;
@@ -847,6 +886,7 @@ RaceEnd run_race(Game& g, SDL_Renderer* renderer, const RaceOptions& opt) {
             result.quit_app = true;
         }
         SDL_RenderPresent(renderer);
+        display.maybe_toggle();
     }
     if (pad) SDL_CloseGamepad(pad);
     if (g.mixer) g.mixer->pause(false);
@@ -864,10 +904,14 @@ std::string pref_directory() {
 
 // Menus -> videos -> races -> results: the original main loop (0x00448200) around the front end.
 int run_game(const rr::Assets& assets, SDL_Window* window, SDL_Renderer* renderer, Game& g, const std::vector<uint8_t>& exe,
-             const std::string& screenshot, long menu_frames) {
+             const std::string& screenshot, long menu_frames, const CliDisplayOverride& cli) {
     const std::string pref = pref_directory();
     const std::string settings_path = (std::filesystem::path(pref) / "settings.txt").string();
     rr::Settings settings = rr::load_settings(settings_path);
+    apply_cli_overrides(settings, cli);
+    DisplayDriver display{window, renderer, &settings, settings_path};
+    display.toggle_at = cli.toggle_at;
+    display.apply(480);
     draw_loading(renderer, "Preparing menus and sound...");
     const rr::TextRenderer text(assets);
     const auto tables = rr::read_career_tables(exe);
@@ -909,7 +953,7 @@ int run_game(const rr::Assets& assets, SDL_Window* window, SDL_Renderer* rendere
     LifecycleWatch audio_lifecycle(&mixer);
     SDL_Texture* texture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_XRGB8888, SDL_TEXTUREACCESS_STREAMING, 640, 480);
     if (!texture) throw std::runtime_error(SDL_GetError());
-    SDL_SetTextureScaleMode(texture, crisp_scale);
+    rr::apply_texture_scale(texture, display.config);
     SDL_Gamepad* pad = open_first_gamepad();
     rr::MenuStickInput menu_stick;
     LifecycleWatch lifecycle;
@@ -917,6 +961,7 @@ int run_game(const rr::Assets& assets, SDL_Window* window, SDL_Renderer* rendere
     fe.start();
     bool running = true, text_input = false;
     long frames = 0;
+    display.frame = 0;
     while (running) {
         rr::FrontendEvent ev;
         while (running && fe.poll(ev)) {
@@ -928,7 +973,7 @@ int run_game(const rr::Assets& assets, SDL_Window* window, SDL_Renderer* rendere
                     const bool showroom = ev.video.find("/RAT/") != std::string::npos || ev.video.find("/SPORT/") != std::string::npos ||
                                           ev.video.find("/SUPER/") != std::string::npos;
                     if (showroom) music.set_volume(0); else music.stop();
-                    play_video(assets, ev.video, renderer, {}, -1);
+                    play_video(assets, ev.video, renderer, {}, -1, display);
                     menu_stick.suspend();
                     apply_levels();
                     if (!showroom && !music.active()) music.play(music.track());
@@ -955,13 +1000,13 @@ int run_game(const rr::Assets& assets, SDL_Window* window, SDL_Renderer* rendere
                     music.stop();
                     race_music.play_race(ev.course, fe.player_name());
                     g.race_music = &race_music;
-                    const RaceEnd demo_end = run_race(g, renderer, {.demo = true});
+                    const RaceEnd demo_end = run_race(g, renderer, {.demo = true}, display);
                     menu_stick.suspend();
                     race_music.stop();
                     g.race_music = nullptr;
                     settings.music_track = music.track();
                     music.play(music.track());
-                    SDL_SetRenderLogicalPresentation(renderer, 640, 480, SDL_LOGICAL_PRESENTATION_LETTERBOX);
+                    display.apply(480);
                     if (demo_end.quit_app) { running = false; break; }
                     fe.enter(rr::screen_id::main_menu);   // re-arm the 60 s timer
                     continue;
@@ -975,7 +1020,7 @@ int run_game(const rr::Assets& assets, SDL_Window* window, SDL_Renderer* rendere
                 race_music.set_music_level(settings.mute ? 0 : settings.music_volume * settings.master_volume / 100);
                 g.sound = sound.get();
                 if (sound) sound->start_race(career.state.bike, career.state.character);
-                const RaceEnd end = run_race(g, renderer, {});
+                const RaceEnd end = run_race(g, renderer, {}, display);
                 menu_stick.suspend();
                 if (sound) sound->stop_race();
                 race_music.stop();  // race end
@@ -983,7 +1028,7 @@ int run_game(const rr::Assets& assets, SDL_Window* window, SDL_Renderer* rendere
                 g.race_music = nullptr;
                 settings.music_track = music.track();
                 music.play(music.track());
-                SDL_SetRenderLogicalPresentation(renderer, 640, 480, SDL_LOGICAL_PRESENTATION_LETTERBOX);
+                display.apply(480);
                 if (end.quit_app) { running = false; break; }
                 // Finishing order: riders who finished, by finish tick (0x00420e30 rows).
                 std::vector<std::pair<int32_t, size_t>> order;
@@ -1014,6 +1059,11 @@ int run_game(const rr::Assets& assets, SDL_Window* window, SDL_Renderer* rendere
             if (e.type == SDL_EVENT_QUIT) running = false;
             if (!lifecycle_event(e.type)) lifecycle.state.handle(e);
             if (!mixer.handle(e)) SDL_Log("Audio reopen failed: %s", SDL_GetError());
+            if (e.type == SDL_EVENT_KEY_DOWN && !e.key.repeat) {
+                // Plan 18 Task 3: Alt+Enter and Cmd+F toggle fullscreen (saved + re-applied).
+                if ((e.key.key == SDLK_RETURN && (e.key.mod & SDL_KMOD_ALT)) ||
+                    (e.key.key == SDLK_F && (e.key.mod & SDL_KMOD_GUI))) { display.toggle_fullscreen(); continue; }
+            }
             if (e.type == SDL_EVENT_KEY_DOWN) {
                 switch (e.key.key) {
                 case SDLK_LEFT: in.left = true; break;
@@ -1084,7 +1134,7 @@ int run_game(const rr::Assets& assets, SDL_Window* window, SDL_Renderer* rendere
                 SDL_DestroyTexture(texture);
                 texture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_XRGB8888, SDL_TEXTUREACCESS_STREAMING, 640, 480);
                 if (!texture) throw std::runtime_error(SDL_GetError());
-                SDL_SetTextureScaleMode(texture, crisp_scale);
+                rr::apply_texture_scale(texture, display.config);
             }
             if (e.type == SDL_EVENT_RENDER_DEVICE_LOST) throw std::runtime_error("Render device lost");
         }
@@ -1101,7 +1151,7 @@ int run_game(const rr::Assets& assets, SDL_Window* window, SDL_Renderer* rendere
         mixer.pause(lifecycle.state.paused() || audio_lifecycle.state.paused());
         if (lifecycle.state.background()) { SDL_Delay(20); continue; }
         fe.draw(frame);
-        SDL_SetRenderLogicalPresentation(renderer, 640, 480, SDL_LOGICAL_PRESENTATION_LETTERBOX);
+        display.apply(480);
         SDL_UpdateTexture(texture, nullptr, frame.pixels.data(), 640 * 4);
         SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
         SDL_RenderClear(renderer);
@@ -1116,6 +1166,7 @@ int run_game(const rr::Assets& assets, SDL_Window* window, SDL_Renderer* rendere
             running = false;
         }
         SDL_RenderPresent(renderer);
+        display.maybe_toggle();
     }
     settings.music_track = music.track();
     rr::save_settings(settings_path, settings);
@@ -1135,6 +1186,7 @@ int main(int argc, char** argv) {
     int course = 0, bike = 0, level = 0, opponents = 7;
     long run_ticks = -1, menu_frames = -1;
     bool auto_drive = false, into_traffic = false, start_paused = false, first_run_smoke = false, quick_race = false;
+    CliDisplayOverride cli;
     for (int i = 1; i < argc; ++i) {
         const std::string a = argv[i];
         if (a == "--assets" && i + 1 < argc) root = argv[++i];
@@ -1151,7 +1203,11 @@ int main(int argc, char** argv) {
         else if (a == "--first-run-smoke") first_run_smoke = true;
         else if (a == "--level" && i + 1 < argc) { level = std::atoi(argv[++i]) - 1; quick_race = true; }
         else if (a == "--opponents" && i + 1 < argc) { opponents = std::atoi(argv[++i]); quick_race = true; }
-        else { std::fprintf(stderr, "Usage: rr-game [--assets DIR] [--menu-frames N --screenshot FILE.bmp] | [--race] [--course 0-4] [--bike 0-14] [--level 1-5] [--opponents 0-7] [--autopilot] [--paused] [--ticks N --screenshot FILE.bmp]\n"); return 2; }
+        else if (a == "--fullscreen") cli.fullscreen = 1;
+        else if (a == "--windowed") cli.fullscreen = 0;
+        else if (a == "--window-scale" && i + 1 < argc) cli.window_scale = std::atoi(argv[++i]);
+        else if (a == "--toggle-fullscreen-at" && i + 1 < argc) cli.toggle_at = std::atol(argv[++i]);
+        else { std::fprintf(stderr, "Usage: rr-game [--assets DIR] [--menu-frames N --screenshot FILE.bmp] | [--race] [--course 0-4] [--bike 0-14] [--level 1-5] [--opponents 0-7] [--autopilot] [--paused] [--ticks N --screenshot FILE.bmp] [--fullscreen|--windowed] [--window-scale 1-4] [--toggle-fullscreen-at N]\n"); return 2; }
     }
     if (course < 0 || course > 4 || level < 0 || level > 4 || opponents < 0 || opponents > 7) return 2;
     SDL_Window* window = nullptr;
@@ -1161,8 +1217,11 @@ int main(int argc, char** argv) {
         if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMEPAD)) throw std::runtime_error(SDL_GetError());
         if (!SDL_CreateWindowAndRenderer("Road Rash Native", 960, 720, SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY, &window, &renderer))
             throw std::runtime_error(SDL_GetError());
-        SDL_SetRenderLogicalPresentation(renderer, 640, 480, SDL_LOGICAL_PRESENTATION_LETTERBOX);
-        SDL_SetRenderVSync(renderer, 1);
+        rr::Settings boot_settings = rr::load_settings((std::filesystem::path(pref_directory()) / "settings.txt").string());
+        apply_cli_overrides(boot_settings, cli);
+        DisplayDriver boot{window, renderer, &boot_settings, (std::filesystem::path(pref_directory()) / "settings.txt").string()};
+        boot.toggle_at = cli.toggle_at;
+        boot.apply(480);
         if (root.empty()) {
             root = rr::data_root();
 #ifdef RR_DEV_ASSETS
@@ -1177,8 +1236,9 @@ int main(int argc, char** argv) {
         }
         const rr::Assets assets(root);
         if (!video.empty()) {
-            SDL_SetRenderLogicalPresentation(renderer, 640, 480, SDL_LOGICAL_PRESENTATION_LETTERBOX);
-            play_video(assets,video,renderer,screenshot,run_ticks);
+            boot.frame = 0;
+            boot.apply(480);
+            play_video(assets,video,renderer,screenshot,run_ticks,boot);
             SDL_DestroyRenderer(renderer);SDL_DestroyWindow(window);SDL_Quit();return 0;
         }
         Game g;
@@ -1193,8 +1253,8 @@ int main(int argc, char** argv) {
             return bytes;
         });
         if (!quick_race) {
-            SDL_SetRenderLogicalPresentation(renderer, 640, 480, SDL_LOGICAL_PRESENTATION_LETTERBOX);
-            result = run_game(assets, window, renderer, g, exe, screenshot, menu_frames);
+            boot.apply(480);
+            result = run_game(assets, window, renderer, g, exe, screenshot, menu_frames, cli);
         } else {
             g.course_name = course_names[course];
             if (bike < 0 || size_t(bike) >= g.specs.size()) throw std::runtime_error("Bike index out of range");
@@ -1282,7 +1342,9 @@ int main(int argc, char** argv) {
                     race_music.play_race(original_index[course], "");
                     g.mixer = &mixer; g.sound = sound.get(); g.race_music = &race_music;
                 }
-                run_race(g, renderer, {.auto_drive = auto_drive, .start_paused = start_paused, .screenshot = screenshot});
+                boot.frame = 0;
+                boot.apply(480);
+                run_race(g, renderer, {.auto_drive = auto_drive, .start_paused = start_paused, .screenshot = screenshot}, boot);
                 g.mixer = nullptr; g.sound = nullptr; g.race_music = nullptr;
             }
         }

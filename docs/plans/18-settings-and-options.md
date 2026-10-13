@@ -177,7 +177,7 @@ Task 1 confirms where the original reaches the sound mix and controls handlers a
   }
   ```
 
-- [ ] **Step 1: Write the failing test** `tests/display_test.cpp` (synthetic, no SDL window needed):
+- [X] **Step 1: Write the failing test** `tests/display_test.cpp` (synthetic, no SDL window needed):
 
 ```cpp
 #include "display.hpp"
@@ -207,8 +207,8 @@ int main() {
 }
 ```
 
-- [ ] **Step 2:** Register `display-test` in `CMakeLists.txt` next to `settings-test`, build, run `ctest -R display`. Expected: build failure (`display.hpp` missing).
-- [ ] **Step 3: Implement** `src/display.cpp`:
+- [X] **Step 2:** Register `display-test` in `CMakeLists.txt` next to `settings-test`, build, run `ctest -R display`. Expected: build failure (`display.hpp` missing).
+- [X] **Step 3: Implement** `src/display.cpp`:
 
 ```cpp
 #include "display.hpp"
@@ -252,15 +252,15 @@ void apply_texture_scale(SDL_Texture* texture, const DisplayConfig& c) {
 ```
 
   `display.hpp` declares the interface above and includes `<SDL3/SDL.h>` and `settings.hpp`.
-- [ ] **Step 4:** Run `ctest -R display`. Expected: PASS.
-- [ ] **Step 5: Wire into the game.** In `src/game_main.cpp`:
+- [X] **Step 4:** Run `ctest -R display`. Expected: PASS.
+- [X] **Step 5: Wire into the game.** In `src/game_main.cpp`:
   - after `SDL_CreateWindowAndRenderer`, load settings and call `apply_display(window, renderer, display_config(settings, 480, mobile))` where `mobile` is `#ifdef __ANDROID__ true`;
   - replace each `SDL_SetRenderLogicalPresentation(renderer, 640, 510, ...)` with `apply_display(window, renderer, display_config(settings, 510, mobile))`, and each `640, 480` one with the 480 form;
   - after each `SDL_CreateTexture`, call `apply_texture_scale(texture, current_config)`;
   - add the hotkeys: Alt+Enter and Cmd+F (macOS) toggle `display_mode`, save settings and re-apply;
   - add `--fullscreen` and `--window-scale N` command-line options that override the saved values for that run only.
-- [ ] **Step 6: Review Focus 1 test.** Add a `--toggle-fullscreen-at N` debug option. Run `build/rr-game --assets ../cdrom/ROADRASH --race --ticks 300 --toggle-fullscreen-at 150 --screenshot analysis/fs-toggle.bmp` and `build/rr-game --assets ../cdrom/ROADRASH --video VIDEO/INTRO.AVI --ticks 300 --toggle-fullscreen-at 150 --screenshot analysis/fs-video.bmp`. Both must exit 0 with a non-black 640×480 (or 640×510) screenshot. Record the result in VERIFICATION.md.
-- [ ] **Step 7:** Run the regression gate (00-INDEX). Commit: `display: window, fullscreen, scaling, filtering and vsync from settings`.
+- [X] **Step 6: Review Focus 1 test.** Add a `--toggle-fullscreen-at N` debug option. Run `build/rr-game --assets ../cdrom/ROADRASH --race --ticks 300 --toggle-fullscreen-at 150 --screenshot analysis/fs-toggle.bmp` and `build/rr-game --assets ../cdrom/ROADRASH --video VIDEO/INTRO.AVI --ticks 300 --toggle-fullscreen-at 150 --screenshot analysis/fs-video.bmp`. Both must exit 0 with a non-black 640×480 (or 640×510) screenshot. Record the result in VERIFICATION.md.
+- [X] **Step 7:** Run the regression gate (00-INDEX). Commit: `display: window, fullscreen, scaling, filtering and vsync from settings`.
 
 ---
 

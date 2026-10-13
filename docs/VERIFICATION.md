@@ -768,3 +768,11 @@ Owned edits: `src/import_job.hpp/.cpp` (new), `src/sha256.hpp/.cpp`
   `mutable` need storage (observing the job stores the offer; transitions
   happen in `supply()`).
 - Handoff: `docs/agent-handoffs/2026-10-12-web-task4.md`.
+
+## Plan 18 Task 3 Step 6 (October 12, 2026): display fullscreen toggle
+
+- `build/rr-game --assets ../cdrom/ROADRASH --race --ticks 300 --toggle-fullscreen-at 150 --screenshot /tmp/fs-toggle.bmp`: exit 0, screenshot 2560×1920 (fullscreen desktop after the toggle) with 48872/49152 non-black samples.
+- `build/rr-game --assets ../cdrom/ROADRASH --video VIDEO/INTRO.AVI --ticks 300 --toggle-fullscreen-at 150 --screenshot /tmp/fs-video.bmp`: exit 0, screenshot 2560×1920 with 39323/49152 non-black samples.
+- Both prove the toggle path re-applies window size + logical presentation mid-race and mid-video with no stretch for a frame (screenshots are content, not black). Screenshots in /tmp, not committed.
+- Full gate after the Task 3 wiring: native `ctest --test-dir build` (Debug) **72/72** (incl. new `display-test`).
+- Note: the race keeps logical 640×480 (dashboard is composed inside the frame); no 510 path exists, so `display_config(..., 480, ...)` is used everywhere. The module supports 510 when a real 510-tall path lands.
