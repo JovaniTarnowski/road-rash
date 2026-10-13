@@ -57,6 +57,7 @@ namespace screen_id {
 constexpr int race_loading = 8, main_menu = 9, thrash_courses = 10, mano = 11, mano_courses = 12, big_game_courses = 27,
               characters = 14, street = 15, restroom = 16, wrecked = 0x1c, busted = 0x1d, won = 0x1e,
               lost = 0x1f, level_up = 0x20, penalty = 0x21, standings = 0x22, finale = 0x23;
+constexpr int native_display = 0x24, native_sound = 0x25, native_pause = 0x26, screen_count = 0x27;
 }
 
 // 0x00445090: switching mode resets level, qualifications and character.

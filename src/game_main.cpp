@@ -20,6 +20,7 @@
 #include "hud.hpp"
 #include "exe_tables.hpp"
 #include "frontend.hpp"
+#include "native_screens.hpp"
 #include "pe_strings.hpp"
 #include "settings.hpp"
 #include "display.hpp"
@@ -904,7 +905,7 @@ std::string pref_directory() {
 
 // Menus -> videos -> races -> results: the original main loop (0x00448200) around the front end.
 int run_game(const rr::Assets& assets, SDL_Window* window, SDL_Renderer* renderer, Game& g, const std::vector<uint8_t>& exe,
-             const std::string& screenshot, long menu_frames, const CliDisplayOverride& cli) {
+             const std::string& screenshot, long menu_frames, const CliDisplayOverride& cli, const std::string& menu_script) {
     const std::string pref = pref_directory();
     const std::string settings_path = (std::filesystem::path(pref) / "settings.txt").string();
     rr::Settings settings = rr::load_settings(settings_path);
@@ -918,7 +919,9 @@ int run_game(const rr::Assets& assets, SDL_Window* window, SDL_Renderer* rendere
     rr::Career career;
     const auto resources = rr::read_string_resources(assets.read(rr::language_dll(settings.language)));
     const auto strings = rr::frontend_strings(resources);
-    rr::Frontend fe(assets, text, strings, rr::credit_lines(resources), rr::read_frontend_data(exe), tables, career, settings,
+    auto frontend_data = rr::read_frontend_data(exe);
+    rr::add_native_screens(frontend_data, kMobileDisplay);
+    rr::Frontend fe(assets, text, strings, rr::credit_lines(resources), std::move(frontend_data), tables, career, settings,
                     (std::filesystem::path(pref) / "saves").string());
     // Opponent names: personality +0x165 -> 0x00464188 -> string slot (0x00437860).
     const auto name_table = rr::read_exe_data(exe, 0x00464188, 9 * 4);
@@ -959,6 +962,21 @@ int run_game(const rr::Assets& assets, SDL_Window* window, SDL_Renderer* rendere
     LifecycleWatch lifecycle;
     rr::RgbImage frame;
     fe.start();
+    if (!menu_script.empty()) {   // debug: comma-separated screen names entered in order
+        static const std::pair<const char*, int> kMenuScriptScreens[] = {
+            {"main", 9}, {"restroom", 0x10}, {"graphics", 0x13}, {"display", 0x24},
+            {"street", 0x0f}, {"characters", 0x0e}, {"jukebox", 0x11},
+        };
+        size_t from = 0;
+        while (from <= menu_script.size()) {
+            size_t to = menu_script.find(',', from);
+            if (to == std::string::npos) to = menu_script.size();
+            const std::string name = menu_script.substr(from, to - from);
+            for (const auto& [key, screen] : kMenuScriptScreens)
+                if (name == key) { fe.enter(screen); break; }
+            from = to + 1;
+        }
+    }
     bool running = true, text_input = false;
     long frames = 0;
     display.frame = 0;
@@ -967,6 +985,7 @@ int run_game(const rr::Assets& assets, SDL_Window* window, SDL_Renderer* rendere
         while (running && fe.poll(ev)) {
             if (ev.kind == rr::FrontendEvent::Kind::quit) running = false;
             else if (ev.kind == rr::FrontendEvent::Kind::select_soundtrack) music.play(ev.track);
+            else if (ev.kind == rr::FrontendEvent::Kind::apply_display) display.apply(480);
             else if (ev.kind == rr::FrontendEvent::Kind::play_video) {
                 if (menu_frames < 0) {
                     // 0x004023e0: showroom clips (flag 1) only quieten the soundtrack; other videos stop it.
@@ -1186,6 +1205,7 @@ int main(int argc, char** argv) {
     int course = 0, bike = 0, level = 0, opponents = 7;
     long run_ticks = -1, menu_frames = -1;
     bool auto_drive = false, into_traffic = false, start_paused = false, first_run_smoke = false, quick_race = false;
+    std::string menu_script;
     CliDisplayOverride cli;
     for (int i = 1; i < argc; ++i) {
         const std::string a = argv[i];
@@ -1200,6 +1220,7 @@ int main(int argc, char** argv) {
         else if (a == "--paused") start_paused = true;
         else if (a == "--race") quick_race = true;
         else if (a == "--menu-frames" && i + 1 < argc) menu_frames = std::atol(argv[++i]);
+        else if (a == "--menu-script" && i + 1 < argc) menu_script = argv[++i];
         else if (a == "--first-run-smoke") first_run_smoke = true;
         else if (a == "--level" && i + 1 < argc) { level = std::atoi(argv[++i]) - 1; quick_race = true; }
         else if (a == "--opponents" && i + 1 < argc) { opponents = std::atoi(argv[++i]); quick_race = true; }
@@ -1254,7 +1275,7 @@ int main(int argc, char** argv) {
         });
         if (!quick_race) {
             boot.apply(480);
-            result = run_game(assets, window, renderer, g, exe, screenshot, menu_frames, cli);
+            result = run_game(assets, window, renderer, g, exe, screenshot, menu_frames, cli, menu_script);
         } else {
             g.course_name = course_names[course];
             if (bike < 0 || size_t(bike) >= g.specs.size()) throw std::runtime_error("Bike index out of range");

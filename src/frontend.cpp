@@ -2,6 +2,8 @@
 #include "assets.hpp"
 #include "race_music.hpp"
 #include "exe_tables.hpp"
+#include "native_screens.hpp"
+#include "native_strings.hpp"
 #include "rri.hpp"
 #include <algorithm>
 #include <cctype>
@@ -194,6 +196,7 @@ uint32_t Frontend::next_random() {
 
 const std::string& Frontend::str(int slot) const {
     static const std::string empty;
+    if (slot >= native_slot_base) return native_string(slot);
     return slot > 0 && size_t(slot) < strings_.size() ? strings_[size_t(slot)] : empty;
 }
 
@@ -274,6 +277,8 @@ std::string Frontend::background_for(int previous, int screen, int title) {
     case 0x19: return "Panzer";
     case 0x18: return title >= 0x80 && title <= 0x8e ? std::string("Bikes/") + bike_files[title - 0x80] : "";
     case 0x1a: return {};   // chosen by prepare_schmooze
+    case screen_id::native_display: case screen_id::native_sound: case screen_id::native_pause:
+        return background_for(previous, 0x13, title);   // native screens share the Graphics Options picture
     default: break;
     }
     // 0x0041d7d0 with a random picture number 1..6.
@@ -335,7 +340,11 @@ void Frontend::describe(const MenuItem& m) {
         const std::string value = format_c("%d%c%d", {A(length / 10), A(decimal), A(length % 10)});
         strings_[dynamic_slot] = format_c(str(21 + m.caption - 0x10), {A(value), A(str(units))});
     }
-    desc_slot_ = m.desc;
+    if (m.desc >= native_slot_base) {
+        // Native value item: "<description>\nCurrent: <value>" via the dynamic slot.
+        strings_[dynamic_slot] = native_string(m.desc) + "\nCurrent: " + native_value_text(m.caption);
+        desc_slot_ = dynamic_slot;
+    } else desc_slot_ = m.desc;
     desc_format_ = m.format;
     desc_flags_ = m.flags & ~0x900u;
 }
@@ -487,7 +496,7 @@ void Frontend::enter(int screen) {
         events_.push_back({FrontendEvent::Kind::start_race, {}, screen});
         return;
     }
-    if (screen == 6 || screen < 0 || screen >= 0x24) {
+    if (screen == 6 || screen < 0 || screen >= screen_id::screen_count) {
         events_.push_back({FrontendEvent::Kind::quit, {}, 0});
         return;
     }
@@ -554,6 +563,66 @@ void Frontend::close_popup() {
     editing_name_ = false;
     save_list_.clear();
     set_focus(size_t(restore));
+}
+
+int Frontend::native_current(uint32_t popup) const {
+    // 1-based choice index matching the popup's choice targets.
+    switch (popup) {
+    case native_popup::display_mode: return settings_.display_mode == DisplayMode::fullscreen ? 2 : 1;
+    case native_popup::window_size: return settings_.window_scale;
+    case native_popup::scaling: return int(settings_.scale_mode) + 1;
+    case native_popup::filtering: return settings_.filter == FilterMode::smooth ? 2 : 1;
+    case native_popup::on_off: return 1;   // caller overrides per item; see open_native_popup
+    case native_popup::touch: return settings_.touch_opacity / 25 + 1;
+    default: return 1;
+    }
+}
+
+void Frontend::open_native_popup(uint32_t popup) {
+    // Setter per popup; on/off popups share one table, the setter is chosen by the focused item.
+    int setter = native_setter::fps;
+    int current = native_current(popup);
+    if (popup_base_ == 0) last_focus_[0] = focus_;
+    switch (popup) {
+    case native_popup::display_mode: setter = native_setter::display_mode; break;
+    case native_popup::window_size: setter = native_setter::window_size; break;
+    case native_popup::scaling: setter = native_setter::scaling; break;
+    case native_popup::filtering: setter = native_setter::filtering; break;
+    case native_popup::touch: setter = native_setter::touch_opacity; break;
+    case native_popup::on_off: {
+        // Which bool this popup edits: the focused value item's caption.
+        const int cap = focus_ >= 0 && size_t(focus_) < items_.size() ? items_[size_t(focus_)].caption : 0;
+        if (cap == ns::vsync) { setter = native_setter::vsync; current = settings_.vsync ? 2 : 1; }
+        else if (cap == ns::haptics) { setter = native_setter::haptics; current = settings_.haptics ? 2 : 1; }
+        else { setter = native_setter::fps; current = settings_.show_fps ? 2 : 1; }
+        break;
+    }
+    default: break;
+    }
+    last_focus_[0] = focus_;
+    open_popup(data_.popups.at(popup), current, setter);
+}
+
+std::string Frontend::native_value_text(int caption) const {
+    switch (caption) {
+    case ns::display_mode: return native_string(settings_.display_mode == DisplayMode::fullscreen ? ns::fullscreen : ns::windowed);
+    case ns::window_size: return native_string(ns::scale_1x + settings_.window_scale - 1);
+    case ns::scaling: return native_string(ns::fit + int(settings_.scale_mode));
+    case ns::filtering: return native_string(settings_.filter == FilterMode::smooth ? ns::smooth : ns::sharp);
+    case ns::vsync: return native_string(settings_.vsync ? ns::on : ns::off);
+    case ns::fps: return native_string(settings_.show_fps ? ns::on : ns::off);
+    case ns::touch_opacity: return native_string(ns::touch_0 + settings_.touch_opacity / 25);
+    case ns::haptics: return native_string(settings_.haptics ? ns::on : ns::off);
+    default: return {};
+    }
+}
+
+void Frontend::apply_native_setting() {
+    // Persist beside the saves directory (sibling settings.txt, as run_game lays out)
+    // and ask the host to re-apply the display live.
+    const std::string path = (std::filesystem::path(save_dir_).parent_path() / "settings.txt").string();
+    save_settings(path, settings_);
+    events_.push_back({FrontendEvent::Kind::apply_display, {}, 0});
 }
 
 void Frontend::show_dialog(const std::string& text, int kind, std::vector<std::pair<int, int>> buttons) {
@@ -831,7 +900,14 @@ int Frontend::run_handler(size_t index) {
             }
             break;
         }
-        default: break;
+        case native_setter::display_mode: settings_.display_mode = target == 2 ? DisplayMode::fullscreen : DisplayMode::windowed; apply_native_setting(); break;
+        case native_setter::window_size: settings_.window_scale = std::min(4, std::max(1, target)); apply_native_setting(); break;
+        case native_setter::scaling: settings_.scale_mode = ScaleMode(std::min(2, std::max(0, target - 1))); apply_native_setting(); break;
+        case native_setter::filtering: settings_.filter = target == 2 ? FilterMode::smooth : FilterMode::sharp; apply_native_setting(); break;
+        case native_setter::vsync: settings_.vsync = target == 2; apply_native_setting(); break;
+        case native_setter::fps: settings_.show_fps = target == 2; apply_native_setting(); break;
+        case native_setter::touch_opacity: settings_.touch_opacity = std::min(100, std::max(0, (target - 1) * 25)); apply_native_setting(); break;
+        case native_setter::haptics: settings_.haptics = target == 2; apply_native_setting(); break;
         }
         return 0;
     }
@@ -864,6 +940,13 @@ void Frontend::reset_keys(bool joystick) {
 
 void Frontend::activate(size_t index) {
     if (index >= items_.size() || !items_[index].enabled) return;
+    const MenuItem& m = items_[index];
+    // Native value item (handler 0, target a native popup key): open the popup
+    // with the current choice instead of entering a screen.
+    if (m.handler == 0 && uint32_t(m.target) >= 0xF0000000u) {
+        open_native_popup(uint32_t(m.target));
+        return;
+    }
     const int next = run_handler(index);
     if (next != 0) enter(next);
 }

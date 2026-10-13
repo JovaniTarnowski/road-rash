@@ -776,3 +776,10 @@ Owned edits: `src/import_job.hpp/.cpp` (new), `src/sha256.hpp/.cpp`
 - Both prove the toggle path re-applies window size + logical presentation mid-race and mid-video with no stretch for a frame (screenshots are content, not black). Screenshots in /tmp, not committed.
 - Full gate after the Task 3 wiring: native `ctest --test-dir build` (Debug) **72/72** (incl. new `display-test`).
 - Note: the race keeps logical 640×480 (dashboard is composed inside the frame); no 510 path exists, so `display_config(..., 480, ...)` is used everywhere. The module supports 510 when a real 510-tall path lands.
+
+## Plan 18 Task 5 Step 4 (October 12, 2026): native Display screen
+
+- `native_screens-test`: 0 failures (slot text, geometry copy, nav chain, Back link, mobile 6-count, 0x13 linkage). `frontend-test`: 0 failures (scripted Restroom → Graphics → Display → Scaling → Integer → Back: settings, file `scale_mode=1`, focus restore).
+- `build/rr-game --assets ../cdrom/ROADRASH --menu-script restroom,graphics,display --menu-frames 60 --screenshot /tmp/display-screen.bmp`: exit 0. Display vs Graphics Options screenshots share 5493314/6553628 pixels (84% — same background picture; differences are the buttons/title/focus only). Fonts, colours and arrow come from the shared item draw path. Screenshot in /tmp, not committed (original art).
+- Deviations from the plan sketch (all test-covered): the 0x13 Display entry repurposes dead item 2 instead of appending (table size stable, existing 1→2→3 nav chain reused); touch opacity gets a 5-choice popup (`native_popup::touch` + `touch_0..100` slots — the sketch's 5 popups had no touch home); `--menu-script` enters named screens directly (debug-only) rather than synthesizing MenuInput keys.
+- Full gate after the wiring: native `ctest --test-dir build` (Debug) **73/73** (incl. new `native_screens-test`).

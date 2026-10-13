@@ -1,0 +1,15 @@
+#pragma once
+#include <string>
+
+namespace rr {
+constexpr int native_slot_base = 0x10000;                        // caption/desc slots >= this are native strings
+const std::string& native_string(int slot);                      // empty for unknown slots
+// Native string slots (values are native_slot_base + n).
+namespace ns { enum : int { display_title = native_slot_base, display_mode, window_size, scaling, filtering, vsync, fps,
+                            touch_opacity, haptics, back, windowed, fullscreen, scale_1x, scale_2x, scale_3x, scale_4x,
+                            fit, integer, stretch, sharp, smooth, on, off, /* descriptions follow */ d_display_mode,
+                            d_window_size, d_scaling, d_filtering, d_vsync, d_fps, d_touch, d_haptics,
+                            sound_title, master, music, effects, engines, others, sirens, interface, mute, swap,
+                            pause_title, resume, sound, display, controls, quit_race, d_quit_race,
+                            touch_0, touch_25, touch_50, touch_75, touch_100, count }; }
+}

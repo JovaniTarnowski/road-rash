@@ -1,5 +1,6 @@
 #include "assets.hpp"
 #include "frontend.hpp"
+#include "native_screens.hpp"
 #include "pe_strings.hpp"
 #include "rri.hpp"
 #include <cstdio>
@@ -37,7 +38,8 @@ int main(int argc, char** argv) {
     const auto exe = assets.read("ROADRASH.EXE");
     const TextRenderer text(assets);
     const auto tables = read_career_tables(exe);
-    const auto data = read_frontend_data(exe);
+    auto data = read_frontend_data(exe);
+    add_native_screens(data, false);
     check(data.screens[9].items.size() == 4 && data.screens[0x10].items.size() == 13 && data.screens[0x22].items.size() == 15, "screen tables");
     check(data.restroom_patterns[1] == "YNNYYYYN", "restroom pattern");
     const auto strings = frontend_strings(read_string_resources(assets.read("TEXT/ENU.DLL")));
@@ -273,6 +275,30 @@ int main(int argc, char** argv) {
         while (fe.poll(se)) if (se.kind == FrontendEvent::Kind::select_soundtrack && se.group == 0 && se.track == 0) soundtrack = true;
         check(soundtrack && settings.music_group == 0 && settings.music_track == 0, "jukebox track select emits soundtrack event");
     }
+    // Native Display screen (plan 18 Task 5): Restroom -> Graphics Options -> Display ->
+    // open Scaling -> choose Integer -> Back. Settings, file and focus all follow.
+    fe.enter(screen_id::restroom);
+    int graphics = -1;
+    for (size_t i = 0; i < fe.items().size(); ++i) if (fe.items()[i].target == 0x13) graphics = int(i);
+    check(graphics >= 0, "restroom has a Graphics Options item");
+    if (focus_item(graphics)) key("select");
+    check(fe.screen() == 0x13, "graphics options");
+    snap("graphics");
+    if (focus_item(2)) key("select");   // repurposed dead item: Display entry
+    check(fe.screen() == screen_id::native_display, "display screen");
+    snap("display");
+    if (focus_item(2)) key("select");   // Scaling row opens its popup
+    check(fe.items().size() == 7 + 4, "scaling popup opens");
+    key("down");   // Integer row (popup header + Fit, Integer, ...)
+    key("select");
+    check(settings.scale_mode == rr::ScaleMode::integer, "scaling choice applies to settings");
+    {
+        std::ifstream settings_file((std::filesystem::path(saves).parent_path() / "settings.txt").string());
+        const std::string text((std::istreambuf_iterator<char>(settings_file)), std::istreambuf_iterator<char>());
+        check(text.find("scale_mode=1") != std::string::npos, "scaling choice saved to settings file");
+    }
+    if (focus_item(6)) key("select");   // Back row
+    check(fe.screen() == 0x13 && fe.focus() == 2, "back returns to the Display item");
     // Outcome videos (plan 13 Task 4 Step 3): every outcome maps to its video family for fixed random values.
     {   // Pure rule first: exact names, no RNG state involved.
         Career c;

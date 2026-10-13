@@ -38,7 +38,7 @@ struct MenuScreen {
 
 // Everything the front end reads from the user's executable.
 struct FrontendData {
-    std::array<MenuScreen, 0x24> screens;
+    std::array<MenuScreen, screen_id::screen_count> screens;
     std::map<uint32_t, std::vector<MenuItem>> popups;     // by original address
     std::array<MenuItem, 3> course_extra{};               // 6th course-select item: Thrash, mano, Big Game templates
     std::array<std::string, 8> restroom_patterns;         // 0x00473598: 'Y'/'N' per restroom item
@@ -65,7 +65,7 @@ struct MenuInput {
 };
 
 struct FrontendEvent {
-    enum class Kind { none, play_video, start_race, quit, select_soundtrack } kind = Kind::none;
+    enum class Kind { none, play_video, start_race, quit, select_soundtrack, apply_display } kind = Kind::none;
     std::string video;   // path relative to the ROADRASH directory, e.g. VIDEO/START3.AVI
     int course = 0;      // 1..5
     int group = 0, track = 0;      // select_soundtrack: 0-based group (menu caption - 0xe1) and track (caption - 0xf1)
@@ -121,6 +121,10 @@ private:
     void navigate(int direction);
     void open_popup(const std::vector<MenuItem>&, int current, int setter);
     void close_popup();
+    void open_native_popup(uint32_t popup);   // plan 18 Task 5: value item -> native popup
+    int native_current(uint32_t popup) const;
+    std::string native_value_text(int caption) const;
+    void apply_native_setting();              // persist + emit apply_display
     void apply_restroom_pattern();
     void set_background(const std::string& name);
     std::string background_for(int previous, int screen, int title);
@@ -155,7 +159,7 @@ private:
     std::vector<MenuItem> items_;          // current items including an open popup
     size_t popup_base_ = 0;                // 0x00496020
     int popup_setter_ = 0;                 // 0x0049e0a8
-    std::array<int, 0x24> last_focus_{};   // 0x0046a3a0
+    std::array<int, screen_id::screen_count> last_focus_{};   // 0x0046a3a0
     int character_return_ = screen_id::street;   // 0x0049705c
     int schmooze_target_ = 0x19, schmooze_count_ = 0;   // 0x00469e1c, 0x0046ab40
     uint8_t schmooze_used_ = 0;            // 0x00485ce4

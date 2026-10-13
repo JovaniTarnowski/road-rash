@@ -314,7 +314,7 @@ Moved here from plan 14 Task 2 Step 3. The game currently always renders the hig
   ```
   `FrontendData::screens` becomes `std::array<MenuScreen, screen_id::screen_count>`; `read_frontend_data` fills the first `0x24` exactly as now. `Frontend::str` returns `native_string(slot)` for `slot >= native_slot_base`. `Frontend::enter` quits only for `screen >= screen_id::screen_count` (and still for 6 and negatives).
 
-- [ ] **Step 1: Write the failing test** `tests/native_screens_test.cpp` (the string check is synthetic; the rest skips with 77 without the disc, because the geometry comes from the user's EXE; register it with `SKIP_RETURN_CODE 77` like `frontend-test`):
+- [X] **Step 1: Write the failing test** `tests/native_screens_test.cpp` (the string check is synthetic; the rest skips with 77 without the disc, because the geometry comes from the user's EXE; register it with `SKIP_RETURN_CODE 77` like `frontend-test`):
 
 ```cpp
 #include "assets.hpp"
@@ -357,13 +357,13 @@ int main(int argc, char** argv) {
   Desktop items: display mode, window size, scaling, filtering, vsync, FPS, Back (7). Mobile items: scaling, filtering, FPS, touch opacity, haptics, Back (6). Plans 19 and 20 later insert RENDER RESOLUTION, TEXTURE DETAIL, ARTWORK and SCREEN FILTER above Back and update these counts in their own tests; mode and size do not apply, and Android's compositor forces vsync. If device testing (plan 14) shows vsync matters on Android, change the expected count and this note together.
 
   Extend `tests/frontend_test.cpp`'s scripted flow: Restroom → Graphics Options → Display → open Scaling → choose Integer → Back. Assert `settings.scale_mode == rr::ScaleMode::integer`, the saved settings file contains `scale_mode=1`, and the focus returned to the Display item it left from.
-- [ ] **Step 2:** Run both; expected FAIL (missing headers).
-- [ ] **Step 3: Implement.**
+- [X] **Step 2:** Run both; expected FAIL (missing headers).
+- [X] **Step 3: Implement.**
   - `native_strings.cpp`: a `static const std::array<std::string, ns::count - native_slot_base>` with labels in the original's capitalisation style (captions upper case like the original buttons, descriptions in sentence case), e.g. `"DISPLAY"`, `"Show the game in a window or fill the whole screen."`.
   - `native_screens.cpp`: copy the first Graphics Options item as the button template; place the N native items in a column at the template's x, starting at the template's y, spaced by `template.h + 4`; set captions, description slots, flags `title_desc | description`, `enabled = true`, the up/down/tab chain, and the Back item with `item_flag::escape` and `target = 0x13`. Each value item has `handler = 0` and a native `target` that `Frontend::activate` turns into `open_popup(data_.popups.at(native_popup::...), current_choice, native_setter)`. Build each native popup from the resolution popup `0x00474240`: its header item becomes the header with a native caption, its first choice item is copied once per choice and offset by its own height. Append one item to screen `0x13` copied from its last button, with caption `ns::display` and `target = screen_id::native_display`, and fix the nav chain of its neighbours.
   - `frontend.cpp`: the value text of a focused native item is shown in the description box as `"<description>\nCurrent: <value>"`; setters write `Settings`, call `save_settings`, and push a new `FrontendEvent::Kind::apply_display` (add it to the enum) that `game_main.cpp` handles by calling `apply_display`.
   - Background: `background_for` returns the Graphics Options picture (`Postcard/Napa` or `Postcard/QNapa`, see `frontend.cpp` case `0x13`) for the native screens.
-- [ ] **Step 4:** Run both tests. Expected: PASS. Then take a menu screenshot: `build/rr-game --assets ../cdrom/ROADRASH --menu-script restroom,graphics,display --menu-frames 60 --screenshot analysis/display-screen.bmp` (add `--menu-script` if it does not exist: a comma list of screen names fed through `MenuInput`). Look at it: fonts, colours, arrow and background must match the neighbouring original screens. Do not commit the screenshot (it contains original art).
+- [X] **Step 4:** Run both tests. Expected: PASS. Then take a menu screenshot: `build/rr-game --assets ../cdrom/ROADRASH --menu-script restroom,graphics,display --menu-frames 60 --screenshot analysis/display-screen.bmp` (add `--menu-script` if it does not exist: a comma list of screen names fed through `MenuInput`). Look at it: fonts, colours, arrow and background must match the neighbouring original screens. Do not commit the screenshot (it contains original art).
 - [ ] **Step 5:** Commit: `frontend: native Display options screen in the original menu style`.
 
 ---
