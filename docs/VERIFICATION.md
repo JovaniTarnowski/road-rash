@@ -304,7 +304,7 @@ Session 19 final validation: native CTest 35/35; ASAN+UBSAN CTest 35/35; standal
   - (with disc) the 101-entry volume curve decoded from `0x004362e0`'s code, all 68 effect files present, an audible engine after 120 accelerating ticks, a crash event, the soundtrack playing T_Auto.
   
   Passes. A full-app run with the dummy audio driver starts the intro without errors. 43/43 tests pass.
-- **Not verified:** sound timing or levels against the original. The DirectSound oracle hook was not built. Race MIDI is not implemented: no General MIDI bank is on the disc, and the AWE32 ROM samples are absent. Races are silent apart from effects and engines.
+- **Not verified:** sound timing or levels against the original. The DirectSound oracle hook was not built. Race MIDI plays through the native SF1 sampler (`music-test`: all 11 songs parse, all 5 AWE renders audible with factory presets, sequencer streams through the mixer with pause/stop semantics; October 2026); exact AWE-timbre fidelity and a human listening check remain open (plan 13 Task 2 Step 5).
 - **Natural-frame renderer equality.** The oracle gained `dump_scene`, run before `0x00450420` on captured frames. It writes the ring slices, projected entries, scratch blocks and every pending display node, with its resource header and an FNV-1a hash of mip 0. `RR_ORACLE_FRAMES=61 RR_ORACLE_PIXELS=1 RR_ORACLE_SHOT_EVERY=10 oracle/run.sh city-scene` captured 7 CITY attract frames.
 - `oracle-scene` (skips without the capture) works as follows:
   - It decodes every texture natively: GLOBAL and course CELs, families exploded and walked including cel groups, and pixel resources in animation/CAR payloads.

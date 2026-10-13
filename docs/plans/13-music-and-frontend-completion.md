@@ -96,14 +96,14 @@
   }
   ```
 
-- [ ] **Step 1: Write the failing tests.**
+- [X] **Step 1: Write the failing tests.**
   - **Synthetic MIDI:** a hand-built two-track format-1 file (bytes written in the test) with tempo change, running status and a SysEx event parses to the expected event ticks. Every truncation of it throws.
   - **Synthetic SBK:** a minimal `sfbk` RIFF with one preset, one instrument and one 16-sample sine parses. Truncated and garbage inputs throw.
   - **Corpus (skip 77):** all five `GRUNGE*.MID` and every `.SBK` parse.
   - **Player:** with a fake mixer sink, `play_race(4, "")` selects the song for original course 4 (NAPA), following the traced Grunge-by-course mapping. `stop()` silences within one block, and `pause(true)` holds the song position.
-- [ ] **Step 2:** Run the tests and confirm they fail.
-- [ ] **Step 3:** Implement per the Task 1 decision. Rendering happens on the game thread in `update()` into the mixer's SPSC queue, which keeps the callback lock-free. Volume follows the music level curve.
-- [ ] **Step 4:** Run the tests and confirm they pass. Then run the full gate and the sanitizer build.
+- [X] **Step 2:** Run the tests and confirm they fail.
+- [X] **Step 3:** Implement per the Task 1 decision. Rendering happens on the game thread in `update()` into the mixer's SPSC queue, which keeps the callback lock-free. Volume follows the music level curve.
+- [X] **Step 4:** Run the tests and confirm they pass. Then run the full gate and the sanitizer build.
 - [ ] **Step 5: Listen.** Start a Napa race in `rr-game` and confirm music plays. Record in VERIFICATION.md that this was a manual listening check. Commit: `audio: race MIDI with SBK banks; soundtrack moved to MusicPlayer`.
 
 ---
