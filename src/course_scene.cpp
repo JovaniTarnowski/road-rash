@@ -158,15 +158,21 @@ const CelTexture* CourseScene::material(uint32_t section,uint32_t local,uint8_t 
     return &group->second.select(width,height,logarithms_).texture;
 }
 void CourseScene::draw_horizon(Framebuffer& fb,int32_t scroll) const {
-    if(fb.width()!=640 || fb.height()!=480)throw std::runtime_error("Course horizon needs high-resolution surface");
-    const int32_t start=int32_t(((-int64_t(scroll)%720)+720)%720);
+    // Plan 19 Task 4: rows and scroll offsets scale with the surface; the
+    // 720x320 source is nearest-neighbour sampled until plan 20 upscales it.
+    const int s = fb.width() / 640;
+    if (s < 1 || fb.width() != 640 * s || fb.height() != 480 * s) throw std::runtime_error("Horizon needs a 640s x 480s surface");
+    const int32_t start = int32_t(((-int64_t(scroll) % 720) + 720) % 720);
     fb.clear(0);
-    for(int y=0;y<320;++y)for(int x=0;x<fb.width();++x)fb.row(y)[x]=horizon_[size_t(y)*720+(x+start)%720];
+    for (int y = 0; y < 320 * s; ++y) for (int x = 0; x < fb.width(); ++x)
+        fb.row(y)[x] = horizon_[size_t(y / s) * 720 + (x / s + start) % 720];
 }
 std::vector<DrawNode> CourseScene::draw_nodes(const std::vector<RouteSample>& route,
     const std::vector<RoadSlice>& slices,const Camera& camera,const DepthTable& depths,ActorEmitter actors) const {
     struct Road {const PathSample* path;const TerrainSlice* terrain;uint32_t section,local;HillRoad hill[2];BuildingRoad building[2];int32_t ceiling;};
     std::vector<std::array<Road,2>> roads(slices.size());
+    // Plan 19 Task 4: the ceiling stays logical (240 Q16 view rows); only
+    // ViewMode::map converts it to surface rows at render time.
     int32_t ceiling=240*65536;
     for(size_t n=0;n<slices.size();++n) {
         const auto& slice=slices[n];const auto& sample=route.at(slice.sample);

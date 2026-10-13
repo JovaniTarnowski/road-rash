@@ -483,32 +483,44 @@ struct SpriteCache {
 struct CourseCanvas {
     rr::Framebuffer frame{640,480};
     std::vector<uint8_t> rgba=std::vector<uint8_t>(640*480*4);
+    int scale_w=640,scale_h=480;   // plan 19 Task 4: 640s x 480s surface
     SDL_Texture* texture=nullptr;
     SDL_Texture* dashboard=nullptr;
     SDL_ScaleMode scale = crisp_scale;   // plan 18 Task 3: from DisplayDriver (filter setting)
     ~CourseCanvas(){clear();}
     void clear(){SDL_DestroyTexture(texture);texture=nullptr;SDL_DestroyTexture(dashboard);dashboard=nullptr;}
+    void resize(int s) {
+        if (s < 1 || s > 4) throw std::runtime_error("Render scale out of range 1..4");
+        if (640 * s == scale_w && 480 * s == scale_h) return;
+        scale_w = 640 * s; scale_h = 480 * s;
+        frame = rr::Framebuffer(scale_w, scale_h);
+        rgba.assign(size_t(scale_w) * size_t(scale_h) * 4, 0);
+        clear();
+    }
     void draw_dashboard(SDL_Renderer* renderer,const Game& game) {
         const auto image=game.hud->compose(game.hud->state(*game.race,game.player_name,game.rider_names),game.physics);
         for(size_t i=0;i<image.pixels.size();++i){const uint32_t c=image.pixels[i];rgba[4*i]=uint8_t(c>>16);rgba[4*i+1]=uint8_t(c>>8);rgba[4*i+2]=uint8_t(c);rgba[4*i+3]=c==0x01000000?0:255;}
         if(!dashboard) {
-            dashboard=SDL_CreateTexture(renderer,SDL_PIXELFORMAT_RGBA32,SDL_TEXTUREACCESS_STREAMING,640,480);
+            dashboard=SDL_CreateTexture(renderer,SDL_PIXELFORMAT_RGBA32,SDL_TEXTUREACCESS_STREAMING,scale_w,scale_h);
             if(!dashboard)throw std::runtime_error(SDL_GetError());
             SDL_SetTextureScaleMode(dashboard,scale);SDL_SetTextureBlendMode(dashboard,SDL_BLENDMODE_BLEND);
         }
-        if(!SDL_UpdateTexture(dashboard,nullptr,rgba.data(),640*4))throw std::runtime_error(SDL_GetError());
-        const SDL_FRect dst{0,0,640,480};SDL_RenderTexture(renderer,dashboard,nullptr,&dst);
+        if(!SDL_UpdateTexture(dashboard,nullptr,rgba.data(),scale_w*4))throw std::runtime_error(SDL_GetError());
+        const SDL_FRect dst{0,0,float(scale_w),float(scale_h)};SDL_RenderTexture(renderer,dashboard,nullptr,&dst);
     }
-    void draw(SDL_Renderer* renderer,const Game& game,const std::vector<rr::RoadSlice>& slices) {
+    void draw(SDL_Renderer* renderer,const Game& game,const std::vector<rr::RoadSlice>& slices,int s) {
+        resize(s);
         game.scene->draw_horizon(frame,game.race->horizon_scroll());
-        rr::render_nodes(frame,game.scene->draw_nodes(game.race->route(),slices,game.race->camera(),game.depth,[&](const rr::RoadSlice& near,const rr::RoadSlice& far,int road,int32_t ceiling,bool back){return game.rider_nodes(near,far,road,ceiling,back);}),rr::view_mode(true),16);
-        frame.to_rgba(game.palette,rgba.data(),640*4);
+        rr::render_nodes(frame,game.scene->draw_nodes(game.race->route(),slices,game.race->camera(),game.depth,[&](const rr::RoadSlice& near,const rr::RoadSlice& far,int road,int32_t ceiling,bool back){return game.rider_nodes(near,far,road,ceiling,back);}),rr::view_mode_scaled(s),16);
+        frame.to_rgba(game.palette,rgba.data(),scale_w*4);
         if(!texture) {
-            texture=SDL_CreateTexture(renderer,SDL_PIXELFORMAT_RGBA32,SDL_TEXTUREACCESS_STREAMING,640,480);
+            texture=SDL_CreateTexture(renderer,SDL_PIXELFORMAT_RGBA32,SDL_TEXTUREACCESS_STREAMING,scale_w,scale_h);
             if(!texture)throw std::runtime_error(SDL_GetError());
             SDL_SetTextureScaleMode(texture,scale);
         }
-        if(!SDL_UpdateTexture(texture,nullptr,rgba.data(),640*4))throw std::runtime_error(SDL_GetError());
+        if(!SDL_UpdateTexture(texture,nullptr,rgba.data(),scale_w*4))throw std::runtime_error(SDL_GetError());
+        // Logical presentation stays 640x480: the GPU scales the 640s x 480s
+        // surface to the drawable (supersampling when the drawable is smaller).
         const SDL_FRect dst{0,0,640,480};
         if(!SDL_RenderTexture(renderer,texture,nullptr,&dst))throw std::runtime_error(SDL_GetError());
     }
@@ -724,6 +736,7 @@ struct RaceOptions {
     std::function<void()> apply_settings;    // host applies display+mixer levels on menu events
     bool show_fps = false;                   // plan 18 Task 9: FPS + ticks/sec overlay
     const rr::Assets* assets = nullptr;      // fonts for the overlay; null disables it
+    int render_scale = 1;                    // plan 19 Task 4: race surface is 640s x 480s
 };
 
 // One race: the playable loop. In career mode the race is decided by the player finishing
@@ -998,11 +1011,10 @@ RaceEnd run_race(Game& g, SDL_Renderer* renderer, const RaceOptions& opt, Displa
             SDL_SetRenderDrawColor(renderer, 15, 18, 22, 255);
             SDL_RenderClear(renderer);
             const auto slices = rr::project_road(g.race->route(), g.race->camera_position(), g.race->camera(), g.depth);
-            if(g.scene)course_canvas.draw(renderer,g,slices);
+            if(g.scene)course_canvas.draw(renderer,g,slices,opt.render_scale);
             else rr::draw_road(renderer, slices);
             draw_opponents(renderer, g, sprites, slices);
             draw_bike(renderer, g, sprites,slices);
-            if(g.hud)course_canvas.draw_dashboard(renderer,g);
             draw_hud(renderer, g);
             if (g.quitting) {
                 SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND);
@@ -1391,6 +1403,7 @@ int main(int argc, char** argv) {
     int course = 0, bike = 0, level = 0, opponents = 7;
     long run_ticks = -1, menu_frames = -1;
     bool auto_drive = false, into_traffic = false, start_paused = false, first_run_smoke = false, quick_race = false;
+    int render_scale = 1;   // plan 19 Task 4: --render-scale 1..4
     std::string menu_script;
     CliDisplayOverride cli;
     for (int i = 1; i < argc; ++i) {
@@ -1413,10 +1426,11 @@ int main(int argc, char** argv) {
         else if (a == "--fullscreen") cli.fullscreen = 1;
         else if (a == "--windowed") cli.fullscreen = 0;
         else if (a == "--window-scale" && i + 1 < argc) cli.window_scale = std::atoi(argv[++i]);
+        else if (a == "--render-scale" && i + 1 < argc) { render_scale = std::atoi(argv[++i]); quick_race = true; }
         else if (a == "--toggle-fullscreen-at" && i + 1 < argc) cli.toggle_at = std::atol(argv[++i]);
-        else { std::fprintf(stderr, "Usage: rr-game [--assets DIR] [--menu-frames N --screenshot FILE.bmp] | [--race] [--course 0-4] [--bike 0-14] [--level 1-5] [--opponents 0-7] [--autopilot] [--paused] [--ticks N --screenshot FILE.bmp] [--fullscreen|--windowed] [--window-scale 1-4] [--toggle-fullscreen-at N]\n"); return 2; }
     }
     if (course < 0 || course > 4 || level < 0 || level > 4 || opponents < 0 || opponents > 7) return 2;
+    if (render_scale < 1 || render_scale > 4) return 2;
     SDL_Window* window = nullptr;
     SDL_Renderer* renderer = nullptr;
     int result = 0;
@@ -1551,7 +1565,7 @@ int main(int argc, char** argv) {
                 }
                 boot.frame = 0;
                 boot.apply(480);
-                run_race(g, renderer, {.auto_drive = auto_drive, .start_paused = start_paused, .screenshot = screenshot, .key_codes = boot_settings.controls, .custom_keys = boot_settings.custom_controls, .swap_punch_kick = boot_settings.swap_punch_kick, .stick_deadzone = boot_settings.stick_deadzone, .left_handed = boot_settings.left_handed, .show_fps = boot_settings.show_fps, .assets = &assets}, boot);
+                run_race(g, renderer, {.auto_drive = auto_drive, .start_paused = start_paused, .screenshot = screenshot, .key_codes = boot_settings.controls, .custom_keys = boot_settings.custom_controls, .swap_punch_kick = boot_settings.swap_punch_kick, .stick_deadzone = boot_settings.stick_deadzone, .left_handed = boot_settings.left_handed, .show_fps = boot_settings.show_fps, .assets = &assets, .render_scale = render_scale}, boot);
                 g.mixer = nullptr; g.sound = nullptr; g.race_music = nullptr;
             }
         }

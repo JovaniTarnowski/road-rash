@@ -141,14 +141,14 @@ inline ViewMode view_mode_scaled(int s) {
 - Create: `tests/hires_render_test.cpp` (CTest `hires-render`; synthetic part always runs, golden part skips 77)
 - Modify: the files Task 1 listed as surface constants (expected: `actor_render.cpp`, `terrain_ground.cpp`, sky/horizon drawing and the race framebuffer in `game_main.cpp`), `CMakeLists.txt`
 
-- [ ] **Step 1: Write the failing test** `hires_render_test`:
+- [x] **Step 1: Write the failing test** `hires_render_test`:
   - **Golden replay at scale.** For each frame of the existing original display-list goldens (`napa-moving` frames 0/150/300/750 and the start frame): render at `s = 1` (must equal the golden exactly, as today) and at `s = 2, 3, 4`. Downsample each `s` image by taking the pixel at `(s·x + s/2, s·y + s/2)` and compare with the `s = 1` image. Require ≥ 97 % equal pixels. Reason for the tolerance: the original snaps vertices to even 640-pixel coordinates; the scaled path keeps sub-pixel positions, so polygon edges move by up to one original pixel. Interiors must match.
   - **Thin geometry (Review Focus 3).** On the far slices (depth > 24 of 33) of the same frames, every lane-marking node visible at `s = 1` covers at least `s` pixels at scale `s`.
   - **Sweep.** All 2,509 Napa sweep views render at `s = 4` with no raster exception.
-- [ ] **Step 2:** Run; expected FAIL (surface constants still fixed).
-- [ ] **Step 3: Fix** each surface constant from Task 1's list: sky/horizon rows and scroll offsets are multiplied by `s`; the horizon image is scaled by nearest neighbour until plan 20 supplies an upscaled one; `occlusion` and `logical_width` stay logical but their conversion to surface rows goes through `ViewMode::map`.
-- [ ] **Step 4:** Run; expected PASS. Render one screenshot per scale with `build/rr-game --assets ../cdrom/ROADRASH --race --render-scale <s> --ticks 900 --autopilot --screenshot analysis/hires-<s>.bmp` (add `--render-scale`) and look at them.
-- [ ] **Step 5:** Commit: `render: race scene at 2x-4x render scale`.
+- [x] **Step 2:** Run; expected FAIL (surface constants still fixed).
+- [x] **Step 3: Fix** each surface constant from Task 1's list: sky/horizon rows and scroll offsets are multiplied by `s`; the horizon image is scaled by nearest neighbour until plan 20 supplies an upscaled one; `occlusion` and `logical_width` stay logical but their conversion to surface rows goes through `ViewMode::map`.
+- [x] **Step 4:** Run; expected PASS. Render one screenshot per scale with `build/rr-game --assets ../cdrom/ROADRASH --race --render-scale <s> --ticks 900 --autopilot --screenshot analysis/hires-<s>.bmp` (add `--render-scale`) and look at them.
+- [x] **Step 5:** Commit: `render: race scene at 2x-4x render scale`.
 
 ---
 

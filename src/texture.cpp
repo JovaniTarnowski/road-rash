@@ -86,6 +86,7 @@ void draw_textured_quad(Framebuffer& fb,const std::array<TextureVertex,4>& verti
 }
 namespace {
 int64_t floor_q16_64(int64_t a){return a>=0?a/65536:int64_t((__int128(a)-65535)/65536);}
+constexpr int64_t empty_edge_value(){return int64_t(INT32_MIN)*65536*4;}
 }
 void RasterScratch::resize(int height) {
     if (height<0 || height>8192) throw std::runtime_error("Raster scratch height out of range");
@@ -100,6 +101,7 @@ void texture_edge_wide(RasterScratch64& scratch,const TextureVertexWide& from,co
     const int64_t height=int64_t(scratch.rows.size());
     const int64_t dy=(int64_t(to.y)-from.y)<<16;
     if (!dy || to.y<from.y) return;
+    for (int64_t y=0;y<height;++y) scratch.rows[size_t(y)]={empty_edge_value(),0,0};
     const int64_t reciprocal=int64_t(0x100000000LL)/dy;
     auto prod=[&](int64_t a){return int64_t((__int128(a)*reciprocal)>>16);};
     int64_t ax=int64_t(from.x)<<16,au=int64_t(from.u)<<16,av=int64_t(from.v)<<16;
@@ -113,6 +115,9 @@ void texture_edge_wide(RasterScratch64& scratch,const TextureVertexWide& from,co
         scratch.rows[size_t(y)]={ax,au,av};
         ax+=sx;au+=su;av+=sv;
     }
+    // Rows this segment never reaches keep the empty sentinel so chain
+    // merges never mistake a zeroed row for a computed edge.
+    for (int64_t y=0;y<first;++y) scratch.rows[size_t(y)]={empty_edge_value(),0,0};
 }
 int texture_mip_level_signed(uint32_t width,uint32_t height,uint32_t source_width,
     uint32_t source_height,size_t original_levels,size_t upscaled_levels) {
@@ -140,7 +145,7 @@ void draw_textured_quad_wide(Framebuffer& fb,const std::array<TextureVertexWide,
     int first=0;int64_t bottom=vertices[0].y;
     for (int i=1;i<4;++i) { if (vertices[i].y<vertices[first].y) first=i;bottom=std::max(bottom,int64_t(vertices[i].y)); }
     if (bottom==vertices[first].y) return;
-    const int64_t empty_sentinel=int64_t(INT32_MIN)*65536*4;
+    const int64_t empty_sentinel=empty_edge_value();
     const size_t rows=scratch.rows.size();
     std::vector<TextureEdge64> saved_left(rows),saved_right(rows);
     for (size_t i=0;i<rows;++i) saved_left[i]={empty_sentinel,0,0},saved_right[i]={empty_sentinel,0,0};
@@ -152,11 +157,11 @@ void draw_textured_quad_wide(Framebuffer& fb,const std::array<TextureVertexWide,
             const int next=(index+direction+4)%4;
             if (vertices[size_t(next)].y<vertices[size_t(index)].y) throw std::runtime_error("Textured quad requires normalized monotone edges");
             TextureVertexWide a{vertices[size_t(index)].x,vertices[size_t(index)].y,vertices[size_t(index)].u,vertices[size_t(index)].v};
-            TextureVertexWide b{vertices[size_t(next)].x,vertices[size_t(next)].y,vertices[size_t(index)].u,vertices[size_t(index)].v};
+            TextureVertexWide b{vertices[size_t(next)].x,vertices[size_t(next)].y,vertices[size_t(next)].u,vertices[size_t(next)].v};
             for (auto& e:seg.rows) e={empty_sentinel,0,0};
             texture_edge_wide(seg,a,b);
             for (int64_t y=std::max<int64_t>(0,a.y);y<=std::min<int64_t>(height-1,b.y);++y)
-                if (side.rows[size_t(y)].x==empty_sentinel) side.rows[size_t(y)]=seg.rows[size_t(y)];
+                if (seg.rows[size_t(y)].x!=empty_sentinel) side.rows[size_t(y)]=seg.rows[size_t(y)];
             index=next;
             if (vertices[size_t(index)].y==bottom) break;
         }
