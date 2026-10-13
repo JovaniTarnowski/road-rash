@@ -580,6 +580,7 @@ The course screens share one item array; the sixth item is copied from `0x004691
 - RPM is `gear_ratio[+0x23c]×speed/256 + 0x2000`, moving at most ±0x2000 per update, +0x1000 while airborne, −0x1000 after a crash.
 - Engine frequency is `doppler × rpm / 512` Hz; volume is `(+0xcc × 0x9ffe / 0xef10) × level`.
 - The two vehicles nearest the camera (`0x004350e0`) use slots 3/5 (bikes) or 4/6 (cars).
+  - Sound-helper REA re-confirmation (October 12, 2026; plan 11a/13 port input): pinned REA 6.4.0 pseudocode whitespace-identical for `0x004349c0` rpm (955 chars — the `update_engine_rpm` source), `0x00434ce0` engine mix (720: `0x00434db0` + rpm + Doppler/volume + normal/nitro/tunnel buffer routing) and `0x00436830` sound event (965). `0x0044efa0` horn is absent from REA's procedure database (valid 651-char export; single `rand()%10==1` draw + `0x1f8` timer gate) — port from the project export. Files: `analysis/oracle/rea-4349c0-rpm.md`, `rea-434ce0-engine.md`, `rea-436830-soundevt.md` (disc-derived, git-ignored).
 
 **Levels** (`0x004362e0`): each channel uses `curve[level × master / 100]` from a 101-entry table built in code. The native reader decodes that code's stores from the user's executable. The Mixer block (`0x00463030`) holds master 100 and interface/player engine/effects/music/other engines/siren at 80, plus mute and swap.
 
