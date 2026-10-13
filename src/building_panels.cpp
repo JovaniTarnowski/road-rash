@@ -7,7 +7,7 @@ int32_t add(int32_t a,int32_t b){return bits(uint32_t(a)+uint32_t(b));}
 int32_t sub(int32_t a,int32_t b){return bits(uint32_t(a)-uint32_t(b));}
 int32_t mul(int32_t a,int32_t b){return bits(uint32_t(a)*uint32_t(b));}
 int32_t absolute(int32_t a){return a<0?sub(0,a):a;}
-DrawNode node(std::array<RasterPoint,4> p,const CelTexture* t){return {p,t,t?std::nullopt:std::optional<uint8_t>(0),p[1].x<p[0].x || p[2].x<p[3].x,p[3].y<p[0].y || p[2].y<p[1].y};}
+DrawNode node(std::array<RasterPoint,4> p,const CelTexture* t,std::array<int32_t,4> depth={}){DrawNode n={p,t,t?std::nullopt:std::optional<uint8_t>(0),p[1].x<p[0].x || p[2].x<p[3].x,p[3].y<p[0].y || p[2].y<p[1].y};n.view_depth=depth;return n;}
 }
 std::vector<DrawNode> building_draw_nodes(const BuildingPanelInput& in,const BuildingMaterial& material) {
     if(in.side>1 || in.logical_width<1 || in.logical_width>32767)throw std::runtime_error("Invalid building panel input");
@@ -49,7 +49,7 @@ std::vector<DrawNode> building_draw_nodes(const BuildingPanelInput& in,const Bui
     }
     if(b.selector!=255 && faces && visible) {
         const int32_t ft=sub(far.y,b.forward_height),nt=sub(near.y,b.height);
-        auto facade=node({{{far.x,ft},{near.x,nt},{near.x,near.y},{far.x,far.y}}},material(false,absolute(sub(near.x,far.x)),b.height));
+        auto facade=node({{{far.x,ft},{near.x,nt},{near.x,near.y},{far.x,far.y}}},material(false,absolute(sub(near.x,far.x)),b.height),{in.far_depth_q8,in.near_depth_q8,in.near_depth_q8,in.far_depth_q8});
         facade.flip_u=false;facade.flip_v=false;out.push_back(facade);
     }
     return out;
@@ -62,16 +62,26 @@ std::vector<DrawNode> building_shoulder_nodes(const BuildingShoulderInput& in,co
     if(p[0].y<p[3].y && p[0].y<=in.top.occlusion_row &&
        (right?p[1].x>=0 && p[0].x<=width:p[0].x>=0 && p[1].x<=width)) {
         const auto* texture=material(0,absolute(sub(p[1].x,p[0].x)),absolute(sub(p[3].y,p[0].y)));
-        if(in.near_depth<1234)for(const auto& quad:subdivide_shoulder(in.top,camera,depths,in.logical_width,240))out.push_back(node(quad,texture));
-        else {auto quad=p;quad[1].y=quad[0].y;quad[2].y=quad[3].y;out.push_back(node(quad,texture));}
+        if(in.near_depth<1234) {
+            std::vector<std::array<RasterPoint,4>> quads;
+            std::vector<std::array<int32_t,4>> qdepths;
+            subdivide_shoulder_depths(quads, qdepths, in.top,camera,depths,in.logical_width,240);
+            for(size_t qi=0;qi<quads.size();++qi)out.push_back(node(quads[qi],texture,qdepths[qi]));
+        }
+        else {auto quad=p;quad[1].y=quad[0].y;quad[2].y=quad[3].y;out.push_back(node(quad,texture,{in.top.far_depth,in.top.far_depth,in.near_depth,in.near_depth}));}
     }
     if((right?p[3].x>=p[0].x:p[3].x<=p[0].x) && (p[0].y<in.top.occlusion_row || p[3].y<in.top.occlusion_row)) {
         HillStrip curb=in.top;curb.adjust_seam=true;
         curb.projected={p[0],{p[0].x,in.far_base_y},{p[3].x,in.near_base_y},p[3]};
         curb.world={in.top.world[0],{in.top.world[0].x,in.far_world_base_y},{in.top.world[3].x,in.near_world_base_y},in.top.world[3]};
         const auto* texture=material(1,0,absolute(sub(p[3].y,p[0].y)));
-        if(in.near_depth<1234)for(const auto& quad:subdivide_hill(curb,camera,depths,in.logical_width))out.push_back(node(quad,texture));
-        else out.push_back(node(curb.projected,texture));
+        if(in.near_depth<1234) {
+            std::vector<std::array<RasterPoint,4>> quads;
+            std::vector<std::array<int32_t,4>> qdepths;
+            subdivide_hill_depths(quads, qdepths, curb,camera,depths,in.logical_width);
+            for(size_t qi=0;qi<quads.size();++qi)out.push_back(node(quads[qi],texture,qdepths[qi]));
+        }
+        else out.push_back(node(curb.projected,texture,{curb.far_depth,curb.far_depth,in.near_depth,in.near_depth}));
     }
     return out;
 }
@@ -80,8 +90,9 @@ std::vector<DrawNode> marked_ground_nodes(const MarkedGroundInput& in,const std:
     if(in.side>1 || in.logical_width<1 || in.logical_width>32767 || in.strips<1 || in.strips>16)throw std::runtime_error("Invalid marked terrain input");
     const int32_t ns=mul(in.near_scale,in.side?512:-512),fs=mul(in.far_scale,in.side?512:-512),width=in.logical_width*65536;
     std::array<RasterPoint,4> p={in.far_edge,{add(in.far_edge.x,fs),in.far_edge.y},{add(in.near_edge.x,ns),in.near_edge.y},in.near_edge};
+    const std::array<int32_t,4> depth={in.far_depth_q8,in.far_depth_q8,in.near_depth_q8,in.near_depth_q8};
     std::vector<DrawNode> result;
-    auto append=[&](uint8_t index){const bool visible=in.side?(p[0].x<width || p[3].x<width) && (p[1].x>0 || p[2].x>0):(p[1].x<width || p[2].x<width) && (p[0].x>0 || p[3].x>0);if(visible)result.push_back(node(p,material(index)));};
+    auto append=[&](uint8_t index){const bool visible=in.side?(p[0].x<width || p[3].x<width) && (p[1].x>0 || p[2].x>0):(p[1].x<width || p[2].x<width) && (p[0].x>0 || p[3].x>0);if(visible)result.push_back(node(p,material(index),depth));};
     append(0);
     uint8_t index=in.marking_flags&7;if(index)--index;
     if(index>2)throw std::runtime_error("Invalid marked terrain selector");

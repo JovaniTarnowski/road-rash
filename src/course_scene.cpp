@@ -255,7 +255,13 @@ std::vector<DrawNode> CourseScene::draw_nodes(const std::vector<RouteSample>& ro
             panels.marking_flags=path.marking_flags;panels.terrain_type=road.terrain->type;panels.next_terrain_type=old.terrain->type;panels.visible=visible;
             append(road_draw_nodes(road_panels(panels,logical_width),roads_));
             if(path.marking_flags&32)for(int side=0;side<2;++side) {
-                MarkedGroundInput ground{{wrap(near.screen_x(r,side?b.right:b.left)),b.screen_y},{wrap(far.screen_x(r,side?a.right:a.left)),a.screen_y},near.scale,far.scale,logical_width,uint8_t(side),path.marking_flags,road.terrain->type==0?8:16};
+                MarkedGroundInput ground;
+                ground.near_edge={wrap(near.screen_x(r,side?b.right:b.left)),b.screen_y};
+                ground.far_edge={wrap(far.screen_x(r,side?a.right:a.left)),a.screen_y};
+                ground.near_scale=near.scale;ground.far_scale=far.scale;ground.logical_width=logical_width;
+                ground.side=uint8_t(side);ground.marking_flags=path.marking_flags;
+                ground.strips=road.terrain->type==0?8:16;
+                ground.near_depth_q8=near.depth;ground.far_depth_q8=far.depth;
                 append(marked_ground_nodes(ground,[&](uint8_t index){return index==3?&*roads_.entries[0].texture:&*roads_.terrain.at(index).texture;}));
             }
             if(i==count-1){append(pending);pending.clear();}
@@ -277,6 +283,7 @@ std::vector<DrawNode> CourseScene::draw_nodes(const std::vector<RouteSample>& ro
                 shoulder.top.world={{{a.road_x+camera.x+(side?a.right:a.left),a.world_y+fy},{old.hill[side].world[0].x,a.world_y+fy},{road.hill[side].world[0].x,b.world_y+ny},{b.road_x+camera.x+(side?b.right:b.left),b.world_y+ny}}};
                 append(building_shoulder_nodes(shoulder,camera,depths,[&](uint8_t frame,int32_t w,int32_t h){return material(road.section,road.local,path.side_flags[side],5,frame,w,h);}));
                 BuildingPanelInput building{road.building[side],old.building[side],uint8_t(side)};
+                building.near_depth_q8=near.depth;building.far_depth_q8=far.depth;
                 append(building_draw_nodes(building,[&](bool use_far,int32_t w,int32_t h){const auto& source=use_far?old:road;return material(source.section,source.local,source.terrain->selectors[side],1,std::nullopt,w,h);}));
             }
             if(actors)append(actors(near,far,r,road.ceiling,true));

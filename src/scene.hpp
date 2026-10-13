@@ -23,8 +23,15 @@ struct HillStrip {
 // Includes early rejection and the original exact final edge.
 std::vector<std::array<RasterPoint,4>> subdivide_hill(const HillStrip&,
     const Camera&,const DepthTable&,int32_t logical_width=320);
+// Plan 21 Task 5: per-quad {far,far,near,near} Q8 depths alongside the quads.
+void subdivide_hill_depths(std::vector<std::array<RasterPoint,4>>& quads,
+    std::vector<std::array<int32_t,4>>& depths, const HillStrip&, const Camera&, const DepthTable&, int32_t logical_width=320);
 // 0x0044c0e0: horizontal shoulder strips, with quarter-pixel rows and
 // the original four-pixel outer expansion at intermediate depths.
 std::vector<std::array<RasterPoint,4>> subdivide_shoulder(const HillStrip&,
     const Camera&,const DepthTable&,int32_t logical_width=320,int32_t logical_height=240);
+// Plan 21 Task 5: per-quad {far,far,near,near} Q8 depths alongside the quads.
+void subdivide_shoulder_depths(std::vector<std::array<RasterPoint,4>>& quads,
+    std::vector<std::array<int32_t,4>>& depths, const HillStrip&, const Camera&, const DepthTable&,
+    int32_t logical_width=320, int32_t logical_height=240);
 }

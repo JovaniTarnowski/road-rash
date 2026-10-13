@@ -24,6 +24,7 @@
 #include "pe_strings.hpp"
 #include "settings.hpp"
 #include "display.hpp"
+#include "fog.hpp"
 #include "framebuffer_rgb.hpp"
 #include "raster_rgb.hpp"
 #include "view_state.hpp"
@@ -619,7 +620,8 @@ struct CourseCanvas {
         // Plan 21 Task 4: the game uses the RGB path when full_colour is on
         // or filter != nearest; otherwise the indexed path (bit-identical).
         const bool use_rgb = game.enhancements.full_colour ||
-                             game.enhancements.filter != rr::TextureFilter::nearest;
+                             game.enhancements.filter != rr::TextureFilter::nearest ||
+                             game.enhancements.fog > 0 || game.enhancements.grade != rr::Grade::none;
         auto nodes=game.scene->draw_nodes(game.race->route(),slices,game.race->camera(),game.depth,[&](const rr::RoadSlice& near,const rr::RoadSlice& far,int road,int32_t ceiling,bool back){return game.rider_nodes(near,far,road,ceiling,back);},wide);
         if (margin) for (auto& n:nodes) for (auto& v:n.view_points) v.x+=margin*65536;
         if (use_rgb) {
@@ -635,7 +637,20 @@ struct CourseCanvas {
                         rgb.row(y)[x] = (255u << 24) | (uint32_t(c[0]) << 16) | (uint32_t(c[1]) << 8) | uint32_t(c[2]);
                     }
             }
-            rr::render_nodes_rgb(rgb,nodes,rr::view_mode_wide(s,wide),16,game.palette,game.enhancements,*workers);
+            // Plan 21 Task 5: fog colour from the horizon's own bottom rows
+            // (user's art, computed at runtime); sky/horizon exempt from fog.
+            const uint32_t fog_rgb = rr::fog_colour(rgb.row(0), scale_w, scale_h);
+            rr::render_nodes_rgb_fog(rgb,nodes,rr::view_mode_wide(s,wide),16,game.palette,game.enhancements,*workers,fog_rgb);
+            // Grade post-pass (identity when grade == none).
+            if (game.enhancements.grade != rr::Grade::none) {
+                const auto lut = rr::grade_lut(game.enhancements.grade);
+                for (int y = 0; y < scale_h; ++y)
+                    for (int x = 0; x < scale_w; ++x) {
+                        const uint32_t p = rgb.row(y)[x];
+                        if (!(p >> 24)) continue;
+                        rgb.row(y)[x] = (p & 0xff000000u) | rr::grade_apply(lut, p & 0xffffffu);
+                    }
+            }
             // Dashboard composited directly (no palette round-trip).
             if (game.hud) {
                 const auto dash = game.hud->compose(game.hud->state(*game.race, game.player_name, game.rider_names),

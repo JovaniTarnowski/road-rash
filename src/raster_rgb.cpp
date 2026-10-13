@@ -1,5 +1,6 @@
 // Plan 21 Task 4: RGB raster implementation.
 #include "raster_rgb.hpp"
+#include "fog.hpp"
 #include <cstring>
 #include "texture.hpp"
 #include <algorithm>
@@ -46,8 +47,8 @@ Prem sample_nearest(const RgbaMip& mip, double u, double v) {
     const int y = std::max(0, std::min(mip.height - 1, int(std::floor(v))));
     return to_prem(mip.premultiplied[size_t(y) * mip.width + x]);
 }
-// Edge walk over x (double) + u/v (double), same fill rules as affine.
-struct RgbEdge { double x = 0, u = 0, v = 0; };
+// Edge walk over x (double) + u/v/fog (double), same fill rules as affine.
+struct RgbEdge { double x = 0, u = 0, v = 0, fog = 0; };
 void rgb_chain(std::vector<RgbEdge>& rows, std::vector<char>& set, const std::array<RgbVertex, 4>& verts,
                int first, int bottom, int direction, int height) {
     int index = first;
@@ -60,11 +61,12 @@ void rgb_chain(std::vector<RgbEdge>& rows, std::vector<char>& set, const std::ar
         const double dy = double(b.y) - double(a.y);
         if (dy > 0) {
             const double sx = (double(b.x) - a.x) / dy, su = (double(b.u) - a.u) / dy;
-            const double sv = (double(b.v) - a.v) / dy;
+            const double sv = (double(b.v) - a.v) / dy, sf = (double(b.fog_q8) - a.fog_q8) / dy;
             const int y0 = std::max(0, a.y), y1 = std::min(height - 1, b.y);
             for (int y = y0; y <= y1; ++y) {
                 const double t = double(y) - double(a.y);
-                rows[size_t(y)] = {double(a.x) + sx * t, double(a.u) + su * t, double(a.v) + sv * t};
+                rows[size_t(y)] = {double(a.x) + sx * t, double(a.u) + su * t, double(a.v) + sv * t,
+                                   double(a.fog_q8) + sf * t};
                 set[size_t(y)] = 1;
             }
         }
@@ -105,7 +107,8 @@ void edge(Edge* rows, const TextureVertex& from, const TextureVertex& to) {
 }
 }  // namespace q16
 void draw_rgb_impl(FramebufferRgb& fb, const std::array<RgbVertex, 4>& verts, const std::vector<RgbaMip>& mips,
-                   size_t level0, size_t level1, double level_frac, bool transparent, RasterClip clip, Sampler sample) {
+                   size_t level0, size_t level1, double level_frac, bool transparent, RasterClip clip, Sampler sample,
+                   FogState fog = {}) {
     int first = 0, bottom = verts[0].y;
     for (int i = 1; i < 4; ++i) {
         if (verts[i].y < verts[first].y) first = i;
@@ -142,7 +145,15 @@ void draw_rgb_impl(FramebufferRgb& fb, const std::array<RgbVertex, 4>& verts, co
                 p = {p0.r * (1 - f) + p1.r * f, p0.g * (1 - f) + p1.g * f, p0.b * (1 - f) + p1.b * f,
                      p0.a * (1 - f) + p1.a * f};
             } else p = p0;
-            const uint32_t out = from_prem(p);
+            uint32_t out = from_prem(p);
+            if (fog.on && (out >> 24)) {
+                // Blend toward the fog colour by the interpolated factor.
+                const double f = std::max(0.0, std::min(1.0, (l.fog + (r.fog - l.fog) * t) / 256.0));
+                const int fr = int((fog.colour >> 16) & 0xff), fg2 = int((fog.colour >> 8) & 0xff), fb2 = int(fog.colour & 0xff);
+                const int pr = int((out >> 16) & 0xff), pg = int((out >> 8) & 0xff), pb = int(out & 0xff);
+                const auto blend_ch = [&](int src, int dst) { return uint32_t(std::max(0, std::min(255, int(src + (dst - src) * f)))); };
+                out = (out & 0xff000000u) | (blend_ch(pr, fr) << 16) | (blend_ch(pg, fg2) << 8) | blend_ch(pb, fb2);
+            }
             if ((out >> 24) || !transparent) fb.row(y)[x] = out;
         }
     }
@@ -202,8 +213,8 @@ const std::vector<RgbaMip>& rgba_mips(const CelTexture& tex, const Palette& pale
 }
 
 void draw_rgb_quad_bilinear(FramebufferRgb& fb, const std::array<RgbVertex, 4>& verts,
-                            const std::vector<RgbaMip>& mips, bool transparent, RasterClip clip) {
-    draw_rgb_impl(fb, verts, mips, 0, 0, 0.0, transparent, clip, sample_level);
+                            const std::vector<RgbaMip>& mips, bool transparent, RasterClip clip, FogState fog) {
+    draw_rgb_impl(fb, verts, mips, 0, 0, 0.0, transparent, clip, sample_level, fog);
 }
 // Nearest-exact path: the SAME Q16 edge/span arithmetic as draw_textured_quad,
 // sinking palette colours instead of indices. Guarantees byte-identity with
@@ -359,15 +370,17 @@ void draw_rgb_impl_nearest(FramebufferRgb& fb, const std::array<RgbVertex, 4>& v
     draw_rgb_impl(fb, verts, mips, level, level, 0.0, transparent, clip, sample_nearest);
 }
 void draw_rgb_quad_trilinear(FramebufferRgb& fb, const std::array<RgbVertex, 4>& verts,
-                             const std::vector<RgbaMip>& mips, bool transparent, RasterClip clip, float lod) {
+                             const std::vector<RgbaMip>& mips, bool transparent, RasterClip clip, float lod,
+                             FogState fog) {
     const size_t l0 = std::min(mips.size() - 1, size_t(lod));
     const size_t l1 = std::min(mips.size() - 1, l0 + 1);
     draw_rgb_impl(fb, verts, mips, l0, l1, std::max(0.0, std::min(1.0, double(lod) - l0)), transparent, clip,
-                  sample_level);
+                  sample_level, fog);
 }
 
-void render_nodes_rgb(FramebufferRgb& fb, const std::vector<DrawNode>& nodes, const ViewMode& mode,
-                      uint32_t flat_mask, const Palette& palette, const Enhancements& enh, RenderThreads& pool) {
+static void render_nodes_rgb_impl(FramebufferRgb& fb, const std::vector<DrawNode>& nodes, const ViewMode& mode,
+                                uint32_t flat_mask, const Palette& palette, const Enhancements& enh,
+                                RenderThreads& pool, bool fog_on, uint32_t fog_colour, int draw_slices) {
     if (fb.width() != mode.surface_width || fb.height() != mode.surface_height)
         throw std::runtime_error("View/RGB framebuffer size mismatch");
     (void)pool;
@@ -389,7 +402,25 @@ void render_nodes_rgb(FramebufferRgb& fb, const std::vector<DrawNode>& nodes, co
         std::array<RasterPoint, 4> nq;
         for (size_t i = 0; i < 4; ++i) nq[i] = {mode.map(node.view_points[i].x), mode.map(node.view_points[i].y)};
         if (node.texture && !normalize_quad(nq, node.texture->flags, &rgb_flip)) continue;
-        for (size_t i = 0; i < 4; ++i) pts[i] = {nq[i].x, nq[i].y, 0, 0};
+        // Fog follows the normalize permutation: match reordered corners back
+        // to originals by coordinates (first match; coincident corners share
+        // an edge, so any match fogs correctly).
+        uint16_t corner_fog[4] = {};
+        if (fog_on) {
+            for (size_t i = 0; i < 4; ++i) {
+                const int32_t f = node.view_depth[i] > 0 ? int32_t(fog_factor_q8(node.view_depth[i], draw_slices, enh.fog)) : 0;
+                corner_fog[i] = uint16_t(f);
+            }
+        }
+        for (size_t i = 0; i < 4; ++i) {
+            pts[i] = {nq[i].x, nq[i].y, 0, 0};
+            if (fog_on) {
+                for (size_t j = 0; j < 4; ++j) {
+                    const auto ox = mode.map(node.view_points[j].x), oy = mode.map(node.view_points[j].y);
+                    if (ox == nq[i].x && oy == nq[i].y) { pts[i].fog_q8 = corner_fog[j]; break; }
+                }
+            }
+        }
         bool flip_u = rgb_flip;
         if (!node.texture || (node.texture->flags & flat_mask)) {
             uint8_t fi = node.texture ? node.texture->flat_index : *node.flat_index;
@@ -401,7 +432,8 @@ void render_nodes_rgb(FramebufferRgb& fb, const std::vector<DrawNode>& nodes, co
             flat.width = 1; flat.height = 1; flat.premultiplied = {argb};
             std::array<RgbVertex, 4> fp = pts;
             for (auto& v : fp) { v.u = 0; v.v = 0; }
-            draw_rgb_impl(fb, fp, std::vector<RgbaMip>{flat}, 0, 0, 0.0, false, clip, sample_nearest);
+            FogState flat_fog{fog_on && (fp[0].fog_q8 | fp[1].fog_q8 | fp[2].fog_q8 | fp[3].fog_q8), fog_colour};
+            draw_rgb_impl(fb, fp, std::vector<RgbaMip>{flat}, 0, 0, 0.0, false, clip, sample_nearest, flat_fog);
             continue;
         }
         const auto& texture = *node.texture;
@@ -433,8 +465,17 @@ void render_nodes_rgb(FramebufferRgb& fb, const std::vector<DrawNode>& nodes, co
             const double proj = double(std::max(maxx - minx + 1, maxy - miny + 1));
             const double src = double(std::max(src_w, src_h));
             const float lod = float(std::max(0.0, std::log2(src / std::max(1.0, proj))));
-            draw_rgb_quad_trilinear(fb, pts, mips, transparent, clip, lod);
+            FogState tex_fog{fog_on && (pts[0].fog_q8 | pts[1].fog_q8 | pts[2].fog_q8 | pts[3].fog_q8), fog_colour};
+            draw_rgb_quad_trilinear(fb, pts, mips, transparent, clip, lod, tex_fog);
         } else if (enh.filter == TextureFilter::nearest) {
+            // Fogged nearest goes through the float path (no exactness claim
+            // with fog on); unfogged keeps the Q16-exact walk.
+            const bool node_fog = fog_on && (pts[0].fog_q8 | pts[1].fog_q8 | pts[2].fog_q8 | pts[3].fog_q8);
+            if (node_fog) {
+                FogState nf{true, fog_colour};
+                draw_rgb_impl(fb, pts, mips, level, level, 0.0, transparent, clip, sample_nearest, nf);
+                continue;
+            }
             // Nearest-exact: Q16 walk over the index pixels (byte-identical).
             const auto& srcmip = texture.mips.at(level);
             const auto& srcpx =
@@ -455,8 +496,18 @@ void render_nodes_rgb(FramebufferRgb& fb, const std::vector<DrawNode>& nodes, co
                 draw_rgb_quad_nearest_q16(fb, nv, srcpx, srcmip.stride_shift, palette, transparent, clip);
             }
         } else {
-            draw_rgb_quad_bilinear(fb, pts, mips, transparent, clip);
+            FogState bi_fog{fog_on && (pts[0].fog_q8 | pts[1].fog_q8 | pts[2].fog_q8 | pts[3].fog_q8), fog_colour};
+            draw_rgb_quad_bilinear(fb, pts, mips, transparent, clip, bi_fog);
         }
     }
+}
+void render_nodes_rgb(FramebufferRgb& fb, const std::vector<DrawNode>& nodes, const ViewMode& mode,
+                      uint32_t flat_mask, const Palette& palette, const Enhancements& enh, RenderThreads& pool) {
+    render_nodes_rgb_impl(fb, nodes, mode, flat_mask, palette, enh, pool, false, 0, 33);
+}
+void render_nodes_rgb_fog(FramebufferRgb& fb, const std::vector<DrawNode>& nodes, const ViewMode& mode,
+                          uint32_t flat_mask, const Palette& palette, const Enhancements& enh, RenderThreads& pool,
+                          uint32_t fog_colour_rgb, int draw_slices) {
+    render_nodes_rgb_impl(fb, nodes, mode, flat_mask, palette, enh, pool, enh.fog > 0, fog_colour_rgb, draw_slices);
 }
 }  // namespace rr

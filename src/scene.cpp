@@ -28,6 +28,14 @@ HillProjection project_hills(const TerrainSlice& terrain,int32_t world_x,int32_t
 }
 std::vector<std::array<RasterPoint,4>> subdivide_hill(const HillStrip& strip,
     const Camera& camera,const DepthTable& table,int32_t width) {
+    std::vector<std::array<RasterPoint,4>> quads;
+    std::vector<std::array<int32_t,4>> depths;
+    subdivide_hill_depths(quads, depths, strip, camera, table, width);
+    return quads;
+}
+void subdivide_hill_depths(std::vector<std::array<RasterPoint,4>>& quads,
+    std::vector<std::array<int32_t,4>>& depths, const HillStrip& strip,
+    const Camera& camera,const DepthTable& table,int32_t width) {
     if(width<=0 || width>32767 || strip.side>1 || strip.far_depth<0)
         throw std::runtime_error("Invalid hill strip input");
     const int shift=strip.far_depth<978 ? (strip.far_depth<466 ? 3:2):1;
@@ -37,7 +45,7 @@ std::vector<std::array<RasterPoint,4>> subdivide_hill(const HillStrip& strip,
     const RasterPoint outer_delta{sub(strip.world[2].x,strip.world[1].x),sub(strip.world[2].y,strip.world[1].y)};
     RasterPoint inner=inner_delta,outer=outer_delta;
     std::array<RasterPoint,4> quad=strip.projected;
-    std::vector<std::array<RasterPoint,4>> out;
+    auto& out = quads;
     int32_t depth=sub(strip.far_depth,step);
     auto project=[&](const RasterPoint& base,const RasterPoint& delta,int32_t scale) {
         const int32_t x=add(sub(delta.x>>shift,camera.x),base.x),product=mul(x,scale);
@@ -63,13 +71,21 @@ std::vector<std::array<RasterPoint,4>> subdivide_hill(const HillStrip& strip,
             }
         }
         out.push_back(quad);
+        depths.push_back({add(depth,step),add(depth,step),depth,depth});
         quad[0]=quad[3];quad[1]=quad[2];depth=sub(depth,step);
         inner={add(inner.x,inner_delta.x),add(inner.y,inner_delta.y)};
         outer={add(outer.x,outer_delta.x),add(outer.y,outer_delta.y)};
     }
-    return out;
 }
 std::vector<std::array<RasterPoint,4>> subdivide_shoulder(const HillStrip& strip,
+    const Camera& camera,const DepthTable& table,int32_t width,int32_t height) {
+    std::vector<std::array<RasterPoint,4>> quads;
+    std::vector<std::array<int32_t,4>> depths;
+    subdivide_shoulder_depths(quads, depths, strip, camera, table, width, height);
+    return quads;
+}
+void subdivide_shoulder_depths(std::vector<std::array<RasterPoint,4>>& quads,
+    std::vector<std::array<int32_t,4>>& depths, const HillStrip& strip,
     const Camera& camera,const DepthTable& table,int32_t width,int32_t height) {
     if(width<=0 || width>32767 || height<=0 || height>32767 || strip.side>1 || strip.far_depth<0)
         throw std::runtime_error("Invalid shoulder strip input");
@@ -79,7 +95,7 @@ std::vector<std::array<RasterPoint,4>> subdivide_shoulder(const HillStrip& strip
     const int32_t dx=sub(strip.world[3].x,strip.world[0].x),dy=sub(strip.world[3].y,strip.world[0].y),ox=sub(strip.world[2].x,strip.world[1].x);
     int32_t inner=dx,vertical=dy,outer=ox,depth=sub(strip.far_depth,step);
     std::array<RasterPoint,4> quad=strip.projected;
-    std::vector<std::array<RasterPoint,4>> out;
+    auto& out = quads;
     auto project_x=[&](int32_t base,int32_t delta,int32_t scale) {
         const int32_t x=add(base,sub(delta>>shift,camera.x)),product=mul(x,scale);
         if(x<0)return product<0?add(centre,product):-0x40000000;
@@ -97,9 +113,10 @@ std::vector<std::array<RasterPoint,4>> subdivide_shoulder(const HillStrip& strip
             quad[2].x=add(project_x(strip.world[1].x,outer,scale),strip.side==0?-0x40000:0x40000);
         }
         quad[1].y=quad[0].y;quad[2].y=quad[3].y;
-        out.push_back(quad);quad[0]=quad[3];quad[1]=quad[2];depth=sub(depth,step);
+        out.push_back(quad);
+        depths.push_back({add(depth,step),add(depth,step),depth,depth});
+        quad[0]=quad[3];quad[1]=quad[2];depth=sub(depth,step);
         inner=add(inner,dx);vertical=add(vertical,dy);outer=add(outer,ox);
     }
-    return out;
 }
 }

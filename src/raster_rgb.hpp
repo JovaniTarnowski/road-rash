@@ -24,11 +24,24 @@ struct RgbaMip {
 const std::vector<RgbaMip>& rgba_mips(const CelTexture&, const Palette&, uint32_t palette_generation);
 // Test hook: convert one mip without caching.
 std::vector<RgbaMip> rgba_mips_for_test(const CelMip&, const Palette&);
-struct RgbVertex { int32_t x = 0, y = 0; float u = 0, v = 0; };
+struct RgbVertex {
+    int32_t x = 0, y = 0;
+    float u = 0, v = 0;
+    uint16_t fog_q8 = 0;  // plan 21 Task 5: per-vertex fog (0..256)
+};
+struct FogState {
+    bool on = false;
+    uint32_t colour = 0;  // 0x00RRGGBB
+};
 void draw_rgb_quad_bilinear(FramebufferRgb&, const std::array<RgbVertex, 4>&, const std::vector<RgbaMip>&,
-                            bool transparent, RasterClip);
+                            bool transparent, RasterClip, FogState fog = {});
 void draw_rgb_quad_trilinear(FramebufferRgb&, const std::array<RgbVertex, 4>&, const std::vector<RgbaMip>&,
-                             bool transparent, RasterClip, float lod);
+                             bool transparent, RasterClip, float lod, FogState fog = {});
 void render_nodes_rgb(FramebufferRgb&, const std::vector<DrawNode>&, const ViewMode&, uint32_t flat_mask,
                       const Palette&, const Enhancements&, RenderThreads& pool);
+// Fog-aware entry (plan 21 Task 5): fog colour + per-node depths from view_depth.
+// fog_strength 0 == render_nodes_rgb exactly.
+void render_nodes_rgb_fog(FramebufferRgb&, const std::vector<DrawNode>&, const ViewMode&, uint32_t flat_mask,
+                          const Palette&, const Enhancements&, RenderThreads& pool, uint32_t fog_colour_rgb,
+                          int draw_slices = 33);
 }  // namespace rr

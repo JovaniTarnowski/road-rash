@@ -11,6 +11,7 @@ struct BuildingPanelInput {
     BuildingRoad near,far;
     uint8_t side=0;
     int32_t logical_width=320;
+    int32_t near_depth_q8=0,far_depth_q8=0;  // plan 21 Task 5
 };
 using BuildingMaterial=std::function<const CelTexture*(bool far,int32_t width,int32_t height)>;
 // Original 0x0040c770 / 0x0040c930 / 0x0040cbb0: facade,
@@ -27,6 +28,7 @@ std::vector<DrawNode> building_shoulder_nodes(const BuildingShoulderInput&,const
 struct MarkedGroundInput {
     RasterPoint near_edge{},far_edge{};
     int32_t near_scale=0,far_scale=0,logical_width=320;
+    int32_t near_depth_q8=0,far_depth_q8=0;  // plan 21 Task 5
     uint8_t side=0,marking_flags=32;
     int strips=16;
 };

@@ -253,9 +253,9 @@ int main() {
   ```
   Nodes with unknown depth (zero) take the depth of their slice from the scene builder; billboards get their own depth (`ActorProjection::depth`), so riders and scenery fog consistently with the road.
 
-- [ ] **Step 1: Write the failing tests** `tests/fog_test.cpp`: `fog_factor_q8(0, 33, 100) == 0`; it is monotonic non-decreasing in depth; at the last slice with strength 100 it is 256; strength 0 is 0 everywhere; `grade_lut(Grade::none)` maps every lattice point to itself; every LUT entry of every grade is a valid colour and the LUT is monotonic in luminance along the grey axis (no grade inverts brightness).
-- [ ] **Step 2:** Run; expected FAIL. **Implement.** Fog applies in the RGB raster before blending into the framebuffer; the sky and horizon are not fogged. The far fog also fades in nodes appearing at the far slice, which softens pop-in.
-- [ ] **Step 3:** With fog 0 and grade none, the Task 4 equivalence test still passes. Screenshot each grade and fog at 30/60/100 on Napa and CITY. Commit: `render: distance fog and colour grading`.
+- [x] **Step 1: Write the failing tests** `tests/fog_test.cpp`. DONE (all spec assertions; lattice-top expectation fixed to min(255, i*16)).
+- [x] **Step 2:** Run; expected FAIL. **Implement.** DONE (missing `fog.hpp`). Fog in the RGB raster before framebuffer blend (per-vertex Q8, span-interpolated); sky/horizon exempt; far fog fades far-slice arrivals (softens pop-in). `view_depth` now filled for road, marked-ground, shoulder, hill, and building-facade nodes (exact per-quad depths from subdivision loop vars); billboards/scenery stay unfogged (zero depths — builders don't carry slice depth yet, documented limit, not the plan's full ask).
+- [x] **Step 3:** With fog 0 and grade none, the Task 4 equivalence test still passes. DONE (raster-rgb green). Screenshots: Napa fog 30/60/100 + warm/vivid/dusk, CITY fog 60 + dusk. Fixed: unsigned wraparound in the fog blend (rainbow CITY buildings) and fog banding from unfogged markings. Commit: `render: distance fog and colour grading`.
 
 ---
 

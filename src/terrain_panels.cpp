@@ -36,9 +36,11 @@ bool facing(const std::array<RasterPoint,4>& p,bool right) {
     const int32_t d=mul(sub(p[2].y,p[1].y)>>12,sub(p[0].x,p[1].x)>>12);
     return right ? (a<b || (sub(c,d)!=0 && d<=c)) : ((sub(a,b)!=0 && b<=a) || c<d);
 }
-DrawNode node(const std::array<RasterPoint,4>& p,const CelTexture* texture) {
-    return {p,texture,texture?std::nullopt:std::optional<uint8_t>(0),
+DrawNode node(const std::array<RasterPoint,4>& p,const CelTexture* texture,std::array<int32_t,4> depth={}) {
+    DrawNode n={p,texture,texture?std::nullopt:std::optional<uint8_t>(0),
         p[1].x<p[0].x || p[2].x<p[3].x,p[3].y<p[0].y || p[2].y<p[1].y};
+    n.view_depth=depth;
+    return n;
 }
 }
 std::vector<DrawNode> hill_draw_nodes(const HillPanelInput& in,const Camera& camera,
@@ -71,13 +73,16 @@ std::vector<DrawNode> hill_draw_nodes(const HillPanelInput& in,const Camera& cam
             HillStrip strip;
             strip.world={in.far.world[band],in.far.world[band+1],in.near.world[band+1],in.near.world[band]};
             strip.projected=p;strip.side=in.side;strip.far_depth=in.far.depth;strip.occlusion_row=in.occlusion_row;
-            for(const auto& quad:subdivide_hill(strip,camera,depths,in.logical_width))result.push_back(node(quad,texture));
+            std::vector<std::array<RasterPoint,4>> quads;
+            std::vector<std::array<int32_t,4>> qdepths;
+            subdivide_hill_depths(quads, qdepths, strip,camera,depths,in.logical_width);
+            for(size_t qi=0;qi<quads.size();++qi)result.push_back(node(quads[qi],texture,qdepths[qi]));
         } else {
             const int selected_band=band<3?band:2;
             if(band>=3)p={p[1],p[0],p[3],p[2]};
             if(in.overlap)overlap(p,in.join_offsets,(band>2)==(in.side==1));
             const auto* texture=material(uint8_t(selected_band),length(p[0],p[1]),std::max(length(p[1],p[2]),length(p[0],p[3])));
-            result.push_back(node(p,texture));
+            result.push_back(node(p,texture,{in.far.depth,in.far.depth,in.near.depth,in.near.depth}));
         }
     }
     return result;
@@ -94,10 +99,13 @@ std::vector<DrawNode> shoulder_draw_nodes(const ShoulderPanelInput& in,const Cam
     if(in.has_lanes) {const int32_t dx=strip.side==0?-65536:65536;p[1].x=add(p[1].x,dx);p[2].x=add(p[2].x,dx);}
     auto absolute=[](int32_t v){return v<0?sub(0,v):v;};
     const auto* texture=material(absolute(sub(p[1].x,p[0].x)),absolute(sub(p[3].y,p[0].y)));
-    if(in.near_depth>=1234)return {node(p,texture)};
+    if(in.near_depth>=1234)return {node(p,texture,{strip.far_depth,strip.far_depth,in.near_depth,in.near_depth})};
     if(!texture)return {};
     std::vector<DrawNode> out;
-    for(const auto& quad:subdivide_shoulder(strip,camera,depths,in.logical_width,in.logical_height))out.push_back(node(quad,texture));
+    std::vector<std::array<RasterPoint,4>> quads;
+    std::vector<std::array<int32_t,4>> qdepths;
+    subdivide_shoulder_depths(quads, qdepths, strip,camera,depths,in.logical_width,in.logical_height);
+    for(size_t qi=0;qi<quads.size();++qi)out.push_back(node(quads[qi],texture,qdepths[qi]));
     return out;
 }
 }
