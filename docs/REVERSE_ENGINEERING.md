@@ -187,6 +187,7 @@ Native port: `src/bike.cpp`, `src/race.cpp`.
   - words 6–10 = weapon per level
   - words 12–15 = strength, base, maximum and current stamina
 - **Contact:** `0x004368f0` runs from the scheduler. Pairs overlap when within the half-lengths `+0x178`, the half-widths `+0x174` and the heights `+0x17c`, and on the same road-half bits. `0x00436a40` separates them along the axis that was clear on the previous tick, scaled by mass `+0x194`, and records impulses `+0x184`/`+0x188`/`+0x18c` and contact flags `+0x19c`; then each object's `+0x1a4` handler runs (bike: `0x004049c0`).
+  - Keymap + contact REA re-confirmation (October 12, 2026; plan 10/16 port input): pinned REA 6.4.0 pseudocode whitespace-identical for `0x0044fa80` keyboard map (868 chars: 256 scancodes via `GetKeyboardState`, `0x004c5d90` binding → `0x00465fb9` code → `0x00476c00` bit, `0x0044fa50` repeat hook), `0x004368f0` contact dispatch (1769: same-tick `+0x10` stamp + `+0xc0&6` live bits, `0x004373f0` near-camera cull, pairwise half-length/width/height + road-half test, `0x00436a40` separation + `+0x1a4` handlers) and `0x004049c0` bike contact (9952: rider/car/ped branches, impulse/sound/crash gates — the 11a car-contact port's source). Files: `analysis/oracle/rea-44fa80-keymap.md`, `rea-4368f0-contact.md`, `rea-4049c0-bikecontact.md` (disc-derived, git-ignored).
 - **Combat:**
   - Control bits `0x20` strike, `0x40` kick, `0x80` backhand.
   - Attack animation codes come from `0x004644f8`/`0x00464508`/`0x00464518`/`0x00464528` (weapon + variant × 4; left or right).
