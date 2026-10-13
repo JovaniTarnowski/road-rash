@@ -81,8 +81,9 @@ int main() {
         down[SDL_SCANCODE_C] = true;
         check(rr::bound_control_bits(defs, false, down) == rr::control_backhand, "C backhands by default");
         // Rebind accelerate (action 0) to W: W yields accelerate, Up yields nothing.
+        // Custom keyboard codes store low-byte-first (0x0040e760).
         std::array<uint16_t, 11> codes{};
-        codes[0] = uint16_t(SDL_SCANCODE_W << 8);
+        codes[0] = uint16_t(SDL_SCANCODE_W);
         down[SDL_SCANCODE_C] = false;
         down[SDL_SCANCODE_W] = true;
         check(rr::bound_control_bits(codes, true, down) == rr::control_accelerate, "rebound key produces its bit");

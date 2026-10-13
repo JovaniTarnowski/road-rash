@@ -203,6 +203,25 @@ void add_native_screens(FrontendData& data, bool mobile) {
                                      item_flag::title_desc | item_flag::escape));
         chain(touch);
     }
+    // Pause menu (plan 18 Task 8): RESUME, SOUND, DISPLAY, CONTROLS, QUIT RACE.
+    // Resume carries the escape flag so Back/B/Escape resumes the race.
+    {
+        MenuScreen& pause = data.screens[screen_id::native_pause];
+        column(pause, ns::pause_title);
+        pause.items.push_back(button(tpl.y, ns::resume, 0,
+                                     native_action::pause_resume, 0,
+                                     item_flag::title_desc | item_flag::escape));
+        pause.items.push_back(button(tpl.y + step, ns::sound, 0, 0,
+                                     screen_id::native_sound, item_flag::title_desc));
+        pause.items.push_back(button(tpl.y + 2 * step, ns::display, 0, 0,
+                                     screen_id::native_display, item_flag::title_desc));
+        pause.items.push_back(button(tpl.y + 3 * step, ns::controls, 0, 0,
+                                     0x12, item_flag::title_desc));
+        pause.items.push_back(button(tpl.y + 4 * step, ns::quit_race, ns::d_quit_race,
+                                     native_action::pause_quit, 0,
+                                     item_flag::title_desc | item_flag::description));
+        chain(pause);
+    }
     // Configure Input links: appended after the label rows so label indices keep
     // working; nav extended from the last label row through the new rows.
     {

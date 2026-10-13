@@ -16,5 +16,6 @@ namespace native_setter { constexpr int display_mode = -1, window_size = -2, sca
 namespace native_action {
 constexpr uint32_t toggle_mute = 0xF0000010, toggle_swap = 0xF0000011;
 constexpr uint32_t toggle_pad_swap = 0xF0000012, toggle_left_handed = 0xF0000013;
+constexpr uint32_t pause_resume = 0xF0000014, pause_quit = 0xF0000015;
 }
 }

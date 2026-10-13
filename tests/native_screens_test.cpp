@@ -36,6 +36,11 @@ int main(int argc, char** argv) {
     check(pad.items[6].target == 0x12, "gamepad back returns to Configure Input");
     const auto& touch = data.screens[rr::screen_id::native_touch];
     check(touch.items.size() == 3 && touch.title == rr::ns::touch_title, "touch page rows");
+    const auto& pause = data.screens[rr::screen_id::native_pause];
+    check(pause.items.size() == 5 && pause.title == rr::ns::pause_title, "pause menu rows");
+    check(pause.items[1].target == rr::screen_id::native_sound, "pause SOUND enters the sound screen");
+    check(pause.items[2].target == rr::screen_id::native_display, "pause DISPLAY enters the display screen");
+    check(pause.items[3].target == 0x12, "pause CONTROLS enters Configure Input");
     check(data.screens[0x12].items.size() == 23, "desktop 0x12 gains the gamepad link");
     check(mobile.screens[0x12].items.size() == 24, "mobile 0x12 gains gamepad and touch links");
     bool pad_linked = false, desk_touch = false;

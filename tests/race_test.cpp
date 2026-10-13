@@ -101,6 +101,30 @@ int main() {
     rr::Race shortrace(straight(80), straight(80), t, spec, 90);
     for (int i = 0; i < 20000 && !shortrace.finished(); ++i) shortrace.step(rr::control_accelerate);
     check(shortrace.finished(), "finish at route end");
+    // Pause gaps insert no simulation state (plan 18 Task 8 Review Focus 4):
+    // two 900-tick runs with identical controls, the second pausing (no ticks
+    // for 120 frames) after ticks 10, 450 and 899, match snapshot by snapshot.
+    {
+        auto same = [&](const rr::RaceSnapshot& a, const rr::RaceSnapshot& b) {
+            if (a.tick != b.tick || a.rng != b.rng || a.fields.size() != b.fields.size()) return false;
+            for (size_t i = 0; i < a.fields.size(); ++i)
+                if (a.fields[i].name != b.fields[i].name || a.fields[i].value != b.fields[i].value) return false;
+            return true;
+        };
+        rr::Race plain(straight(2000), straight(2000), t, spec, 90);
+        rr::Race paused(straight(2000), straight(2000), t, spec, 90);
+        bool snapshots_match = true;
+        for (int i = 0; i < 900; ++i) {
+            const uint32_t c = rr::control_accelerate | ((i / 60) % 2 ? rr::control_left : rr::control_right);
+            plain.step(c);
+            paused.step(c);
+            snapshots_match &= same(plain.snapshot(), paused.snapshot());
+            if (i == 10 || i == 450 || i == 899)
+                for (int f = 0; f < 120; ++f) snapshots_match &= same(plain.snapshot(), paused.snapshot());
+        }
+        check(snapshots_match, "pause gaps change no snapshot");
+        check(plain.position() == paused.position() && plain.rng_state() == paused.rng_state(), "pause gaps keep final state");
+    }
 
     // Camera is one sample behind the rider and at least 150 high (0x00437c30).
     check(race.camera_position() == race.position() - 0x100, "camera one sample behind");

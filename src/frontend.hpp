@@ -67,7 +67,7 @@ struct MenuInput {
 };
 
 struct FrontendEvent {
-    enum class Kind { none, play_video, start_race, quit, select_soundtrack, apply_display, apply_mixer } kind = Kind::none;
+    enum class Kind { none, play_video, start_race, quit, select_soundtrack, apply_display, apply_mixer, resume_race, quit_race } kind = Kind::none;
     std::string video;   // path relative to the ROADRASH directory, e.g. VIDEO/START3.AVI
     int course = 0;      // 1..5
     int group = 0, track = 0;      // select_soundtrack: 0-based group (menu caption - 0xe1) and track (caption - 0xf1)
@@ -113,6 +113,12 @@ public:
     // marks settings custom, and refreshes the 0x12 current-key labels.
     void rebind_key(size_t action, uint16_t code);
     void reset_keys(bool joystick);   // 0x0040fdf0: copy a default table in
+    // In-race pause menu (plan 18 Task 8): darken the captured race frame and
+    // enter native_pause. Back/B/Escape on the pause screen resumes. Sub-screens'
+    // Back returns to the pause screen, not to Graphics Options, when entered
+    // from it. Emits resume_race / quit_race (race ends with the Task 1 outcome).
+    void open_pause(const RgbImage& race_frame);
+    bool pause_open() const;
 
 private:
     struct Dialog { std::string text; std::vector<std::pair<int, int>> buttons; int focus = 0; int kind = 0; };
@@ -162,6 +168,8 @@ private:
     Settings& settings_;
     std::string save_dir_, save_file_;
     int capture_action_ = -1;              // plan 18 Task 7: press-a-key arming (-1 idle)
+    bool pause_open_ = false;              // plan 18 Task 8: in-race pause menu showing
+    bool pause_return_ = false;            // plan 18 Task 8: sub-screen Back returns to native_pause
     std::deque<FrontendEvent> events_;
 
     int screen_ = 0, previous_ = 0, focus_ = -1;

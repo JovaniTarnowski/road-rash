@@ -55,7 +55,7 @@ constexpr uint32_t jukebox_tracks[6][2] = {{0x00473b38, 3}, {0x00473be0, 2}, {0x
 
 // Dialog kinds and the action that follows a confirmed "save before continuing?" (0x004450e0).
 enum Then { then_none = 0, then_quit = 1, then_load = 2, then_mode = 3, then_characters = 4 };
-enum DialogKind { dialog_message = 0, dialog_unsaved = 1 };
+enum DialogKind { dialog_message = 0, dialog_unsaved = 1, dialog_quit_race = 2 };
 
 constexpr uint32_t colour_light = 0xdefff0, colour_grey = 0xa0a0a0, colour_orange = 0xff6432, colour_focus = 0xe1e180,
                    colour_yellow = 0xffff00;
@@ -656,11 +656,12 @@ void Frontend::apply_native_setting() {
 }
 
 std::string Frontend::key_name(int action) const {
-    // Plan 18 Task 7: label text for the 0x12 key-label rows.
+    // Plan 18 Task 7: label text for the 0x12 key-label rows. Custom keyboard
+    // codes store low-byte-first (0x0040e760); the byte is the keyboard code.
     static const char* kDefaultNames[9] = {"Up", "Down", "Left", "Right", "Z", "X", "C", "?", "?"};
     if (action < 0 || action > 8) return "?";
     if (settings_.custom_controls) {
-        const int sc = settings_.controls[size_t(action)] >> 8;
+        const int sc = settings_.controls[size_t(action)] & 0xff;
         if (sc > 0 && sc < SDL_SCANCODE_COUNT) {
             const char* name = SDL_GetScancodeName(SDL_Scancode(sc));
             if (name && *name) return name;
@@ -751,6 +752,13 @@ bool Frontend::confirm_unsaved(int then) {
 void Frontend::finish_dialog(int choice) {
     const int kind = dialog_.kind;
     dialog_ = {};
+    if (kind == dialog_quit_race) {   // plan 18 Task 8: Yes ends the race, No stays paused
+        if (choice == 1) {
+            pause_open_ = false;
+            events_.push_back({FrontendEvent::Kind::quit_race, {}, 0});
+        }
+        return;
+    }
     if (kind != dialog_unsaved || choice == 0) return;
     if (choice == 1) save_current();
     const int then = dialog_then_;
@@ -841,6 +849,20 @@ void Frontend::race_finished(RaceOutcome outcome, int place, const std::vector<S
     if (!video.empty()) queue_video(video, 0);
     enter(report_.screen);
 }
+
+void Frontend::open_pause(const RgbImage& race_frame) {
+    // Plan 18 Task 8: the captured race frame becomes the menu background and
+    // its darkened copy fills the screen, as the standings screen does.
+    pause_open_ = true;
+    pause_return_ = false;
+    enter(screen_id::native_pause);
+    background_ = race_frame;
+    dark_ = race_frame;
+    for (auto& p : dark_.pixels) p = darken555(p);
+    dark_screen_ = true;
+}
+
+bool Frontend::pause_open() const { return pause_open_; }
 
 // Item handlers by original address (0x00423200 calls +0x2c, else enters +4).
 int Frontend::run_handler(size_t index) {
@@ -951,6 +973,14 @@ int Frontend::run_handler(size_t index) {
     case native_action::toggle_swap: settings_.swap_speakers = !settings_.swap_speakers; apply_mixer_setting(); return 0;
     case native_action::toggle_pad_swap: settings_.swap_punch_kick = !settings_.swap_punch_kick; apply_mixer_setting(); return 0;
     case native_action::toggle_left_handed: settings_.left_handed = !settings_.left_handed; apply_mixer_setting(); return 0;
+    case native_action::pause_resume:   // plan 18 Task 8: RESUME and Back/B/Escape resume
+        pause_open_ = false;
+        events_.push_back({FrontendEvent::Kind::resume_race, {}, 0});
+        return 0;
+    case native_action::pause_quit:   // plan 18 Task 8: QUIT RACE asks first; Yes ends the race
+        show_dialog(native_string(ns::d_quit_race), dialog_quit_race, {{386, 1}, {387, 0}});
+        dialog_.focus = 1;   // default to No
+        return 0;
     case 0x00445600: {
         // Jukebox track list: popup per focused band caption 0xe1..0xe6; current row = saved track when the group matches.
         const int group = m.caption >= 0xe1 && m.caption <= 0xe6 ? m.caption - 0xe1 : 0;
@@ -1068,7 +1098,23 @@ void Frontend::activate(size_t index) {
         return;
     }
     const int next = run_handler(index);
-    if (next != 0) enter(next);
+    if (next == 0) return;
+    // Plan 18 Task 8: entering a settings screen from the pause menu arms the
+    // return; its Back row (escape flag, no popup open) goes back to the pause
+    // menu instead of the screen's original Back target.
+    if (screen_ == screen_id::native_pause &&
+        (next == screen_id::native_sound || next == screen_id::native_display ||
+         next == screen_id::native_gamepad || next == screen_id::native_touch || next == 0x12)) {
+        pause_return_ = true;
+        enter(next);
+        return;
+    }
+    if (pause_return_ && popup_base_ == 0 && (m.flags & item_flag::escape)) {
+        pause_return_ = false;
+        enter(screen_id::native_pause);
+        return;
+    }
+    enter(next);
 }
 
 void Frontend::navigate(int k) {
@@ -1151,13 +1197,13 @@ void Frontend::update(const MenuInput& in, uint64_t now_ms) {
     if (in.opponent_key && !editing_name_) toggle_opponent_list();
     if (capture_action_ >= 0 && in.capture_scancode != 0) {
         // Plan 18 Task 7 press-a-key (`0x0040e760`): Escape cancels with no change;
-        // any other key stores (scancode,0) via the 0x0040fbf0 conflict rule.
+        // any other key stores low-byte-first (key,0) via the 0x0040fbf0 conflict rule.
         if (in.capture_scancode != SDL_SCANCODE_ESCAPE && in.capture_scancode < 256) {
             if (!settings_.custom_controls) {
                 settings_.controls = default_keyboard_controls();
                 settings_.custom_controls = true;
             }
-            apply_rebind(settings_.controls, size_t(capture_action_), uint16_t(in.capture_scancode << 8));
+            apply_rebind(settings_.controls, size_t(capture_action_), uint16_t(in.capture_scancode));
             strings_[size_t(160 + capture_action_)] = key_name(capture_action_);   // 0x0040e7b0 relabel
         }
         capture_action_ = -1;   // 0x0040e6d0 disarm

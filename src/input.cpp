@@ -70,7 +70,8 @@ uint32_t bound_control_bits(const std::array<uint16_t, 11>& codes, bool custom, 
         if (!custom) {
             if (pressed(down, kDefaultKeys[i][0]) || pressed(down, kDefaultKeys[i][1])) bits |= kActionBits[i];
         } else {
-            if (pressed(down, codes[size_t(i)] >> 8)) bits |= kActionBits[i];
+            // Custom keyboard codes store low-byte-first (0x0040e760).
+            if (pressed(down, codes[size_t(i)] & 0xff)) bits |= kActionBits[i];
         }
     }
     return bits;

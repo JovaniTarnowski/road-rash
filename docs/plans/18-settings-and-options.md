@@ -421,13 +421,13 @@ Moved here from plan 13 Task 3.
   ```
   The pause screen items: RESUME, SOUND (→ `native_sound`), DISPLAY (→ `native_display`), CONTROLS (→ `0x12`, read-only while racing if the original forbids rebinding mid-race), QUIT RACE (confirmation dialog via the existing `show_dialog`). Back/B/Escape on the pause screen resumes. Sub-screens' Back returns to the pause screen, not to Graphics Options, when entered from it.
 
-- [ ] **Step 1: Write the failing tests.**
+- [x] **Step 1: Write the failing tests.**
   - `frontend_test`: `open_pause` → focus on RESUME; Down×4 → QUIT RACE; select → dialog; choose No → still paused; Escape → `resume_race` event.
   - `race_test` (Review Focus 4): run a headless race twice for 900 ticks with the same controls; in the second run, call the pause path (no ticks while paused, 120 frames) at ticks 10 (countdown), at the first crash tick, and at the tick before the finish of a short scripted race. Compare `Race` snapshots tick by tick: identical.
   - Controller-only (Review Focus 5): the same flow driven by `MenuInput` produced from `SDL_GAMEPAD_BUTTON_*` events only.
-- [ ] **Step 2:** Run them; expected FAIL.
-- [ ] **Step 3: Implement.** The race loop stops stepping the simulation while `pause_open()`; the mixer pauses race sounds but keeps the interface channel live so the sound sliders can be heard. The lifecycle pause (app backgrounded) opens the pause menu when the app returns, instead of the old "PAUSED" text. Delete `draw_pause`.
-- [ ] **Step 4:** Run the tests and the regression gate. Commit: `game: in-race pause menu with sound, display and controls`.
+- [x] **Step 2:** Run them; expected FAIL.
+- [x] **Step 3: Implement.** The race loop stops stepping the simulation while `pause_open()`; the mixer pauses race sounds but keeps the interface channel live so the sound sliders can be heard. The lifecycle pause (app backgrounded) opens the pause menu when the app returns, instead of the old "PAUSED" text. Delete `draw_pause`.
+- [x] **Step 4:** Run the tests and the regression gate. Commit: `game: in-race pause menu with sound, display and controls`.
 
 ---
 

@@ -33,6 +33,7 @@
 #include <algorithm>
 #include <cstdio>
 #include <memory>
+#include <functional>
 #include <string>
 
 namespace {
@@ -640,19 +641,6 @@ struct LifecycleWatch {
     ~LifecycleWatch() { SDL_RemoveEventWatch(watch, this); }
 };
 
-void draw_pause(SDL_Renderer* r) {
-    SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_BLEND);
-    SDL_SetRenderDrawColor(r, 0, 0, 0, 190);
-    SDL_RenderFillRect(r, nullptr);
-    SDL_SetRenderDrawColor(r, 255, 255, 255, 255);
-    SDL_SetRenderScale(r, 3, 3);
-    SDL_RenderDebugText(r, 80, 65, "PAUSED");
-    SDL_SetRenderScale(r, 1, 1);
-    SDL_RenderDebugText(r, 184, 260, "Enter / Start / tap to resume");
-    SDL_RenderDebugText(r, 232, 284, "Q to quit on desktop");
-    SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_NONE);
-}
-
 void play_video(const rr::Assets& assets,const std::string& path,SDL_Renderer* renderer,
                 const std::string& screenshot,long ticks,DisplayDriver& display) {
     rr::Mixer mixer(32);
@@ -702,7 +690,6 @@ void play_video(const rr::Assets& assets,const std::string& path,SDL_Renderer* r
         if (ticks<0 && !player.update(SDL_GetTicksNS())) running=false;
         if (lifecycle.state.background()) { SDL_Delay(20);continue; }
         SDL_SetRenderDrawColor(renderer,0,0,0,255);SDL_RenderClear(renderer);player.draw(renderer);
-        if (lifecycle.state.paused()) draw_pause(renderer);
         if (!screenshot.empty()) {
             SDL_Surface* capture=SDL_RenderReadPixels(renderer,nullptr);
             if (!capture || !SDL_SaveBMP(capture,screenshot.c_str())) throw std::runtime_error(SDL_GetError());
@@ -733,10 +720,94 @@ struct RaceOptions {
     bool swap_punch_kick = false;            // plan 18 Task 7: native gamepad page
     int stick_deadzone = 35;                 // plan 18 Task 7: percent, 10..40
     bool left_handed = false;                // plan 18 Task 7: native touch page
+    rr::Frontend* menu = nullptr;            // plan 18 Task 8: pause menu; null keeps the old freeze
+    std::function<void()> apply_settings;    // host applies display+mixer levels on menu events
 };
 
 // One race: the playable loop. In career mode the race is decided by the player finishing
 // (0x00434660: code 0x7f), wrecking or quitting (code 5), and runs on for 0xb4 ticks.
+// Plan 18 Task 8: capture the presented race frame into a 640x480 menu
+// background (box-sample down from the window surface).
+static rr::RgbImage capture_race_frame(SDL_Renderer* renderer) {
+    rr::RgbImage frame(640, 480, 0);
+    SDL_Surface* raw = SDL_RenderReadPixels(renderer, nullptr);
+    if (!raw) return frame;
+    SDL_Surface* s = SDL_ConvertSurface(raw, SDL_PIXELFORMAT_XRGB8888);
+    SDL_DestroySurface(raw);
+    if (!s) return frame;
+    const auto* px = static_cast<const uint32_t*>(s->pixels);
+    const int sw = s->w, sh = s->h, pitch = s->pitch / 4;
+    for (int y = 0; y < 480; ++y) {
+        const int y0 = y * sh / 480, y1 = (y + 1) * sh / 480;
+        for (int x = 0; x < 640; ++x) {
+            const int x0 = x * sw / 640, x1 = (x + 1) * sw / 640;
+            uint64_t r = 0, gg = 0, b = 0, n = 0;
+            for (int sy = y0; sy < std::max(y0 + 1, y1); ++sy)
+                for (int sx = x0; sx < std::max(x0 + 1, x1); ++sx) {
+                    const uint32_t p = px[size_t(sy) * size_t(pitch) + size_t(sx)];
+                    r += (p >> 16) & 0xff; gg += (p >> 8) & 0xff; b += p & 0xff; ++n;
+                }
+            frame.at(x, y) = uint32_t(((r / n) << 16) | ((gg / n) << 8) | (b / n));
+        }
+    }
+    SDL_DestroySurface(s);
+    return frame;
+}
+
+// Plan 18 Task 8: while the pause menu is open it owns all input, with the
+// menu loop's mapping (arrows + Enter/Escape, d-pad + A/B, pointer/touch).
+static void pause_event(rr::Frontend* menu, const SDL_Event& e, SDL_Gamepad*& pad, SDL_Renderer* renderer) {
+    rr::MenuInput in;
+    if (e.type == SDL_EVENT_GAMEPAD_ADDED && !pad) { pad = SDL_OpenGamepad(e.gdevice.which); return; }
+    if (e.type == SDL_EVENT_GAMEPAD_REMOVED && pad && SDL_GetGamepadID(pad) == e.gdevice.which) {
+        SDL_CloseGamepad(pad); pad = nullptr; return;
+    }
+    if (e.type == SDL_EVENT_KEY_DOWN) {
+        if (!e.key.repeat && e.key.scancode > 0 && e.key.scancode < SDL_SCANCODE_COUNT)
+            in.capture_scancode = int(e.key.scancode);
+        switch (e.key.key) {
+        case SDLK_LEFT: in.left = true; break;
+        case SDLK_RIGHT: in.right = true; break;
+        case SDLK_UP: in.up = true; break;
+        case SDLK_DOWN: in.down = true; break;
+        case SDLK_HOME: in.home = true; break;
+        case SDLK_END: in.end = true; break;
+        case SDLK_RETURN: case SDLK_KP_ENTER: case SDLK_SPACE: if (!e.key.repeat) in.select = true; break;
+        case SDLK_ESCAPE: case SDLK_P: case SDLK_AC_BACK: if (!e.key.repeat) in.back = true; break;
+        default: break;
+        }
+    } else if (e.type == SDL_EVENT_GAMEPAD_BUTTON_DOWN && pad && SDL_GetGamepadID(pad) == e.gbutton.which) {
+        switch (e.gbutton.button) {
+        case SDL_GAMEPAD_BUTTON_DPAD_LEFT: in.left = true; break;
+        case SDL_GAMEPAD_BUTTON_DPAD_RIGHT: in.right = true; break;
+        case SDL_GAMEPAD_BUTTON_DPAD_UP: in.up = true; break;
+        case SDL_GAMEPAD_BUTTON_DPAD_DOWN: in.down = true; break;
+        case SDL_GAMEPAD_BUTTON_SOUTH: case SDL_GAMEPAD_BUTTON_START: in.select = true; break;
+        case SDL_GAMEPAD_BUTTON_EAST: case SDL_GAMEPAD_BUTTON_BACK: in.back = true; break;
+        default: break;
+        }
+    } else if (e.type == SDL_EVENT_MOUSE_MOTION || e.type == SDL_EVENT_MOUSE_BUTTON_DOWN ||
+               e.type == SDL_EVENT_FINGER_DOWN) {
+        float x = 0, y = 0;
+        if (e.type == SDL_EVENT_FINGER_DOWN) {
+            int w = 0, h = 0;
+            SDL_Window* window = SDL_GetRenderWindow(renderer);
+            if (window) SDL_GetWindowSize(window, &w, &h);
+            SDL_RenderCoordinatesFromWindow(renderer, e.tfinger.x * float(w), e.tfinger.y * float(h), &x, &y);
+        } else if (e.type == SDL_EVENT_MOUSE_MOTION) {
+            if (e.motion.which == SDL_TOUCH_MOUSEID) return;
+            SDL_RenderCoordinatesFromWindow(renderer, e.motion.x, e.motion.y, &x, &y);
+        } else {
+            if (e.button.which == SDL_TOUCH_MOUSEID) return;
+            SDL_RenderCoordinatesFromWindow(renderer, e.button.x, e.button.y, &x, &y);
+        }
+        in.pointer_x = int(x); in.pointer_y = int(y);
+        in.pointer_moved = true;
+        if (e.type != SDL_EVENT_MOUSE_MOTION) in.pointer_click = true;
+    } else return;
+    menu->update(in, SDL_GetTicks());
+}
+
 RaceEnd run_race(Game& g, SDL_Renderer* renderer, const RaceOptions& opt, DisplayDriver& display) {
     RaceEnd result;
     SpriteCache sprites;
@@ -748,6 +819,8 @@ RaceEnd run_race(Game& g, SDL_Renderer* renderer, const RaceOptions& opt, Displa
     touch.set_left_handed(opt.left_handed);
     rr::TickClock clock;
     SDL_Gamepad* pad = open_first_gamepad();
+    SDL_Texture* pause_tex = nullptr;   // plan 18 Task 8: presents the 640x480 pause menu
+    rr::RgbImage pause_img;
     bool running = true, decided = false;
     int end_ticks = 0;
     uint64_t last = SDL_GetTicksNS();
@@ -764,6 +837,8 @@ RaceEnd run_race(Game& g, SDL_Renderer* renderer, const RaceOptions& opt, Displa
                 e.type == SDL_EVENT_GAMEPAD_BUTTON_DOWN || e.type == SDL_EVENT_GAMEPAD_ADDED ||
                 e.type == SDL_EVENT_FINGER_DOWN || e.type == SDL_EVENT_MOUSE_BUTTON_DOWN);
             if (demo_exit) { running = false; continue; }   // attract demo: any input exits quietly
+            const bool menu_open = opt.menu && opt.menu->pause_open();
+            if (menu_open) { pause_event(opt.menu, e, pad, renderer); continue; }   // menu owns all input
             if (e.type == SDL_EVENT_KEY_DOWN && !e.key.repeat) {
                 if (g.quitting) {
                     // 0x004227d0: a second Escape quits the race (outcome 5), any other key continues.
@@ -775,10 +850,16 @@ RaceEnd run_race(Game& g, SDL_Renderer* renderer, const RaceOptions& opt, Displa
                     continue;
                 }
                 if (e.key.key == SDLK_Q && !g.career) { running = false; result.quit_app = true; }
-                if (e.key.key == SDLK_AC_BACK) lifecycle.state.pause();
+                // Plan 18 Task 8: Escape/P/Back opens the pause menu; without one
+                // the old lifecycle freeze stays (headless/smoke paths).
+                if (e.key.key == SDLK_AC_BACK) {
+                    if (opt.menu) { opt.menu->open_pause(capture_race_frame(renderer)); lifecycle.state.resume(); }
+                    else lifecycle.state.pause();
+                }
                 if (e.key.key == SDLK_ESCAPE && g.career && !lifecycle.state.paused()) g.quitting = true;
                 else if (e.key.key == SDLK_ESCAPE || e.key.key == SDLK_P) {
-                    if (lifecycle.state.paused()) lifecycle.state.resume(); else lifecycle.state.pause();
+                    if (opt.menu) { opt.menu->open_pause(capture_race_frame(renderer)); lifecycle.state.resume(); }
+                    else if (lifecycle.state.paused()) lifecycle.state.resume(); else lifecycle.state.pause();
                 }
                 if (e.key.key == SDLK_RETURN) {
                     if (lifecycle.state.paused()) lifecycle.state.resume();
@@ -798,7 +879,8 @@ RaceEnd run_race(Game& g, SDL_Renderer* renderer, const RaceOptions& opt, Displa
                         running = false;
                     }
                 } else if (e.gbutton.button == SDL_GAMEPAD_BUTTON_START) {
-                    if (lifecycle.state.paused()) lifecycle.state.resume(); else lifecycle.state.pause();
+                    if (opt.menu) { opt.menu->open_pause(capture_race_frame(renderer)); lifecycle.state.resume(); }
+                    else if (lifecycle.state.paused()) lifecycle.state.resume(); else lifecycle.state.pause();
                 } else if (e.gbutton.button == SDL_GAMEPAD_BUTTON_BACK && g.career && !lifecycle.state.paused()) g.quitting = true;
                 else if (e.gbutton.button == SDL_GAMEPAD_BUTTON_SOUTH && !lifecycle.state.paused() && g.race->finished() && !g.career) restart = true;
             }
@@ -816,7 +898,25 @@ RaceEnd run_race(Game& g, SDL_Renderer* renderer, const RaceOptions& opt, Displa
             }
         }
         if (!running) break;
-        if (restart) g.restart();
+        // Plan 18 Task 8: a lifecycle freeze (background return, focus loss,
+        // pad removal) opens the pause menu instead of the old PAUSED text.
+        if (opt.menu && !opt.menu->pause_open() && lifecycle.state.paused() && !lifecycle.state.background()) {
+            opt.menu->open_pause(capture_race_frame(renderer));
+            lifecycle.state.resume();
+        }
+        if (opt.menu && opt.menu->pause_open()) {
+            rr::FrontendEvent ev;
+            while (opt.menu->poll(ev)) {
+                if (ev.kind == rr::FrontendEvent::Kind::resume_race) lifecycle.state.resume();
+                else if (ev.kind == rr::FrontendEvent::Kind::quit_race) {
+                    lifecycle.state.resume();
+                    if (!decided) { result.outcome = rr::RaceOutcome::wrecked; result.place = std::max(0, g.race->place(0) - 1); }
+                    running = false;
+                } else if (ev.kind == rr::FrontendEvent::Kind::apply_display) display.apply(480);
+                else if (ev.kind == rr::FrontendEvent::Kind::apply_mixer && opt.apply_settings) opt.apply_settings();
+            }
+        }
+        if (!running) break;
         rr::PlayerInput in = touch.current();
         const bool* keys = SDL_GetKeyboardState(nullptr);
         // Plan 18 Task 7: custom tables are honored via bound_control_bits below;
@@ -849,7 +949,11 @@ RaceEnd run_race(Game& g, SDL_Renderer* renderer, const RaceOptions& opt, Displa
 
         const uint64_t now = SDL_GetTicksNS();
         if (lifecycle.state.take_clock_reset()) { touch.clear(); clock.reset(); last = now; }
-        const bool frozen = lifecycle.state.paused() || g.quitting;
+        // Plan 18 Task 8: the race loop stops stepping the simulation while
+        // pause_open(); the mixer pauses race sounds but the interface levels
+        // stay live so the sound sliders apply (no preview click, as in Task 6).
+        const bool menu_pause = opt.menu && opt.menu->pause_open();
+        const bool frozen = lifecycle.state.paused() || g.quitting || menu_pause;
         if (g.mixer) g.mixer->pause(frozen || lifecycle.state.background());
         if (g.race_music && !frozen && !lifecycle.state.background()) g.race_music->update();
         const int steps = clock.advance(now - last, frozen);
@@ -867,33 +971,46 @@ RaceEnd run_race(Game& g, SDL_Renderer* renderer, const RaceOptions& opt, Displa
             } else if (decided && --end_ticks <= 0) running = false;
         }
         if (lifecycle.state.background()) { SDL_Delay(20); continue; }
-
-        SDL_SetRenderDrawColor(renderer, 15, 18, 22, 255);
-        SDL_RenderClear(renderer);
-        const auto slices = rr::project_road(g.race->route(), g.race->camera_position(), g.race->camera(), g.depth);
-        if(g.scene)course_canvas.draw(renderer,g,slices);
-        else rr::draw_road(renderer, slices);
-        draw_opponents(renderer, g, sprites, slices);
-        draw_bike(renderer, g, sprites,slices);
-        if(g.hud)course_canvas.draw_dashboard(renderer,g);
-        draw_hud(renderer, g);
-        if (g.quitting) {
-            SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND);
-            SDL_SetRenderDrawColor(renderer, 0, 0, 0, 190);
-            SDL_RenderFillRect(renderer, nullptr);
-            SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_NONE);
-            SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
-            float y = 200;
-            size_t from = 0;
-            while (from <= g.quit_prompt.size()) {
-                size_t to = g.quit_prompt.find('\n', from);
-                if (to == std::string::npos) to = g.quit_prompt.size();
-                const std::string line = rr::cp1252_to_utf8(g.quit_prompt.substr(from, to - from));
-                SDL_RenderDebugText(renderer, 320 - 4.f * float(line.size()), y, line.c_str());
-                y += 14;
-                from = to + 1;
+        if (menu_pause && opt.menu) {
+            // Plan 18 Task 8: the pause menu draws over the captured frame.
+            opt.menu->draw(pause_img);
+            if (!pause_tex) {
+                pause_tex = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_XRGB8888, SDL_TEXTUREACCESS_STREAMING, 640, 480);
+                if (!pause_tex) throw std::runtime_error(SDL_GetError());
+                rr::apply_texture_scale(pause_tex, display.config);
             }
-        } else if (lifecycle.state.paused()) draw_pause(renderer);
+            SDL_UpdateTexture(pause_tex, nullptr, pause_img.pixels.data(), 640 * 4);
+            SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
+            SDL_RenderClear(renderer);
+            SDL_RenderTexture(renderer, pause_tex, nullptr, nullptr);
+        } else {
+            SDL_SetRenderDrawColor(renderer, 15, 18, 22, 255);
+            SDL_RenderClear(renderer);
+            const auto slices = rr::project_road(g.race->route(), g.race->camera_position(), g.race->camera(), g.depth);
+            if(g.scene)course_canvas.draw(renderer,g,slices);
+            else rr::draw_road(renderer, slices);
+            draw_opponents(renderer, g, sprites, slices);
+            draw_bike(renderer, g, sprites,slices);
+            if(g.hud)course_canvas.draw_dashboard(renderer,g);
+            draw_hud(renderer, g);
+            if (g.quitting) {
+                SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND);
+                SDL_SetRenderDrawColor(renderer, 0, 0, 0, 190);
+                SDL_RenderFillRect(renderer, nullptr);
+                SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_NONE);
+                SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
+                float y = 200;
+                size_t from = 0;
+                while (from <= g.quit_prompt.size()) {
+                    size_t to = g.quit_prompt.find('\n', from);
+                    if (to == std::string::npos) to = g.quit_prompt.size();
+                    const std::string line = rr::cp1252_to_utf8(g.quit_prompt.substr(from, to - from));
+                    SDL_RenderDebugText(renderer, 320 - 4.f * float(line.size()), y, line.c_str());
+                    y += 14;
+                    from = to + 1;
+                }
+            }
+        }
         if (!opt.screenshot.empty()) {
             SDL_Surface* capture = SDL_RenderReadPixels(renderer, nullptr);
             if (!capture || !SDL_SaveBMP(capture, opt.screenshot.c_str())) throw std::runtime_error(SDL_GetError());
@@ -905,6 +1022,7 @@ RaceEnd run_race(Game& g, SDL_Renderer* renderer, const RaceOptions& opt, Displa
         display.maybe_toggle();
     }
     if (pad) SDL_CloseGamepad(pad);
+    if (pause_tex) SDL_DestroyTexture(pause_tex);
     if (g.mixer) g.mixer->pause(false);
     return result;
 }
@@ -1035,7 +1153,7 @@ int run_game(const rr::Assets& assets, SDL_Window* window, SDL_Renderer* rendere
                     music.stop();
                     race_music.play_race(ev.course, fe.player_name());
                     g.race_music = &race_music;
-                    const RaceEnd demo_end = run_race(g, renderer, {.demo = true, .key_codes = settings.controls, .custom_keys = settings.custom_controls, .swap_punch_kick = settings.swap_punch_kick, .stick_deadzone = settings.stick_deadzone, .left_handed = settings.left_handed}, display);
+                    const RaceEnd demo_end = run_race(g, renderer, {.demo = true, .key_codes = settings.controls, .custom_keys = settings.custom_controls, .swap_punch_kick = settings.swap_punch_kick, .stick_deadzone = settings.stick_deadzone, .left_handed = settings.left_handed, .menu = &fe, .apply_settings = apply_levels}, display);
                     menu_stick.suspend();
                     race_music.stop();
                     g.race_music = nullptr;
@@ -1055,7 +1173,7 @@ int run_game(const rr::Assets& assets, SDL_Window* window, SDL_Renderer* rendere
                 race_music.set_music_level(settings.mute ? 0 : settings.music_volume * settings.master_volume / 100);
                 g.sound = sound.get();
                 if (sound) sound->start_race(career.state.bike, career.state.character);
-                const RaceEnd end = run_race(g, renderer, {.key_codes = settings.controls, .custom_keys = settings.custom_controls, .swap_punch_kick = settings.swap_punch_kick, .stick_deadzone = settings.stick_deadzone, .left_handed = settings.left_handed}, display);
+                const RaceEnd end = run_race(g, renderer, {.key_codes = settings.controls, .custom_keys = settings.custom_controls, .swap_punch_kick = settings.swap_punch_kick, .stick_deadzone = settings.stick_deadzone, .left_handed = settings.left_handed, .menu = &fe, .apply_settings = [&] { apply_levels(); race_music.set_music_level(settings.mute ? 0 : settings.music_volume * settings.master_volume / 100); }}, display);
                 menu_stick.suspend();
                 if (sound) sound->stop_race();
                 race_music.stop();  // race end
@@ -1194,7 +1312,6 @@ int run_game(const rr::Assets& assets, SDL_Window* window, SDL_Renderer* rendere
         SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
         SDL_RenderClear(renderer);
         SDL_RenderTexture(renderer, texture, nullptr, nullptr);
-        if (lifecycle.state.paused()) draw_pause(renderer);
         if (menu_frames >= 0 && ++frames >= menu_frames) {
             if (!screenshot.empty()) {
                 SDL_Surface* capture = SDL_RenderReadPixels(renderer, nullptr);

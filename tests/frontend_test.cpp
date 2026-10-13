@@ -388,7 +388,8 @@ int main(int argc, char** argv) {
     check(fe.caption_text(fe.items()[13]) == "Up", "default accelerate label");
     if (focus_item(0)) key("select");   // arm accelerate
     press_key(SDL_SCANCODE_W);
-    check(settings.controls[0] == uint16_t(SDL_SCANCODE_W << 8) && settings.custom_controls, "W binds accelerate");
+    // 0x0040e760 stores keyboard codes low-byte-first (key,0).
+    check(settings.controls[0] == uint16_t(SDL_SCANCODE_W) && settings.custom_controls, "W binds accelerate");
     check(fe.caption_text(fe.items()[13]) == SDL_GetScancodeName(SDL_SCANCODE_W), "label follows the rebind");
     if (focus_item(1)) key("select");   // arm brake
     press_key(SDL_SCANCODE_ESCAPE);
@@ -422,6 +423,51 @@ int main(int argc, char** argv) {
     check(settings.left_handed, "left-handed toggle flips");
     if (focus_item(2)) key("select");
     check(fe.screen() == 0x12, "touch back returns to Configure Input");
-    std::cout << failures << " failures\n";
+    // In-race pause menu (plan 18 Task 8): open over a race frame, resume, quit dialog, back-return.
+    const RgbImage race_frame(640, 480, 0x123456);
+    fe.open_pause(race_frame);
+    check(fe.pause_open() && fe.screen() == screen_id::native_pause && fe.focus() == 0, "pause opens on RESUME");
+    snap("pause");
+    for (int i = 0; i < 4; ++i) key("down");
+    check(fe.focus() == 4, "Downx4 reaches QUIT RACE");
+    key("select");
+    check(fe.dialog_open(), "quit asks for confirmation");
+    snap("pause-quit-dialog");
+    key("select");   // No (default): still paused, no event
+    check(!fe.dialog_open() && fe.pause_open() && !event(FrontendEvent::Kind::quit_race), "No stays paused");
+    if (focus_item(4)) key("select");
+    key("left");
+    key("select");   // Yes: quit event, pause closed
+    check(event(FrontendEvent::Kind::quit_race) && !fe.pause_open(), "Yes quits the race");
+    fe.open_pause(race_frame);
+    key("back");
+    check(event(FrontendEvent::Kind::resume_race) && !fe.pause_open(), "Escape resumes the race");
+    // Sub-screen Back returns to the pause screen, not to Graphics Options.
+    fe.open_pause(race_frame);
+    if (focus_item(3)) key("select");
+    check(fe.screen() == 0x12, "pause CONTROLS enters Configure Input");
+    key("back");
+    check(fe.screen() == screen_id::native_pause && fe.pause_open(), "Configure Back returns to pause");
+    if (focus_item(1)) key("select");
+    check(fe.screen() == screen_id::native_sound, "pause SOUND enters the sound screen");
+    key("back");
+    check(fe.screen() == screen_id::native_pause, "sound Back returns to pause");
+    // Controller-only: the same flow with d-pad + A/B inputs only.
+    auto pad = [&](const char* k) {
+        MenuInput in;
+        std::string s = k;
+        if (s == "down") in.down = true; else if (s == "up") in.up = true;
+        else if (s == "select") in.select = true; else if (s == "back") in.back = true;
+        press(in);
+    };
+    fe.open_pause(race_frame);
+    for (int i = 0; i < 8 && fe.focus() != 4; ++i) pad("down");   // focus memory: approach from wherever
+    check(fe.focus() == 4, "pad reaches QUIT RACE");
+    pad("select");
+    check(fe.dialog_open(), "pad opens the quit dialog");
+    pad("select");   // No
+    check(fe.pause_open() && !event(FrontendEvent::Kind::quit_race), "pad No stays paused");
+    pad("back");
+    check(event(FrontendEvent::Kind::resume_race) && !fe.pause_open(), "pad B resumes");
     return failures ? 1 : 0;
 }
