@@ -942,6 +942,7 @@ the screenshot flag. Open: menu keys feeding the MiniDash/OpponentList
 dispatch, the rebind flow and conflict rule, and the Escape race-quit path.
 Plan 18's screen map is corrected accordingly: Sound hangs off Restroom as a
 native look-alike of dialog 300, Pause is purely native.
+  - Pause-pump keys (October 12, 2026; plan 18 Task 1 Step 3 — exports `004431d0.c`/`00443120.c` + disasm call sites): modal pump `0x004431d0` exits on key-up/`syskey-up` (`0x101/0x105`): F10 (`0x79`) cycles MiniDash, PrintScreen (`0x2c`) sets the screenshot flag, any other key exits 2 (resume); with param_1≠0 Escape (`0x1b`) exits 1, else 2. WM_TIMER + joystick-button exits 2. Three call sites: A (param 1, string +0x4f0) — return 1 → `PostQuitMessage(0)` + outcome `0x4c5d7c = 5`; B (param 0, +0x4f4); C (param 0, custom format +0x5f0). Native gap: race loop has no F10/PrintScreen handling (`cycle_mini_dash`/`enable_opponent_list` exist but are menu-test-only) — plan 18 Task 6/7 port scope. Escape race-entry point still open.
 
 ### Rider/bike/shadow nodes (October 12, 2026, plan 11a Task 3 trace)
 
