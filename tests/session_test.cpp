@@ -47,6 +47,15 @@ int main() {
     check(clock.advance(10000000, false) == 0, "resume discards pre-pause partial tick");
     check(clock.advance(10000000, false) == 1, "normal ticks after resume");
     check(clock.advance(UINT64_MAX, false) == rr::max_steps_per_frame, "stall clamped before multiplication");
+    {
+        // Plan 21 Task 2: alpha_q16 reports the sub-tick remainder in Q16.
+        rr::TickClock c2;
+        constexpr uint64_t half = 1000000000ull / 60 / 2 + 1;  // ceil(half a 60 Hz tick)
+        check(c2.advance(half, false) == 0, "half tick takes no step");
+        check(c2.alpha_q16() == 32767 || c2.alpha_q16() == 32768, "half-tick remainder reads half");
+        check(c2.advance(half, false) == 1, "two halves complete the tick");
+        check(c2.alpha_q16() == 0, "exact tick boundary reads zero");
+    }
     check(clock.advance(0, false) == 0, "stall leaves no catch-up debt");
     std::cout << failures << " failures\n";
     return failures ? 1 : 0;

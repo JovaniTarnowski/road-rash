@@ -107,6 +107,11 @@ Hotkeys: Alt+Enter or Cmd+F toggles fullscreen; F10 cycles the MiniDash
 display; `/` in menus toggles the opponent list; the FPS row shows frames and
 simulation ticks per second in the race's top-right corner.
 
+Frame interpolation (upcoming Enhancements screen): with it off every frame
+is the newest simulation tick, exactly as before; with it on the game blends
+positions between ticks for smoother motion on high-refresh displays, at most
+one tick (16.7 ms) of extra input-to-photon delay.
+
 Widescreen (Display screen): Off keeps the original 4:3 view; 16:10,
 16:9 and Match display widen it (Hor+: same height, more road at the
 sides, centre unchanged). The dashboard stays centred with darkened side

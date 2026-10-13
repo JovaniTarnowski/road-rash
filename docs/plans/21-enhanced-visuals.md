@@ -169,11 +169,11 @@ int main() {
 ```
 
   Also add to `session_test`: `TickClock` after advancing 1.5 ticks reports `alpha_q16() == 32768`.
-- [ ] **Step 2:** Run; expected FAIL.
-- [ ] **Step 3: Implement** `view_state.cpp` and `alpha_q16`. Then change the race loop: keep two `ViewState`s (`previous`, `current`); after each `g.tick`, swap and `capture_view(current, ...)`; before drawing, `blend_view(drawn, previous, current, interpolate ? clock.alpha_q16() : 65536)`. Every builder that reads a position from `Race` for drawing takes it from `drawn` instead. With `interpolate` off, `alpha = 65536` gives exactly today's frame (the Original-exact rule).
-- [ ] **Step 4: Tests.** `hires-render`: with interpolation off, a headless race renders the same images as before the change. Extend plan 19 Task 7's independence test with interpolation on. Review Focus 1: a scripted race with a crash and remount and a split commit; at the crash, remount and commit ticks, assert no drawn actor lies more than `teleport_q8` from both endpoints.
-- [ ] **Step 5: Present faster than 60 Hz.** With `interpolate` on, the race loop draws every vsync (or uncapped when vsync is off) instead of only after a tick. Measure on a 120 Hz display if available and record it.
-- [ ] **Step 6:** Commit: `render: interpolated frames for high refresh rates`.
+- [x] **Step 2:** Run; expected FAIL. DONE (link error on `blend_view`; no member `alpha_q16`).
+- [x] **Step 3: Implement** `view_state.cpp` and `alpha_q16`. DONE. Capture covers riders, crash riders, active cars; camera x/height + route. Race loop captures after tick batches, blends before draw (off: alpha=65536 = live, exact). Rider quads, traffic cars, project_road camera read the blend; peds, horizon heading, HUD text stay live (documented limits).
+- [x] **Step 4: Tests.** DONE. `hires-render` green; off-mode headless shot bit-identical to the pre-change baseline (a35b485 tree: 0 sampled diffs); interpolation-on independence extends the Task-7 soak (same hash); crash/remount teleport rule holds over scripted crash transitions. Split-commit route-change rule covered in view_state_test (route change → draw at b).
+- [x] **Step 5: Present faster than 60 Hz.** DEFERRED: no 120 Hz display on this machine; the loop already draws every vsync when steps=0 (blend reuses the last pair with fresh alpha), so high-refresh presentation works when the display allows it. No measurement recorded.
+- [x] **Step 6:** Commit: `render: interpolated frames for high refresh rates`.
 
 ---
 

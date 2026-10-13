@@ -46,4 +46,9 @@ int TickClock::advance(uint64_t elapsed_ns, bool paused) {
     remainder_ %= second;
     return steps;
 }
+
+uint32_t TickClock::alpha_q16() const {
+    constexpr uint64_t second = 1000000000ull;
+    return uint32_t((remainder_ << 16) / second);
+}
 }

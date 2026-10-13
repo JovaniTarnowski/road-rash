@@ -24,6 +24,7 @@
 #include "pe_strings.hpp"
 #include "settings.hpp"
 #include "display.hpp"
+#include "view_state.hpp"
 #include "sound.hpp"
 #include "race_music.hpp"
 #include "render_threads.hpp"
@@ -163,6 +164,15 @@ struct Game {
     int bike = 0;
     rr::Widescreen widescreen = rr::Widescreen::off;  // plan 21 Task 8: live setting
     rr::Enhancements enhancements;  // plan 21 Task 1: synced per frame; all-off = original
+    rr::ViewState view_prev, view_cur, view_drawn;  // plan 21 Task 2: interpolated frame state
+    bool view_ready = false;
+    // Blended position overrides for the current frame (id -> pose).
+    const rr::ActorPose* blend_pose(uint32_t id) const {
+        for (const auto& p : view_drawn.actors) if (p.id == id) return &p;
+        return nullptr;
+    }
+    uint32_t blend_camera_position() const { return view_ready ? view_drawn.camera_position_q8 : race->camera_position(); }
+    rr::Camera blend_camera() const { return view_ready ? view_drawn.camera : race->camera(); }
     int32_t logical_width() const {
         const rr::Widescreen w = enhancements.any() ? enhancements.widescreen : widescreen;
         return rr::logical_width_for(w);
@@ -239,13 +249,20 @@ struct Game {
     std::vector<rr::DrawNode> rider_nodes(const rr::RoadSlice& near,const rr::RoadSlice& far,int road,int32_t ceiling,bool back)const {
         struct Visible {int32_t position;size_t index;bool car,body=false,pedestrian=false;};
         std::vector<Visible> visible;
+        // Plan 21 Task 2: sample membership uses live positions (which slice
+        // an actor is on); the drawn quad uses the blended pose. With
+        // interpolation off the blend is alpha=65536 = live, exactly.
+        auto rider_pose = [&](size_t i,bool body) -> const rr::ActorPose* {
+            return view_ready ? blend_pose(uint32_t(body ? 1000 + i : i + 1)) : nullptr;
+        };
         for(size_t i=0;i<race->riders().size();++i) {
             const auto& rd=race->riders()[i];
             auto include=[&](const rr::Bike& actor,int route,const rr::ActorAnimationState& state,bool body) {
                 const auto pos=uint32_t(actor.i32(0x1c));
                 if((pos>>8)!=near.sample || ((pos&255)>=128)!=back || !state.selected)return;
                 if(near.count==2 && route!=road)return;
-                visible.push_back({actor.i32(0x1c),i,false,body});
+                if(const auto* pose=rider_pose(i,body))visible.push_back({int32_t(pose->position_q8),i,false,body});
+                else visible.push_back({actor.i32(0x1c),i,false,body});
             };
             if(rd.crash_active) {
                 include(rd.bike,rd.route,rd.crash_bike_animation,false);
@@ -254,7 +271,12 @@ struct Game {
         }
         if(traffic && road==near.own)for(size_t i=0;i<traffic->cars().size();++i) {
             const auto& car=traffic->cars()[i];const auto pos=uint32_t(car.position);
-            if(car.active && (pos>>8)==near.sample && ((pos&255)>=128)==back)visible.push_back({car.position,i,true});
+            if(car.active && (pos>>8)==near.sample && ((pos&255)>=128)==back) {
+                if(view_ready) {
+                    if(const auto* pose=blend_pose(uint32_t(2000 + i)))visible.push_back({int32_t(pose->position_q8),i,true});
+                    else visible.push_back({car.position,i,true});
+                } else visible.push_back({car.position,i,true});
+            }
         }
         if(pedestrians && road==near.own)for(size_t i=0;i<pedestrians->pool().size();++i) {
             const auto& p=pedestrians->pool()[i];const auto pos=uint32_t(p.body.bike.i32(0x1c));
@@ -270,14 +292,26 @@ struct Game {
             }
             if(item.car) {
                 const auto& car=traffic->cars()[i];
-                if(auto node=rr::traffic_car_node(traffic->library().vehicles().at(car.vehicle),car,near,far,road,race->route().at(near.sample),race->camera(),depth,int32_t(race->camera_position()),ceiling,logical_width()))output.push_back(*node);
+                int32_t bpos = 0, blat = 0; bool use_blend = false;
+                if(view_ready) {
+                    if(const auto* pose=blend_pose(uint32_t(2000 + i))) { bpos=int32_t(pose->position_q8); blat=pose->lateral_q8; use_blend=true; }
+                }
+                if(auto node=rr::traffic_car_node(traffic->library().vehicles().at(car.vehicle),car,near,far,road,race->route().at(near.sample),blend_camera(),depth,int32_t(blend_camera_position()),ceiling,logical_width(),bpos,blat,use_blend))output.push_back(*node);
                 continue;
             }
             const auto& rd=race->riders()[i];const auto& bike=item.body?rd.crash_actor.motion:rd.bike;
             const auto& sample=race->route_for(item.body?rd.crash_actor.route:rd.route).at(near.sample);
-            const auto& a=near.road[road];const auto& b=far.road[road];const auto camera=race->camera();
-            rr::ActorOrientation orientation;orientation.depth=near.depth;orientation.position=bike.i32(0x1c);orientation.road_x=a.road_x+camera.x;orientation.lateral_q8=bike.i32(0x28)-sample.offset*256;orientation.road_heading=a.heading;orientation.heading=bike.i32(0x5c);orientation.roll=bike.i32(0x60);orientation.rider=!rd.crash_active || item.body;
-            rr::ActorProjection projection;projection.road_x=orientation.road_x;projection.far_x=b.road_x+camera.x;projection.road_y=a.world_y;projection.far_y=b.world_y;projection.lateral=orientation.lateral_q8/256;projection.ground=bike.i32(0x24);projection.depth=near.depth;projection.fraction=uint8_t(orientation.position);projection.occlusion=ceiling;
+            const auto& a=near.road[road];const auto& b=far.road[road];const auto camera=blend_camera();
+            // Plan 21 Task 2: drawn position/lateral/ground/heading/roll come
+            // from the blended pose; sample membership above stays live.
+            int32_t pos_q8=bike.i32(0x1c),lat_q8=bike.i32(0x28),gnd_q8=bike.i32(0x24),head=bike.i32(0x5c),roll=bike.i32(0x60);
+            if(view_ready) {
+                if(const auto* pose=rider_pose(i,item.body)) {
+                    pos_q8=int32_t(pose->position_q8);lat_q8=pose->lateral_q8;gnd_q8=pose->height_q8;head=pose->heading;roll=pose->roll;
+                }
+            }
+            rr::ActorOrientation orientation;orientation.depth=near.depth;orientation.position=pos_q8;orientation.road_x=a.road_x+camera.x;orientation.lateral_q8=lat_q8-sample.offset*256;orientation.road_heading=a.heading;orientation.heading=head;orientation.roll=roll;orientation.rider=!rd.crash_active || item.body;
+            rr::ActorProjection projection;projection.road_x=orientation.road_x;projection.far_x=b.road_x+camera.x;projection.road_y=a.world_y;projection.far_y=b.world_y;projection.lateral=orientation.lateral_q8/256;projection.ground=gnd_q8;projection.depth=near.depth;projection.fraction=uint8_t(orientation.position);projection.occlusion=ceiling;
             const auto& state=rd.crash_active?(item.body?rd.crash_actor.animation:rd.crash_bike_animation):actor_states[i];
             const auto selected=*state.selected;const auto& descriptor=actors->library().playback[0].at(size_t(selected[0]))->at(size_t(selected[1]));
             const auto nodes=actors->rider(descriptor,0,rd.colour,orientation,projection,camera,depth,bike.i32(0x20),nullptr,logical_width());output.insert(output.end(),nodes.begin(),nodes.end());
@@ -1069,6 +1103,17 @@ RaceEnd run_race(Game& g, SDL_Renderer* renderer, const RaceOptions& opt, Displa
             } else if (decided && --end_ticks <= 0) running = false;
         }
         if (fps_on) fps_tick_acc += steps;
+        // Plan 21 Task 2: capture the new tick; blend for this frame. With
+        // interpolation off, alpha=65536 reproduces the live frame exactly.
+        if (steps > 0 && !frozen) {
+            g.view_prev = std::move(g.view_cur);
+            rr::capture_view(g.view_cur, *g.race, g.traffic.get());
+            g.view_ready = true;
+        }
+        if (g.view_ready) {
+            const uint32_t alpha = g.enhancements.interpolate ? clock.alpha_q16() : 65536;
+            rr::blend_view(g.view_drawn, g.view_prev, g.view_cur, alpha);
+        }
         if (lifecycle.state.background()) { SDL_Delay(20); continue; }
         if (menu_pause && opt.menu) {
             // Plan 18 Task 8: the pause menu draws over the captured frame.
@@ -1090,7 +1135,7 @@ RaceEnd run_race(Game& g, SDL_Renderer* renderer, const RaceOptions& opt, Displa
         } else {
             SDL_SetRenderDrawColor(renderer, 15, 18, 22, 255);
             SDL_RenderClear(renderer);
-            const auto slices = rr::project_road(g.race->route(), g.race->camera_position(), g.race->camera(), g.depth);
+            const auto slices = rr::project_road(g.race->route(), g.blend_camera_position(), g.blend_camera(), g.depth);
             int dw = 0, dh = 0;
             if (display.window) SDL_GetWindowSize(display.window, &dw, &dh);
             const int race_scale = opt.menu && opt.settings ? rr::effective_render_scale(*opt.settings, dw, dh, kMobileDisplay)

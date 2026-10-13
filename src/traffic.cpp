@@ -563,17 +563,20 @@ void TrafficSystem::append_snapshot(std::vector<FieldValue>& out) const {
 
 std::optional<DrawNode> traffic_car_node(const Vehicle& vehicle,const TrafficCar& car,
     const RoadSlice& near,const RoadSlice& far,int road,const RouteSample& sample,
-    const Camera& camera,const DepthTable& depths,int32_t camera_q8,int32_t ceiling,int32_t logical_width) {
+    const Camera& camera,const DepthTable& depths,int32_t camera_q8,int32_t ceiling,int32_t logical_width,
+    int32_t blend_position_q8,int32_t blend_lateral_q8,bool use_blend) {
     if(vehicle.playback.size()!=3)return std::nullopt;
     const int64_t distance=std::abs(int64_t(car.position)-camera_q8);
     const size_t code=distance>0xa00 && vehicle.playback[2]?2:distance>0x500 && vehicle.playback[1]?1:0;
     const auto& sequence=vehicle.playback[code];if(!sequence || sequence->empty())return std::nullopt;
     const auto& a=near.road[road];const auto& b=far.road[road];
-    ActorOrientation orientation;orientation.depth=near.depth;orientation.position=car.position;orientation.road_x=a.road_x+camera.x;orientation.lateral_q8=car.lateral-sample.offset*256;orientation.road_heading=a.heading;orientation.heading=car.heading;
+    const int32_t pos_q8 = use_blend ? blend_position_q8 : car.position;
+    const int32_t lat_q8 = use_blend ? blend_lateral_q8 : car.lateral;
+    ActorOrientation orientation;orientation.depth=near.depth;orientation.position=pos_q8;orientation.road_x=a.road_x+camera.x;orientation.lateral_q8=lat_q8-sample.offset*256;orientation.road_heading=a.heading;orientation.heading=car.heading;
     const auto angles=actor_angles(orientation,camera.x);
     const auto selected=select_actor_view(sequence->front(),vehicle.views,angles.yaw,angles.roll);
     const auto& cell=vehicle.views.at(selected.group).at(selected.subframe);const auto& frame=vehicle.animation.frames.at(cell.frame);
-    ActorProjection projection;projection.road_x=orientation.road_x;projection.far_x=b.road_x+camera.x;projection.road_y=a.world_y;projection.far_y=b.world_y;projection.lateral=orientation.lateral_q8/256;projection.depth=near.depth;projection.fraction=uint8_t(car.position);projection.size=0x500;projection.flags=cell.flags;projection.occlusion=ceiling;
+    ActorProjection projection;projection.road_x=orientation.road_x;projection.far_x=b.road_x+camera.x;projection.road_y=a.world_y;projection.far_y=b.world_y;projection.lateral=orientation.lateral_q8/256;projection.depth=near.depth;projection.fraction=uint8_t(pos_q8);projection.size=0x500;projection.flags=cell.flags;projection.occlusion=ceiling;
     return actor_node(frame,frame.texture.get(),projection,camera,depths,logical_width);
 }
 std::vector<DrawNode> traffic_draw_nodes(const TrafficSystem& system,

@@ -11,6 +11,11 @@
 #include "golden.hpp"
 #include "input.hpp"
 #include "race_setup.hpp"
+#include "view_state.hpp"
+#include "bike.hpp"
+#include "course.hpp"
+#include "crash.hpp"
+#include "race.hpp"
 #include "render_threads.hpp"
 #include "road.hpp"
 #include "view.hpp"
@@ -141,6 +146,97 @@ int main() {
         const uint64_t half = render_soak(b, exe, controls, 4, 1);
         if (every != half) throw std::runtime_error("race depends on render scale/rate");
         std::cout << "render-rate independence hash=" << std::hex << every << std::dec << "\n";
+    }
+    // Plan 21 Task 2: interpolation on — capture/blend every tick at varying
+    // alpha — must not move the simulation either.
+    {
+        rr::RaceConfig config;
+        config.course = "NAPA";
+        config.level = 0;
+        config.career = false;
+        config.opponents = 7;
+        auto c = rr::make_race_setup(assets, exe, config);
+        const auto depths = rr::read_depth_table(exe);
+        uint64_t hash = 1469598103934665603ULL;
+        rr::ViewState prev, cur, drawn;
+        bool ready = false;
+        for (int tick = 0; tick < 3600 && !c.race->finished(); ++tick) {
+            c.race->step(controls);
+            prev = std::move(cur);
+            rr::capture_view(cur, *c.race, nullptr);
+            ready = true;
+            // Vary alpha across the tick like a 120 Hz display would sample.
+            // (Blended cameras past the route end cannot project; skip those,
+            // as the game does when the race finishes.)
+            for (uint32_t alpha : {0u, 21745u, 43590u, 65536u}) {
+                rr::blend_view(drawn, prev, cur, alpha);
+                try {
+                    const auto slices = rr::project_road(c.race->route(), drawn.camera_position_q8,
+                                                         drawn.camera, depths);
+                    (void)slices;
+                } catch (const std::runtime_error&) {}
+            }
+            const auto snap = c.race->snapshot();
+            hash = fnv(hash, uint64_t(snap.tick));
+            hash = fnv(hash, uint64_t(snap.rng));
+            for (const auto& f : snap.fields) hash = fnv(hash, uint64_t(f.value));
+        }
+        auto d = rr::make_race_setup(assets, exe, config);
+        const uint64_t plain = render_soak(d, exe, controls, 1, 0);
+        if (hash != plain) throw std::runtime_error("interpolation moves the simulation");
+        std::cout << "interpolation independence hash=" << std::hex << hash << std::dec << "\n";
+    }
+    // Plan 21 Task 2 Review Focus 1: crash/remount teleport rule. Script a
+    // crash; at the crash, remount and route-commit ticks, no drawn actor may
+    // lie more than teleport_q8 from BOTH endpoints (it must snap to one).
+    {
+        const auto tables = rr::read_physics_tables(exe);
+        const auto course = rr::read_course(assets.read("DATA/COURSES/NAPA.CRS"));
+        const auto specs = rr::read_bike_specs(assets.read("DATA/BIKESPEC.RSC"));
+        const auto lib = rr::ActorAnimationLibrary(exe, assets.read("DATA/GLOBAL.RSC"));
+        const auto crash_config = rr::read_crash_config(exe);
+        rr::Race race(rr::make_route(course, false), rr::make_route(course, true), tables, specs.at(0), 90);
+        race.set_crash_library(lib, crash_config);
+        auto& live_bike = const_cast<rr::Bike&>(race.bike());
+        live_bike.i32(0xec) = 6000;
+        live_bike.i32(0x2f4) = 1;
+        constexpr uint32_t teleport_q8 = 8 << 8;
+        rr::ViewState prev, cur, drawn;
+        rr::capture_view(cur, race, nullptr);
+        bool was_crashed = race.riders()[0].crash_active;
+        int checks = 0;
+        for (int t = 0; t < 5000 && checks < 3; ++t) {
+            prev = std::move(cur);
+            rr::capture_view(cur, race, nullptr);
+            race.step(0);
+            const bool crashed = race.riders()[0].crash_active;
+            // Transition ticks: crash start, remount end.
+            if (crashed != was_crashed) {
+                rr::ViewState after;
+                rr::capture_view(after, race, nullptr);
+                for (uint32_t alpha : {16384u, 32768u, 49152u}) {
+                    rr::blend_view(drawn, cur, after, alpha, teleport_q8);
+                    for (const auto& p : drawn.actors) {
+                        const rr::ActorPose* pa = nullptr;
+                        const rr::ActorPose* pb = nullptr;
+                        for (const auto& q : cur.actors) if (q.id == p.id) pa = &q;
+                        for (const auto& q : after.actors) if (q.id == p.id) pb = &q;
+                        if (!pa || !pb) continue;  // new/gone: drawn at b by rule
+                        const uint32_t da = p.position_q8 >= pa->position_q8 ? p.position_q8 - pa->position_q8
+                                                                             : pa->position_q8 - p.position_q8;
+                        const uint32_t db = p.position_q8 >= pb->position_q8 ? p.position_q8 - pb->position_q8
+                                                                             : pb->position_q8 - p.position_q8;
+                        if (da > teleport_q8 && db > teleport_q8)
+                            throw std::runtime_error("drawn actor floats between endpoints at transition");
+                    }
+                }
+                ++checks;
+            }
+            was_crashed = crashed;
+            if (!crashed && t > 10 && checks >= 2) break;  // crash + remount seen
+        }
+        if (checks < 2) throw std::runtime_error("crash/remount transitions not observed");
+        std::cout << "crash/remount teleport rule holds (" << checks << " transitions)\n";
     }
     return 0;
 }

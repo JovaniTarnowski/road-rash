@@ -24,6 +24,7 @@ class TickClock {
 public:
     int advance(uint64_t elapsed_ns, bool paused);
     void reset() { remainder_ = 0; }
+    uint32_t alpha_q16() const;  // plan 21 Task 2: sub-tick remainder in Q16
 private:
     uint64_t remainder_ = 0;
 };
