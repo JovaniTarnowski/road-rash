@@ -133,6 +133,7 @@ private:
     void close_popup();
     void open_native_popup(uint32_t popup);   // plan 18 Task 5: value item -> native popup
     int native_current(uint32_t popup) const;
+    int visual_style_current() const;  // plan 21 Task 9: 1 Original, 2 Enhanced, 3 Custom
     std::string native_value_text(int caption) const;
     void apply_native_setting();              // persist + emit apply_display
     int slider_value(int caption) const;      // plan 18 Task 6: 0..100 for slider rows

@@ -64,6 +64,8 @@ void add_native_screens(FrontendData& data, bool mobile) {
     rows.push_back({ns::render_resolution, ns::d_render_resolution, native_popup::resolution});
     // Plan 21 Task 8: WIDESCREEN row (both desktop and mobile).
     rows.push_back({ns::widescreen, ns::d_widescreen, native_popup::widescreen});
+    // Plan 21 Task 9: VISUAL STYLE row (Original / Enhanced / Custom).
+    rows.push_back({ns::visual_style, ns::d_visual_style, native_popup::visual_style});
     if (!mobile) {
         rows.push_back({ns::vsync, ns::d_vsync, native_popup::on_off});
         rows.push_back({ns::fps, ns::d_fps, native_popup::on_off});
@@ -113,6 +115,50 @@ void add_native_screens(FrontendData& data, bool mobile) {
     // Plan 21 Task 8: 4:3 + 16:10/16:9/match.
     data.popups[native_popup::widescreen] = build_popup(rtpl, ns::widescreen,
         {{1, ns::wide_off}, {2, ns::wide_16x10}, {3, ns::wide_16x9}, {4, ns::wide_match}});
+    // Plan 21 Task 9: visual style + per-effect popups.
+    data.popups[native_popup::visual_style] = build_popup(rtpl, ns::visual_style,
+        {{1, ns::style_original}, {2, ns::style_enhanced}, {3, ns::style_custom}});
+    data.popups[native_popup::enh_filter] = build_popup(rtpl, ns::enh_filter,
+        {{1, ns::filt_nearest}, {2, ns::filt_bilinear}, {3, ns::filt_trilinear}});
+    data.popups[native_popup::enh_grade] = build_popup(rtpl, ns::enh_grade,
+        {{1, ns::grade_none}, {2, ns::grade_warm}, {3, ns::grade_vivid}, {4, ns::grade_dusk}});
+    data.popups[native_popup::enh_fog] = build_popup(rtpl, ns::touch_opacity,
+        {{1, ns::touch_0}, {2, ns::touch_25}, {3, ns::touch_50}, {4, ns::touch_75}, {5, ns::touch_100}});
+    // Enhancements screen (plan 21 Task 9): one row per Enhancements field +
+    // Back to the Display screen. Toggle rows use the on/off popup; filter and
+    // grade have their own; fog reuses the 0-100 touch popup; widescreen reuses
+    // its popup. Built like the Display screen (same template/column).
+    {
+        MenuScreen& enh = data.screens[screen_id::native_enhancements];
+        enh.title = ns::enh_title;
+        enh.title_format = data.screens[0x13].title_format;
+        enh.items.clear();
+        const std::pair<int, uint32_t> erows[] = {
+            {ns::enh_interp, native_popup::on_off}, {ns::enh_persp, native_popup::on_off},
+            {ns::enh_colour, native_popup::on_off}, {ns::enh_filter, native_popup::enh_filter},
+            {ns::enh_fog, native_popup::enh_fog}, {ns::enh_grade, native_popup::enh_grade},
+            {ns::enh_bloom, native_popup::on_off}, {ns::enh_vig, native_popup::on_off},
+            {ns::enh_mb, native_popup::on_off}, {ns::enh_wide, native_popup::widescreen},
+        };
+        for (size_t i = 0; i < 10; ++i)
+            enh.items.push_back(value_item(tpl, tpl.y + int(i) * step, erows[i].first, ns::d_enh, erows[i].second));
+        MenuItem back = tpl;
+        back.y = tpl.y + 10 * step;
+        back.target = screen_id::native_display;
+        back.caption = ns::back;
+        back.handler = 0;
+        back.desc = 0;
+        back.flags = item_flag::title_desc | item_flag::escape;
+        back.enabled = true;
+        enh.items.push_back(back);
+        const size_t n = enh.items.size();
+        for (size_t i = 0; i < n; ++i) {
+            enh.items[i].nav[2] = uint8_t((i + n - 1) % n);
+            enh.items[i].nav[3] = uint8_t((i + 1) % n);
+            enh.items[i].nav[4] = uint8_t((i + 1) % n);
+            enh.items[i].nav[5] = uint8_t((i + n - 1) % n);
+        }
+    }
     // Sound screen (plan 18 Task 6): dialog-300 order — master + six channels as sliders,
     // mute + swap as direct toggles, Back to the restroom. Same button template/column.
     {

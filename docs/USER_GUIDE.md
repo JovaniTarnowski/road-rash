@@ -94,7 +94,7 @@ files still load; unknown key codes fall back per action):
 
 | Screen | Original options | Native additions |
 | --- | --- | --- |
-| Graphics | Resolution, Bikers, Videos | Display screen: window/fullscreen, window size, scaling, filtering, render resolution, VSync, FPS counter, touch opacity, haptics |
+| Graphics | Resolution, Bikers, Videos | Display screen: window/fullscreen, window size, scaling, filtering, render resolution, widescreen, visual style, VSync, FPS counter, touch opacity, haptics |
 | Sound | — (dialog 300) | Sound screen: master + six channel sliders (music, effects, engines, others, sirens, interface), mute, swap speakers |
 | Configure Input | Nine key bindings, Defaults | Gamepad page (swap punch+kick, dead zone), Touch page (opacity, left-handed) |
 
@@ -116,6 +116,13 @@ Widescreen (Display screen): Off keeps the original 4:3 view; 16:10,
 16:9 and Match display widen it (Hor+: same height, more road at the
 sides, centre unchanged). The dashboard stays centred with darkened side
 panels; menus and videos stay 4:3. 4:3 is the original-exact mode.
+
+Visual Style (Display screen): Original is the exact 1996 renderer; Enhanced
+applies the measured preset (interpolation, perspective-correct textures,
+trilinear filtering, fog 40, dusk grade, bloom, vignette, motion blur,
+match-display widescreen — all under the frame budget, see VERIFICATION.md);
+Custom opens the Enhancements screen with one row per effect. Any manual edit
+shows Custom. Draw distance stays 33 slices (original limit).
 
 Render Resolution (Display screen): Match display picks the largest of
 640x480, 1280x960, 1920x1440, 2560x1920 fitting the window; the fixed

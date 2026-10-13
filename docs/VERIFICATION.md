@@ -851,3 +851,21 @@ Owned edits: `src/import_job.hpp/.cpp` (new), `src/sha256.hpp/.cpp`
   | 2 (1280x960) | 1.32–1.46 ms | 1.41–1.44 ms | 1.49–1.50 ms |
   | 4 (2560x1920) | 1.99–2.13 ms | 2.57–2.60 ms | 2.87–2.90 ms |
 - RGB-nearest equivalence holds exactly (raster-rgb suite); the RGB path only runs when `full_colour` is on or `filter != nearest`.
+
+## Plan 21 Task 9 Step 2 (October 13, 2026): enhancement cost + preset
+
+- Headless race cost at render scale 2 (Apple M3 Pro; 900 autopilot ticks, wall/900 per tick, best of 3; synchronous ticks, relative numbers, not vsync p95):
+  | config | ms/tick |
+  | --- | --- |
+  | all off | 1.22 |
+  | +interpolate | 1.25 |
+  | +perspective | 1.25 |
+  | trilinear (vs bilinear) | 1.32 |
+  | fog 60 | 1.28 |
+  | dusk grade | 1.39 |
+  | bloom | 1.33 |
+  | vignette | 1.26 |
+  | motion blur | 1.26 |
+  | 16:9 wide | 1.30 |
+  | ALL ON | 1.67 (+37%) |
+- Every single enhancement and the all-on combination are far under the 8.3 ms budget, so the preset includes the largest set: everything except `draw_slices` (Task 6 dropped — stays 33) and `full_colour` (implied by trilinear). Preset: interpolate, perspective, trilinear, fog 40, dusk, bloom, vignette, motion blur, match-display widescreen.

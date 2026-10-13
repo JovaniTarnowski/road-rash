@@ -621,6 +621,10 @@ int Frontend::native_current(uint32_t popup) const {
     case native_popup::touch: return settings_.touch_opacity / 25 + 1;
     case native_popup::resolution: return settings_.render_scale + 1;   // match = 1, 1x..4x = 2..5
     case native_popup::widescreen: return int(settings_.widescreen) + 1;
+    case native_popup::visual_style: return visual_style_current();
+    case native_popup::enh_filter: return int(settings_.enhancements.filter) + 1;
+    case native_popup::enh_grade: return int(settings_.enhancements.grade) + 1;
+    case native_popup::enh_fog: return settings_.enhancements.fog / 25 + 1;
     default: return 1;
     }
 }
@@ -637,12 +641,32 @@ void Frontend::open_native_popup(uint32_t popup) {
     case native_popup::filtering: setter = native_setter::filtering; break;
     case native_popup::touch: setter = native_setter::touch_opacity; break;
     case native_popup::resolution: setter = native_setter::render_resolution; break;
-    case native_popup::widescreen: setter = native_setter::widescreen; break;
+    case native_popup::widescreen: {
+        const int capw = focus_ >= 0 && size_t(focus_) < items_.size() ? items_[size_t(focus_)].caption : 0;
+        if (capw == ns::enh_wide) { setter = native_setter::enh_wide; current = int(settings_.enhancements.widescreen) + 1; }
+        else setter = native_setter::widescreen;
+        break;
+    }
+    case native_popup::visual_style: setter = native_setter::visual_style; break;
+    case native_popup::enh_filter: setter = native_setter::enh_filter; break;
+    case native_popup::enh_grade: setter = native_setter::enh_grade; break;
+    case native_popup::enh_fog: setter = native_setter::enh_fog; break;
     case native_popup::on_off: {
         // Which bool this popup edits: the focused value item's caption.
         const int cap = focus_ >= 0 && size_t(focus_) < items_.size() ? items_[size_t(focus_)].caption : 0;
         if (cap == ns::vsync) { setter = native_setter::vsync; current = settings_.vsync ? 2 : 1; }
         else if (cap == ns::haptics) { setter = native_setter::haptics; current = settings_.haptics ? 2 : 1; }
+        else if (cap == ns::enh_interp) { setter = native_setter::enh_interp; current = settings_.enhancements.interpolate ? 2 : 1; }
+        else if (cap == ns::enh_persp) { setter = native_setter::enh_persp; current = settings_.enhancements.perspective ? 2 : 1; }
+        else if (cap == ns::enh_colour) { setter = native_setter::enh_colour; current = settings_.enhancements.full_colour ? 2 : 1; }
+        else if (cap == ns::enh_bloom) { setter = native_setter::enh_bloom; current = settings_.enhancements.bloom ? 2 : 1; }
+        else if (cap == ns::enh_vig) { setter = native_setter::enh_vig; current = settings_.enhancements.vignette ? 2 : 1; }
+        else if (cap == ns::enh_mb) { setter = native_setter::enh_mb; current = settings_.enhancements.motion_blur ? 2 : 1; }
+        else if (cap == ns::enh_wide) {
+            // Widescreen inside Enhancements edits the enhancements copy.
+            setter = native_setter::enh_wide;
+            current = int(settings_.enhancements.widescreen) + 1;
+        }
         else { setter = native_setter::fps; current = settings_.show_fps ? 2 : 1; }
         break;
     }
@@ -652,6 +676,12 @@ void Frontend::open_native_popup(uint32_t popup) {
     open_popup(data_.popups.at(popup), current, setter);
 }
 
+int Frontend::visual_style_current() const {
+    if (!settings_.enhancements.any()) return 1;
+    Enhancements preset = enhanced_preset();
+    if (settings_.enhancements == preset) return 2;
+    return 3;
+}
 std::string Frontend::native_value_text(int caption) const {
     switch (caption) {
     case ns::display_mode: return native_string(settings_.display_mode == DisplayMode::fullscreen ? ns::fullscreen : ns::windowed);
@@ -667,6 +697,18 @@ std::string Frontend::native_value_text(int caption) const {
                                            : native_string(ns::scale_1x + settings_.render_scale - 1);
     case ns::widescreen:
         return native_string(ns::wide_off + int(settings_.widescreen));
+    case ns::visual_style:
+        return native_string(ns::style_original + visual_style_current() - 1);
+    case ns::enh_interp: return native_string(settings_.enhancements.interpolate ? ns::on : ns::off);
+    case ns::enh_persp: return native_string(settings_.enhancements.perspective ? ns::on : ns::off);
+    case ns::enh_colour: return native_string(settings_.enhancements.full_colour ? ns::on : ns::off);
+    case ns::enh_filter: return native_string(ns::filt_nearest + int(settings_.enhancements.filter));
+    case ns::enh_fog: return std::to_string(settings_.enhancements.fog) + "%";
+    case ns::enh_grade: return native_string(ns::grade_none + int(settings_.enhancements.grade));
+    case ns::enh_bloom: return native_string(settings_.enhancements.bloom ? ns::on : ns::off);
+    case ns::enh_vig: return native_string(settings_.enhancements.vignette ? ns::on : ns::off);
+    case ns::enh_mb: return native_string(settings_.enhancements.motion_blur ? ns::on : ns::off);
+    case ns::enh_wide: return native_string(ns::wide_off + int(settings_.enhancements.widescreen));
     default: return {};
     }
 }
@@ -1084,6 +1126,28 @@ int Frontend::run_handler(size_t index) {
         case native_setter::haptics: settings_.haptics = target == 2; apply_native_setting(); break;
         case native_setter::render_resolution: settings_.render_scale = std::min(4, std::max(0, target - 1)); apply_native_setting(); break;
         case native_setter::widescreen: settings_.widescreen = Widescreen(std::min(3, std::max(0, target - 1))); apply_native_setting(); break;
+        case native_setter::visual_style:
+            if (target == 1) settings_.enhancements = Enhancements{};
+            else if (target == 2) { settings_.enhancements = enhanced_preset(); settings_.widescreen = Widescreen::match; }
+            else enter(screen_id::native_enhancements);
+            apply_native_setting(); break;
+        case native_setter::enh_interp: case native_setter::enh_persp: case native_setter::enh_colour:
+        case native_setter::enh_bloom: case native_setter::enh_vig: case native_setter::enh_mb: {
+            // Which bool: the focused Enhancements row's caption.
+            const int cap = focus_ >= 0 && size_t(focus_) < items_.size() ? items_[size_t(focus_)].caption : 0;
+            const bool v = target == 2;
+            if (cap == ns::enh_interp) settings_.enhancements.interpolate = v;
+            else if (cap == ns::enh_persp) settings_.enhancements.perspective = v;
+            else if (cap == ns::enh_colour) settings_.enhancements.full_colour = v;
+            else if (cap == ns::enh_bloom) settings_.enhancements.bloom = v;
+            else if (cap == ns::enh_vig) settings_.enhancements.vignette = v;
+            else if (cap == ns::enh_mb) settings_.enhancements.motion_blur = v;
+            apply_native_setting(); break;
+        }
+        case native_setter::enh_filter: settings_.enhancements.filter = TextureFilter(std::min(2, std::max(0, target - 1))); apply_native_setting(); break;
+        case native_setter::enh_grade: settings_.enhancements.grade = Grade(std::min(3, std::max(0, target - 1))); apply_native_setting(); break;
+        case native_setter::enh_fog: settings_.enhancements.fog = std::min(100, std::max(0, (target - 1) * 25)); apply_native_setting(); break;
+        case native_setter::enh_wide: settings_.enhancements.widescreen = Widescreen(std::min(3, std::max(0, target - 1))); apply_native_setting(); break;
         }
         return 0;
     }

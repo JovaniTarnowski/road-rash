@@ -74,7 +74,13 @@ int main() {
         check(g2.enhancements.draw_slices == 33 && g2.enhancements.fog == 0 && g2.enhancements.filter == rr::TextureFilter::nearest &&
               g2.enhancements.widescreen == rr::Widescreen::off, "only 33/48/64 slices and in-range values accepted");
         check(!rr::default_settings().enhancements.any(), "defaults are the original renderer");
-        check(!rr::enhanced_preset().any(), "preset is all-off until Task 9 measures it");
+        // Plan 21 Task 9: measured preset (all-on except draw_slices/full_colour).
+        const rr::Enhancements preset = rr::enhanced_preset();
+        check(preset.interpolate && preset.perspective && preset.filter == rr::TextureFilter::trilinear &&
+              preset.fog == 40 && preset.grade == rr::Grade::dusk && preset.bloom && preset.vignette &&
+              preset.motion_blur && preset.widescreen == rr::Widescreen::match &&
+              preset.draw_slices == 33 && !preset.full_colour,
+              "enhanced preset matches the measured set");
     }
     {
         // Plan 19 Task 8: render_scale round-trips; 5 and -1 fall back to default.

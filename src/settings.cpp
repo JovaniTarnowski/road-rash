@@ -29,7 +29,22 @@ bool operator==(const Enhancements& a, const Enhancements& b) {
 bool Enhancements::any() const {
     return !(*this == Enhancements{});
 }
-Enhancements enhanced_preset() { return {}; }
+Enhancements enhanced_preset() {
+    // Plan 21 Task 9: measured on Apple M3 Pro at render scale 2 (all-on
+    // 1.67 ms/tick vs 1.22 off; budget 8.3 ms). draw_slices stays 33 (Task 6
+    // dropped); full_colour is implied by the filter.
+    Enhancements e;
+    e.interpolate = true;
+    e.perspective = true;
+    e.filter = TextureFilter::trilinear;
+    e.fog = 40;
+    e.grade = Grade::dusk;
+    e.bloom = true;
+    e.vignette = true;
+    e.motion_blur = true;
+    e.widescreen = Widescreen::match;
+    return e;
+}
 
 Settings default_settings() {
     Settings s;

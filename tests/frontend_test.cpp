@@ -311,7 +311,7 @@ int main(int argc, char** argv) {
     check(fe.screen() == screen_id::native_display, "display screen");
     snap("display");
     if (focus_item(2)) key("select");   // Scaling row opens its popup
-    check(fe.items().size() == 9 + 4, "scaling popup opens");
+    check(fe.items().size() == 10 + 4, "scaling popup opens");
     key("down");   // Integer row (popup header + Fit, Integer, ...)
     key("select");
     check(settings.scale_mode == rr::ScaleMode::integer, "scaling choice applies to settings");
@@ -320,7 +320,7 @@ int main(int argc, char** argv) {
         const std::string text((std::istreambuf_iterator<char>(settings_file)), std::istreambuf_iterator<char>());
         check(text.find("scale_mode=1") != std::string::npos, "scaling choice saved to settings file");
     }
-    if (focus_item(8)) key("select");   // Back row
+    if (focus_item(9)) key("select");   // Back row
     check(fe.screen() == 0x13 && fe.focus() == 2, "back returns to the Display item");
     // Plan 19 Task 8: RENDER RESOLUTION row — popup choice persists; Low/Inset disables it.
     fe.enter(screen_id::native_display);
@@ -347,7 +347,7 @@ int main(int argc, char** argv) {
         if (fe.items()[i].caption == rr::ns::widescreen) wide_row = int(i);
     check(wide_row >= 0, "display screen has the widescreen row");
     if (focus_item(size_t(wide_row))) key("select");
-    check(fe.items().size() == 9 + 5, "widescreen popup opens with four choices");
+    check(fe.items().size() == 10 + 5, "widescreen popup opens with four choices");
     key("down"); key("down");   // 16:9 row (popup header + Off, 16:10, 16:9, ...)
     key("select");
     check(settings.widescreen == rr::Widescreen::mode16x9, "16:9 choice persists");
@@ -355,6 +355,44 @@ int main(int argc, char** argv) {
         std::ifstream settings_file((std::filesystem::path(saves).parent_path() / "settings.txt").string());
         const std::string text((std::istreambuf_iterator<char>(settings_file)), std::istreambuf_iterator<char>());
         check(text.find("widescreen=2") != std::string::npos, "widescreen choice saved to settings file");
+    }
+    // Plan 21 Task 9: VISUAL STYLE — Original/Enhanced/Custom + Enhancements screen.
+    fe.enter(screen_id::native_display);
+    int style_row = -1;
+    for (size_t i = 0; i < fe.items().size(); ++i)
+        if (fe.items()[i].caption == rr::ns::visual_style) style_row = int(i);
+    check(style_row >= 0, "display screen has the visual style row");
+    if (focus_item(size_t(style_row))) key("select");
+    check(fe.items().size() == 10 + 4, "visual style popup opens with three choices");
+    key("down");   // Enhanced row (popup opens focused on current = Original)
+    key("select");
+    check(settings.enhancements == rr::enhanced_preset(), "Enhanced sets exactly the preset");
+    fe.enter(screen_id::native_display);
+    if (focus_item(size_t(style_row))) key("select");
+    key("up");   // Original row (popup opens focused on current = Enhanced)
+    key("select");
+    check(!settings.enhancements.any(), "Original sets every field to default");
+    // Custom: enter the Enhancements screen via the third choice, toggle one
+    // row with controller-only input, Back; style reads Custom.
+    fe.enter(screen_id::native_display);
+    if (focus_item(size_t(style_row))) key("select");
+    key("down"); key("down");   // Custom row
+    key("select");
+    check(fe.screen() == screen_id::native_enhancements, "Custom enters the Enhancements screen");
+    // Controller-only: D-pad down to Bloom (rows: interp, persp, colour, filter,
+    // fog, grade, bloom), South toggles via the on/off popup.
+    key("down"); key("down"); key("down"); key("down"); key("down"); key("down");
+    key("select");
+    key("down");   // On row
+    key("select");
+    check(settings.enhancements.bloom, "controller toggles Bloom on");
+    if (focus_item(10)) key("select");   // Back row
+    check(fe.screen() == screen_id::native_display, "Back returns to Display");
+    {
+        std::string style_text;
+        for (size_t i = 0; i < fe.items().size(); ++i)
+            if (fe.items()[i].caption == rr::ns::visual_style) style_text = "found";
+        check(style_text == "found", "style row still present");
     }
     settings.high_resolution = false;
     fe.enter(screen_id::native_display);

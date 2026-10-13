@@ -310,10 +310,10 @@ int main() {
 **Files:**
 - Modify: `src/native_screens.cpp`, `src/native_strings.cpp`, `src/frontend.cpp`, `src/settings.cpp` (`enhanced_preset`), `tests/frontend_test.cpp`, `docs/USER_GUIDE.md`, `docs/VERIFICATION.md`
 
-- [ ] **Step 1:** The Display screen gains VISUAL STYLE: Original (all off), Enhanced (`enhanced_preset()`), Custom. Custom enters a native ENHANCEMENTS screen, built like plan 18 Task 5's Display screen, with one item per field of `Enhancements`; items that need something unavailable (GPU post-processing, render scale above 1 for filtering to matter) are disabled with a description saying why.
-- [ ] **Step 2: Measure and set the preset.** On the owner's Mac at render scale 2, measure p95 for each enhancement alone and for combinations; `enhanced_preset()` includes the largest set that keeps p95 ≤ 8.3 ms (Global Constraints). Record the table in VERIFICATION.md and the chosen preset in USER_GUIDE.
-- [ ] **Step 3: Tests.** `frontend_test`: choosing Original sets every field to default; choosing Enhanced sets exactly `enhanced_preset()`; changing any field in Custom shows VISUAL STYLE as Custom. Controller-only navigation of the Enhancements screen works.
-- [ ] **Step 4:** Run the regression gate. Commit: `frontend: visual style presets and Enhancements screen`.
+- [x] **Step 1:** The Display screen gains VISUAL STYLE: Original (all off), Enhanced (`enhanced_preset()`), Custom. Custom enters a native ENHANCEMENTS screen (new `screen_id::native_enhancements`), one row per field + Back to Display. No rows disabled: nothing is GPU-gated (CPU chain) and filtering matters at scale 1 too (magnified sprites) — recorded here instead of disabled rows.
+- [x] **Step 2: Measure and set the preset.** DONE: all-on 1.67 ms/tick vs 1.22 off (budget 8.3 ms) — preset is everything except `draw_slices` (Task 6 dropped) and `full_colour` (implied). Table in VERIFICATION.md, preset in USER_GUIDE.
+- [x] **Step 3: Tests.** DONE: Original/Enhanced/Custom + controller-only Enhancements navigation (Bloom toggle via D-pad + South) + Back-to-Display.
+- [x] **Step 4:** Run the regression gate. DONE: 72 fast + soak green. Commit: `frontend: visual style presets and Enhancements screen`.
 
 ## Exit criteria
 

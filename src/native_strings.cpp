@@ -29,6 +29,12 @@ const std::array<std::string, ns::count - native_slot_base> kNativeStrings = {
     "Locked to 640x480 while Graphics Options Resolution is Low or Inset.",
     "Widescreen", "Off (4:3)", "16:10", "16:9", "Match display",
     "Hor+ wide race view. 4:3 is the original-exact mode; the centre is unchanged.",
+    "Visual Style", "Original", "Enhanced", "Custom",
+    "Original is the exact 1996 renderer; Enhanced applies the measured preset; Custom opens per-effect options.",
+    "ENHANCEMENTS", "Frame Interpolation", "Perspective Textures", "Full Colour", "Texture Filtering",
+    "Distance Fog", "Colour Grade", "Bloom", "Vignette", "Motion Blur", "Widescreen",
+    "Per-effect options. Anything non-default shows Visual Style as Custom.",
+    "Nearest", "Bilinear", "Trilinear", "None", "Warm", "Vivid", "Dusk",
 };
 const std::string kEmpty;
 }

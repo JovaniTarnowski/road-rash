@@ -16,5 +16,9 @@ namespace ns { enum : int { display_title = native_slot_base, display_mode, wind
                             pad_swap, pad_deadzone, d_swap, d_deadzone,
                             touch_title, touch_left, d_lefthand,
                             render_resolution, res_match, d_render_resolution, d_render_lowres,
-                            widescreen, wide_off, wide_16x10, wide_16x9, wide_match, d_widescreen, count }; }
+                            widescreen, wide_off, wide_16x10, wide_16x9, wide_match, d_widescreen,
+                            visual_style, style_original, style_enhanced, style_custom, d_visual_style,
+                            enh_title, enh_interp, enh_persp, enh_colour, enh_filter, enh_fog, enh_grade,
+                            enh_bloom, enh_vig, enh_mb, enh_wide, d_enh, filt_nearest, filt_bilinear, filt_trilinear,
+                            grade_none, grade_warm, grade_vivid, grade_dusk, count }; }
 }

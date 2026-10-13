@@ -15,7 +15,7 @@ int main(int argc, char** argv) {
     rr::add_native_screens(data, false);
     const auto& display = data.screens[rr::screen_id::native_display];
     check(display.title == rr::ns::display_title, "display screen has the native title");
-    check(display.items.size() == 9, "desktop display screen: mode, size, scaling, filtering, resolution, widescreen, vsync, fps, back");
+    check(display.items.size() == 10, "desktop display screen: + visual style");
     const auto& gfx = data.screens[0x13].items.front();
     for (const auto& m : display.items)
         check(m.w == gfx.w && m.h == gfx.h && m.x == gfx.x, "native buttons copy the Graphics Options button geometry");
@@ -26,7 +26,7 @@ int main(int argc, char** argv) {
     check((display.items.back().flags & rr::item_flag::escape) && display.items.back().target == 0x13, "Back returns to Graphics Options");
     rr::FrontendData mobile = rr::read_frontend_data(assets.read("ROADRASH.EXE"));
     rr::add_native_screens(mobile, true);
-    check(mobile.screens[rr::screen_id::native_display].items.size() == 8, "mobile adds resolution, widescreen, touch, haptics");
+    check(mobile.screens[rr::screen_id::native_display].items.size() == 9, "mobile adds style");
     bool linked = false;
     for (const auto& m : data.screens[0x13].items) linked |= m.target == rr::screen_id::native_display;
     const auto& pad = data.screens[rr::screen_id::native_gamepad];
@@ -55,7 +55,11 @@ int main(int argc, char** argv) {
     check(mobile_touch, "mobile 0x12 links the touch page");
     // Plan 19 Task 8: Display screen gains RENDER RESOLUTION (8 desktop rows).
     // Plan 21 Task 8: + WIDESCREEN (9 desktop / 8 mobile rows).
-    check(data.screens[rr::screen_id::native_display].items.size() == 9, "display screen has the resolution row");
-    check(mobile.screens[rr::screen_id::native_display].items.size() == 8, "mobile display screen has the resolution row");
+    check(data.screens[rr::screen_id::native_display].items.size() == 10, "display screen has the resolution row");
+    check(mobile.screens[rr::screen_id::native_display].items.size() == 9, "mobile display screen has the resolution row");
+    // Plan 21 Task 9: Enhancements screen (10 effect rows + Back).
+    check(data.screens[rr::screen_id::native_enhancements].items.size() == 11, "enhancements screen rows");
+    check(data.screens[rr::screen_id::native_enhancements].items.back().target == rr::screen_id::native_display,
+          "enhancements Back returns to Display");
     return failures ? 1 : 0;
 }
