@@ -639,6 +639,7 @@ by the camera delta in `0x00454120`. The `0x0044dc10` window test
 `[back, front)` applies only to objects with the knock-off flag `+0x1cc`
 (riders); free cars always think, and `0x00437e60`'s tail parks them once
 outside the window.
+  - Ring plumbing REA re-confirmation (October 12, 2026; plan 10/17 port input): pinned REA 6.4.0 pseudocode whitespace-identical for `0x00454120` advance (1113 chars: front/back/camera scroll, 0x100 slice rebuild via `0x00453030/0x00450f90/0x00454c80`, split-sample flag clear), `0x00449910` ring walk (750: `+0x10/+0x20` link steps clamped to front/back) and `0x00449990` positioned index (1265: in-window pass-through else forward/backward search with ring-wrap guards). Files: `analysis/oracle/rea-454120-ringadv.md`, `rea-449910-ringidx.md`, `rea-449990-posidx.md` (disc-derived, git-ignored).
 
 **Spawn timers** (`0x0044dd00`/`0x0044dd90`, driven per step by
 `0x0044b3b0`): rate 2500 = 0x19·100, density default 6, reloads
