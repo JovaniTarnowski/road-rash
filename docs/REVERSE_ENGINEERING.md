@@ -904,6 +904,7 @@ native look-alike of dialog 300, Pause is purely native.
 Start-grid ordering follow-up (October 12): pinned `npx rea-agents@6.4.0`
 on the hash-verified disc EXE confirms `0x00443af0`, `0x00443cd0` and
 `0x00438610`; all three pseudocode outputs exactly match the existing exports.
+  - Independent re-confirmation (October 12, 2026): same three functions re-fetched via pinned REA 6.4.0 — `0x00443af0` (376 chars), `0x00443cd0` (533), `0x00438610` (1587) — all whitespace-identical to the project exports a second time. Files: `analysis/oracle/rea-443af0-order.md`, `rea-443cd0-worldobj.md`, `rea-438610-halfdispatch.md` (disc-derived, git-ignored).
 The original emits the complete next nearer world strip (lanes and terrain,
 both roads and join when split) before the farther slice's object pass.
 The unsigned rendered-position low-byte `<0x80` test inserts scenery between
