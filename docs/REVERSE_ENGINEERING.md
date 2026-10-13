@@ -814,6 +814,7 @@ Correction to the section above: layout entry 30 prints `DAT_0049e115`, the rout
 | `0x00476ce8` | 20 × 0xec | `0x00476cb8` | 1 | in-road BORR solids (no draw) |
 
 The `+0xc4` values tested anywhere are 1, 2, 4, 8, 0x10, 0x20, 0x40 and 0x400. Police bikes are riders (`0x00406b80`), not a separate pool.
+  - Object-iterator REA re-confirmation (October 12, 2026; plan 10 Task 5 `TrackRing` input): pinned REA 6.4.0 pseudocode whitespace-identical for `0x00451e20` BORR step (1217 chars), `0x00451cb0` slot walk (2385: twice per slice build, one draw per random-spaced object) and `0x00452230` DZHR index (869: may end one past the last record). Confirms the remaining iterator draw sites the merged `TrackRing` ports. Files: `analysis/oracle/rea-451e20-borstep.md`, `rea-451cb0-borslots.md`, `rea-452230-dzhridx.md` (disc-derived, git-ignored).
 
 **Pedestrians (corrected October 12, 2026).** Pool `0x004c1274` is pedestrians, not cops.
 - `0x004520d0` (slice build, DZHR iterator at section `+0x1b8`) spawns a DZHR record with word0 bit 31 set:
