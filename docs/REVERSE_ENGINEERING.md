@@ -846,6 +846,7 @@ The `+0xc4` values tested anywhere are 1, 2, 4, 8, 0x10, 0x20, 0x40 and 0x400. P
 ### Crash run-back input (October 12, 2026, static)
 
 In `0x0040a600`, a rider with `+0x324 == −1` (remote network) goes to `0x0040a9e0`, which reads its input packet through `0x00440410`. In the single-player branch, at animation 38, the player's input word `DAT_004b7ed0 & 0x7800` (racing state `DAT_004c5d7c == 1`, demo hold clear) steers the walk and zeroes the 1,200-tick timer. Bits 0x800, 0x1000, 0x4000 and 0x2000 come from the same keys as accelerate, brake, left and right (`0x00465fb9` codes 0x94/0x96/0x93/0x95). With none held, the rider heads for the bike at speed 1200 (`0x0040a9d0`). For the player on slice type 1, a bike or rider lateral outside `[+0x14c, +0x158]` ends the race (`0x00416010(5, 0xb4)`); the port does not have this yet.
+  - Walk-input REA check (October 12, 2026; plan 24 Task 3 input): `0x0040a9e0`/`0x004046b0` have no decompile exports and no REA procedure entries (network-only helpers) — port from the `0x0040a600` parent (already confirmed) + disassembly. `0x00440410` packet reader confirmed whitespace-identical (241 chars). Re-fetches of `0x0040a600`/`0x00403d60` are byte-identical to the prior turn's files (deduped), proving toolchain determinism across turns. File kept: `analysis/oracle/rea-440410-netpkt.md` (disc-derived, git-ignored).
 
 ### Rider–vehicle contact (October 12, 2026, plan 11a Task 1)
 
