@@ -439,6 +439,7 @@ All 343 panels emitted by 128 original calls match coordinates/material/PRE0/fli
 | +0xc | alias (NUL-terminated) | `0x0041c060` |
 
 **Game mode** `0x004753b0`: 0 attract, 1 Thrash, 2 Big Game, 3 mano-a-mano. `0x00445090` resets level, qualifications and character when the mode changes.
+  - Attract demo trace (October 12, 2026; plan 13 Task 5 Step 1 — disassembly + EXE-table dumps, no capture): entering main menu (screen 9) re-arms Win32 timer 9 for 60000 ms (`0x00421df0` case 1 at `0x421e93`: KillTimer + SetTimer; dispatch map `0x4223ac` dumped). First fire (`0x423cb7`): KillTimer, toggle `0x46afec` set; course counter `0x46aff0` cycles 1–5 (hits 6 → reset to 1, so 6 never runs); `0x00421430(course)` rebuilds standings (thrash/big-game path by current mode) and stores the course by writing screen-8 item 0's target (`0x469ec4` = screen array `0x469ec0` + 4); `DAT_004753c8 = 1` (demo hold → player think `0x00434660` takes the AI branch, confirmed at `0x4346a1`); course art via `0x0041dbc0(0x1b, …)`; `0x00421df0(8)` enters race loading → AI demo race. Second fire (toggle clear): random JESSIE/DUEL video (`rand & 1` → `0x46b1f8`/`0x46b1f0` via `0x004023e0`), back to menu 9. Mode 0 outcome routing confirmed earlier (`0x00416120` → main menu). Input-exit mechanism (which message ends the demo race) NOT pinned — Step 2/3 port detail, behaviorally tested (key → main menu). Controller-connect exit likewise open.
 
 **Characters:** `0x00415fc0` maps character 1..8 to personality 8, 7, 2, 5, 4, 6, 3, 1. Starting cash comes from u16 table `0x00469000` by character. The default bike is `0x004641c8[level + personality*5]` (`0x0041f630`). Choosing a character in Big Game restarts the career (level 0, no qualifications, starting cash).
 
@@ -548,8 +549,8 @@ The course screens share one item array; the sixth item is copied from `0x004691
 
 **Not ported or replaced natively:**
 - Mano-a-mano is disabled (plan 09).
-- Jukebox, Sound Mix and Configure Input items do nothing yet.
-- The 60-second attract-demo timer on the main menu is not implemented.
+- Jukebox track list and video popup ported (plan 13 Task 4 Step 1); Sound Mix and Configure Input items do nothing yet (plan 18 Tasks 6-7).
+- The 60-second attract-demo timer on the main menu is not implemented (traced October 12, 2026: plan 13 Task 5 Step 1; see Game-mode bullet).
 - Windows common file dialogs are replaced by numbered `<Character> N.RRS` saves in the preference directory and a list of the newest eight.
 - MessageBox prompts are replaced by an in-picture dialog.
 - Wingdings and New Courier are substituted.
