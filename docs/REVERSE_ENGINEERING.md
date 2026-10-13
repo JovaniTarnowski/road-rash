@@ -790,7 +790,7 @@ Correction to the section above: layout entry 30 prints `DAT_0049e115`, the rout
   - Red (phase 2) and close-enough yellow brake to 0 at the line; a car already past the line hurries (double speed, accel 0x24).
   - Crossing cars aim at (±0x32000, 0), giving a heading of ±90°. `0x0044dc10` parks them off intersection slices (marking & 0x20 = 0). They collide only within [−0x400, 0x2400] of the ring camera.
 - **Pedestrian signal `0x004415b0`.** Only on slices marked 8/0x10. Signal index 0 (lane ≥ 0) or 2, the nearer of ahead/behind within 0x1e0 (behind wins ties), when within 0x801.
-- Ported October 12 (`src/traffic.*`, plan 24 Task 1 Steps 3–4) and corrected the same day: start-based placement, slot order, signal types per index, the 30-tick think, crossing-car start offset and drive, signal stops and obstacle following for all cars. Lane changes around non-car obstacles are not ported. Capture acceptance (Step 5) is open.
+  - Controller chain REA re-confirmation (October 12, 2026; plan 24 Task 1 Step 5 input): pinned REA 6.4.0 pseudocode whitespace-identical for `0x0041eca0` placement (2945 chars), `0x0041ef60` signal setup (910) and `0x0041f040` think (2022). No new semantics beyond the section above — this closes the "trace" half of Step 5's acceptance prerequisites; only the `city-intersection` capture + pixel frame remain open. Files: `analysis/oracle/rea-41eca0-ctlplace.md`, `rea-41ef60-signal.md`, `rea-41f040-think.md` (disc-derived, git-ignored).
 
 ### Actor census (October 12, 2026, static)
 
