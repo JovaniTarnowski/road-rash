@@ -57,7 +57,7 @@ Restroom (0x10) ──► Jukebox (0x11)               original
                ├──► Configure Input (0x12)        original, Task 7
                └──► Graphics Options (0x13)       original: Resolution, Bikers, Videos
                         ├──► Display (0x24)       native, Task 5
-                        └──► Sound (0x25)         original sound mix 0x00401df0 if it is a screen; else native, Task 6
+                        └──► Sound (0x25)         native look-alike of Win32 dialog 300, Task 6 (Task 1: sound mix is a modal dialog, not a screen)
                         (Display also hosts RENDER RESOLUTION from plan 19 Task 8,
                          and TEXTURE DETAIL, ARTWORK, SCREEN FILTER from plan 20)
 Race pause ──────────► Pause (0x26)               native, Task 8: Resume, Sound, Display, Controls, Quit race
@@ -72,10 +72,10 @@ Task 1 confirms where the original reaches the sound mix and controls handlers a
 **Files:**
 - Modify: `docs/REVERSE_ENGINEERING.md` (new subsection "Options screens and pause"), `docs/plans/18-settings-and-options.md` (correct the screen map if needed)
 
-- [ ] **Step 1:** Read the item tables of screens `0x10`–`0x13` with `read_frontend_data` and print them (a throwaway loop in `build/rr-inspect`-style code or a debugger; do not commit the output). Record for each item: caption, target, handler, flags and geometry.
-- [ ] **Step 2:** Read `analysis/decompiled/` for handlers `0x00401df0` (sound mix), `0x0040fd90` (controls) and `0x00445600`/`0x00445730` (jukebox). If a file is missing, generate it with `tools/decompile_at.sh <address>`. Record: is the sound mix a menu screen, a popup or a Win32 dialog resource (`DIALOG`/`TRACKBAR` in the EXE resources; check with `build/rr-inspect`-style PE resource listing in `src/pe_strings.cpp`)? What ranges and steps do the Mixer channels have, and does a change play a preview sound?
-- [ ] **Step 3:** Trace in-race pause in `0x0044f800` (control word) and the race loop `0x0044b3b0`: which key pauses, what is drawn, which keys work while paused (the original had in-race toggles for the mini dashboard and opponent list; record their keys), and how Escape ends a race (outcome code and screen).
-- [ ] **Step 4:** Write the findings, with addresses, into REVERSE_ENGINEERING.md. Correct the screen map in this plan. Commit: `docs: original options screens, sound mix and pause behaviour`.
+- [X] **Step 1:** Read the item tables of screens `0x10`–`0x13` with `read_frontend_data` and print them (a throwaway loop in `build/rr-inspect`-style code or a debugger; do not commit the output). Record for each item: caption, target, handler, flags and geometry.
+- [X] **Step 2:** Read `analysis/decompiled/` for handlers `0x00401df0` (sound mix), `0x0040fd90` (controls) and `0x00445600`/`0x00445730` (jukebox). If a file is missing, generate it with `tools/decompile_at.sh <address>`. Record: is the sound mix a menu screen, a popup or a Win32 dialog resource (`DIALOG`/`TRACKBAR` in the EXE resources; check with `build/rr-inspect`-style PE resource listing in `src/pe_strings.cpp`)? What ranges and steps do the Mixer channels have, and does a change play a preview sound?
+- [X] **Step 3:** Trace in-race pause in `0x0044f800` (control word) and the race loop `0x0044b3b0`: which key pauses, what is drawn, which keys work while paused (the original had in-race toggles for the mini dashboard and opponent list; record their keys), and how Escape ends a race (outcome code and screen).
+- [X] **Step 4:** Write the findings, with addresses, into REVERSE_ENGINEERING.md. Correct the screen map in this plan. Commit: `docs: original options screens, sound mix and pause behaviour`.
 
 ---
 
