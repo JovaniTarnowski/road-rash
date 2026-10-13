@@ -1029,3 +1029,10 @@ matches `analysis/inventory.json`. No legacy Android executable was used.
   `MessageBoxA` in `0x00443120`; see the options/pause trace above. Native
   crash actor playback exists, but this audit did not capture original crash
   frames or establish complete crash-frame parity.
+
+### Race view modes and low-detail bikers (October 12, 2026, plan 18 Task 4 Step 1)
+
+- Mode select `0x00448870` (`src/view.hpp::view_mode`, already ported): HiRes on → 640×480 (Q16 shift 15, bit-0 clear); off → 320×240 (shift 16); inset centers the 320×240 view at (160,120) in a 640×480 display. Choice `0x004457f0` maps 1/2/3 → low fullscreen / low inset / high fullscreen.
+- Dashboard `0x00416310` (export `analysis/decompiled/00416310.c`): HiRes off → horizon art `Images/Horizons/L`, meter `LilMeter` (`IMAGES/LILMETER.BOB` on disc), dash BOB `Images/Bikes/<class>/kLoDash.BOB` (kilometers) or `mLoDash.BOB` (miles, `0x0042f490` metric check). HiRes on → `Images/Horizons/`, `BigMeter` (`IMAGES/BIGMETER.BOB`), `kHiDash.BOB`/`mHiDash.BOB`. Low mode uses SEPARATE low-resolution artwork, not a scaled high dash. `Images/Bikes/*/KLODASH.BOB` + `MLODASH.BOB` exist on disc for RAT/SPORT/SUPER.
+- Bob file select (`0x4436a0` region disasm): HiResBikers (`0x00475384`) nonzero → `Data/Bikers/Hi<X>.DAT`, else `Data/Bikers/Lo<X>.DAT` (strings `0x46f080/0x46f070` + `.DAT`), with fallback to Lo when the Hi open fails (`0x00443380`). Disc holds `HIBOB.DAT` + `LOBOB.DAT` (plus HI/LO SHADOW/SHADOC/COP). Disasm `0x448c8a` forces HiResBikers = 1 after the Graphics Options bikers popup applies. Low mode uses SEPARATE low-resolution sprites, not halved high sprites.
+- Native gaps (this task): game always renders high view (`view_mode(true)` hardcoded in `game_main.cpp`), always loads `HIBOB.DAT`, `hud.cpp` implements only the high dashboard. Captures `napa-drive-low` / `napa-drive-inset` (Step 2) pending at trace time — see handoff.
