@@ -758,6 +758,7 @@ Correction to the section above: layout entry 30 prints `DAT_0049e115`, the rout
 - `0x00446b80` copies the name (`0x00446bf0`: personality string for offline riders) into `DAT_0049e0e0` and the stamina meter `((+0x3c·2−2)·15)/(+0x34−1)+1` into `DAT_0049e119`.
 - `0x00446c30` draws the name at entry 5 and the gap at entry 10 as `%d%c%03d` of `(|gap|·1000 >> 4)/(metric ? 3279 : 5280)` (one sample is 16 feet). Colours are COLORREF `0x10e7` when the target is ahead (gap ≤ 0) and `0x1ca328` when behind.
 - The arrow is Wingdings (`0x00442990`: height 12 low / 18 high) glyph 0xe9 (ahead) or 0xea (behind), in entry 11's rect offset by (−12, +11/+9) in high resolution, drawn through `0x00447b20`.
+  - HUD target REA re-confirmation (October 12, 2026; plan 11a/16 port input): pinned REA 6.4.0 pseudocode whitespace-identical for `0x00438550` nearest-opponent scan (784 chars: 15-slot walk, ahead/behind minima, 2×-behind rule, `DAT_004b8a30/34` writes), `0x00446b80` name+stamina copy (506) and `0x00446a40` distance readout (249). No new semantics beyond this section — the ported `Hud::state` name/gap/meter path was built from these exports. Files: `analysis/oracle/rea-438550-nearopp.md`, `rea-446b80-tgtname.md`, `rea-446a40-distread.md` (disc-derived, git-ignored).
 
 ### Depth table padding (October 12, 2026)
 
