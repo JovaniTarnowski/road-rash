@@ -194,7 +194,7 @@ Native port: `src/bike.cpp`, `src/race.cpp`.
   - Reach (`0x00409c10`): |dz| < `0x40`, |dx| < reach × `0x1000`, |dy| < `0x3000`.
   - Damage: max(maximum/base × strength, strength/2) × weapon multiplier / 256.
   - Stamina and bike condition: the maximum drops by damage×4 and the current by damage×64; kicks also wear the bike (`+0x2f0`) by damage/4 + 1. Either reaching zero knocks the rider off (`0x00403d60`).
-  - Hit cooldown: (5 − level) × 6 ticks.
+  - Combat leaves (REA-confirmed October 12, 2026; all five whitespace-identical to project exports): `0x00409400` victim pick = `0x00449c80(half, 8, 0x1e0)` (contact scan), else `0x00449c80(half, 0x38, 0x1e0)` + clear `+0x168`; on hit latches `+0x168 = victim+0x71` (bike index word) and returns NULL (caller uses latched target). `0x004095a0` (left-side anim test): code `+0x80` vs `0x00464518/0x00464528 + 4·weapon` → 1 else 0; `0x00409bd0` is the right-side twin (`0x00464508/0x00464528`). `0x00409ad0` damage: `base = max((max/base·str)>>8, str/2)`, `dmg = weapon_mult·base>>8`, player-involved sound `0x00436830(11/9/8/10+(tick&1))` by weapon; then `0x004052c0(victim, dmg, weapon==3 ? (dmg+2)>>2)+1 : 0, 5−(weapon==3))`. `0x00408d50` relationship write: for k=0..2, `brain[victim_char·3+k] += brain[0xf0+(k+ping·3)·4]`, clamped ±`0x100000`; skipped when victim char ≥ 10. Pinned REA 6.4.0 pseudocode (`analysis/oracle/rea-409400-victim.md`, `rea-4095a0-reach.md`, `rea-409ad0-damage.md`, `rea-409bd0-knock.md`, `rea-408d50-rel.md`; disc-derived, git-ignored). AI/combat trace is now complete except `0x00449c80` contact scan, `0x004052c0` knock-off, `0x00409c10` reach (already documented above), `0x0040ac70` anim set.
 
 ## Original image loading recovered
 
