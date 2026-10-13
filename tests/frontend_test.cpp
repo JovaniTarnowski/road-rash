@@ -314,11 +314,12 @@ int main(int argc, char** argv) {
     check(settings.controls[1] == 0x001e && settings.controls[0] == 0, "rebind conflict unbinds");
     fe.reset_keys(true);
     check(settings.controls == default_joystick_controls(), "joystick defaults restore");
-    // In-race toggles: F10 cycles MiniDash 0->1->2->0; opponent key is ON-only.
+    // In-race toggles: F10 cycles MiniDash 0->1->2->0; menu `/` toggles the opponent list (0x423777 sete).
     settings.mini_dash = 0;
     check(fe.cycle_mini_dash() == 1 && fe.cycle_mini_dash() == 2 && fe.cycle_mini_dash() == 0, "minidash F10 cycle");
     settings.opponent_list = false;
-    check(fe.enable_opponent_list() && settings.opponent_list && fe.enable_opponent_list(), "opponent list ON-only");
+    check(fe.toggle_opponent_list() && settings.opponent_list, "opponent list toggles on");
+    check(!fe.toggle_opponent_list() && !settings.opponent_list, "opponent list toggles off");
     std::cout << failures << " failures\n";
     return failures ? 1 : 0;
 }

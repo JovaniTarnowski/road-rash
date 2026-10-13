@@ -843,10 +843,10 @@ int Frontend::cycle_mini_dash() {
     settings_.mini_dash = (settings_.mini_dash + 1) % 3;
     return settings_.mini_dash;
 }
-bool Frontend::enable_opponent_list() {
-    // Menu dispatch 0x00423777: 0->1, else stays 1 (ON only, no in-race toggle).
-    settings_.opponent_list = true;
-    return true;
+bool Frontend::toggle_opponent_list() {
+    // Menu `/` key dispatch 0x00423777: toggles OpponentList 0<->1 (sete, unambiguous).
+    settings_.opponent_list = !settings_.opponent_list;
+    return settings_.opponent_list;
 }
 void Frontend::rebind_key(size_t action, uint16_t code) {
     // 0x0040fbf0 conflict rule via apply_rebind: same-code rows are cleared.

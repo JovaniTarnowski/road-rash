@@ -17,7 +17,7 @@ struct Settings {
     int video_mode = 2;              // "VideoMode" 0x0047538c: 0 none, 1 small, 2 large
     bool alternate_artwork = false;  // "AlternateArtwork" 0x004753a4 (Sierra postcard variant, key A)
     int mini_dash = 0;               // "MiniDash" 0x00467a98: 0 full, 1 mini, 2 off (F10 cycles, 0x004431d0)
-    bool opponent_list = false;      // "OpponentList" 0x004753a8 (menu key turns ON only, 0x00423777)
+    bool opponent_list = false;      // "OpponentList" 0x004753a8 (menu `/` key toggles, 0x00423777)
     // Key rebinding table: 11 u16 action codes at 0x00465fb8, stored in the
     // 0x16-byte "Controls" registry block (0x0040e710 writes, 0x0040e5c0 reads).
     std::array<uint16_t, 11> controls{};  // empty = EXE defaults below
