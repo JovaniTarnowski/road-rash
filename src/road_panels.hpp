@@ -10,10 +10,12 @@ struct RoadPanelInput {
     uint8_t surface_flags=0,marking_flags=0;
     uint8_t terrain_type=0,next_terrain_type=0;
     bool visible=true;
+    int32_t near_depth_q8=0,far_depth_q8=0;  // plan 21 Task 3: perspective depths
 };
 enum class RoadPanelMaterial { plain,alternate,marked0,marked1,marked2,normal0,normal1,normal2 };
 struct RoadPanel {
     std::array<RasterPoint,4> points{}; // Q16, original CCB quad order
+    std::array<int32_t,4> view_depth{};  // plan 21 Task 3: Q8, {far,far,near,near}
     RoadPanelMaterial material=RoadPanelMaterial::plain;
     uint32_t pre0=0;
     bool flip_u=false,flip_v=false;

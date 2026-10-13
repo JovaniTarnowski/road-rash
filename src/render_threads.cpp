@@ -85,7 +85,7 @@ void RenderThreads::run(int bands, int height, const std::function<void(int,int,
 // Every band renders the whole node list in order, clipped to its rows, so
 // the union is bit-identical to one thread (Review Focus 2).
 void render_nodes_threaded(Framebuffer& fb, const std::vector<DrawNode>& nodes, const ViewMode& mode,
-                           uint32_t flat_mask, RenderThreads& pool) {
+                           uint32_t flat_mask, RenderThreads& pool, bool perspective_on) {
     if (fb.width() != mode.surface_width || fb.height() != mode.surface_height)
         throw std::runtime_error("View/framebuffer size mismatch");
     const bool wide_surface = mode.surface_width > 640 || mode.surface_height > 480;
@@ -120,6 +120,21 @@ void render_nodes_threaded(Framebuffer& fb, const std::vector<DrawNode>& nodes, 
             const uint16_t v0 = uint16_t(node.flip_v ? bounds[3] - 1 : bounds[1] + 1);
             const uint16_t v1 = uint16_t(node.flip_v ? bounds[1] + 1 : bounds[3] - 1);
             const std::array<std::array<uint16_t,2>,4> uv = {{{u0, v0}, {u1, v0}, {u1, v1}, {u0, v1}}};
+            if (perspective_on && (node.view_depth[0] | node.view_depth[1] | node.view_depth[2] | node.view_depth[3])) {
+                const int psigned = texture_mip_level_signed(uint32_t(maxx - minx + 1), uint32_t(maxy - miny + 1),
+                                                             src_w, src_h, texture.mips.size(), texture.upscaled.size());
+                if (psigned >= 0) {
+                    const size_t plevel = size_t(psigned);
+                    const auto& pmip = texture.mips.at(plevel);
+                    std::array<PerspectiveVertex,4> pv;
+                    for (size_t i = 0; i < 4; ++i) {
+                        const float inv = node.view_depth[i] > 0 ? 256.0f / float(node.view_depth[i]) : 0.0f;
+                        pv[i] = {points[i].x, points[i].y, float(uv[i][0] >> plevel), float(uv[i][1] >> plevel), inv};
+                    }
+                    draw_textured_quad_perspective(fb, pv, pmip, (texture.flags & 2) != 0, clip);
+                    continue;
+                }
+            }
             if (wide_surface) {
                 const int signed_level = texture_mip_level_signed(uint32_t(maxx - minx + 1), uint32_t(maxy - miny + 1),
                                                                   src_w, src_h, texture.mips.size(), texture.upscaled.size());

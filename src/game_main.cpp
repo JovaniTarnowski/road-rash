@@ -617,7 +617,7 @@ struct CourseCanvas {
         if (margin) for (auto& n:nodes) for (auto& v:n.view_points) v.x+=margin*65536;
         // The dashboard stays a centred 4:3 image (plan 21 Task 8); side
         // panels are drawn from its edge columns below.
-        rr::render_nodes_threaded(frame,nodes,rr::view_mode_wide(s,wide),16,*workers);
+        rr::render_nodes_threaded(frame,nodes,rr::view_mode_wide(s,wide),16,*workers,game.enhancements.perspective);
         frame.to_rgba(game.palette,rgba.data(),scale_w*4);
         if(!texture) {
             texture=SDL_CreateTexture(renderer,SDL_PIXELFORMAT_RGBA32,SDL_TEXTUREACCESS_STREAMING,scale_w,scale_h);

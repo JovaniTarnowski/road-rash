@@ -19,5 +19,5 @@ private:
     Impl* impl_ = nullptr;
     int threads_ = 1;
 };
-void render_nodes_threaded(Framebuffer&, const std::vector<DrawNode>&, const ViewMode&, uint32_t flat_mask, RenderThreads&);
+void render_nodes_threaded(Framebuffer&, const std::vector<DrawNode>&, const ViewMode&, uint32_t flat_mask, RenderThreads&, bool perspective = false);
 }

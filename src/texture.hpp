@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <vector>
 #include "raster.hpp"
+#include "cel.hpp"
 namespace rr {
 // Original 0x00418910..0x00419e10 and transparent variants: power-of-two
 // row stride 1..256, Q16 row/column and signed wrapped per-pixel increments.
@@ -70,4 +71,7 @@ void draw_textured_quad_wide(Framebuffer&,const std::array<TextureVertexWide,4>&
 // Perspective-correct quads with equal per-corner depth MUST call the
 // original affine draw_textured_quad above: float arithmetic and 16-pixel
 // span subdivision do not reproduce integer wrap/rounding exactly.
+struct PerspectiveVertex { int32_t x = 0, y = 0; float u = 0, v = 0, inv_z = 0; };
+void draw_textured_quad_perspective(Framebuffer&, const std::array<PerspectiveVertex, 4>&, const CelMip&,
+                                    bool transparent, RasterClip);
 }

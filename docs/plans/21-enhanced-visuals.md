@@ -198,9 +198,9 @@ int main() {
   - a quad with all four depths equal renders byte-identical to `draw_textured_quad` on the same vertices (an affine quad is a special case);
   - a road-like trapezoid (bottom edge 200 px wide at depth 1, top edge 50 px at depth 4) textured with a 64×64 texture whose rows are a vertical gradient: at the screen row halfway between top and bottom, the sampled texture row equals the analytic perspective value `v = 64 · (1/z_mid − 1/z_near) / (1/z_far − 1/z_near)` within ±1 texel, and the affine path is measurably different there (documents the original's warp);
   - fill rule: the same trapezoid covers exactly the pixels the affine version covers.
-- [ ] **Step 2:** Run; expected FAIL.
-- [ ] **Step 3: Implement**; `render_nodes` uses the perspective path when `perspective` is on and the node has non-zero depths, otherwise today's path.
-- [ ] **Step 4:** Run the tests and the whole suite (with the setting off nothing changes). Screenshot comparison at render scale 2, on and off, at a sharp bend near the camera. Commit: `render: optional perspective-correct textures`.
+- [x] **Step 2:** Run; expected FAIL. DONE (no `PerspectiveVertex`/`draw_textured_quad_perspective`).
+- [x] **Step 3: Implement**; `render_nodes` uses the perspective path when `perspective` is on and the node has non-zero depths, otherwise today's path. DONE. `draw_textured_quad_perspective` (integer X edges = affine-exact coverage; float u/z,v/z,1/z, 16-px subdivision; equal inv_z delegates to affine). `DrawNode::view_depth` (Q8, {far,far,near,near} on road panels); dispatch in single + threaded paths (upscaled fallback to affine). Billboards/scenery/terrain stay affine (zero depths) — road-only in this slice, per plan's phasing.
+- [x] **Step 4:** Run the tests and the whole suite (with the setting off nothing changes). DONE: texture-perspective/hires/widescreen/view-state green; 69 fast green. Screenshots at scale 2 on/off differ in 458k sampled px (road straightening visible). Test fixes: analytic is `(v/z)/(1/z)=50.4` (plan's formula omitted the divide); gradient offset +1 so coverage==nonzero count. Commit: `render: optional perspective-correct textures`.
 
 ---
 

@@ -250,6 +250,7 @@ std::vector<DrawNode> CourseScene::draw_nodes(const std::vector<RouteSample>& ro
             RoadPanelInput panels;
             panels.first_left=wrap(far.screen_x(r,far_left));panels.first_y=a.screen_y;panels.first_lane_width=wrap(int64_t(250)*far.scale);
             panels.second_left=wrap(near.screen_x(r,whole_left));panels.second_y=b.screen_y;panels.second_lane_width=wrap(int64_t(250)*near.scale);
+            panels.near_depth_q8=near.depth;panels.far_depth_q8=far.depth;
             panels.left_lanes_q8=path.left_q8;panels.right_lanes_q8=path.right_q8;panels.left_lane_count=uint8_t((path.left_q8+255)/256);panels.right_lane_count=uint8_t((path.right_q8+255)/256);
             panels.marking_flags=path.marking_flags;panels.terrain_type=road.terrain->type;panels.next_terrain_type=old.terrain->type;panels.visible=visible;
             append(road_draw_nodes(road_panels(panels,logical_width),roads_));

@@ -38,7 +38,7 @@ std::vector<DrawNode> road_draw_nodes(const std::vector<RoadPanel>& panels,const
     std::vector<DrawNode> nodes;nodes.reserve(panels.size());
     for(const auto& panel:panels) {
         const auto slot=size_t(panel.material);if(slot>=materials.entries.size() || !materials.entries[slot].texture)throw std::runtime_error("Unbound road material");
-        DrawNode node;node.view_points=panel.points;node.texture=&*materials.entries[slot].texture;node.flip_u=panel.flip_u;node.flip_v=panel.flip_v;nodes.push_back(node);
+        DrawNode node;node.view_points=panel.points;node.view_depth=panel.view_depth;node.texture=&*materials.entries[slot].texture;node.flip_u=panel.flip_u;node.flip_v=panel.flip_v;nodes.push_back(node);
     }
     return nodes;
 }

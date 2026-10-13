@@ -7,7 +7,7 @@ namespace rr {
 namespace {
 int16_t narrow(int32_t v){const uint16_t bits=uint16_t(v);int16_t result;std::memcpy(&result,&bits,2);return result;}
 }
-void render_nodes(Framebuffer& fb,const std::vector<DrawNode>& nodes,const ViewMode& mode,uint32_t flat_mask) {
+static void render_nodes_impl(Framebuffer& fb,const std::vector<DrawNode>& nodes,const ViewMode& mode,uint32_t flat_mask,bool perspective_on) {
     if(fb.width()!=mode.surface_width || fb.height()!=mode.surface_height)throw std::runtime_error("View/framebuffer size mismatch");
     const RasterClip clip{0,0,fb.width(),fb.height()-1};
     const bool wide_surface=mode.surface_width>640 || mode.surface_height>480;
@@ -34,6 +34,23 @@ void render_nodes(Framebuffer& fb,const std::vector<DrawNode>& nodes,const ViewM
         const uint16_t u0=uint16_t(flip_u?bounds[2]-1:bounds[0]+1),u1=uint16_t(flip_u?bounds[0]+1:bounds[2]-1);
         const uint16_t v0=uint16_t(node.flip_v?bounds[3]-1:bounds[1]+1),v1=uint16_t(node.flip_v?bounds[1]+1:bounds[3]-1);
         const std::array<std::array<uint16_t,2>,4> uv={{{u0,v0},{u1,v0},{u1,v1},{u0,v1}}};
+        if(perspective_on && (node.view_depth[0] | node.view_depth[1] | node.view_depth[2] | node.view_depth[3])) {
+            // Plan 21 Task 3: perspective path. Mip level selected as today;
+            // upscaled levels fall back to affine (no perspective upscaled path yet).
+            const int psigned=texture_mip_level_signed(uint32_t(maxx-minx+1),uint32_t(maxy-miny+1),src_w,src_h,texture.mips.size(),texture.upscaled.size());
+            if(psigned >= 0) {
+                const size_t plevel=size_t(psigned);
+                const auto& pmip=texture.mips.at(plevel);
+                std::array<PerspectiveVertex,4> pv;
+                for(size_t i=0;i<4;++i) {
+                    const float inv = node.view_depth[i] > 0 ? 256.0f / float(node.view_depth[i]) : 0.0f;
+                    pv[i]={points[i].x,points[i].y,float(uv[i][0]>>plevel),float(uv[i][1]>>plevel),inv};
+                }
+                draw_textured_quad_perspective(fb,pv,pmip,(texture.flags&2)!=0,clip);
+                continue;
+            }
+            // else fall through to affine
+        }
         if(wide_surface) {
             // Plan 19 Task 3: int32 surface points (Review Focus 5); negative
             // levels sample upscaled[-level-1] with uv scaled by 2^(-level).
@@ -72,5 +89,11 @@ void render_nodes(Framebuffer& fb,const std::vector<DrawNode>& nodes,const ViewM
         const auto& mip=texture.mips.at(level);
         draw_textured_quad(fb,vertices,mip.sampling_storage.empty()?mip.pixels:mip.sampling_storage,mip.stride_shift,(texture.flags&2)!=0,clip);
     }
+}
+void render_nodes(Framebuffer& fb,const std::vector<DrawNode>& nodes,const ViewMode& mode,uint32_t flat_mask) {
+    render_nodes_impl(fb,nodes,mode,flat_mask,false);
+}
+void render_nodes_perspective(Framebuffer& fb,const std::vector<DrawNode>& nodes,const ViewMode& mode,uint32_t flat_mask,bool perspective) {
+    render_nodes_impl(fb,nodes,mode,flat_mask,perspective);
 }
 }

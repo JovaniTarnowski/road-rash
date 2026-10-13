@@ -38,6 +38,7 @@ std::vector<RoadPanel> road_panels(const RoadPanelInput& in,int32_t width) {
     auto append=[&](int index){
         if((first<width*65536 && first_right>0)||(second<width*65536 && second_right>0)) {
             RoadPanel panel;panel.points={{{first,first_y},{first_right,first_y},{second_right,second_y},{second,second_y}}};
+            panel.view_depth={in.far_depth_q8,in.far_depth_q8,in.near_depth_q8,in.near_depth_q8};
             panel.material=material(in,index);panel.pre0=pre0;
             panel.flip_u=first_right<first || second_right<second;panel.flip_v=second_y<first_y;
             result.push_back(panel);
