@@ -101,7 +101,7 @@ Task 1 confirms where the original reaches the sound mix and controls handlers a
   bool haptics = true;             // Android rumble on crash/hit where the device supports it
   ```
 
-- [ ] **Step 1: Write the failing test.** Add to `tests/settings_test.cpp`, before the final `std::cout`:
+- [X] **Step 1: Write the failing test.** Add to `tests/settings_test.cpp`, before the final `std::cout`:
 
 ```cpp
     {
@@ -121,8 +121,8 @@ Task 1 confirms where the original reaches the sound mix and controls handlers a
     }
 ```
 
-- [ ] **Step 2:** Run `cmake --build build --target settings-test && ctest --test-dir build -R settings --output-on-failure`. Expected: compile error (the new members do not exist).
-- [ ] **Step 3: Implement.** Add the enums and members above to `settings.hpp`. In `parse_settings` add:
+- [X] **Step 2:** Run `cmake --build build --target settings-test && ctest --test-dir build -R settings --output-on-failure`. Expected: compile error (the new members do not exist).
+- [X] **Step 3: Implement.** Add the enums and members above to `settings.hpp`. In `parse_settings` add:
 
 ```cpp
         else if (k == "display_mode") { if (parse_int(v, 0, 1, x)) s.display_mode = DisplayMode(x); }
@@ -144,7 +144,7 @@ Task 1 confirms where the original reaches the sound mix and controls handlers a
 ```
 
   In `default_settings()`, on Android (`#ifdef __ANDROID__`) set `display_mode = DisplayMode::fullscreen`.
-- [ ] **Step 4:** Run the test again. Expected: `0 failures`, PASS.
+- [X] **Step 4:** Run the test again. Expected: `0 failures`, PASS.
 - [ ] **Step 5:** Commit: `settings: native display, scaling, vsync and touch fields`.
 
 ---

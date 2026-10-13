@@ -29,6 +29,9 @@ Settings default_settings() {
         s.metric = locales[0]->country ? !imperial_country(locales[0]->country) : s.language != Language::english;
     }
     SDL_free(locales);
+#ifdef __ANDROID__
+    s.display_mode = DisplayMode::fullscreen;
+#endif
     return s;
 }
 
@@ -76,6 +79,14 @@ Settings parse_settings(const std::string& text) {
         else if (k == "interface_volume") { if (parse_int(v, 0, 100, x)) s.interface_volume = x; }
         else if (k == "mute") flag(s.mute);
         else if (k == "swap_speakers") flag(s.swap_speakers);
+        else if (k == "display_mode") { if (parse_int(v, 0, 1, x)) s.display_mode = DisplayMode(x); }
+        else if (k == "window_scale") { if (parse_int(v, 1, 4, x)) s.window_scale = x; }
+        else if (k == "scale_mode") { if (parse_int(v, 0, 2, x)) s.scale_mode = ScaleMode(x); }
+        else if (k == "filter") { if (parse_int(v, 0, 1, x)) s.filter = FilterMode(x); }
+        else if (k == "vsync") flag(s.vsync);
+        else if (k == "show_fps") flag(s.show_fps);
+        else if (k == "touch_opacity") { if (parse_int(v, 0, 100, x)) s.touch_opacity = x; }
+        else if (k == "haptics") flag(s.haptics);
         else if (k == "alias") { if (v.size() < 20) s.alias = v; }
     }
     return s;
@@ -93,7 +104,10 @@ std::string format_settings(const Settings& s) {
     o << "\nmusic_track=" << s.music_track << "\nmaster_volume=" << s.master_volume << "\nmusic_volume=" << s.music_volume
       << "\neffects_volume=" << s.effects_volume << "\nengine_volume=" << s.engine_volume << "\nothers_volume=" << s.others_volume
       << "\nsiren_volume=" << s.siren_volume << "\ninterface_volume=" << s.interface_volume << "\nmute=" << s.mute
-      << "\nswap_speakers=" << s.swap_speakers << "\nalias=" << s.alias << "\n";
+      << "\nswap_speakers=" << s.swap_speakers
+      << "\ndisplay_mode=" << int(s.display_mode) << "\nwindow_scale=" << s.window_scale << "\nscale_mode=" << int(s.scale_mode)
+      << "\nfilter=" << int(s.filter) << "\nvsync=" << s.vsync << "\nshow_fps=" << s.show_fps
+      << "\ntouch_opacity=" << s.touch_opacity << "\nhaptics=" << s.haptics << "\nalias=" << s.alias << "\n";
     return o.str();
 }
 

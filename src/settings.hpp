@@ -8,6 +8,9 @@
 namespace rr {
 // Values the original keeps under HKLM\SOFTWARE\Electronic Arts\RoadRash 95 (string 0x004633e8),
 // stored natively as key=value text in the SDL preference directory.
+enum class DisplayMode : uint8_t { windowed = 0, fullscreen = 1 };       // fullscreen = borderless desktop
+enum class ScaleMode : uint8_t { fit = 0, integer = 1, stretch = 2 };    // letterbox, whole multiples, fill
+enum class FilterMode : uint8_t { sharp = 0, smooth = 1 };               // nearest, linear
 struct Settings {
     Language language = Language::english;
     bool metric = false;             // original: LOCALE_IMEASURE != "1" (0x0042f490)
@@ -28,6 +31,14 @@ struct Settings {
         siren_volume = 80, interface_volume = 80;
     bool mute = false, swap_speakers = false;
     std::string alias;               // player name (0x004b8a1c)
+    DisplayMode display_mode = DisplayMode::windowed;
+    int window_scale = 2;            // 1..4: window is 640x480 (or 640x510 in a race) times this
+    ScaleMode scale_mode = ScaleMode::fit;
+    FilterMode filter = FilterMode::sharp;
+    bool vsync = true;
+    bool show_fps = false;
+    int touch_opacity = 50;          // 0..100, Android touch overlay (plan 14 Task 3)
+    bool haptics = true;             // Android rumble on crash/hit where the device supports it
 };
 Settings default_settings();                         // language and units from the system locale
 Settings parse_settings(const std::string& text);   // unknown keys and malformed values are ignored
