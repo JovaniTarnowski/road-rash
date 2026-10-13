@@ -250,6 +250,35 @@ int main(int argc, char** argv) {
         while (fe.poll(se)) if (se.kind == FrontendEvent::Kind::select_soundtrack && se.group == 0 && se.track == 0) soundtrack = true;
         check(soundtrack && settings.music_group == 0 && settings.music_track == 0, "jukebox track select emits soundtrack event");
     }
+    // Outcome videos (plan 13 Task 4 Step 3): every outcome maps to its video family for fixed random values.
+    {   // Pure rule first: exact names, no RNG state involved.
+        Career c;
+        check(results_video(c, screen_id::wrecked, 0) == "WRECK1", "wrecked random 0 -> WRECK1");
+        check(results_video(c, screen_id::busted, 5) == "BUSTED6", "busted random 5 -> BUSTED6");
+        check(results_video(c, screen_id::lost, 9) == "LOSE10", "lost random 9 -> LOSE10");
+        check(results_video(c, screen_id::won, 1) == "WIN2", "won random 1 -> WIN2");
+        c.state.qualified = all_qualified;
+        check(results_video(c, screen_id::won, 3) == "LEVEL4", "all-qualified level<4 -> LEVEL4");
+        c.state.level = 4;
+        check(results_video(c, screen_id::won, 3) == "FINALWIN", "all-qualified level 4 -> FINALWIN");
+        check(results_video(c, screen_id::main_menu, 0).empty(), "no video for menu screen");
+    }
+    {   // End to end through race_finished: each outcome queues its family (prefix match; number is RNG).
+        career.mode = GameMode::big_game;
+        career.state.qualified = 0;
+        career.state.level = 1;
+        fe.race_finished(RaceOutcome::lost, 5, {});
+        check(fe.screen() == screen_id::lost && event_video("VIDEO/LOSE"), "lost queues LOSE video");
+        fe.race_finished(RaceOutcome::busted, 9, {});
+        check(fe.screen() == screen_id::busted && event_video("VIDEO/BUSTED"), "busted queues BUSTED video");
+        career.state.qualified = all_qualified;
+        career.state.level = 2;
+        fe.race_finished(RaceOutcome::won, 0, {});
+        check(fe.screen() == screen_id::won && event_video("VIDEO/LEVEL"), "all-qualified win queues LEVEL video");
+        career.state.level = 4;
+        fe.race_finished(RaceOutcome::won, 0, {});
+        check(fe.screen() == screen_id::won && event_video("VIDEO/FINALWIN"), "level-4 win queues FINALWIN video");
+    }
     // Key rebinding storage + conflict rule (0x0040fbf0: same-code rows unbound).
     check(default_keyboard_controls()[0] == 0x9400 && default_joystick_controls()[0] == 0x0025, "control defaults match EXE");
     { std::array<uint16_t, 11> kb, joy; read_control_tables(exe, kb, joy); check(kb == default_keyboard_controls() && joy == default_joystick_controls(), "control tables read from EXE"); }

@@ -139,7 +139,7 @@
 
 - [X] **Step 1: Jukebox.** Port handlers `0x00445600`/`0x00445730` on top of `MusicPlayer::play_soundtrack`, then add a scripted test.
 - [X] **Step 2: Cutscene audit.** Build a table in REVERSE_ENGINEERING.md of all 59 videos: trigger, original address and native status. Videos: `INTRO`, `START1–6`, `WIN1–6`, `LOSE1–10`, `WRECK1–6`, `BUSTED1–6`, `LEVEL1–6`, `FINALWIN`, `DUEL`, `JESSIE`, and the bike showroom folders `RAT`/`SPORT`/`SUPER`. Port every missing trigger. `BUSTED*` uses plan 11 Task 6's outcome.
-- [ ] **Step 3: Test.** The scripted frontend test drives each outcome (won, lost, wrecked, busted, level up, finale) and asserts the queued video path follows the traced rule for a fixed random value.
+- [X] **Step 3: Test.** The scripted frontend test drives each outcome (won, lost, wrecked, busted, level up, finale) and asserts the queued video path follows the traced rule for a fixed random value.
 - [ ] **Step 4:** Commit: `frontend: jukebox and complete cutscene triggers`.
 
 ---
