@@ -643,12 +643,12 @@ outside the window.
 sample with lane `−1 − rand % left_lanes` (sub-slice +0x30); "behind"
 spawns kind 0 at front−1 with right lanes (+0x2c); "ahead" spawns kind 0 at
 back+1 while the rider is slow. Lane counts use the signed-char semantics
-`(int8_t)((value + (value < 0 ? 0xff : 0)) >> 8)`.
 
 **Placement** (`0x0044df60`): lateral `(road centre + lane·250 + 125)·256`;
 vehicle type filtered by mask (loop excludes the last vehicle) and picked
 with `rand() % accepted`; four random bytes (phase `+0x71` is a full int
 slot 192..319 — a byte truncation freezes the car); serial `DAT_004b7e98`.
+  - Spawn chain REA re-confirmation (October 12, 2026; plan 24 Task 1 Step 5 input): pinned REA 6.4.0 pseudocode whitespace-identical for `0x0044df60` placement (3472 chars) and `0x0044dd90` timers (1866). `0x0044dd90` owns three countdowns — oncoming (`+0x90`, kind 2 at front−1, lane `−1 − rand%left`), behind (`+0x94`, kind 0 at front−1, right lanes, clamped at 2× reload), ahead (`+0x80`, kind 0 at back+1 when slow); each reload adds its period and each spawn draws exactly one `rand()` for the lane. Suite green 70/70 at this commit. Files: `analysis/oracle/rea-44df60-xing.md`, `rea-44dd90-spawntimer.md` (disc-derived, git-ignored).
 
 **Car think/move** (`0x0044e710`/`0x0043adc0`): speed accumulates through
 `0x004498c0` (`+0xec += dt·rate`, clamped) toward the phase-scaled cruise
