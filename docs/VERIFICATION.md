@@ -783,3 +783,11 @@ Owned edits: `src/import_job.hpp/.cpp` (new), `src/sha256.hpp/.cpp`
 - `build/rr-game --assets ../cdrom/ROADRASH --menu-script restroom,graphics,display --menu-frames 60 --screenshot /tmp/display-screen.bmp`: exit 0. Display vs Graphics Options screenshots share 5493314/6553628 pixels (84% — same background picture; differences are the buttons/title/focus only). Fonts, colours and arrow come from the shared item draw path. Screenshot in /tmp, not committed (original art).
 - Deviations from the plan sketch (all test-covered): the 0x13 Display entry repurposes dead item 2 instead of appending (table size stable, existing 1→2→3 nav chain reused); touch opacity gets a 5-choice popup (`native_popup::touch` + `touch_0..100` slots — the sketch's 5 popups had no touch home); `--menu-script` enters named screens directly (debug-only) rather than synthesizing MenuInput keys.
 - Full gate after the wiring: native `ctest --test-dir build` (Debug) **73/73** (incl. new `native_screens-test`).
+
+## Plan 18 Task 6 Step 4 (October 12, 2026): Sound mix with live channel levels
+
+- `frontend-test`: 0 failures (Sound screen via restroom row; Music 80 → 50 via 3× Left; End → 100; Mute toggle; Back to restroom; `apply_mixer` emitted; file round-trips `music_volume=100`; slider bit absent from all original EXE items/popups).
+- `mixer-test`: 0 failures (voice `set()` between renders rescales the next block; old level gone — Review Focus 3 at the Mixer layer; `SoundSystem::play_loop` re-voices every update so `set_levels` lands on the next update).
+- Preview click: none. Task 1 found no wave playback in the dlgproc (scroll/edit post the live-apply thread message; button 0xBC1 re-posts it) — the `apply_mixer` event is the native equivalent.
+- Deviations: mute/swap are direct-toggle rows (dialog has a mute bit; no toggle UI traced — direct toggle is the minimal faithful mapping); swap speakers exposed alongside mute (same bit class).
+- Full gate after the wiring: native `ctest --test-dir build` (Debug) **73/73**.

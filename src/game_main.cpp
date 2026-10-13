@@ -986,6 +986,7 @@ int run_game(const rr::Assets& assets, SDL_Window* window, SDL_Renderer* rendere
             if (ev.kind == rr::FrontendEvent::Kind::quit) running = false;
             else if (ev.kind == rr::FrontendEvent::Kind::select_soundtrack) music.play(ev.track);
             else if (ev.kind == rr::FrontendEvent::Kind::apply_display) display.apply(480);
+            else if (ev.kind == rr::FrontendEvent::Kind::apply_mixer) apply_levels();
             else if (ev.kind == rr::FrontendEvent::Kind::play_video) {
                 if (menu_frames < 0) {
                     // 0x004023e0: showroom clips (flag 1) only quieten the soundtrack; other videos stop it.

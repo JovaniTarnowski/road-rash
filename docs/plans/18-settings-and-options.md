@@ -377,13 +377,13 @@ int main(int argc, char** argv) {
 - Consumes: `Settings` volume fields (`master_volume`, `music_volume`, `effects_volume`, `engine_volume`, `others_volume`, `siren_volume`, `interface_volume`, `mute`, `swap_speakers`), the level curve `0x004362e0` already used by `mixer.cpp`.
 - Produces: a slider item kind, `item_flag::native_slider = 0x01000000` (a bit the original never sets; assert that in `native_screens_test`), drawn as the caption plus ten segments; Left/Right change the value by 10; Home/End go to 0/100. `FrontendEvent::Kind::apply_mixer` pushed on every change.
 
-- [ ] **Step 1:** Use Task 1's finding. If the original sound mix is a menu screen, port its handler `0x00401df0` and items exactly, adding only the slider drawing it needs. If it is a Win32 dialog, build `screen_id::native_sound` with the dialog's controls in the dialog's order and ranges, drawn as menu sliders; record that as a documented deviation (the original look is a Windows dialog).
-- [ ] **Step 2: Write the failing tests.**
+- [X] **Step 1:** Use Task 1's finding. If the original sound mix is a menu screen, port its handler `0x00401df0` and items exactly, adding only the slider drawing it needs. If it is a Win32 dialog, build `screen_id::native_sound` with the dialog's controls in the dialog's order and ranges, drawn as menu sliders; record that as a documented deviation (the original look is a Windows dialog).
+- [X] **Step 2: Write the failing tests.**
   - `frontend_test`: open Sound, move to Music, press Left 3 times → `settings.music_volume == 50`; press End → 100; toggle Mute; Back. The file round-trips.
   - `frontend_test`: the slider bit `0x01000000` is never set on any original item read from the EXE.
   - `mixer_test`: changing the engine level between two `Mixer::mix` blocks scales the next block by the new curve value with no sample from the old level after the change point (Review Focus 3).
-- [ ] **Step 3: Implement** and run the tests. Expected: PASS.
-- [ ] **Step 4:** Preview: when a slider moves, play the original interface click (the event the original plays, if Task 1 found one; otherwise none). Commit: `frontend: sound mix with live channel levels`.
+- [X] **Step 3: Implement** and run the tests. Expected: PASS.
+- [X] **Step 4:** Preview: when a slider moves, play the original interface click (the event the original plays, if Task 1 found one; otherwise none). Commit: `frontend: sound mix with live channel levels`.
 
 ---
 

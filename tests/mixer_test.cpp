@@ -73,6 +73,16 @@ int main(int argc,char**) {
     rr::PcmSound stereo{22050,2,{100,-200,300,-400}};
     rr::Mixer channels(1);channels.play(&stereo,127,0,256,false);channels.render(out,2);
     check(out[0]==100 && out[1]==-200 && out[2]==300 && out[3]==-400,"stereo channels preserved");
+    // Plan 18 Task 6 Review Focus 3: a voice volume change between two render blocks
+    // scales the next block by the new gain; no sample from the old level follows.
+    rr::Mixer levels(1);
+    const int lv = levels.play(&constant, 100, 0, 256, true);
+    int16_t block[4];
+    levels.render(block, 2);
+    check(block[0] == block[2] && block[0] > 0, "voice renders at the set level");
+    levels.set(lv, 50, 0, 256);
+    levels.render(block, 2);
+    check(block[0] == block[2] && block[0] > 0 && block[0] < 1000, "next block uses the new level only");
     rr::Mixer queue(1);int accepted=0;
     while (queue.play(&constant,127,0,256,true)>=0) ++accepted;
     check(accepted==255,"full command queue reports failure");

@@ -96,7 +96,55 @@ void add_native_screens(FrontendData& data, bool mobile) {
     data.popups[native_popup::on_off] = build_popup(rtpl, ns::fps, {{1, ns::off}, {2, ns::on}});
     data.popups[native_popup::touch] = build_popup(rtpl, ns::touch_opacity,
         {{1, ns::touch_0}, {2, ns::touch_25}, {3, ns::touch_50}, {4, ns::touch_75}, {5, ns::touch_100}});
-    // Graphics Options: repurpose dead item 2 as the Display entry (keeps table size;
+    // Sound screen (plan 18 Task 6): dialog-300 order — master + six channels as sliders,
+    // mute + swap as direct toggles, Back to the restroom. Same button template/column.
+    {
+        const int caps[7] = {ns::master, ns::music, ns::effects, ns::engines, ns::others, ns::sirens, ns::interface};
+        MenuScreen& sound = data.screens[screen_id::native_sound];
+        sound.title = ns::sound_title;
+        sound.title_format = data.screens[0x13].title_format;
+        sound.items.clear();
+        for (int i = 0; i < 7; ++i) {
+            MenuItem m = tpl;
+            m.y = tpl.y + i * step;
+            m.caption = caps[i];
+            m.handler = 0;
+            m.target = 0;
+            m.desc = 0;
+            m.flags = item_flag::title_desc | item_flag::native_slider;
+            m.enabled = true;
+            sound.items.push_back(m);
+        }
+        const std::pair<int, uint32_t> toggles[2] = {{ns::mute, native_action::toggle_mute},
+                                                     {ns::swap, native_action::toggle_swap}};
+        for (int i = 0; i < 2; ++i) {
+            MenuItem m = tpl;
+            m.y = tpl.y + (7 + i) * step;
+            m.caption = toggles[i].first;
+            m.handler = toggles[i].second;
+            m.target = 0;
+            m.desc = 0;
+            m.flags = item_flag::title_desc;
+            m.enabled = true;
+            sound.items.push_back(m);
+        }
+        MenuItem back = tpl;
+        back.y = tpl.y + 9 * step;
+        back.target = 0x10;
+        back.caption = ns::back;
+        back.handler = 0;
+        back.desc = 0;
+        back.flags = item_flag::title_desc | item_flag::escape;
+        back.enabled = true;
+        sound.items.push_back(back);
+        const size_t n = sound.items.size();
+        for (size_t i = 0; i < n; ++i) {
+            sound.items[i].nav[2] = uint8_t((i + n - 1) % n);
+            sound.items[i].nav[3] = uint8_t((i + 1) % n);
+            sound.items[i].nav[4] = uint8_t((i + 1) % n);
+            sound.items[i].nav[5] = uint8_t((i + n - 1) % n);
+        }
+    }
     // nav chain already routes 1->2->3).
     MenuItem& link = data.screens[0x13].items[2];
     link.target = screen_id::native_display;

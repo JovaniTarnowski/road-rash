@@ -202,6 +202,18 @@ const std::string& Frontend::str(int slot) const {
 
 std::string Frontend::caption_text(const MenuItem& m) const {
     if (m.caption == edit_slot && editing_name_) return edit_buffer_ + "_";
+    if (m.flags & item_flag::native_slider) {
+        // Plan 18 Task 6: caption plus ten segments plus the numeric value.
+        const int v = slider_value(m.caption);
+        std::string segs;
+        for (int i = 0; i < 10; ++i) segs += i < v / 10 ? '#' : '-';
+        return str(m.caption) + " " + segs + " " + std::to_string(v);
+    }
+    if ((m.handler == native_action::toggle_mute && settings_.mute) ||
+        (m.handler == native_action::toggle_swap && settings_.swap_speakers))
+        return str(m.caption) + " On";
+    if (m.handler == native_action::toggle_mute || m.handler == native_action::toggle_swap)
+        return str(m.caption) + " Off";
     return str(m.caption);
 }
 
@@ -625,6 +637,58 @@ void Frontend::apply_native_setting() {
     events_.push_back({FrontendEvent::Kind::apply_display, {}, 0});
 }
 
+int Frontend::slider_value(int caption) const {
+    // Plan 18 Task 6: dialog-300 channel order (master + six), 0..100 each.
+    switch (caption) {
+    case ns::master: return settings_.master_volume;
+    case ns::music: return settings_.music_volume;
+    case ns::effects: return settings_.effects_volume;
+    case ns::engines: return settings_.engine_volume;
+    case ns::others: return settings_.others_volume;
+    case ns::sirens: return settings_.siren_volume;
+    case ns::interface: return settings_.interface_volume;
+    default: return 0;
+    }
+}
+
+void Frontend::set_slider_value(int caption, int v) {
+    v = std::min(100, std::max(0, v));
+    switch (caption) {
+    case ns::master: settings_.master_volume = v; break;
+    case ns::music: settings_.music_volume = v; break;
+    case ns::effects: settings_.effects_volume = v; break;
+    case ns::engines: settings_.engine_volume = v; break;
+    case ns::others: settings_.others_volume = v; break;
+    case ns::sirens: settings_.siren_volume = v; break;
+    case ns::interface: settings_.interface_volume = v; break;
+    default: return;
+    }
+    apply_mixer_setting();
+}
+
+void Frontend::adjust_slider(int delta) {
+    if (focus_ < 0 || size_t(focus_) >= items_.size()) return;
+    const MenuItem& m = items_[size_t(focus_)];
+    if (!(m.flags & item_flag::native_slider)) return;
+    set_slider_value(m.caption, slider_value(m.caption) + delta);
+}
+
+void Frontend::slider_home_end(bool home) {
+    if (focus_ < 0 || size_t(focus_) >= items_.size()) return;
+    const MenuItem& m = items_[size_t(focus_)];
+    if (!(m.flags & item_flag::native_slider)) return;
+    set_slider_value(m.caption, home ? 0 : 100);
+}
+
+void Frontend::apply_mixer_setting() {
+    // Same persistence as display settings; the host re-applies channel levels live.
+    // No preview click: the original dlgproc plays no wave on change either (test
+    // button 0xBC1 only re-posts the live-apply message, which this event is).
+    const std::string path = (std::filesystem::path(save_dir_).parent_path() / "settings.txt").string();
+    save_settings(path, settings_);
+    events_.push_back({FrontendEvent::Kind::apply_mixer, {}, 0});
+}
+
 void Frontend::show_dialog(const std::string& text, int kind, std::vector<std::pair<int, int>> buttons) {
     dialog_ = {text.empty() ? std::string(" ") : text, std::move(buttons), 0, kind};
 }
@@ -830,7 +894,10 @@ int Frontend::run_handler(size_t index) {
         character_return_ = 0x0f;
         return r == 0x0f ? 0x19 : r;
     }
-    case 0x00401df0: case 0x0040fd90: return 0;   // sound mix, controls: not ported (plan 18 Tasks 6-7)
+    case 0x00401df0: return screen_id::native_sound;   // plan 18 Task 6: native look-alike of dialog 300
+    case 0x0040fd90: return 0;   // controls: not ported (plan 18 Task 7)
+    case native_action::toggle_mute: settings_.mute = !settings_.mute; apply_mixer_setting(); return 0;
+    case native_action::toggle_swap: settings_.swap_speakers = !settings_.swap_speakers; apply_mixer_setting(); return 0;
     case 0x00445600: {
         // Jukebox track list: popup per focused band caption 0xe1..0xe6; current row = saved track when the group matches.
         const int group = m.caption >= 0xe1 && m.caption <= 0xe6 ? m.caption - 0xe1 : 0;
@@ -1041,12 +1108,24 @@ void Frontend::update(const MenuInput& in, uint64_t now_ms) {
             }
         }
     }
+    if ((in.left || in.right) && focus_ >= 0 && size_t(focus_) < items_.size() &&
+        (items_[size_t(focus_)].flags & item_flag::native_slider)) {
+        // Plan 18 Task 6: Left/Right adjust the focused slider by 10 instead of navigating.
+        adjust_slider(in.left ? -10 : 10);
+        return;
+    }
     if (in.left) navigate(0);
     if (in.right) navigate(1);
     if (in.up) navigate(2);
     if (in.down) navigate(3);
     if (in.tab) navigate(4);
     if (in.shift_tab) navigate(5);
+    if ((in.home || in.end) && focus_ >= 0 && size_t(focus_) < items_.size() &&
+        (items_[size_t(focus_)].flags & item_flag::native_slider)) {
+        // Plan 18 Task 6: Home/End go to 0/100 on the focused slider row.
+        slider_home_end(in.home);
+        return;
+    }
     if (in.home || in.end) {
         for (size_t n = 0; n + popup_base_ < items_.size(); ++n) {
             const size_t i = in.home ? popup_base_ + n : items_.size() - 1 - n;

@@ -70,6 +70,7 @@ int main(int argc, char** argv) {
         if (s == "down") in.down = true; else if (s == "up") in.up = true; else if (s == "left") in.left = true;
         else if (s == "right") in.right = true; else if (s == "select") in.select = true; else if (s == "back") in.back = true;
         else if (s == "tab") in.tab = true; else if (s == "slash") in.opponent_key = true;
+        else if (s == "home") in.home = true; else if (s == "end") in.end = true;
         press(in);
     };
     auto event = [&](FrontendEvent::Kind kind) {
@@ -299,6 +300,43 @@ int main(int argc, char** argv) {
     }
     if (focus_item(6)) key("select");   // Back row
     check(fe.screen() == 0x13 && fe.focus() == 2, "back returns to the Display item");
+    // Native Sound screen (plan 18 Task 6): restroom sound row -> sliders, Left/End, Mute, Back.
+    {
+        // The slider bit is never set on an original EXE item or popup row
+        // (native screens/popup keys excluded).
+        for (int s = 0; s < 0x24; ++s)
+            for (const auto& m : data.screens[size_t(s)].items) check(!(m.flags & rr::item_flag::native_slider), "original items lack the slider bit");
+        for (const auto& [addr, rows] : data.popups) {
+            if (addr >= 0xF0000000u) continue;
+            for (const auto& m : rows) check(!(m.flags & rr::item_flag::native_slider), "original popups lack the slider bit");
+        }
+    }
+    fe.enter(screen_id::restroom);
+    int sound_row = -1;
+    for (size_t i = 0; i < fe.items().size(); ++i) if (fe.items()[i].handler == 0x00401df0) sound_row = int(i);
+    check(sound_row >= 0, "restroom has the sound mix row");
+    if (focus_item(sound_row)) key("select");
+    check(fe.screen() == screen_id::native_sound, "sound screen");
+    snap("sound");
+    if (focus_item(1)) key("left");   // Music row: 80 -> 70
+    if (focus_item(1)) key("left");
+    if (focus_item(1)) key("left");
+    check(settings.music_volume == 50, "three Left steps take Music 80 -> 50");
+    FrontendEvent me;
+    bool mixer_event = false;
+    while (fe.poll(me)) if (me.kind == FrontendEvent::Kind::apply_mixer) mixer_event = true;
+    check(mixer_event, "slider change emits apply_mixer");
+    if (focus_item(1)) key("end");
+    check(settings.music_volume == 100, "End takes Music to 100");
+    if (focus_item(7)) key("select");   // Mute row toggles
+    check(settings.mute, "mute toggles on");
+    if (focus_item(9)) key("select");   // Back row
+    check(fe.screen() == screen_id::restroom, "back returns to the restroom");
+    {
+        std::ifstream settings_file((std::filesystem::path(saves).parent_path() / "settings.txt").string());
+        const std::string text((std::istreambuf_iterator<char>(settings_file)), std::istreambuf_iterator<char>());
+        check(text.find("music_volume=100") != std::string::npos, "mixer changes saved to settings file");
+    }
     // Outcome videos (plan 13 Task 4 Step 3): every outcome maps to its video family for fixed random values.
     {   // Pure rule first: exact names, no RNG state involved.
         Career c;

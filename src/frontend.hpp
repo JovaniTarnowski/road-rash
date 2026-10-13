@@ -27,7 +27,8 @@ struct MenuItem {
 // Item flags.
 namespace item_flag {
 constexpr uint32_t title_caption = 0x1, title_desc = 0x2, description = 0x4, popup_item = 0x10, keep_background = 0x20,
-                   light = 0x40, course_length = 0x4000, price = 0x2000, escape = 0x8000, skip = 0x40000, dimmed = 0x80000;
+                   light = 0x40, course_length = 0x4000, price = 0x2000, escape = 0x8000, skip = 0x40000, dimmed = 0x80000,
+                   native_slider = 0x01000000;   // plan 18 Task 6: native slider row (bit never set by the original)
 }
 
 struct MenuScreen {
@@ -65,7 +66,7 @@ struct MenuInput {
 };
 
 struct FrontendEvent {
-    enum class Kind { none, play_video, start_race, quit, select_soundtrack, apply_display } kind = Kind::none;
+    enum class Kind { none, play_video, start_race, quit, select_soundtrack, apply_display, apply_mixer } kind = Kind::none;
     std::string video;   // path relative to the ROADRASH directory, e.g. VIDEO/START3.AVI
     int course = 0;      // 1..5
     int group = 0, track = 0;      // select_soundtrack: 0-based group (menu caption - 0xe1) and track (caption - 0xf1)
@@ -125,6 +126,11 @@ private:
     int native_current(uint32_t popup) const;
     std::string native_value_text(int caption) const;
     void apply_native_setting();              // persist + emit apply_display
+    int slider_value(int caption) const;      // plan 18 Task 6: 0..100 for slider rows
+    void set_slider_value(int caption, int v);
+    void adjust_slider(int delta);            // Left/Right (+-10) on the focused slider row
+    void slider_home_end(bool home);          // Home/End: 0/100 on the focused slider row
+    void apply_mixer_setting();               // persist + emit apply_mixer
     void apply_restroom_pattern();
     void set_background(const std::string& name);
     std::string background_for(int previous, int screen, int title);
