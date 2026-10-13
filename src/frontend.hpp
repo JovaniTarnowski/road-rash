@@ -92,7 +92,9 @@ public:
     void start();                                 // intro video, then the Credits screen
     void update(const MenuInput&, uint64_t now_ms);
     bool poll(FrontendEvent&);                    // next host action
-    void draw(RgbImage&) const;                   // 640x480
+    void draw(RgbImage&, int scale = 1) const;      // 640s x 480s; scale = 1 keeps today's output exactly
+    void draw_scale1(RgbImage&) const;                 // original 640x480 path, bit-identical
+    void draw_scaled(RgbImage&, int scale) const;        // 640s x 480s, s = 2..4
     void race_finished(RaceOutcome, int place, const std::vector<Standing>&);
     void enter(int screen);                       // 0x00421df0
     int screen() const { return screen_; }

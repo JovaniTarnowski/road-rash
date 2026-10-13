@@ -7,11 +7,11 @@ namespace rr {
 namespace {
 constexpr uint32_t transparent=0x01000000;
 int32_t high_product(int32_t a,int32_t b){return int32_t((int64_t(a)*b)>>32);}
-void line(RgbImage& out,int x,int y,int end_x,int end_y,uint32_t color) {
+void line(RgbImage& out,int x,int y,int end_x,int end_y,uint32_t color,int width=1) {
     const int dx=std::abs(end_x-x),sx=x<end_x?1:-1,dy=-std::abs(end_y-y),sy=y<end_y?1:-1;
     int error=dx+dy;
     for(int guard=0;guard<2048;++guard) {
-        for(int yy=y-1;yy<=y+1;++yy)for(int xx=x-1;xx<=x+1;++xx)if(out.contains(xx,yy))out.at(xx,yy)=color;
+        for(int yy=y-width;yy<=y+width;++yy)for(int xx=x-width;xx<=x+width;++xx)if(out.contains(xx,yy))out.at(xx,yy)=color;
         if(x==end_x && y==end_y)return;
         const int twice=2*error;if(twice>=dy){error+=dy;x+=sx;}if(twice<=dx){error+=dx;y+=sy;}
     }
@@ -75,14 +75,17 @@ NearestOpponent nearest_opponent(const Race& race) {
     if(behind*2<ahead)return {behind_rider,behind};
     return {ahead_rider,-ahead};
 }
-void Hud::draw_gap_arrow(RgbImage& out,int left,int top,bool up,uint32_t color) {
+void Hud::draw_gap_arrow(RgbImage& out,int left,int top,bool up,uint32_t color,int scale) {
     // Native stand-in for the 18-pixel Wingdings 0xe9/0xea glyphs: an
     // 11-wide, 6-row head over a 5-wide, 6-row shaft, inside the cell.
+    // At scale s every source pixel becomes an s x s block.
+    if (scale < 1 || scale > 4) throw std::runtime_error("Gap arrow scale out of range 1..4");
     for(int row=0;row<12;++row) {
         const int r=up?row:11-row;          // r: distance from the tip
         const int half=r<6?r:2;
         for(int x=5-half;x<=5+half;++x)
-            if(out.contains(left+3+x,top+3+row))out.at(left+3+x,top+3+row)=color;
+            for(int yy=0;yy<scale;++yy)for(int xx=0;xx<scale;++xx)
+                if(out.contains(left+3*scale+x*scale+xx,top+3*scale+row*scale+yy))out.at(left+3*scale+x*scale+xx,top+3*scale+row*scale+yy)=color;
     }
 }
 HudState Hud::state(const Race& race,const std::string& player,const std::vector<std::string>& rider_names) const {
@@ -112,15 +115,19 @@ HudState Hud::state(const Race& race,const std::string& player,const std::vector
     }
     return s;
 }
-RgbImage Hud::compose(const HudState& state,const PhysicsTables& physics,DashMode mode) const {
-    RgbImage image(640,480,transparent);
+RgbImage Hud::compose(const HudState& state,const PhysicsTables& physics,DashMode mode,int scale) const {
+    // Plan 19 Task 5: artwork blits nearest-neighbour x scale (plan 20 swaps
+    // in upscaled art); text rasterises at height x scale with shadow x scale;
+    // needles use the pen width x scale. scale = 1 keeps today's output exactly.
+    if (scale < 1 || scale > 4) throw std::runtime_error("HUD scale out of range 1..4");
+    RgbImage image(640*scale,480*scale,transparent);
     // 0x00446c30 draws nothing at all when MiniDash == 2 (mode off).
     if(mode == DashMode::off)return image;
     const std::vector<uint8_t>& dash_art = low_ ? dashboard_low_ : dashboard_;
     const std::vector<uint8_t>& meter_art = low_ ? meter_low_ : meter_;
     const int stride = low_ ? 320 : 640, meter_stride = low_ ? 95 : 190;
     const std::array<int32_t,55>& layout = mode == DashMode::mini ? layout_mini_ : layout_;
-    const float scale = low_ ? 0.5f : 1.f;
+    const float lscale = low_ ? 0.5f : 1.f;
     auto blit=[&](const std::vector<uint8_t>& source,int src_stride,int left,int top,int right,int bottom,int x,int y,bool keyed=true) {
         const int dx = low_ ? x / 2 : x, dy = low_ ? y / 2 : y;
         for(int row=top;row<bottom;++row)for(int col=left;col<right;++col) {
@@ -128,14 +135,17 @@ RgbImage Hud::compose(const HudState& state,const PhysicsTables& physics,DashMod
             const uint8_t index=source[size_t(row)*src_stride+col];if(!index && keyed)continue;
             const auto* rgb=&palette_.rgbx[4*index];
             const uint32_t pixel=index?uint32_t(rgb[0])<<16|uint32_t(rgb[1])<<8|rgb[2]:0;
-            if(!low_) { if(image.contains(dx+col-left,dy+row-top))image.at(dx+col-left,dy+row-top)=pixel; }
-            else for(int yy=0;yy<2;++yy)for(int xx=0;xx<2;++xx)if(image.contains(2*(dx+col-left)+xx,2*(dy+row-top)+yy))image.at(2*(dx+col-left)+xx,2*(dy+row-top)+yy)=pixel;
+            const int dbl = low_ ? 2 : 1;
+            for(int yy=0;yy<dbl*scale;++yy)for(int xx=0;xx<dbl*scale;++xx) {
+                const int px=(dx+col-left)*dbl*scale+xx,py=(dy+row-top)*dbl*scale+yy;
+                if(image.contains(px,py))image.at(px,py)=pixel;
+            }
         }
     };
     auto bar=[&](int value,int offset) {
         // 0x0044ca50 (flags 0x10). Vertical meters: full colour column
         // {11,0,62,31}, then the black {11,32,62,63-value} empties it from the top.
-        const int type=layout[offset],x=int(layout[offset+1]*scale),y=int(layout[offset+2]*scale);value=std::clamp(value,0,31);
+        const int type=layout[offset],x=int(layout[offset+1]*lscale),y=int(layout[offset+2]*lscale);value=std::clamp(value,0,31);
         if(!type){blit(meter_art,meter_stride,62,16,126,34,x,y,false);blit(meter_art,meter_stride,62,0,62+value*2,16,x+1,y+1,false);}
         else {blit(meter_art,meter_stride,11,0,62,31,x,y,false);blit(meter_art,meter_stride,11,32,62,63-value,x,y,false);}
     };
@@ -143,10 +153,10 @@ RgbImage Hud::compose(const HudState& state,const PhysicsTables& physics,DashMod
     // in mini mode (1) only the numeric speed readout is drawn, no needles/bars.
     if(mode == DashMode::mini) {
         auto label=[&](const std::string& value,int offset,uint32_t color) {
-            TextRect rect{int(layout[offset+1]*scale),int(layout[offset+2]*scale),int(layout[offset+3]*scale),int(layout[offset+4]*scale)};
-            auto shadow=rect;shadow.left+=2;shadow.top+=2;shadow.right+=2;shadow.bottom+=2;
-            text_.draw_box(&image,Face::badloc,32,shadow,0,value,uint32_t(layout[offset]));
-            text_.draw_box(&image,Face::badloc,32,rect,color,value,uint32_t(layout[offset]));
+            TextRect rect{int(layout[offset+1]*lscale)*scale,int(layout[offset+2]*lscale)*scale,int(layout[offset+3]*lscale)*scale,int(layout[offset+4]*lscale)*scale};
+            auto shadow=rect;shadow.left+=2*scale;shadow.top+=2*scale;shadow.right+=2*scale;shadow.bottom+=2*scale;
+            text_.draw_box(&image,Face::badloc,32*scale,shadow,0,value,uint32_t(layout[offset]));
+            text_.draw_box(&image,Face::badloc,32*scale,rect,color,value,uint32_t(layout[offset]));
         };
         char speed[32];std::snprintf(speed,sizeof speed,"%d",state.distance);
         label(speed,21,0xffffff);
@@ -162,15 +172,15 @@ RgbImage Hud::compose(const HudState& state,const PhysicsTables& physics,DashMod
         // selects CreatePen(PS_SOLID, HiRes?3:2, 0x81172) and issues
         // MoveToEx/LineTo (0x00446c30) — documented, NOT ported (see notes).
         const int32_t sx=sine(physics,uint32_t(angle)),cy=sine(physics,uint32_t(angle+1024));
-        const int x=int(layout[offset]*scale),y=int(layout[offset+1]*scale);
-        line(image,x,y,x+high_product(sx,int(layout[offset+2]*scale)),y-high_product(cy,int(layout[offset+3]*scale)),0x721108);
+        const int x=int(layout[offset]*lscale)*scale,y=int(layout[offset+1]*lscale)*scale;
+        line(image,x,y,x+high_product(sx,int(layout[offset+2]*lscale))*scale,y-high_product(cy,int(layout[offset+3]*lscale))*scale,0x721108,scale);
     };
     needle(state.rpm_angle,16);needle(state.speed_angle,21);
     auto label=[&](const std::string& value,int offset,uint32_t color) {
-        TextRect rect{int(layout[offset+1]*scale),int(layout[offset+2]*scale),int(layout[offset+3]*scale),int(layout[offset+4]*scale)};
-        auto shadow=rect;shadow.left+=2;shadow.top+=2;shadow.right+=2;shadow.bottom+=2;
-        text_.draw_box(&image,Face::badloc,32,shadow,0,value,uint32_t(layout[offset]));
-        text_.draw_box(&image,Face::badloc,32,rect,color,value,uint32_t(layout[offset]));
+        TextRect rect{int(layout[offset+1]*lscale)*scale,int(layout[offset+2]*lscale)*scale,int(layout[offset+3]*lscale)*scale,int(layout[offset+4]*lscale)*scale};
+        auto shadow=rect;shadow.left+=2*scale;shadow.top+=2*scale;shadow.right+=2*scale;shadow.bottom+=2*scale;
+        text_.draw_box(&image,Face::badloc,32*scale,shadow,0,value,uint32_t(layout[offset]));
+        text_.draw_box(&image,Face::badloc,32*scale,rect,color,value,uint32_t(layout[offset]));
     };
     label(state.player,0,0xffff00);label(std::to_string(state.place),25,0xffffff);
     char distance[32];std::snprintf(distance,sizeof distance,"%02d.%d",state.distance/10,state.distance%10);label(distance,30,0xffffff);
@@ -189,9 +199,9 @@ RgbImage Hud::compose(const HudState& state,const PhysicsTables& physics,DashMod
         char gap[32];std::snprintf(gap,sizeof gap,"%d.%03d",value/1000,value%1000);
         const bool ahead=state.target_gap<1;
         label(gap,10,ahead?0xe71000:0x28a31c);
-        const int ax=int((layout[11]-12)*scale),ay=int((layout[12]+(ahead?9:11))*scale);
-        draw_gap_arrow(image,ax,ay,ahead,0);
-        draw_gap_arrow(image,ax-2,ay-2,ahead,0xffffff);
+        const int ax=int((layout[11]-12)*lscale)*scale,ay=int((layout[12]+(ahead?9:11))*lscale)*scale;
+        draw_gap_arrow(image,ax,ay,ahead,0,scale);
+        draw_gap_arrow(image,ax-2*scale,ay-2*scale,ahead,0xffffff,scale);
     }
     return image;
 }

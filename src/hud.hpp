@@ -36,8 +36,8 @@ public:
     // The ahead/behind indicator 0x00446c30 draws in Wingdings (0xe9 up,
     // 0xea down); Wingdings is a Windows system font, not on the disc, so a
     // native arrow of the same cell height stands in for the glyph.
-    static void draw_gap_arrow(RgbImage&,int left,int top,bool up,uint32_t color);
-    RgbImage compose(const HudState&,const PhysicsTables&,DashMode mode = DashMode::full) const;
+    static void draw_gap_arrow(RgbImage&,int left,int top,bool up,uint32_t color,int scale = 1);
+    RgbImage compose(const HudState&,const PhysicsTables&,DashMode mode = DashMode::full,int scale = 1) const;
     // Low-mode artwork: 320-wide KLODASH/MLODASH dashboard + 95-stride LILMETER,
     // selected in low resolution (0x004457f0 choice 1/2); MiniDash picks the stride.
     void set_low_mode(bool low);

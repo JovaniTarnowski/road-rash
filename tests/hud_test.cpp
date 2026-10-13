@@ -50,17 +50,17 @@ int main(){
             if(state.place!=1 || state.stamina!=31 || state.condition!=31)throw std::runtime_error("Starting dashboard values");
             for(int value:{0,1,15,31}) {
                 state.stamina=state.condition=state.target_stamina=value;
-                const auto image=hud.compose(state,physics);
+                const auto image=hud.compose(state,physics,rr::DashMode::full);
                 if(image.width!=640 || image.height!=480 || image.at(0,0)!=0x01000000 || image.at(250,449)!=0x721108)throw std::runtime_error("Dashboard composition bounds/needle");
                 ++variants;
             }
             // 0x00446c30 draws the opponent meter (layout 50, 456,424, 51x31)
             // with no target, so the dashboard hole never shows the road.
             state.target.clear();state.target_stamina=0;state.stamina=0;
-            const auto empty=hud.compose(state,physics);
+            const auto empty=hud.compose(state,physics,rr::DashMode::full);
             for(int y=424;y<455;++y)for(int x=456;x<507;++x)if(empty.at(x,y)==0x01000000)throw std::runtime_error("Opponent meter hole is transparent");
             // 0x0044ca50: vertical meters empty from the top (colour, then black overlay).
-            state.stamina=31;const auto full=hud.compose(state,physics);size_t changed=0;
+            state.stamina=31;const auto full=hud.compose(state,physics,rr::DashMode::full);size_t changed=0;
             for(int y=424;y<455;++y)for(int x=134;x<185;++x)changed+=full.at(x,y)!=empty.at(x,y);
             // MiniDash 1 (0x00446899/0x004468e1 skip tach/speedo; 0x00446c76 skips
             // name bars): numeric readout only, no 3x3 needle pixels at the dial.
@@ -73,11 +73,17 @@ int main(){
             // Low-mode assets (0x004457f0 choices 1/2): 320-wide dashboard blits
             // through the same 640x480 frame without transparency holes.
             hud.set_low_mode(true);
-            const auto low=hud.compose(state,physics);
+            const auto low=hud.compose(state,physics,rr::DashMode::full);
             if(low.width!=640 || low.height!=480)throw std::runtime_error("Low dashboard bounds");
             { size_t lit=0,total=0; for(int y=420;y<480;++y)for(int x=0;x<640;++x){++total;lit+=low.at(x,y)!=0x01000000;} if(lit<total/10)throw std::runtime_error("Low dashboard mostly transparent"); }
             hud.set_low_mode(false);
+            // Plan 19 Task 5: compose at scale 2 is 1280 wide and downsamples
+            // (pixel (2x+1,2y+1)) to the scale-1 image on >=98% of pixels.
+            const auto hi=hud.compose(state,physics,rr::DashMode::full,2);
+            if(hi.width!=1280 || hi.height!=960)throw std::runtime_error("Scaled dashboard bounds");
+            size_t same=0,stotal=0;
+            for(int y=0;y<480;++y)for(int x=0;x<640;++x){++stotal;same+=hi.at(2*x+1,2*y+1)==full.at(x,y);}
+            if(same*100<98*stotal)throw std::runtime_error("Scaled dashboard downsample mismatch");
         }
-        std::cout<<variants<<" imported dashboard variants pass\n";return 0;
     }catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}
 }

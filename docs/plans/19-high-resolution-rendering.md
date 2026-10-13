@@ -160,12 +160,12 @@ inline ViewMode view_mode_scaled(int s) {
 **Interfaces:**
 - Produces: `Hud::compose(const HudState&, const PhysicsTables&, int scale) const` and `Frontend::draw(RgbImage&, int scale) const`. `scale = 1` keeps today's output exactly; the old signatures become wrappers with `scale = 1`.
 
-- [ ] **Step 1: Write the failing tests.**
+- [x] **Step 1: Write the failing tests.**
   - `hud_test`: for all 24 style combinations, `compose(..., 1)` equals today's image; `compose(..., 2)` is 1280 wide and its downsample (pixel `(2x+1, 2y+1)`) equals the scale-1 image on ≥ 98 % of pixels (needles and text are re-rasterised at the new size, so their edges differ).
   - `frontend_test`: on the main menu and the Restroom, every item's focus rectangle at scale 2 is exactly twice its scale-1 rectangle, and every text box's ink lies inside its doubled box.
-- [ ] **Step 2:** Run; expected FAIL.
-- [ ] **Step 3: Implement.** Artwork (dashboard, menu pictures) is scaled by nearest neighbour here; plan 20 swaps in upscaled art through the same call. Text is rasterised by `TextRenderer` at `height × scale` with the shadow offset `2 × scale`. Needles use the pen from plan 16 Task 6 with width × scale (or the current line with width × scale if Task 6 has not landed). Videos stay at their native size and are scaled on the GPU with the Display screen's filter (plan 20 Task 6 adds shaders).
-- [ ] **Step 4:** Run; expected PASS. Commit: `hud, frontend: draw at render scale with high-resolution text`.
+- [x] **Step 2:** Run; expected FAIL.
+- [x] **Step 3: Implement.** Artwork (dashboard, menu pictures) is scaled by nearest neighbour here; plan 20 swaps in upscaled art through the same call. Text is rasterised by `TextRenderer` at `height × scale` with the shadow offset `2 × scale`. Needles use the pen from plan 16 Task 6 with width × scale (or the current line with width × scale if Task 6 has not landed). Videos stay at their native size and are scaled on the GPU with the Display screen's filter (plan 20 Task 6 adds shaders).
+- [x] **Step 4:** Run; expected PASS. Commit: `hud, frontend: draw at render scale with high-resolution text`.
 
 ---
 

@@ -1260,7 +1260,16 @@ void Frontend::draw_text_box(RgbImage& img, const TextRect& r, Face face, int he
     text_.draw_box(&img, face, height, top, colour, s, flags);
 }
 
-void Frontend::draw(RgbImage& out) const {
+void Frontend::draw(RgbImage& out, int scale) const {
+    // Plan 19 Task 5: menus draw at 640s x 480s. Artwork scales nearest
+    // neighbour here (plan 20 swaps in upscaled art); text rasterises at
+    // height x scale with shadow offset 2 x scale. scale = 1 is today's path.
+    if (scale < 1 || scale > 4) throw std::runtime_error("Frontend scale out of range 1..4");
+    if (scale == 1) { draw_scale1(out); return; }
+    draw_scaled(out, scale);
+}
+
+void Frontend::draw_scale1(RgbImage& out) const {
     out = dark_screen_ ? dark_ : background_;
     if (credit_set_ >= 0) {
         // 0x00424340: twenty 24-pixel lines in Futura Condensed Bold 24; the first character picks the colour.
@@ -1409,6 +1418,183 @@ void Frontend::draw(RgbImage& out) const {
         for (int i = 0; i < n; ++i) {
             const int bx = 320 - n * 60 + i * 120;
             draw_text_box(out, {bx, 300, bx + 110, 330}, Face::futura_bold, 24, str(dialog_.buttons[size_t(i)].first),
+                          dt::center, i == dialog_.focus ? colour_focus : colour_light);
+        }
+    }
+}
+
+void Frontend::draw_scaled(RgbImage& out, int scale) const {
+    // Scaled menu path (scale 2..4). Structure mirrors draw_scale1 with every
+    // geometry term multiplied by scale and text at height x scale.
+    const RgbImage& bg = dark_screen_ ? dark_ : background_;
+    out = RgbImage(640 * scale, 480 * scale, 0);
+    auto blit_bg = [&](int dx, int dy, int w, int h) {
+        for (int yy = 0; yy < h * scale; ++yy) for (int xx = 0; xx < w * scale; ++xx) {
+            const int sx = dx + xx / scale, sy = dy + yy / scale;
+            if (sx < bg.width && sy < bg.height) out.at(dx * scale + xx, dy * scale + yy) = bg.at(sx, sy);
+        }
+    };
+    blit_bg(0, 0, 640, 480);
+    auto textbox = [&](TextRect r, Face face, int height, const std::string& str, unsigned flags, uint32_t colour) {
+        TextRect rs{r.left * scale, r.top * scale, r.right * scale, r.bottom * scale};
+        TextRect shadow = rs;
+        text_.draw_box(&out, face, height * scale, shadow, 0, str, flags);
+        TextRect top{rs.left - 2 * scale, rs.top - 2 * scale, rs.right - 2 * scale, rs.bottom - 2 * scale};
+        text_.draw_box(&out, face, height * scale, top, colour, str, flags);
+    };
+    auto fill = [&](int x, int y, int w, int h) {
+        for (int yy = 0; yy < h * scale; ++yy) for (int xx = 0; xx < w * scale; ++xx) {
+            const int sx = x + xx / scale, sy = y + yy / scale;
+            if (sx < dark_.width && sy < dark_.height) out.at(x * scale + xx, y * scale + yy) = dark_.at(sx, sy);
+        }
+    };
+    if (credit_set_ >= 0) {
+        // 0x00424340: twenty 24-pixel lines in Futura Condensed Bold 24; the first character picks the colour.
+        const auto& lines = credits_[size_t(credit_set_)];
+        const bool centred = credit_set_ == 1;
+        const int tab = 35 * text_.width(Face::futura_bold, 24 * scale, "x");   // DRAWTEXTPARAMS iTabLength 35, margin 40
+        int y = credit_y_ * scale;
+        for (size_t i = size_t(credit_line_); i < lines.size() && i < size_t(credit_line_) + 20; ++i, y += 0x18 * scale) {
+            const std::string& l = lines[i];
+            if (l.empty()) continue;
+            uint32_t colour = colour_light;
+            switch (l[0]) {
+            case 'G': colour = colour_grey; break;
+            case 'O': colour = colour_orange; break;
+            case 'R': colour = 0xff0000; break;
+            case 'Y': colour = colour_focus; break;
+            default: break;
+            }
+            const std::string body = l.substr(1);
+            for (int pass = 0; pass < 2; ++pass) {
+                const int off = pass ? -2 * scale : 0;
+                const uint32_t col = pass ? colour : 0;
+                if (centred) {
+                    TextRect r{off, y + off, 640 * scale + off, y + 0x18 * scale + off};
+                    text_.draw_box(&out, Face::futura_bold, 24 * scale, r, col, body, dt::center | dt::singleline);
+                    continue;
+                }
+                int x = 40 * scale + off;
+                size_t from = 0;
+                while (from <= body.size()) {
+                    size_t to = body.find('\t', from);
+                    if (to == std::string::npos) to = body.size();
+                    const std::string part = body.substr(from, to - from);
+                    text_.draw(out, Face::futura_bold, 24 * scale, x, y + off, col, part);
+                    x += text_.width(Face::futura_bold, 24 * scale, part);
+                    if (to < body.size()) x = 40 * scale + off + ((x - 40 * scale - off) / tab + 1) * tab;
+                    from = to + 1;
+                }
+            }
+        }
+        return;
+    }
+    // Title box (0x0041f770): Badloc 72 on the darkened picture, orange with a black shadow.
+    const std::string& title = str(title_slot_);
+    if (title_slot_ && !title.empty() && title != "*") {
+        TextRect m{0, 0, 640, 480};
+        text_.draw_box(nullptr, Face::badloc, 72, m, 0, title, dt::calcrect);
+        const int tw = m.right - m.left, th = m.bottom - m.top;
+        TextRect box;
+        if (title_format_ & 4) box = {0, 0, 640, 300};
+        else if (title_format_ & 1) {
+            const int w = tw + 16, h = th + 16;
+            box = {320 - w / 2, (480 - h) * 3 / 4, 320 - w / 2 + w, (480 - h) * 3 / 4 + h};
+        } else if (title_format_ & 2) {
+            const int w = tw < 0x10c ? 0x13c : tw + 0x31;
+            box = {640 - w, 0, 640, th + 0x2a};
+        } else {
+            int w = tw + 0x31;
+            if (title_slot_ == 6 && w < 0xe6) w = 0xe6;
+            box = {0, 0, w, th + 0x2a};
+        }
+        fill(box.left, box.top, box.right - box.left, box.bottom - box.top);
+        TextRect t{box.left, box.top + (box.bottom - box.top - th) / 2 + 2, box.right, box.bottom};
+        textbox(t, Face::badloc, 72, title, dt::center | dt::wordbreak, colour_orange);
+    }
+    // Description box (0x00420470): darkened, Futura, pale text with a black shadow.
+    const std::string& desc = str(desc_slot_);
+    if (desc_slot_ && !desc.empty() && desc != "*") {
+        const Face face = screen_ == 0x1a ? Face::futura_regular : (desc_flags_ & 0x80) ? Face::futura_demi : Face::futura_regular;
+        const int height = screen_ == 0x1a ? 36 : (desc_flags_ & 0x80) ? 24 : 32;
+        TextRect box;
+        if (desc_flags_ & 0x1000) box = {0, 300, 640, 0x1a4 + 300};
+        else {
+            const bool wide = (desc_flags_ & 0x900) != 0;
+            const int maxw = wide ? 0x270 : 300;
+            TextRect m{0, 0, maxw, 0};
+            text_.draw_box(nullptr, face, height, m, 0, desc, dt::wordbreak | dt::calcrect);
+            const int w = std::min(maxw, m.right - m.left), h = std::min(0x186, m.bottom - m.top);
+            int x = (desc_format_ & 2) ? 0x13c : 8, y = 0x7a;
+            if (wide) { x = (0x270 - w) / 2; y = 0x17c - (screen_ == 0x0b ? 16 : 0); }
+            box = {x, y, x + w + 16, y + h + 16};
+        }
+        fill(box.left, box.top, box.right - box.left, box.bottom - box.top);
+        textbox({box.left + 8, box.top + 8, box.right - 8, box.bottom}, face, height, desc, dt::wordbreak | dt::center, colour_light);
+    }
+    if (!price_text_.empty()) {
+        TextRect box{0x10, 0x154, 0x10 + 0xf0 + 16, 0x154 + 30 + 16};
+        fill(box.left, box.top, box.right - box.left, box.bottom - box.top);
+        textbox({box.left + 8, box.top + 8, box.right - 8, box.bottom}, Face::futura_regular, 32, price_text_, dt::center, colour_light);
+    }
+    // Buttons (0x0041fc90 / 0x0041ff80).
+    for (size_t i = 0; i < items_.size(); ++i) {
+        const MenuItem& m = items_[i];
+        if (m.w <= 0 || m.h <= 0) continue;
+        const std::string caption = caption_text(m);
+        if (!(m.flags & item_flag::keep_background)) fill(m.x, m.y, m.w, m.h);
+        else if (m.caption == 0) continue;
+        if (caption.empty() || caption == "*") continue;
+        uint32_t colour;
+        if (!m.enabled) colour = (m.flags & item_flag::light) ? colour_light : colour_grey;
+        else if (int(i) != focus_ && !(m.flags & 0x10000)) colour = (m.flags & item_flag::skip) ? colour_orange : (m.flags & item_flag::dimmed) ? colour_grey : colour_light;
+        else colour = m.caption == 0xb8 ? 0xffffff : colour_focus;
+        if (screen_ == 0x22) {
+            // Standings in a fixed-pitch layout (original: New Courier Bold 18).
+            const int cell = text_.width(Face::futura_bold, 20 * scale, "0");
+            int x = (m.x + 0x19) * scale;
+            for (char c : caption) {
+                const std::string ch(1, c);
+                text_.draw(out, Face::futura_bold, 20 * scale, x + (cell - text_.width(Face::futura_bold, 20 * scale, ch)) / 2, m.y * scale + 2 * scale, 0, ch);
+                text_.draw(out, Face::futura_bold, 20 * scale, x + (cell - text_.width(Face::futura_bold, 20 * scale, ch)) / 2 - 2 * scale, m.y * scale, colour, ch);
+                x += cell;
+            }
+            continue;
+        }
+        const bool wide = m.x == 0 && m.w == 640;
+        if (wide) {
+            textbox({m.x + 0x19, m.y + 2, m.x + m.w, m.y + m.h}, Face::futura_regular, 32, caption, dt::wordbreak | dt::center, colour_light);
+        } else {
+            textbox({m.x + 0x19, m.y + 2, m.x + m.w, m.y + m.h}, Face::futura_bold, 24, caption, dt::wordbreak, colour);
+            if (colour == colour_focus || colour == 0xffffff) {
+                // Wingdings arrow (0x0046b044) substitute: a right-pointing triangle.
+                for (int pass = 0; pass < 2; ++pass) {
+                    const int ox = (m.x + 6 + (pass ? 0 : 2)) * scale, oy = (m.y + 6 + (pass ? 0 : 2)) * scale;
+                    for (int y = 0; y < 13 * scale; ++y)
+                        for (int x = 0; x <= 6 * scale - std::abs(y - 6 * scale); ++x)
+                            if (out.contains(ox + x, oy + y)) out.at(ox + x, oy + y) = pass ? colour_yellow : 0;
+                }
+            }
+        }
+    }
+    if (qualified_overlay_) {
+        const std::string& q = str(181);
+        text_.draw(out, Face::badloc, 42 * scale, 0x1c4 * scale, 0x110 * scale, 0, q);
+        text_.draw(out, Face::badloc, 42 * scale, 0x1c2 * scale, 0x10e * scale, colour_yellow, q);
+    }
+    if (!dialog_.text.empty()) {
+        // Native modal box for the original MessageBoxA prompts.
+        TextRect m{0, 0, 520, 0};
+        text_.draw_box(nullptr, Face::futura_regular, 28, m, 0, dialog_.text, dt::wordbreak | dt::calcrect);
+        const int h = m.bottom - m.top;
+        const int top = std::max(20, 290 - h - 16);
+        fill(40, top - 16, 560, 340 - top + 32);
+        for (int x = 40 * scale; x < 600 * scale; ++x) { out.at(x, (top - 16) * scale) = colour_light; out.at(x, (340 + 15) * scale) = colour_light; }
+        textbox({60, top, 580, 290}, Face::futura_regular, 28, dialog_.text, dt::wordbreak | dt::center, colour_light);
+        const int n = int(dialog_.buttons.size());
+        for (int i = 0; i < n; ++i) {
+            const int bx = 320 - n * 60 + i * 120;
+            textbox({bx, 300, bx + 110, 330}, Face::futura_bold, 24, str(dialog_.buttons[size_t(i)].first),
                           dt::center, i == dialog_.focus ? colour_focus : colour_light);
         }
     }

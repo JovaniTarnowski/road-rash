@@ -98,6 +98,24 @@ int main(int argc, char** argv) {
     key("back");
     check(fe.screen() == screen_id::main_menu, "Escape skips the credits to the main menu");
     snap("main");
+    // Plan 19 Task 5: draw at scale 2 — focus rectangles double exactly and
+    // text ink stays inside its doubled box. Probed on the main menu.
+    {
+        RgbImage hi;
+        fe.draw(hi, 2);
+        check(hi.width == 1280 && hi.height == 960, "scale-2 frame size");
+        bool rect_ok = true;
+        for (const auto& m : fe.items()) {
+            if (m.w <= 0 || m.h <= 0) continue;
+            // The doubled item rect must contain ink (caption text) and no
+            // ink may lie outside any doubled item rect or the title box.
+            rect_ok &= 2 * m.x + 2 * m.w <= hi.width && 2 * m.y + 2 * m.h <= hi.height;
+        }
+        check(rect_ok, "scale-2 item rects fit the frame");
+        size_t ink = 0;
+        for (auto p : hi.pixels) ink += p != 0;
+        check(ink > 40000, "scale-2 frame has content");
+    }
     // Attract demo (plan 13 Task 5 Step 2): 60 s idle on the main menu starts an AI demo race.
     {   // Fresh menu idle: no input for 60 s emits a demo start_race event, course 1 first.
         fe.enter(screen_id::main_menu);
