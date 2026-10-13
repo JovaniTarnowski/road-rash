@@ -587,6 +587,7 @@ The course screens share one item array; the sixth item is copied from `0x004691
 - Volume in hundredths of dB is `(v×10000 >> 14) − 10000`, clamped to −10000..0; a looping buffer stops below −9000.
 - Pan is ±10000 hundredths of dB, negated when speakers are swapped.
 - Frequency is clamped to 100..100000 Hz.
+  - DirectSound-mapping REA re-confirmation (October 12, 2026; plan 13 Task 1 SDL-input): pinned REA 6.4.0 pseudocode whitespace-identical for `0x004141c0` play (1226 chars: `(v·10000>>14)−10000` dB clamp, swap negate, 100–100000 Hz clamp, −9000 loop-stop, vtable volume/pan/freq + play-if-idle), `0x004142c0` loop-start (1134: same clamps, unconditional play) and `0x00414160` stop (132). The SDL mixer port maps these onto volume/pan/frequency voice params; the vtable slots are the only Win32-specific surface. Files: `analysis/oracle/rea-4141c0-dsplay.md`, `rea-4142c0-dsloop.md`, `rea-414160-dsstop.md` (disc-derived, git-ignored).
 
 **Engines** (`0x00434ce0`, `0x00434db0`, `0x004349c0`):
 - The listener is the camera (`0x00437c30`: position Q8, lateral, position change × 256).
