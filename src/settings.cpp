@@ -55,17 +55,40 @@ Settings parse_settings(const std::string& text) {
         else if (k == "alternate_artwork") flag(s.alternate_artwork);
         else if (k == "mini_dash") { if (parse_int(v, 0, 2, x)) s.mini_dash = x; }
         else if (k == "controls") {
-            // 0x16-byte "Controls" block as 22 hex chars; malformed input ignored.
-            if (v.size() == 22) {
-                bool ok = true;
-                std::array<uint16_t, 11> t{};
-                auto hex = [](char c) { return c >= '0' && c <= '9' ? c - '0' : c >= 'a' && c <= 'f' ? c - 'a' + 10 : c >= 'A' && c <= 'F' ? c - 'A' + 10 : -1; };
+            // 44 hex chars (full u16 per action, high byte first); legacy 22-char
+            // files carry the low byte only. Malformed input ignored. Unknown codes
+            // fall back to that action's keyboard default only: high byte 0 with a
+            // low byte outside the joystick set means nothing pressable (plan 18
+            // Task 7). Zero stays unbound.
+            auto hex = [](char c) { return c >= '0' && c <= '9' ? c - '0' : c >= 'a' && c <= 'f' ? c - 'a' + 10 : c >= 'A' && c <= 'F' ? c - 'A' + 10 : -1; };
+            std::array<uint16_t, 11> t{};
+            bool ok = false;
+            if (v.size() == 44) {
+                ok = true;
+                for (size_t i = 0; i < 11 && ok; ++i) {
+                    int h[4] = {hex(v[4 * i]), hex(v[4 * i + 1]), hex(v[4 * i + 2]), hex(v[4 * i + 3])};
+                    if (h[0] < 0 || h[1] < 0 || h[2] < 0 || h[3] < 0) ok = false;
+                    else t[i] = uint16_t(h[0] * 4096 + h[1] * 256 + h[2] * 16 + h[3]);
+                }
+            } else if (v.size() == 22) {
+                ok = true;
                 for (size_t i = 0; i < 11 && ok; ++i) {
                     int hi = hex(v[2 * i]), lo = hex(v[2 * i + 1]);
                     if (hi < 0 || lo < 0) ok = false;
                     else t[i] = uint16_t(hi * 16 + lo);
                 }
-                if (ok) { s.controls = t; s.custom_controls = true; }
+            }
+            if (ok) {
+                static constexpr uint8_t kJoy[] = {0x00, 0x01, 0x02, 0x25, 0x26, 0x27, 0x28};
+                const auto known_joy = [&](uint8_t b) {
+                    for (uint8_t j : kJoy) if (j == b) return true;
+                    return false;
+                };
+                const auto kb = default_keyboard_controls();
+                for (size_t i = 0; i < 11; ++i)
+                    if (t[i] != 0 && (t[i] >> 8) == 0 && !known_joy(uint8_t(t[i]))) t[i] = kb[i];
+                s.controls = t;
+                s.custom_controls = true;
             }
         }
         else if (k == "music_group") { if (parse_int(v, 0, 31, x)) s.music_group = x; }
@@ -87,6 +110,9 @@ Settings parse_settings(const std::string& text) {
         else if (k == "show_fps") flag(s.show_fps);
         else if (k == "touch_opacity") { if (parse_int(v, 0, 100, x)) s.touch_opacity = x; }
         else if (k == "haptics") flag(s.haptics);
+        else if (k == "swap_punch_kick") flag(s.swap_punch_kick);
+        else if (k == "stick_deadzone") { if (parse_int(v, 10, 40, x)) s.stick_deadzone = x; }
+        else if (k == "left_handed") flag(s.left_handed);
         else if (k == "alias") { if (v.size() < 20) s.alias = v; }
     }
     return s;
@@ -98,8 +124,12 @@ std::string format_settings(const Settings& s) {
       << "\nhires_bikers=" << s.high_res_bikers << "\nvideo_mode=" << s.video_mode << "\nalternate_artwork=" << s.alternate_artwork
       << "\nmini_dash=" << s.mini_dash << "\nopponent_list=" << s.opponent_list << "\nmusic_group=" << s.music_group;
     if (s.custom_controls) {
+        // Full u16 per action (4 hex chars, high byte first). The pre-Task-7
+        // writer emitted only the low byte (22 chars); the reader still takes it.
         o << "\ncontrols=";
-        for (uint16_t c : s.controls) o << "0123456789abcdef"[c >> 4] << "0123456789abcdef"[c & 15];
+        for (uint16_t c : s.controls)
+            o << "0123456789abcdef"[(c >> 12) & 15] << "0123456789abcdef"[(c >> 8) & 15]
+              << "0123456789abcdef"[(c >> 4) & 15] << "0123456789abcdef"[c & 15];
     }
     o << "\nmusic_track=" << s.music_track << "\nmaster_volume=" << s.master_volume << "\nmusic_volume=" << s.music_volume
       << "\neffects_volume=" << s.effects_volume << "\nengine_volume=" << s.engine_volume << "\nothers_volume=" << s.others_volume
@@ -107,7 +137,9 @@ std::string format_settings(const Settings& s) {
       << "\nswap_speakers=" << s.swap_speakers
       << "\ndisplay_mode=" << int(s.display_mode) << "\nwindow_scale=" << s.window_scale << "\nscale_mode=" << int(s.scale_mode)
       << "\nfilter=" << int(s.filter) << "\nvsync=" << s.vsync << "\nshow_fps=" << s.show_fps
-      << "\ntouch_opacity=" << s.touch_opacity << "\nhaptics=" << s.haptics << "\nalias=" << s.alias << "\n";
+      << "\ntouch_opacity=" << s.touch_opacity << "\nhaptics=" << s.haptics
+      << "\nswap_punch_kick=" << s.swap_punch_kick << "\nstick_deadzone=" << s.stick_deadzone
+      << "\nleft_handed=" << s.left_handed << "\nalias=" << s.alias << "\n";
     return o.str();
 }
 

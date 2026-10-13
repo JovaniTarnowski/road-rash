@@ -145,6 +145,101 @@ void add_native_screens(FrontendData& data, bool mobile) {
             sound.items[i].nav[5] = uint8_t((i + n - 1) % n);
         }
     }
+    // Gamepad page (plan 18 Task 7): fixed-mapping info rows (disabled), swap toggle,
+    // dead-zone slider, Back to Configure Input. Touch page: opacity popup, handedness, Back.
+    auto column = [&](MenuScreen& screen, int title) {
+        screen.title = title;
+        screen.title_format = data.screens[0x13].title_format;
+        screen.items.clear();
+    };
+    auto chain = [&](MenuScreen& screen) {
+        const size_t n = screen.items.size();
+        for (size_t i = 0; i < n; ++i) {
+            screen.items[i].nav[2] = uint8_t((i + n - 1) % n);
+            screen.items[i].nav[3] = uint8_t((i + 1) % n);
+            screen.items[i].nav[4] = uint8_t((i + 1) % n);
+            screen.items[i].nav[5] = uint8_t((i + n - 1) % n);
+        }
+    };
+    auto button = [&](int y, int caption, int desc, uint32_t handler, int target, uint32_t flags) {
+        MenuItem m = tpl;
+        m.y = y;
+        m.caption = caption;
+        m.desc = desc;
+        m.handler = handler;
+        m.target = target;
+        m.flags = flags;
+        m.enabled = true;
+        return m;
+    };
+    {
+        MenuScreen& pad = data.screens[screen_id::native_gamepad];
+        column(pad, ns::gamepad_title);
+        const int maps[4] = {ns::pad_map1, ns::pad_map2, ns::pad_map3, ns::pad_map4};
+        for (int i = 0; i < 4; ++i) {
+            MenuItem m = button(tpl.y + i * step, maps[i], 0, 0, 0,
+                                item_flag::title_desc | item_flag::description);
+            m.enabled = false;   // info rows: visible, never focused
+            pad.items.push_back(m);
+        }
+        pad.items.push_back(button(tpl.y + 4 * step, ns::pad_swap, ns::d_swap,
+                                   native_action::toggle_pad_swap, 0, item_flag::title_desc));
+        MenuItem dz = button(tpl.y + 5 * step, ns::pad_deadzone, ns::d_deadzone, 0, 0,
+                             item_flag::title_desc | item_flag::native_slider);
+        dz.desc = ns::d_deadzone;
+        pad.items.push_back(dz);
+        pad.items.push_back(button(tpl.y + 6 * step, ns::back, 0, 0, 0x12,
+                                   item_flag::title_desc | item_flag::escape));
+        chain(pad);
+    }
+    {
+        MenuScreen& touch = data.screens[screen_id::native_touch];
+        column(touch, ns::touch_title);
+        touch.items.push_back(button(tpl.y, ns::touch_opacity, ns::d_touch, 0,
+                                     int(native_popup::touch), item_flag::title_desc | item_flag::description));
+        touch.items.push_back(button(tpl.y + step, ns::touch_left, ns::d_lefthand,
+                                     native_action::toggle_left_handed, 0, item_flag::title_desc));
+        touch.items.push_back(button(tpl.y + 2 * step, ns::back, 0, 0, 0x12,
+                                     item_flag::title_desc | item_flag::escape));
+        chain(touch);
+    }
+    // Configure Input links: appended after the label rows so label indices keep
+    // working; nav extended from the last label row through the new rows.
+    {
+        auto& items = data.screens[0x12].items;
+        MenuItem gp = tpl;
+        gp.y = tpl.y + 8 * step;
+        gp.caption = ns::gamepad_title;
+        gp.handler = 0;
+        gp.target = screen_id::native_gamepad;
+        gp.desc = 0;
+        gp.flags = item_flag::title_desc | item_flag::description;
+        gp.enabled = true;
+        gp.nav[2] = 21;
+        gp.nav[5] = 21;
+        MenuItem th = gp;
+        th.y = tpl.y + 9 * step;
+        th.caption = ns::touch_title;
+        th.target = screen_id::native_touch;
+        th.nav[2] = 22;
+        th.nav[5] = 22;
+        if (mobile) {
+            gp.nav[3] = 23;
+            gp.nav[4] = 23;
+            th.nav[3] = 0;
+            th.nav[4] = 0;
+            items.push_back(gp);
+            items.push_back(th);
+        } else {
+            gp.nav[3] = 0;
+            gp.nav[4] = 0;
+            items.push_back(gp);
+        }
+        items[21].nav[3] = 22;
+        items[21].nav[4] = 22;
+        items[0].nav[2] = uint8_t(items.size() - 1);
+        items[0].nav[5] = uint8_t(items.size() - 1);
+    }
     // nav chain already routes 1->2->3).
     MenuItem& link = data.screens[0x13].items[2];
     link.target = screen_id::native_display;

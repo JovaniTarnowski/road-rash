@@ -728,6 +728,11 @@ struct RaceEnd {
 struct RaceOptions {
     bool auto_drive = false, start_paused = false, demo = false;   // attract demo: any input exits quietly
     std::string screenshot;
+    std::array<uint16_t, 11> key_codes{};   // plan 18 Task 7: honored when custom_keys
+    bool custom_keys = false;
+    bool swap_punch_kick = false;            // plan 18 Task 7: native gamepad page
+    int stick_deadzone = 35;                 // plan 18 Task 7: percent, 10..40
+    bool left_handed = false;                // plan 18 Task 7: native touch page
 };
 
 // One race: the playable loop. In career mode the race is decided by the player finishing
@@ -740,6 +745,7 @@ RaceEnd run_race(Game& g, SDL_Renderer* renderer, const RaceOptions& opt, Displa
     LifecycleWatch lifecycle(g.mixer);
     if (opt.start_paused) lifecycle.state.pause();
     rr::TouchInput touch;
+    touch.set_left_handed(opt.left_handed);
     rr::TickClock clock;
     SDL_Gamepad* pad = open_first_gamepad();
     bool running = true, decided = false;
@@ -813,24 +819,33 @@ RaceEnd run_race(Game& g, SDL_Renderer* renderer, const RaceOptions& opt, Displa
         if (restart) g.restart();
         rr::PlayerInput in = touch.current();
         const bool* keys = SDL_GetKeyboardState(nullptr);
-        in.accelerate |= keys[SDL_SCANCODE_UP] || keys[SDL_SCANCODE_W];
-        in.brake |= keys[SDL_SCANCODE_DOWN] || keys[SDL_SCANCODE_S];
-        in.left |= keys[SDL_SCANCODE_LEFT] || keys[SDL_SCANCODE_A];
-        in.right |= keys[SDL_SCANCODE_RIGHT] || keys[SDL_SCANCODE_D];
-        in.punch |= keys[SDL_SCANCODE_Z] || keys[SDL_SCANCODE_LCTRL];
-        in.kick |= keys[SDL_SCANCODE_X] || keys[SDL_SCANCODE_LALT];
-        in.backhand |= keys[SDL_SCANCODE_C];
+        // Plan 18 Task 7: custom tables are honored via bound_control_bits below;
+        // defaults use the hardcoded keys (touch/gamepad layer through `in` either way).
+        if (!opt.custom_keys) {
+            in.accelerate |= keys[SDL_SCANCODE_UP] || keys[SDL_SCANCODE_W];
+            in.brake |= keys[SDL_SCANCODE_DOWN] || keys[SDL_SCANCODE_S];
+            in.left |= keys[SDL_SCANCODE_LEFT] || keys[SDL_SCANCODE_A];
+            in.right |= keys[SDL_SCANCODE_RIGHT] || keys[SDL_SCANCODE_D];
+            in.punch |= keys[SDL_SCANCODE_Z] || keys[SDL_SCANCODE_LCTRL];
+            in.kick |= keys[SDL_SCANCODE_X] || keys[SDL_SCANCODE_LALT];
+            in.backhand |= keys[SDL_SCANCODE_C];
+        }
+        const int zone = opt.stick_deadzone * 32768 / 100;
         if (pad) {
-            in.accelerate |= SDL_GetGamepadButton(pad, SDL_GAMEPAD_BUTTON_SOUTH) || SDL_GetGamepadAxis(pad, SDL_GAMEPAD_AXIS_RIGHT_TRIGGER) > 8000;
+            const auto south = SDL_GetGamepadButton(pad, SDL_GAMEPAD_BUTTON_SOUTH);
+            const auto west = SDL_GetGamepadButton(pad, SDL_GAMEPAD_BUTTON_WEST);
+            const auto north = SDL_GetGamepadButton(pad, SDL_GAMEPAD_BUTTON_NORTH);
+            in.accelerate |= south || SDL_GetGamepadAxis(pad, SDL_GAMEPAD_AXIS_RIGHT_TRIGGER) > 8000;
             in.brake |= SDL_GetGamepadButton(pad, SDL_GAMEPAD_BUTTON_EAST) || SDL_GetGamepadAxis(pad, SDL_GAMEPAD_AXIS_LEFT_TRIGGER) > 8000;
             in.left |= SDL_GetGamepadButton(pad, SDL_GAMEPAD_BUTTON_DPAD_LEFT);
             in.right |= SDL_GetGamepadButton(pad, SDL_GAMEPAD_BUTTON_DPAD_RIGHT);
             in.steer_axis = SDL_GetGamepadAxis(pad, SDL_GAMEPAD_AXIS_LEFTX);
-            in.punch |= SDL_GetGamepadButton(pad, SDL_GAMEPAD_BUTTON_WEST);
-            in.kick |= SDL_GetGamepadButton(pad, SDL_GAMEPAD_BUTTON_NORTH);
+            in.punch |= opt.swap_punch_kick ? north : west;
+            in.kick |= opt.swap_punch_kick ? west : north;
             in.backhand |= SDL_GetGamepadButton(pad, SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER);
         }
-        const uint32_t controls = opt.auto_drive ? autopilot(*g.race, g.traffic.get()) : rr::controls_from(in);
+        uint32_t controls = opt.auto_drive ? autopilot(*g.race, g.traffic.get()) : rr::controls_from(in, zone);
+        if (!opt.auto_drive && opt.custom_keys) controls |= rr::bound_control_bits(opt.key_codes, true, keys);
 
         const uint64_t now = SDL_GetTicksNS();
         if (lifecycle.state.take_clock_reset()) { touch.clear(); clock.reset(); last = now; }
@@ -1020,7 +1035,7 @@ int run_game(const rr::Assets& assets, SDL_Window* window, SDL_Renderer* rendere
                     music.stop();
                     race_music.play_race(ev.course, fe.player_name());
                     g.race_music = &race_music;
-                    const RaceEnd demo_end = run_race(g, renderer, {.demo = true}, display);
+                    const RaceEnd demo_end = run_race(g, renderer, {.demo = true, .key_codes = settings.controls, .custom_keys = settings.custom_controls, .swap_punch_kick = settings.swap_punch_kick, .stick_deadzone = settings.stick_deadzone, .left_handed = settings.left_handed}, display);
                     menu_stick.suspend();
                     race_music.stop();
                     g.race_music = nullptr;
@@ -1040,7 +1055,7 @@ int run_game(const rr::Assets& assets, SDL_Window* window, SDL_Renderer* rendere
                 race_music.set_music_level(settings.mute ? 0 : settings.music_volume * settings.master_volume / 100);
                 g.sound = sound.get();
                 if (sound) sound->start_race(career.state.bike, career.state.character);
-                const RaceEnd end = run_race(g, renderer, {}, display);
+                const RaceEnd end = run_race(g, renderer, {.key_codes = settings.controls, .custom_keys = settings.custom_controls, .swap_punch_kick = settings.swap_punch_kick, .stick_deadzone = settings.stick_deadzone, .left_handed = settings.left_handed}, display);
                 menu_stick.suspend();
                 if (sound) sound->stop_race();
                 race_music.stop();  // race end
@@ -1085,6 +1100,9 @@ int run_game(const rr::Assets& assets, SDL_Window* window, SDL_Renderer* rendere
                     (e.key.key == SDLK_F && (e.key.mod & SDL_KMOD_GUI))) { display.toggle_fullscreen(); continue; }
             }
             if (e.type == SDL_EVENT_KEY_DOWN) {
+                // Plan 18 Task 7: raw scancode for press-a-key capture (0 = none).
+                if (!e.key.repeat && e.key.scancode > 0 && e.key.scancode < SDL_SCANCODE_COUNT)
+                    in.capture_scancode = int(e.key.scancode);
                 switch (e.key.key) {
                 case SDLK_LEFT: in.left = true; break;
                 case SDLK_RIGHT: in.right = true; break;
@@ -1366,7 +1384,7 @@ int main(int argc, char** argv) {
                 }
                 boot.frame = 0;
                 boot.apply(480);
-                run_race(g, renderer, {.auto_drive = auto_drive, .start_paused = start_paused, .screenshot = screenshot}, boot);
+                run_race(g, renderer, {.auto_drive = auto_drive, .start_paused = start_paused, .screenshot = screenshot, .key_codes = boot_settings.controls, .custom_keys = boot_settings.custom_controls, .swap_punch_kick = boot_settings.swap_punch_kick, .stick_deadzone = boot_settings.stick_deadzone, .left_handed = boot_settings.left_handed}, boot);
                 g.mixer = nullptr; g.sound = nullptr; g.race_music = nullptr;
             }
         }

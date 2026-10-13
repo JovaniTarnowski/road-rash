@@ -19,6 +19,11 @@ const std::array<std::string, ns::count - native_slot_base> kNativeStrings = {
     "SOUND", "Master", "Music", "Effects", "Engines", "Others", "Sirens", "Interface", "Mute", "Swap Speakers",
     "PAUSE", "Resume", "Sound", "Display", "Controls", "Quit Race", "Leave the race and return to the menu.",
     "0%", "25%", "50%", "75%", "100%",
+    "GAMEPAD", "South/RT2: gas  East/LT2: brake  Pad: steer", "West: punch  North: kick  RShoulder: backhand",
+    "Start: select  Back: back  Guide: pause", "Menus: D-pad + A/B",
+    "Swap Punch+Kick", "Stick Dead Zone", "South and West trade punch and kick.",
+    "Stick deflection needed before steering, in percent.",
+    "TOUCH", "Left-Handed Layout", "Mirror the touch zones for left thumbs.",
 };
 const std::string kEmpty;
 }

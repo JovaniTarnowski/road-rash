@@ -1,4 +1,6 @@
 #include "frontend.hpp"
+#include <SDL3/SDL_scancode.h>
+#include <SDL3/SDL_keyboard.h>
 #include "assets.hpp"
 #include "race_music.hpp"
 #include "exe_tables.hpp"
@@ -13,6 +15,8 @@
 #include <stdexcept>
 
 namespace rr {
+// Slider range {min, max, step} per caption (plan 18 Task 7 dead zone differs).
+static std::array<int, 3> slider_range(int caption);
 namespace {
 uint32_t le32(const std::vector<uint8_t>& b, size_t p) {
     return uint32_t(b.at(p)) | uint32_t(b.at(p + 1)) << 8 | uint32_t(b.at(p + 2)) << 16 | uint32_t(b.at(p + 3)) << 24;
@@ -203,16 +207,22 @@ const std::string& Frontend::str(int slot) const {
 std::string Frontend::caption_text(const MenuItem& m) const {
     if (m.caption == edit_slot && editing_name_) return edit_buffer_ + "_";
     if (m.flags & item_flag::native_slider) {
-        // Plan 18 Task 6: caption plus ten segments plus the numeric value.
+        // Plan 18 Task 6/7: caption plus ten segments plus the numeric value,
+        // segments scaled to the slider's own range.
         const int v = slider_value(m.caption);
+        const auto range = slider_range(m.caption);
+        const int fill = range[1] == range[0] ? 10 : (v - range[0]) * 10 / (range[1] - range[0]);
         std::string segs;
-        for (int i = 0; i < 10; ++i) segs += i < v / 10 ? '#' : '-';
+        for (int i = 0; i < 10; ++i) segs += i < fill ? '#' : '-';
         return str(m.caption) + " " + segs + " " + std::to_string(v);
     }
     if ((m.handler == native_action::toggle_mute && settings_.mute) ||
-        (m.handler == native_action::toggle_swap && settings_.swap_speakers))
+        (m.handler == native_action::toggle_swap && settings_.swap_speakers) ||
+        (m.handler == native_action::toggle_pad_swap && settings_.swap_punch_kick) ||
+        (m.handler == native_action::toggle_left_handed && settings_.left_handed))
         return str(m.caption) + " On";
-    if (m.handler == native_action::toggle_mute || m.handler == native_action::toggle_swap)
+    if (m.handler == native_action::toggle_mute || m.handler == native_action::toggle_swap ||
+        m.handler == native_action::toggle_pad_swap || m.handler == native_action::toggle_left_handed)
         return str(m.caption) + " Off";
     return str(m.caption);
 }
@@ -290,6 +300,7 @@ std::string Frontend::background_for(int previous, int screen, int title) {
     case 0x18: return title >= 0x80 && title <= 0x8e ? std::string("Bikes/") + bike_files[title - 0x80] : "";
     case 0x1a: return {};   // chosen by prepare_schmooze
     case screen_id::native_display: case screen_id::native_sound: case screen_id::native_pause:
+    case screen_id::native_gamepad: case screen_id::native_touch:
         return background_for(previous, 0x13, title);   // native screens share the Graphics Options picture
     default: break;
     }
@@ -459,6 +470,13 @@ void Frontend::prepare_screen(int previous, int screen) {
     case 10: case 12: case 0x1b: prepare_courses(screen); break;
     case 0x0e: prepare_characters(); break;
     case 0x10: apply_restroom_pattern(); break;
+    case 0x12: {
+        // Plan 18 Task 7: key labels (caps 160-168) show the bound key per action.
+        auto& items = data_.screens[0x12].items;
+        for (int i = 0; i < 9 && 13 + i < int(items.size()); ++i)
+            strings_[size_t(160 + i)] = key_name(i);
+        break;
+    }
     case 0x1a: prepare_schmooze(previous); break;
     case 0x1e: {
         // Results title and "%s finished in ... Place."
@@ -637,6 +655,21 @@ void Frontend::apply_native_setting() {
     events_.push_back({FrontendEvent::Kind::apply_display, {}, 0});
 }
 
+std::string Frontend::key_name(int action) const {
+    // Plan 18 Task 7: label text for the 0x12 key-label rows.
+    static const char* kDefaultNames[9] = {"Up", "Down", "Left", "Right", "Z", "X", "C", "?", "?"};
+    if (action < 0 || action > 8) return "?";
+    if (settings_.custom_controls) {
+        const int sc = settings_.controls[size_t(action)] >> 8;
+        if (sc > 0 && sc < SDL_SCANCODE_COUNT) {
+            const char* name = SDL_GetScancodeName(SDL_Scancode(sc));
+            if (name && *name) return name;
+        }
+        return "?";
+    }
+    return kDefaultNames[action];
+}
+
 int Frontend::slider_value(int caption) const {
     // Plan 18 Task 6: dialog-300 channel order (master + six), 0..100 each.
     switch (caption) {
@@ -647,12 +680,20 @@ int Frontend::slider_value(int caption) const {
     case ns::others: return settings_.others_volume;
     case ns::sirens: return settings_.siren_volume;
     case ns::interface: return settings_.interface_volume;
+    case ns::pad_deadzone: return settings_.stick_deadzone;
     default: return 0;
     }
 }
 
+// Slider range {min, max, step} per caption (plan 18 Task 7 dead zone differs).
+std::array<int, 3> slider_range(int caption) {
+    if (caption == ns::pad_deadzone) return {10, 40, 5};
+    return {0, 100, 10};
+}
+
 void Frontend::set_slider_value(int caption, int v) {
-    v = std::min(100, std::max(0, v));
+    const auto range = slider_range(caption);
+    v = std::min(range[1], std::max(range[0], v));
     switch (caption) {
     case ns::master: settings_.master_volume = v; break;
     case ns::music: settings_.music_volume = v; break;
@@ -661,6 +702,7 @@ void Frontend::set_slider_value(int caption, int v) {
     case ns::others: settings_.others_volume = v; break;
     case ns::sirens: settings_.siren_volume = v; break;
     case ns::interface: settings_.interface_volume = v; break;
+    case ns::pad_deadzone: settings_.stick_deadzone = v; break;
     default: return;
     }
     apply_mixer_setting();
@@ -670,14 +712,18 @@ void Frontend::adjust_slider(int delta) {
     if (focus_ < 0 || size_t(focus_) >= items_.size()) return;
     const MenuItem& m = items_[size_t(focus_)];
     if (!(m.flags & item_flag::native_slider)) return;
-    set_slider_value(m.caption, slider_value(m.caption) + delta);
+    // Dead-zone-style sliders move by their own step, not the +/-10 default.
+    const auto range = slider_range(m.caption);
+    const int step = delta < 0 ? -range[2] : range[2];
+    set_slider_value(m.caption, slider_value(m.caption) + step);
 }
 
 void Frontend::slider_home_end(bool home) {
     if (focus_ < 0 || size_t(focus_) >= items_.size()) return;
     const MenuItem& m = items_[size_t(focus_)];
     if (!(m.flags & item_flag::native_slider)) return;
-    set_slider_value(m.caption, home ? 0 : 100);
+    const auto range = slider_range(m.caption);
+    set_slider_value(m.caption, home ? range[0] : range[1]);
 }
 
 void Frontend::apply_mixer_setting() {
@@ -896,8 +942,15 @@ int Frontend::run_handler(size_t index) {
     }
     case 0x00401df0: return screen_id::native_sound;   // plan 18 Task 6: native look-alike of dialog 300
     case 0x0040fd90: return 0;   // controls: not ported (plan 18 Task 7)
+    case 0x0040e580:
+        // Plan 18 Task 7: the 9 rebind rows (captions 256-264) cover actions 0-8;
+        // nitro/camera rows have no UI. Arm press-a-key capture for the action.
+        if (m.caption >= 256 && m.caption <= 264) capture_action_ = m.caption - 256;
+        return 0;
     case native_action::toggle_mute: settings_.mute = !settings_.mute; apply_mixer_setting(); return 0;
     case native_action::toggle_swap: settings_.swap_speakers = !settings_.swap_speakers; apply_mixer_setting(); return 0;
+    case native_action::toggle_pad_swap: settings_.swap_punch_kick = !settings_.swap_punch_kick; apply_mixer_setting(); return 0;
+    case native_action::toggle_left_handed: settings_.left_handed = !settings_.left_handed; apply_mixer_setting(); return 0;
     case 0x00445600: {
         // Jukebox track list: popup per focused band caption 0xe1..0xe6; current row = saved track when the group matches.
         const int group = m.caption >= 0xe1 && m.caption <= 0xe6 ? m.caption - 0xe1 : 0;
@@ -1096,6 +1149,20 @@ void Frontend::update(const MenuInput& in, uint64_t now_ms) {
         if ((screen_ == 10 || screen_ == 12 || screen_ == 0x1b) && focus_ >= 0) { background_name_.clear(); set_focus(size_t(focus_)); }
     }
     if (in.opponent_key && !editing_name_) toggle_opponent_list();
+    if (capture_action_ >= 0 && in.capture_scancode != 0) {
+        // Plan 18 Task 7 press-a-key (`0x0040e760`): Escape cancels with no change;
+        // any other key stores (scancode,0) via the 0x0040fbf0 conflict rule.
+        if (in.capture_scancode != SDL_SCANCODE_ESCAPE && in.capture_scancode < 256) {
+            if (!settings_.custom_controls) {
+                settings_.controls = default_keyboard_controls();
+                settings_.custom_controls = true;
+            }
+            apply_rebind(settings_.controls, size_t(capture_action_), uint16_t(in.capture_scancode << 8));
+            strings_[size_t(160 + capture_action_)] = key_name(capture_action_);   // 0x0040e7b0 relabel
+        }
+        capture_action_ = -1;   // 0x0040e6d0 disarm
+        return;
+    }
     if (focus_ < 0) return;
     if (in.pointer_moved || in.pointer_click) {
         for (size_t i = items_.size(); i-- > 0;) {

@@ -70,6 +70,31 @@ int main() {
     check(idle(menu.update(0, 10000, 200001)), "interrupted stick must fully return to neutral");
     check(idle(menu.update(0, 0, 200002)), "neutral rearms interrupted menu stick");
     check(menu.update(0, -30000, 200003).up, "menu navigation works after explicit neutral");
+    // Plan 18 Task 7 Step 2: defaults honor the current keys; a rebound key
+    // produces its action's control bit, and the old key goes silent.
+    {
+        std::array<uint16_t, 11> defs{};
+        bool down[SDL_SCANCODE_COUNT] = {};
+        down[SDL_SCANCODE_UP] = true;
+        check(rr::bound_control_bits(defs, false, down) == rr::control_accelerate, "Up accelerates by default");
+        down[SDL_SCANCODE_UP] = false;
+        down[SDL_SCANCODE_C] = true;
+        check(rr::bound_control_bits(defs, false, down) == rr::control_backhand, "C backhands by default");
+        // Rebind accelerate (action 0) to W: W yields accelerate, Up yields nothing.
+        std::array<uint16_t, 11> codes{};
+        codes[0] = uint16_t(SDL_SCANCODE_W << 8);
+        down[SDL_SCANCODE_C] = false;
+        down[SDL_SCANCODE_W] = true;
+        check(rr::bound_control_bits(codes, true, down) == rr::control_accelerate, "rebound key produces its bit");
+        down[SDL_SCANCODE_W] = false;
+        down[SDL_SCANCODE_UP] = true;
+        check(rr::bound_control_bits(codes, true, down) == 0, "old key silent after rebind");
+    }
+    // Plan 18 Task 7 Steps 2/4: left-handed mirrors the touch zones.
+    check(rr::touch_input(1.f / 6, 0.5f, 1.f, 1.f, false).left, "left third steers left by default");
+    check(rr::touch_input(5.f / 6, 0.5f, 1.f, 1.f, true).left, "left-handed mirrors right to left");
+    check(rr::touch_input(5.f / 6, 0.8f, 1.f, 1.f, false).accelerate, "steer zones accelerate by default");
+    check(rr::touch_input(1.f / 6, 0.8f, 1.f, 1.f, true).accelerate, "left-handed mirrors accelerate across");
     std::cout << failures << " failures\n";
     return failures ? 1 : 0;
 }

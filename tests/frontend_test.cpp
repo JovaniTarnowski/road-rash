@@ -3,6 +3,8 @@
 #include "native_screens.hpp"
 #include "pe_strings.hpp"
 #include "rri.hpp"
+#include <SDL3/SDL_scancode.h>
+#include <SDL3/SDL_keyboard.h>
 #include <cstdio>
 #include <filesystem>
 #include <fstream>
@@ -73,6 +75,7 @@ int main(int argc, char** argv) {
         else if (s == "home") in.home = true; else if (s == "end") in.end = true;
         press(in);
     };
+    auto press_key = [&](int scancode) { MenuInput in; in.capture_scancode = scancode; press(in); };
     auto event = [&](FrontendEvent::Kind kind) {
         FrontendEvent e;
         bool found = false;
@@ -378,6 +381,20 @@ int main(int argc, char** argv) {
     check(settings.controls[1] == 0x001e && settings.controls[0] == 0, "rebind conflict unbinds");
     fe.reset_keys(true);
     check(settings.controls == default_joystick_controls(), "joystick defaults restore");
+    // Press-a-key capture (plan 18 Task 7): select a 0x12 row, press W to bind,
+    // Escape cancels with no change and disarms (focus moves on next Down).
+    settings.custom_controls = false;
+    fe.enter(0x12);
+    check(fe.caption_text(fe.items()[13]) == "Up", "default accelerate label");
+    if (focus_item(0)) key("select");   // arm accelerate
+    press_key(SDL_SCANCODE_W);
+    check(settings.controls[0] == uint16_t(SDL_SCANCODE_W << 8) && settings.custom_controls, "W binds accelerate");
+    check(fe.caption_text(fe.items()[13]) == SDL_GetScancodeName(SDL_SCANCODE_W), "label follows the rebind");
+    if (focus_item(1)) key("select");   // arm brake
+    press_key(SDL_SCANCODE_ESCAPE);
+    check(settings.controls[1] == default_keyboard_controls()[1], "Escape cancels with no change");
+    key("down");
+    check(fe.focus() == 2, "Escape disarms the capture");
     // In-race toggles: F10 cycles MiniDash 0->1->2->0; menu `/` toggles the opponent list (0x423777 sete).
     settings.mini_dash = 0;
     check(fe.cycle_mini_dash() == 1 && fe.cycle_mini_dash() == 2 && fe.cycle_mini_dash() == 0, "minidash F10 cycle");
@@ -389,6 +406,22 @@ int main(int argc, char** argv) {
     check(settings.opponent_list, "menu `/` key toggles the opponent list on");
     key("slash");
     check(!settings.opponent_list, "menu `/` key toggles the opponent list off");
+    // Native gamepad/touch pages (plan 18 Task 7): swap toggle, dead-zone slider, handedness.
+    settings.swap_punch_kick = false; settings.stick_deadzone = 35; settings.left_handed = false;
+    fe.enter(screen_id::native_gamepad);
+    if (focus_item(4)) key("select");
+    check(settings.swap_punch_kick, "swap toggle flips");
+    if (focus_item(5)) key("right");
+    check(settings.stick_deadzone == 40, "dead zone slider steps by 5");
+    if (focus_item(5)) key("home");
+    check(settings.stick_deadzone == 10, "dead zone Home goes to 10");
+    if (focus_item(6)) key("select");
+    check(fe.screen() == 0x12, "gamepad back returns to Configure Input");
+    fe.enter(screen_id::native_touch);
+    if (focus_item(1)) key("select");
+    check(settings.left_handed, "left-handed toggle flips");
+    if (focus_item(2)) key("select");
+    check(fe.screen() == 0x12, "touch back returns to Configure Input");
     std::cout << failures << " failures\n";
     return failures ? 1 : 0;
 }

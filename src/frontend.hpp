@@ -60,6 +60,7 @@ struct MenuInput {
     bool home = false, end = false, select = false, back = false, backspace = false;
     bool alternate_artwork = false;      // 'A' key (0x004227d0)
     bool opponent_key = false;           // '/' key toggles the opponent list (0x00423777)
+    int capture_scancode = 0;            // plan 18 Task 7: raw SDL scancode of this keydown (0 none)
     bool pointer_moved = false, pointer_click = false;
     int pointer_x = -1, pointer_y = -1;  // 640x480 coordinates
     std::string text;                    // typed characters (Windows-1252)
@@ -131,6 +132,7 @@ private:
     void adjust_slider(int delta);            // Left/Right (+-10) on the focused slider row
     void slider_home_end(bool home);          // Home/End: 0/100 on the focused slider row
     void apply_mixer_setting();               // persist + emit apply_mixer
+    std::string key_name(int action) const;   // plan 18 Task 7: 0x12 label text
     void apply_restroom_pattern();
     void set_background(const std::string& name);
     std::string background_for(int previous, int screen, int title);
@@ -159,6 +161,7 @@ private:
     Career& career_;
     Settings& settings_;
     std::string save_dir_, save_file_;
+    int capture_action_ = -1;              // plan 18 Task 7: press-a-key arming (-1 idle)
     std::deque<FrontendEvent> events_;
 
     int screen_ = 0, previous_ = 0, focus_ = -1;

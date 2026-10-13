@@ -11,5 +11,8 @@ namespace ns { enum : int { display_title = native_slot_base, display_mode, wind
                             d_window_size, d_scaling, d_filtering, d_vsync, d_fps, d_touch, d_haptics,
                             sound_title, master, music, effects, engines, others, sirens, interface, mute, swap,
                             pause_title, resume, sound, display, controls, quit_race, d_quit_race,
-                            touch_0, touch_25, touch_50, touch_75, touch_100, count }; }
+                            touch_0, touch_25, touch_50, touch_75, touch_100,
+                            gamepad_title, pad_map1, pad_map2, pad_map3, pad_map4,
+                            pad_swap, pad_deadzone, d_swap, d_deadzone,
+                            touch_title, touch_left, d_lefthand, count }; }
 }

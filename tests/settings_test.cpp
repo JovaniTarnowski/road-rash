@@ -34,6 +34,32 @@ int main() {
         const rr::Settings old = rr::parse_settings("hires=1\nmaster_volume=40\n");   // a file written before this task
         check(old.high_resolution && old.master_volume == 40 && old.window_scale == d.window_scale, "old files still load");
     }
+    {
+        // Plan 18 Task 7 Step 2: bindings round-trip; an unknown code falls back
+        // to that action's default only.
+        rr::Settings b;
+        b.controls = rr::default_keyboard_controls();
+        b.controls[0] = 0x1a00;
+        b.custom_controls = true;
+        const rr::Settings r = rr::parse_settings(rr::format_settings(b));
+        check(r.controls == b.controls && r.custom_controls, "bindings round trip");
+        rr::Settings u = rr::parse_settings("controls=fffffffffffffffffffff");   // 21 chars
+        check(!u.custom_controls, "malformed controls ignored");
+        std::string unknown = "controls=";
+        for (int i = 0; i < 11; ++i) unknown += i == 4 ? "00ff" : "0000";
+        const rr::Settings f = rr::parse_settings(unknown);
+        check(f.controls[4] == rr::default_keyboard_controls()[4], "unknown code falls back per action");
+        check(f.controls[0] == 0 && f.controls[5] == 0, "known codes pass through");
+    }
+    {
+        // Plan 18 Task 7: gamepad/touch page fields round-trip with clamping.
+        rr::Settings p;
+        p.swap_punch_kick = true; p.stick_deadzone = 10; p.left_handed = true;
+        const rr::Settings q = rr::parse_settings(rr::format_settings(p));
+        check(q.swap_punch_kick && q.stick_deadzone == 10 && q.left_handed, "page fields round trip");
+        const rr::Settings c = rr::parse_settings("stick_deadzone=9\nstick_deadzone=41\n");
+        check(c.stick_deadzone == 37, "dead zone rejects out-of-range values");
+    }
     std::cout << failures << " failures\n";
     return failures ? 1 : 0;
 }

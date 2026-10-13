@@ -33,19 +33,51 @@ MenuDirections MenuStickInput::update(int x, int y, uint64_t now_ms) {
             next == Direction::up, next == Direction::down};
 }
 
-uint32_t controls_from(const PlayerInput& in) {
+uint32_t controls_from(const PlayerInput& in, int dead_zone) {
     uint32_t c = 0;
     if (in.accelerate) c |= control_accelerate;
     if (in.brake) c |= control_brake;
     if (in.punch) c |= control_punch;
     if (in.kick) c |= control_kick;
     if (in.backhand) c |= control_backhand;
-    if (in.left || in.steer_axis < -steer_dead_zone) c |= control_left;
-    else if (in.right || in.steer_axis > steer_dead_zone) c |= control_right;
+    if (in.left || in.steer_axis < -dead_zone) c |= control_left;
+    else if (in.right || in.steer_axis > dead_zone) c |= control_right;
     return c;
 }
 
-PlayerInput touch_input(float x, float y, float width, float height) {
+namespace {
+// Native control bit per action row 0..10 (rows 7/8/10 have no native bit).
+constexpr uint32_t kActionBits[11] = {
+    control_accelerate, control_brake, control_left, control_right, control_punch,
+    control_kick, control_backhand, 0, 0, control_nitro, 0,
+};
+// Default keyboard scancodes per action (current game feel; row 8 dead, 7/9/10 unbound).
+constexpr int kDefaultKeys[11][2] = {
+    {SDL_SCANCODE_UP, SDL_SCANCODE_W}, {SDL_SCANCODE_DOWN, SDL_SCANCODE_S},
+    {SDL_SCANCODE_LEFT, SDL_SCANCODE_A}, {SDL_SCANCODE_RIGHT, SDL_SCANCODE_D},
+    {SDL_SCANCODE_Z, SDL_SCANCODE_LCTRL}, {SDL_SCANCODE_X, SDL_SCANCODE_LALT},
+    {SDL_SCANCODE_C, -1}, {-1, -1}, {-1, -1}, {-1, -1}, {-1, -1},
+};
+bool pressed(const bool* down, int sc) {
+    return sc > 0 && sc < SDL_SCANCODE_COUNT && down[sc];
+}
+}
+
+uint32_t bound_control_bits(const std::array<uint16_t, 11>& codes, bool custom, const bool* down) {
+    uint32_t bits = 0;
+    for (int i = 0; i < 11; ++i) {
+        if (kActionBits[i] == 0) continue;
+        if (!custom) {
+            if (pressed(down, kDefaultKeys[i][0]) || pressed(down, kDefaultKeys[i][1])) bits |= kActionBits[i];
+        } else {
+            if (pressed(down, codes[size_t(i)] >> 8)) bits |= kActionBits[i];
+        }
+    }
+    return bits;
+}
+
+PlayerInput touch_input(float x, float y, float width, float height, bool left_handed) {
+    if (left_handed) x = width - x;   // plan 18 Task 7: mirror zones for left thumbs
     PlayerInput in;
     if (y < height / 3) { in.punch = true; in.accelerate = true; return in; }   // top third: punch
     if (x < width / 3) in.left = true;
@@ -60,7 +92,7 @@ void TouchInput::handle(const SDL_Event& e) {
     if (e.type == SDL_EVENT_FINGER_UP || e.type == SDL_EVENT_FINGER_CANCELED)
         fingers_.erase(id);
     else if (e.type == SDL_EVENT_FINGER_DOWN || e.type == SDL_EVENT_FINGER_MOTION)
-        fingers_[id] = touch_input(e.tfinger.x, e.tfinger.y, 1.f, 1.f);
+        fingers_[id] = touch_input(e.tfinger.x, e.tfinger.y, 1.f, 1.f, left_handed_);
 }
 
 PlayerInput TouchInput::current() const {

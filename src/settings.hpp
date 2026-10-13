@@ -26,6 +26,9 @@ struct Settings {
     std::array<uint16_t, 11> controls{};  // empty = EXE defaults below
     bool custom_controls = false;
     int music_group = 0, music_track = 0;   // "Group"/"Track" (jukebox)
+    bool swap_punch_kick = false;            // plan 18 Task 7: native gamepad page
+    int stick_deadzone = 37;                 // plan 18 Task 7: percent, 10..40 (≈ legacy 12000 units)
+    bool left_handed = false;                // plan 18 Task 7: native touch page
     // "Mixer" block (0x00463030): master 100, other channels 80 by default.
     int master_volume = 100, music_volume = 80, effects_volume = 80, engine_volume = 80, others_volume = 80,
         siren_volume = 80, interface_volume = 80;

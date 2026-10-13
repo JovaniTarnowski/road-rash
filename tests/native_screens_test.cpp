@@ -29,7 +29,25 @@ int main(int argc, char** argv) {
     check(mobile.screens[rr::screen_id::native_display].items.size() == 6, "mobile hides window size and adds touch, haptics");
     bool linked = false;
     for (const auto& m : data.screens[0x13].items) linked |= m.target == rr::screen_id::native_display;
-    check(linked, "Graphics Options has an item that enters the Display screen");
+    const auto& pad = data.screens[rr::screen_id::native_gamepad];
+    check(pad.items.size() == 7, "gamepad page: 4 mapping rows, swap, dead zone, back");
+    check(pad.title == rr::ns::gamepad_title, "gamepad title");
+    check(pad.items[5].caption == rr::ns::pad_deadzone, "dead zone slider row");
+    check(pad.items[6].target == 0x12, "gamepad back returns to Configure Input");
+    const auto& touch = data.screens[rr::screen_id::native_touch];
+    check(touch.items.size() == 3 && touch.title == rr::ns::touch_title, "touch page rows");
+    check(data.screens[0x12].items.size() == 23, "desktop 0x12 gains the gamepad link");
+    check(mobile.screens[0x12].items.size() == 24, "mobile 0x12 gains gamepad and touch links");
+    bool pad_linked = false, desk_touch = false;
+    for (const auto& m : data.screens[0x12].items) {
+        pad_linked |= m.target == rr::screen_id::native_gamepad;
+        desk_touch |= m.target == rr::screen_id::native_touch;
+    }
+    check(pad_linked, "Configure Input links the gamepad page");
+    check(!desk_touch, "desktop 0x12 does not link the touch page");
+    bool mobile_touch = false;
+    for (const auto& m : mobile.screens[0x12].items) mobile_touch |= m.target == rr::screen_id::native_touch;
+    check(mobile_touch, "mobile 0x12 links the touch page");
     std::cout << failures << " failures\n";
     return failures ? 1 : 0;
 }

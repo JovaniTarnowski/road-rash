@@ -31,16 +31,26 @@ private:
     uint64_t next_repeat_ = 0;
     bool require_neutral_ = false;
 };
-uint32_t controls_from(const PlayerInput&);
-// One touch point on a width x height window.
-PlayerInput touch_input(float x, float y, float width, float height);
+// Dead-zone override in SDL axis units (plan 18 Task 7 stick setting);
+// the default keeps current feel for existing callers.
+uint32_t controls_from(const PlayerInput&, int dead_zone = steer_dead_zone);
+// Rebindable keyboard map (plan 18 Task 7): native control bit per action row
+// 0..10 (row 8 is dead in the original too, rows 7/10 have no native bit).
+// Custom tables store the SDL scancode in the high byte (native capture format);
+// the traced defaults keep their internal-id bytes and are honored through the
+// default scancode sets below (current game feel, unchanged).
+uint32_t bound_control_bits(const std::array<uint16_t, 11>& codes, bool custom, const bool* down);
+// One touch point on a width x height window (mirrored zones when left_handed).
+PlayerInput touch_input(float x, float y, float width, float height, bool left_handed = false);
 // Each finger keeps its own intent; releasing one cannot release another.
 class TouchInput {
 public:
     void handle(const SDL_Event&);
     void clear() { fingers_.clear(); }
+    void set_left_handed(bool v) { left_handed_ = v; }
     PlayerInput current() const;
 private:
     std::map<std::pair<SDL_TouchID, SDL_FingerID>, PlayerInput> fingers_;
+    bool left_handed_ = false;
 };
 }

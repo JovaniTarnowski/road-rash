@@ -396,13 +396,13 @@ Moved here from plan 13 Task 3.
 
 **Starting point:** handler `0x0040fd90` (currently `return 0` in `frontend.cpp`), key table `0x0040e5f0`, control word `0x004b7ed0` built by `0x0044f800`, joystick analog path in `0x0044f800`.
 
-- [ ] **Step 1: Trace** the items of screen `0x12`, the rebinding flow ("press a key"), the conflict rule (swap or refuse) and the registry storage. Record them.
-- [ ] **Step 2: Write the failing tests.**
+- [x] **Step 1: Trace** the items of screen `0x12`, the rebinding flow ("press a key"), the conflict rule (swap or refuse) and the registry storage. Record them. (Traced in the prior session: EXE control tables asserted against the defaults in `frontend_test`, conflict rule in `apply_rebind`.)
+- [x] **Step 2: Write the failing tests.**
   - `input_test`: the default bindings equal the traced table; the analog stick maps to the original control bits at the traced thresholds; a rebound key produces the bound control bit.
   - `frontend_test`: rebind Accelerate to a key used by Brake → the traced rule happens (Review Focus of plan 13 kept here). Escape during "press a key" cancels without changing anything.
   - `settings_test`: bindings round-trip; an unknown key code in the file falls back to the default for that action only.
-- [ ] **Step 3: Port** screen `0x12` exactly. Add two native pages reached from it, built like Task 5's screen: **Gamepad** (shows the fixed SDL gamepad mapping, with a "Swap punch and kick" toggle and stick dead zone 10–40 %) and, on touch devices, **Touch** (overlay opacity from `touch_opacity`, left-handed layout toggle). Native pages are documented as native additions.
-- [ ] **Step 4:** Commit: `frontend: Configure Input with original bindings; native gamepad and touch pages`.
+- [x] **Step 3: Port** screen `0x12` exactly. Add two native pages reached from it, built like Task 5's screen: **Gamepad** (shows the fixed SDL gamepad mapping, with a "Swap punch and kick" toggle and stick dead zone 10–40 %) and, on touch devices, **Touch** (overlay opacity from `touch_opacity`, left-handed layout toggle). Native pages are documented as native additions.
+- [x] **Step 4:** Commit: `frontend: Configure Input with original bindings; native gamepad and touch pages`.
 
 ---
 
