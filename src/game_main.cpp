@@ -26,6 +26,7 @@
 #include "display.hpp"
 #include "fog.hpp"
 #include "framebuffer_rgb.hpp"
+#include "post_chain.hpp"
 #include "raster_rgb.hpp"
 #include "view_state.hpp"
 #include "sound.hpp"
@@ -167,6 +168,7 @@ struct Game {
     int bike = 0;
     rr::Widescreen widescreen = rr::Widescreen::off;  // plan 21 Task 8: live setting
     rr::Enhancements enhancements;  // plan 21 Task 1: synced per frame; all-off = original
+    mutable bool post_teleported = true;  // plan 21 Task 7: first frame seeds blur history
     rr::ViewState view_prev, view_cur, view_drawn;  // plan 21 Task 2: interpolated frame state
     bool view_ready = false;
     // Blended position overrides for the current frame (id -> pose).
@@ -556,6 +558,7 @@ struct CourseCanvas {
     std::unique_ptr<rr::RenderThreads> workers;
     int worker_count = 0;
     rr::FramebufferRgb rgb;  // plan 21 Task 4: full-colour frame (resized with frame)
+    rr::PostChain post_chain;  // plan 21 Task 7: per-race post history
     void draw(SDL_Renderer* renderer,const Game& game,const std::vector<rr::RoadSlice>& slices,int s,int threads) {
         const int32_t wide = game.logical_width();
         resize(s,wide);
@@ -650,6 +653,16 @@ struct CourseCanvas {
                         if (!(p >> 24)) continue;
                         rgb.row(y)[x] = (p & 0xff000000u) | rr::grade_apply(lut, p & 0xffffffu);
                     }
+            }
+            // Plan 21 Task 7: CPU post chain (motion blur -> bloom -> vignette).
+            // Speed from the race's speedometer state (presentation read of the
+            // drawn tick, never a sim write); pause/teleport resets history.
+            post_chain.configure(game.enhancements);
+            if (post_chain.any()) {
+                const float speed = float(std::abs(game.race->speed()));
+                post_chain.apply(reinterpret_cast<uint32_t*>(rgb.row(0)), scale_w, scale_h, speed,
+                                 game.post_teleported);
+                game.post_teleported = false;
             }
             // Dashboard composited directly (no palette round-trip).
             if (game.hud) {
@@ -1135,7 +1148,7 @@ RaceEnd run_race(Game& g, SDL_Renderer* renderer, const RaceOptions& opt, Displa
         if (!opt.auto_drive && opt.custom_keys) controls |= rr::bound_control_bits(opt.key_codes, true, keys);
 
         const uint64_t now = SDL_GetTicksNS();
-        if (lifecycle.state.take_clock_reset()) { touch.clear(); clock.reset(); last = now; }
+        if (lifecycle.state.take_clock_reset()) { touch.clear(); clock.reset(); last = now; g.post_teleported = true; }
         // Plan 18 Task 8: the race loop stops stepping the simulation while
         // pause_open(); the mixer pauses race sounds but the interface levels
         // stay live so the sound sliders apply (no preview click, as in Task 6).

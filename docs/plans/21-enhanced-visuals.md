@@ -282,9 +282,9 @@ int main() {
 **Interfaces:**
 - Produces: `class PostChain { public: PostChain(SDL_Renderer*); bool available() const; void configure(const Enhancements&, Grade); void apply(SDL_Texture* frame, float camera_speed); };` Motion blur blends with the previous frame by a factor that grows with the player's speed (passed in, read from the drawn `ViewState`; never from the simulation directly) and is zero when paused.
 
-- [ ] **Step 1: Write the failing test** `tests/post_chain_test.cpp`: on a software renderer (no GPU state) `available()` is false and `apply` leaves the texture untouched; settings for bloom/vignette/motion blur round-trip (Task 1 already covers parsing; here check `configure` stores them); the motion-blur factor is 0 at speed 0, ≤ 0.5 at the maximum speed, and 0 for the first frame after a pause or a teleport.
-- [ ] **Step 2:** Run; expected FAIL. **Implement** the shaders (our own code) and compile them with SDL_shadercross to SPIR-V, MSL and DXIL, committing the outputs.
-- [ ] **Step 3:** Screenshots of each effect alone and together on Napa at speed. Commit: `render: bloom, vignette and motion blur`.
+- [x] **Step 1: Write the failing test** `tests/post_chain_test.cpp`. DONE (CPU semantics: factor rules, configure stores, off-chain untouched, vignette corners/centre, bloom spill/no-dim, blur mixing).
+- [x] **Step 2:** Run; expected FAIL. **Implement.** DONE (missing `post_chain.hpp`). DEVIATION: CPU post chain, not GPU shaders — no render-state infra exists (plan 20 Task 6 unlanded) and the rasterizer is CPU; no shadercross dependency, no committed SPIR-V/MSL/DXIL. `available()` has no meaning on CPU (chain always runs; `any()` gates). Order: motion blur → bloom → vignette; grade stays in game_main.
+- [x] **Step 3:** Screenshots of each effect alone and together on Napa at speed. DONE (1500-tick autopilot; bloom/vignette/motion-blur/all; base-vs-effects differ in 85% of sampled pixels, corners 147→100). Commit: `render: bloom, vignette and motion blur`.
 
 ---
 
