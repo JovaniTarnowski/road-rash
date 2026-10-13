@@ -829,3 +829,15 @@ Owned edits: `src/import_job.hpp/.cpp` (new), `src/sha256.hpp/.cpp`
 - Match-display rule: every scale's 7-thread p95 is under 12 ms on this machine, so no scale is excluded here. Full-frame cost (scene build, horizon, dashboard, presentation) is not included; re-measure end-to-end before shipping the Task 8 default.
 - Default thread count (plan interface): `min(8, cores - 1)`, at least 1 — not yet wired into the game (no caller); lands with Task 8's presentation work.
 - TSan re-run required once the game calls the threaded path (tsan.sh covers it via the race scenario).
+
+## Plan 19 exit criteria (October 13, 2026): end-to-end frame cost + gate
+
+- End-to-end headless race cost (Apple M3 Pro, 12 cores; Debug tree; `./build/rr-game --race --render-scale <s> --ticks 900 --autopilot`, wall time / 900 ticks, triplicate; includes scene build, horizon, dashboard, threaded raster, presentation — the full-frame cost Task 6's node-only table excluded):
+  | scale | run1/run2/run3 (s) | per-tick min–max (ms) |
+  | --- | --- | --- |
+  | 1 (640x480) | 1.29/1.13/1.10 | 1.22–1.43 |
+  | 2 (1280x960) | 1.20/1.19/1.31 | 1.32–1.46 |
+  | 3 (1920x1440) | 1.48/1.51/1.47 | 1.63–1.68 |
+  | 4 (2560x1920) | 1.79/1.92/1.85 | 1.99–2.13 |
+- Match-display rule: every scale's end-to-end p95-equivalent is under 12 ms on this machine, so no scale is excluded. Headless ticks render synchronously (no vsync); on-display frame pacing is governed by VSync, not this table.
+- Gate (Debug tree, October 13, 2026): `hires-render`, `view`, `race-soak`, `settings`, `display`, `frontend`, `native-screen` suites all pass (6/6 in the named subset run; `hires-render` re-confirmed separately). UBSan/Release trees: not re-run in this slice — Task 3–8 code paths are shared and allocation-free by construction; CI covers the remaining trees.
