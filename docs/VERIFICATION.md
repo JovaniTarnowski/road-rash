@@ -910,3 +910,24 @@ Owned edits: `src/import_job.hpp/.cpp` (new), `src/sha256.hpp/.cpp`
 - Correctness: `DashLut` is an exact per-color memo (a 32K RGB555 cell table
   was tried first and REJECTED — two colors in one cell can map to different
   indices, `hud-test` caught it); `hud` suite green, `race-soak` green.
+
+## Plan 11a Task 2 Step 5 (October 14, 2026): dashboard pixel acceptance (partial)
+
+- Mechanism: post-dashboard capture hook (`hook_dash` wraps the `0x00446c30`
+  call at `0x0044c7b9` in `oracle/aweman_proxy.c`, dumps `-dN.raw` after it
+  returns). The surface RAM is current after the GDI draw: pre/post pairs
+  differ 15.8% from row 143 (dashboard band). Proof: `analysis/oracle/napa-dash-solo`
+  (git-ignored), 118 dense frames (course 4, seed 1, drive 2, solo).
+- Parked needles (countdown, frame 30 vs native compose at tick 30): speedo bar
+  `x[205..251] y[448..450]` EXACT in both; tach `x[360..389] y[434..442]`
+  original vs `y[435..442]` native — 1 px, the documented pen-width exception
+  (GDI width-2 vs native 3x3 Bresenham). Origins/lengths agree.
+- Tach climbs post-green in the original (tip y 434 -> 428 over frames 104–119),
+  correct direction. Needle pen index switches 37 -> 52 at frame ~104 (cause
+  open: redline threshold vs countdown blink).
+- Distance text reads `0.003` at frame 104; native formula gives 0 at the grid.
+- OPEN (blocked): moving-state angle match + distance scale. Needs SIM+PIXELS
+  capture (faults after 2 frames — reproduced on the stock proxy, pre-existing)
+  for tick-annotated dash frames, plus countdown alignment (original green
+  ~frame 108 vs native tick 180). Native rpm trace (trace-fed
+  `update_engine_rpm` over `sim-napa-solo.tsv`) recorded in the handoff.

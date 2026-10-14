@@ -386,8 +386,9 @@ static void dump_sim_tick(void) {
                 rr_log(key, sim_field_value(node, 0x60, 4, 1));
                 /* Steer-rate and limit words (+0x2a0..+0x2b0) plus tick delta (+0x18):
                  * pins down steer ramp-rate divergences. */
-                static const uint32_t extra[] = {0x18, 0x2a0, 0x2a4, 0x2a8, 0x2ac, 0x29c, 0x2b0, 0x2d0, 0x2d4};
-                for (unsigned e = 0; e < 9; ++e) {
+                static const uint32_t extra[] = {0x18, 0x2a0, 0x2a4, 0x2a8, 0x2ac, 0x29c, 0x2b0, 0x2d0, 0x2d4,
+                                                 0x2dc, 0x2e8, 0x44};   // plan 11a Task 2 Step 5: rpm + caches + snap
+                for (unsigned e = 0; e < sizeof extra / sizeof extra[0]; ++e) {
                     snprintf(key, sizeof key, "rider.%d.bike_%x", slot, extra[e]);
                     rr_log(key, sim_field_value(node, extra[e], 4, 1));
                 }
@@ -1461,6 +1462,33 @@ static void dump_scene(void) {
 
 // 0x0044d300 locks the surface while drawing and stores its view-origin pixel
 // pointer/pitch at 0x004b7ec0/0x004b7ec4. Capture before 0x0044c780 unlocks it.
+// Post-dashboard capture (plan 11a Task 2 Step 5): wrap the 0x00446c30 call at
+// 0x0044c7b9 inside 0x0044c780. The dashboard draws via GetDC after the 3D unlock;
+// dump the same base/pitch surface right after it returns, before present.
+static void dump_post_dash(void) {
+    const uintptr_t base = (uint32_t)RD32(0x004b7ec0);
+    const int width = RD32(0x0047539c), height = RD32(0x004753a0), pitch = RD32(0x004b7ec4);
+    if (width < 1 || width > 1280 || height < 1 || height > 960 || pitch < width || pitch > 16384) return;
+    if (!readable(base, (size_t)(height - 1) * pitch + width)) return;
+    char path[MAX_PATH];
+    const char* slash = strrchr(g_output, '\\');
+    const size_t prefix = slash ? (size_t)(slash - g_output) + 1 : 0;
+    if (prefix > sizeof path - 64) return;
+    memcpy(path, g_output, prefix);
+    int count = snprintf(path + prefix, sizeof path - prefix, "%s-d%u.raw", g_scenario, g_frame);
+    if (count < 0 || (size_t)count >= sizeof path - prefix) return;
+    FILE* pixels = fopen(path, "wb");
+    if (!pixels) return;
+    int ok = 1;
+    for (int row = 0; row < height; ++row)
+        if (fwrite((void*)(base + (size_t)row * pitch), 1, width, pixels) != (size_t)width) { ok = 0; break; }
+    if (fclose(pixels)) ok = 0;
+    (void)ok;
+}
+static void __cdecl hook_dash(void) {
+    ((void (__cdecl*)(void))0x00446c30)();
+    if (capture_frame()) dump_post_dash();
+}
 static void __cdecl hook_draw(void) {
     if (capture_frame() && RD8(0x00475620)) dump_scene();
     ((rr_frame_fn)0x00450420)();
@@ -1969,6 +1997,7 @@ static int rr_install_hooks(void) {
         {0x0041656d,0x004439f0, hook_frame_2, {0xe8,0x7e,0xd4,0x02,0}},
         {0x00443249,0x004439f0, hook_frame_3, {0xe8,0xa2,0x07,0,0}},
         {0x004439f5,0x00450420, hook_draw, {0xe8,0x26,0xca,0,0}},
+        {0x0044c7b9,0x00446c30, hook_dash, {0xe8,0x72,0xa4,0xff,0xff}},
         {0x00443a5c,0x00443d70, hook_project, {0xe8,0x0f,0x03,0,0}},
         {0x00442ea8,0x0044f800, hook_controls, {0xe8,0x53,0xc9,0,0}},
         {0x0044b324,0x0044b3b0, hook_step, {0xe8,0x87,0,0,0}},

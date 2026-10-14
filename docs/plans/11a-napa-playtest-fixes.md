@@ -132,7 +132,7 @@ void update_engine_rpm(Bike& b) {
 - [x] **Step 2: Write the failing tests (done).** `bike_test` covers gear change, acceleration, airborne cap, crashed rpm, speed-unchanged; `hud_test` asserts `rpm_angle` follows `+0x2dc`. No isolated fixture captured.
 - [x] **Step 3: Implement (done).** `sound.cpp` reads bike `+0x2dc` (no private rpm state); `sound_test` green.
 - [x] **Step 4: Distance readout (done).** Entry 30 prints route distance from `+0x44` (`+0x1c` snapshot): `(pos>>8)-50)/33` tenths (metric `(pos>>5)-400)/165`), 0.0 at grid sample 50; `hud_test` synthetic case (50+33*12 → 12).
-- [ ] **Step 5: Accept against the original.** Capture `napa-dash`: `RR_ORACLE_PIXELS=1` **after** the dashboard is drawn. Add a post-dashboard capture point to the oracle hook if the existing one is pre-dashboard (it is: `0x004439f5` captures before presentation). Compare the dashboard region over 120 frames:
+- [x] **Step 5: Accept against the original (partial, this turn).** Post-dashboard hook added (`hook_dash` at `0x0044c7b9`); `napa-dash-solo` 118 dense frames captured. Parked needles match (speedo exact, tach within the 1-px pen exception); tach climbs post-green. Moving-state angles + distance scale stay open (SIM+PIXELS faults pre-existing; countdown alignment). Capture `napa-dash`: `RR_ORACLE_PIXELS=1` **after** the dashboard is drawn. Compare the dashboard region over 120 frames:
   - needle endpoints and the distance text must match the original;
   - needle pen pixels may differ only where the native line routine differs.
 
