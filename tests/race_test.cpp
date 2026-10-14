@@ -419,11 +419,11 @@ int main() {
         auto napa = rr::make_race_setup(assets, exe, config);
         std::array<int32_t, 8> halfway{};
         for (int tick = 0; tick < 3600; ++tick) {
-            napa.race->step(rr::control_accelerate);
-            if (tick == 2999) for (size_t i = 1; i < 8; ++i) halfway[i] = napa.race->riders()[i].bike.i32(0x1c);
+            napa.instance.race->step(rr::control_accelerate);
+            if (tick == 2999) for (size_t i = 1; i < 8; ++i) halfway[i] = napa.instance.race->riders()[i].bike.i32(0x1c);
         }
         for (size_t i = 1; i < 8; ++i) {
-            const auto& rider = napa.race->riders()[i];
+            const auto& rider = napa.instance.race->riders()[i];
             std::cout << "Napa AI " << i << " pos " << rider.bike.i32(0x1c)
                       << " last-ten-seconds " << rider.bike.i32(0x1c) - halfway[i] << "\n";
             check(rider.bike.i32(0x1c) - halfway[i] > 0x100, "Napa opponent continues driving after replans");

@@ -27,7 +27,10 @@ constexpr int max_steps_per_frame = 20;
 // charges, minimum activation, tail-rate seed). The EXE defaults at
 // 0x00465a28 are {0x11, 0x180, 0x78, 0x64, 0x1e, 0xf}.
 struct NitroConfig { int32_t recharge = 0x11, boost = 0x180, max = 0x78, charges = 0x64, minimum = 0x1e, tail = 0xf; };
-
+// Plan 26 Task 1: wiring report — which Race hooks the factory attached.
+// Derived from the existing members; no new state except nitro_set_.
+struct RaceWiring { bool terrain=false, traffic=false, pedestrians=false, ring=false, crash_library=false,
+                    ride_library=false, nitro=false, finish=false, personalities=false; };
 // Rider fight stats: rider table 0x00463c78 words 12..15 (+0x30 strength, +0x34 base stamina,
 // +0x38 maximum, +0x3c current). Hits lower maximum by damage*4 (not below base/2) and current
 // by damage*64; current regenerates one point per tick up to maximum (0x00407d40).
@@ -232,8 +235,9 @@ public:
     // Nitro setup 0x0040b0e0: copy six words from the player spec at +0x14c
     // and start the accumulator at maximum<<8. Call once after construction
     // (the game calls it from 0x00405600 right after the player build).
-    void set_nitro(const NitroConfig& c) { nitro_ = c; nitro_charges_ = c.charges;
+    void set_nitro(const NitroConfig& c) { nitro_ = c; nitro_set_ = true; nitro_charges_ = c.charges;
         for (auto& r : riders_) r.nitro_charge = c.max << 8; }
+    RaceWiring wiring() const;   // derived from the existing members; no new state except nitro_set_
     const NitroConfig& nitro() const { return nitro_; }
     int32_t nitro_charges() const { return nitro_charges_; }
     // Demo hold (DAT_004753c8): attract/demo races and oracle captures run
@@ -410,6 +414,7 @@ private:
     const std::array<std::array<std::array<int8_t,4>,2>,2>* attack_codes_ = nullptr;
     CrashConfig crash_config_;
     NitroConfig nitro_;
+    bool nitro_set_ = false;
     int32_t nitro_charges_ = 0;
     std::vector<RouteSample> routes_[2];
     PhysicsTables tables_;

@@ -216,6 +216,20 @@ void Race::set_crash_library(const ActorAnimationLibrary& library,const CrashCon
     for(auto& rider:riders_)init_crash_actor(rider.crash_actor,config);
 }
 
+RaceWiring Race::wiring() const {
+    RaceWiring w;
+    w.terrain = bool(terrain_source_);
+    w.traffic = traffic_ != nullptr;
+    w.pedestrians = pedestrians_ != nullptr;
+    w.ring = ring_ != nullptr;
+    w.crash_library = crash_library_ != nullptr;
+    w.ride_library = ride_library_ && attack_codes_;
+    w.nitro = nitro_set_;
+    w.finish = finish_q8_ != 0;
+    w.personalities = overtake_eagerness_.has_value();
+    return w;
+}
+
 void Race::set_demo_hold(bool v, int base_speed, int lane, int32_t bias,
                        int weapon, RiderStats stats) {
     demo_hold_ = v;
