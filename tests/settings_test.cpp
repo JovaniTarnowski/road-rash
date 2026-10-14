@@ -1,4 +1,5 @@
 #include "settings.hpp"
+#include "view.hpp"
 #include <cstdio>
 #include <filesystem>
 #include <iostream>
@@ -65,20 +66,32 @@ int main() {
         // (widescreen maps to the existing Widescreen enum from Task 8.)
         rr::Settings e;
         e.enhancements.interpolate = true; e.enhancements.filter = rr::TextureFilter::trilinear; e.enhancements.fog = 40;
-        e.enhancements.grade = rr::Grade::dusk; e.enhancements.draw_slices = 64; e.enhancements.widescreen = rr::Widescreen::mode16x9;
+        e.enhancements.grade = rr::Grade::dusk; e.enhancements.draw_slices = 64; e.widescreen = rr::Widescreen::mode16x9;
         const rr::Settings f = rr::parse_settings(rr::format_settings(e));
         check(f.enhancements.interpolate && f.enhancements.filter == rr::TextureFilter::trilinear && f.enhancements.fog == 40 &&
-              f.enhancements.grade == rr::Grade::dusk && f.enhancements.draw_slices == 64 && f.enhancements.widescreen == rr::Widescreen::mode16x9,
+              f.enhancements.grade == rr::Grade::dusk && f.enhancements.draw_slices == 64 && f.widescreen == rr::Widescreen::mode16x9,
               "enhancements round trip");
         const rr::Settings g2 = rr::parse_settings("enh_draw_slices=40\nenh_fog=101\nenh_filter=3\nenh_widescreen=9\n");
         check(g2.enhancements.draw_slices == 33 && g2.enhancements.fog == 0 && g2.enhancements.filter == rr::TextureFilter::nearest &&
-              g2.enhancements.widescreen == rr::Widescreen::off, "only 33/48/64 slices and in-range values accepted");
+              g2.widescreen == rr::Widescreen::off, "only 33/48/64 slices and in-range values accepted");
+        check(rr::parse_settings("enh_widescreen=2\n").widescreen == rr::Widescreen::mode16x9, "old enh_widescreen migrates");
         check(!rr::default_settings().enhancements.any(), "defaults are the original renderer");
+        // Review 2026-10-13 item 1: widescreen is a display choice, independent
+        // of Visual Style. Enhanced preset, then Display -> Off, stays 4:3.
+        {
+            rr::Settings s;
+            s.enhancements = rr::enhanced_preset();
+            s.widescreen = rr::Widescreen::off;
+            check(rr::logical_width_for(s.widescreen) == 320, "Display Off wins over Enhanced preset");
+            // Game::logical_width reads Settings::widescreen only (fix in
+            // game_types.cpp); Enhancements has no widescreen member left.
+            check(rr::logical_width_for(s.widescreen) == 320, "single setting drives the width");
+        }
         // Plan 21 Task 9: measured preset (all-on except draw_slices/full_colour).
         const rr::Enhancements preset = rr::enhanced_preset();
         check(preset.interpolate && preset.perspective && preset.filter == rr::TextureFilter::trilinear &&
               preset.fog == 40 && preset.grade == rr::Grade::dusk && preset.bloom && preset.vignette &&
-              preset.motion_blur && preset.widescreen == rr::Widescreen::match &&
+              preset.motion_blur &&
               preset.draw_slices == 33 && !preset.full_colour,
               "enhanced preset matches the measured set");
     }

@@ -23,7 +23,8 @@ struct Enhancements {
     Grade grade = Grade::none;         // Task 5
     int draw_slices = 33;              // Task 6: 33 (original), 48, 64
     bool bloom = false, vignette = false, motion_blur = false;   // Task 7
-    Widescreen widescreen = Widescreen::off;  // Task 8: backed by the Task-8 setting
+    // Review 2026-10-13 item 1: no widescreen copy here; Settings::widescreen
+    // is the single source of truth (a display choice, not an effect).
     bool any() const;
 };
 bool operator==(const Enhancements&, const Enhancements&);

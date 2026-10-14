@@ -10,8 +10,7 @@
 
 namespace rr {
 int32_t Game::logical_width() const {
-    const Widescreen w = enhancements.any() ? enhancements.widescreen : widescreen;
-    return logical_width_for(w);
+    return logical_width_for(widescreen);   // single setting (review 2026-10-13 item 1)
 }
 
 void Game::load_course(const Assets& a,const std::vector<uint8_t>& exe) {

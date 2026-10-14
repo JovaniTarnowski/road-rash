@@ -645,7 +645,7 @@ void Frontend::open_native_popup(uint32_t popup) {
     case native_popup::resolution: setter = native_setter::render_resolution; break;
     case native_popup::widescreen: {
         const int capw = focus_ >= 0 && size_t(focus_) < items_.size() ? items_[size_t(focus_)].caption : 0;
-        if (capw == ns::enh_wide) { setter = native_setter::enh_wide; current = int(settings_.enhancements.widescreen) + 1; }
+        if (capw == ns::enh_wide) { setter = native_setter::widescreen; current = int(settings_.widescreen) + 1; }
         else setter = native_setter::widescreen;
         break;
     }
@@ -666,9 +666,9 @@ void Frontend::open_native_popup(uint32_t popup) {
         else if (cap == ns::enh_vig) { setter = native_setter::enh_vig; current = settings_.enhancements.vignette ? 2 : 1; }
         else if (cap == ns::enh_mb) { setter = native_setter::enh_mb; current = settings_.enhancements.motion_blur ? 2 : 1; }
         else if (cap == ns::enh_wide) {
-            // Widescreen inside Enhancements edits the enhancements copy.
-            setter = native_setter::enh_wide;
-            current = int(settings_.enhancements.widescreen) + 1;
+            // Widescreen inside Enhancements edits the single Display setting.
+            setter = native_setter::widescreen;
+            current = int(settings_.widescreen) + 1;
         }
         else { setter = native_setter::fps; current = settings_.show_fps ? 2 : 1; }
         break;
@@ -711,7 +711,7 @@ std::string Frontend::native_value_text(int caption) const {
     case ns::enh_bloom: return native_string(settings_.enhancements.bloom ? ns::on : ns::off);
     case ns::enh_vig: return native_string(settings_.enhancements.vignette ? ns::on : ns::off);
     case ns::enh_mb: return native_string(settings_.enhancements.motion_blur ? ns::on : ns::off);
-    case ns::enh_wide: return native_string(ns::wide_off + int(settings_.enhancements.widescreen));
+    case ns::enh_wide: return native_string(ns::wide_off + int(settings_.widescreen));
     case ns::tex_detail: return native_string(settings_.texture_detail ? ns::tex_enhanced : ns::tex_original);
     default: return {};
     }
@@ -1130,7 +1130,7 @@ int Frontend::run_handler(size_t index) {
         case native_setter::widescreen: settings_.widescreen = Widescreen(std::min(3, std::max(0, target - 1))); apply_native_setting(); break;
         case native_setter::visual_style:
             if (target == 1) settings_.enhancements = Enhancements{};
-            else if (target == 2) { settings_.enhancements = enhanced_preset(); settings_.widescreen = Widescreen::match; }
+            else if (target == 2) { settings_.enhancements = enhanced_preset(); settings_.widescreen = Widescreen::match; }   // widescreen stays a display choice
             else enter(screen_id::native_enhancements);
             apply_native_setting(); break;
         case native_setter::enh_interp: case native_setter::enh_persp: case native_setter::enh_colour:
@@ -1149,7 +1149,7 @@ int Frontend::run_handler(size_t index) {
         case native_setter::enh_filter: settings_.enhancements.filter = TextureFilter(std::min(2, std::max(0, target - 1))); apply_native_setting(); break;
         case native_setter::enh_grade: settings_.enhancements.grade = Grade(std::min(3, std::max(0, target - 1))); apply_native_setting(); break;
         case native_setter::enh_fog: settings_.enhancements.fog = std::min(100, std::max(0, (target - 1) * 25)); apply_native_setting(); break;
-        case native_setter::enh_wide: settings_.enhancements.widescreen = Widescreen(std::min(3, std::max(0, target - 1))); apply_native_setting(); break;
+        case native_setter::enh_wide: settings_.widescreen = Widescreen(std::min(3, std::max(0, target - 1))); apply_native_setting(); break;
         case native_setter::tex_detail: settings_.texture_detail = target == 2; apply_native_setting(); break;
         }
         return 0;

@@ -24,8 +24,7 @@ bool parse_int(const std::string& v, int lo, int hi, int& out) {
 bool operator==(const Enhancements& a, const Enhancements& b) {
     return a.interpolate == b.interpolate && a.perspective == b.perspective && a.full_colour == b.full_colour &&
            a.filter == b.filter && a.fog == b.fog && a.grade == b.grade && a.draw_slices == b.draw_slices &&
-           a.bloom == b.bloom && a.vignette == b.vignette && a.motion_blur == b.motion_blur &&
-           a.widescreen == b.widescreen;
+           a.bloom == b.bloom && a.vignette == b.vignette && a.motion_blur == b.motion_blur;
 }
 bool Enhancements::any() const {
     return !(*this == Enhancements{});
@@ -43,7 +42,6 @@ Enhancements enhanced_preset() {
     e.bloom = true;
     e.vignette = true;
     e.motion_blur = true;
-    e.widescreen = Widescreen::match;
     return e;
 }
 
@@ -148,7 +146,7 @@ Settings parse_settings(const std::string& text) {
         else if (k == "enh_bloom") flag(s.enhancements.bloom);
         else if (k == "enh_vignette") flag(s.enhancements.vignette);
         else if (k == "enh_motion_blur") flag(s.enhancements.motion_blur);
-        else if (k == "enh_widescreen") { if (parse_int(v, 0, 3, x)) s.enhancements.widescreen = Widescreen(x); }
+        else if (k == "enh_widescreen") { if (parse_int(v, 0, 3, x)) s.widescreen = Widescreen(x); }   // migrated: single setting
         else if (k == "touch_opacity") { if (parse_int(v, 0, 100, x)) s.touch_opacity = x; }
         else if (k == "haptics") flag(s.haptics);
         else if (k == "swap_punch_kick") flag(s.swap_punch_kick);
@@ -184,7 +182,6 @@ std::string format_settings(const Settings& s) {
       << "\nenh_fog=" << s.enhancements.fog << "\nenh_grade=" << int(s.enhancements.grade)
       << "\nenh_draw_slices=" << s.enhancements.draw_slices << "\nenh_bloom=" << s.enhancements.bloom
       << "\nenh_vignette=" << s.enhancements.vignette << "\nenh_motion_blur=" << s.enhancements.motion_blur
-      << "\nenh_widescreen=" << int(s.enhancements.widescreen)
       << "\ntouch_opacity=" << s.touch_opacity << "\nhaptics=" << s.haptics
       << "\nswap_punch_kick=" << s.swap_punch_kick << "\nstick_deadzone=" << s.stick_deadzone
       << "\nleft_handed=" << s.left_handed << "\nalias=" << s.alias << "\n";
