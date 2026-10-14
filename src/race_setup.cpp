@@ -51,11 +51,13 @@ RaceAssets load_race_assets(const Assets& assets, const std::vector<uint8_t>& ex
         throw std::runtime_error("DATA/COURSES/" + config.course + ".CRS: " + e.what());
     }
     // Player bike/rider through the career tables (0x00415fc0 character ->
-    // rider, 0x004641c8 level_bike, 0x00463c78 rider row); quick races use the
-    // explicit bike index instead.
+    // rider, 0x004641c8 level_bike, 0x00463c78 rider row); quick races and
+    // career races use the explicit bike index (the shop's purchased bike).
+    // The level table applies only when bike_from_table is set (oracle
+    // harness and course sweeps reproduce the original default-bike setup).
     int bike_index = config.bike;
     int rider = character_rider(config.character >= 1 && config.character <= 8 ? config.character : 1);
-    if (config.career) {
+    if (config.career && config.bike_from_table) {
         const CareerTables tables = read_career_tables(exe);
         const size_t slot = size_t(config.level) + size_t(rider) * 5; // 0x004641c8
         if (slot >= tables.level_bike.size()) throw std::runtime_error("career level_bike: slot out of range");

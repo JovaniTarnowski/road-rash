@@ -55,7 +55,7 @@ int main() {
     }
     std::cout << races << " race setups built\n";
     for (const char* course : {"NAPA", "CITY", "HIWAY", "CANYN", "MEDLY"}) {
-        rr::RaceConfig config; config.course = course; config.character = 1;
+        rr::RaceConfig config; config.course = course; config.character = 1; config.bike_from_table = true;
         rr::RaceSetup setup = rr::make_race_setup(assets, exe, config);
         const rr::RaceWiring w = setup.instance.race->wiring();
         const std::string c = course;
@@ -69,6 +69,19 @@ int main() {
         check(!again.traffic || again.traffic->cars().empty() ||
               std::none_of(again.traffic->cars().begin(), again.traffic->cars().end(),
                            [](const auto& car) { return car.active; }), c + ": no cars carried over");
+    }
+    // Review finding 1 (2026-10-13): career races must use the purchased bike,
+    // not the level table default. career=true with an explicit bike keeps it.
+    {
+        rr::RaceConfig config;
+        config.course = "NAPA";
+        config.level = 0;
+        config.character = 1;
+        config.career = true;
+        config.bike = 7;   // differs from the level-0 table default
+        config.opponents = 0;
+        rr::RaceSetup setup = rr::make_race_setup(assets, exe, config);
+        check(setup.assets.bike_index == 7, "career keeps the purchased bike");
     }
     if (failures == 0) std::cout << "race_setup OK\n";
     return failures ? 1 : 0;

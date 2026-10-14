@@ -38,7 +38,8 @@ NitroConfig nitro_from_spec(const BikeSpec&);                     // words 77..8
 struct RaceConfig {
     std::string course = "NAPA"; // original file name: "CITY", "HIWAY", "MEDLY", "NAPA", "CANYN"
     int level = 0;               // 0..4 (DAT_004b8a12)
-    int bike = 0;                // quick-race bike index; ignored when career resolves it
+    int bike = 0;                // quick-race bike index; career's purchased bike (shop)
+    bool bike_from_table = false;  // true: career level table overrides bike (oracle/sweeps only)
     int character = 0;           // 1..8 front-end character (0x00415fc0); career only
     bool career = true;
     int opponents = 7;           // 0..7, for quick races and solo tests

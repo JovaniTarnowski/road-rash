@@ -332,6 +332,7 @@ int main(int argc, char** argv) {
     config.level = level;
     config.character = 1;
     config.career = true;
+    config.bike_from_table = true;   // default-bike setup stream (finding 1, 2026-10-13)
     config.solo = solo;
     config.road_base_q8 = road_base;
     // Track ring (plan 10 Task 5): the original builds it inside the setup
