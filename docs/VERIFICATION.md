@@ -1,5 +1,23 @@
 # Verification log (all sessions September 28, 2026)
 
+## Tick-208 contact classes (October 14, 2026, plan 10 Task 5)
+
+- `cmake --build build-integrator --parallel`: exit 0, no warnings.
+- `./build-integrator/race-test`: 0 failures (2 new: class-3 knock-tail kick
+  recomputed exactly, class-1 contained transfer/damage).
+- `./build-integrator/oracle-sim-test --driver=demo
+  analysis/oracle/sim-napa-solo-human.tsv`: exit 1, first divergence at
+  frame 209 (tick 210) rng; tick-208 steer matches exactly (2392).
+  Output hash matches `tools/sim_known_divergences.json` human entry.
+- Demo golden `sim-napa-solo.tsv`: output byte-identical, still diverges at
+  frame 207 (tick 208) position — expected (no node laterals in that era).
+- `python3 tools/verify_sim.py --mode diagnostic`: exit 0 (known-divergence).
+- `ctest --test-dir build-integrator --output-on-failure`: **94/94 pass**.
+- LSP: `python3 tools/agent_lsp.py --check src/race.cpp` parsed (clangd
+  ExtractFunction tweak FAILs only, no diagnostics).
+- Open: tick-210 grid-setup cause; SIM-capture 2-tick fault blocks fresh
+  frozen-word captures (see `docs/agent-handoffs/sim-fault-20261014.md`).
+
 ## Intersections second pass (October 12, 2026, plan 24 Task 1)
 
 - `cmake --build build-fixes --parallel`: pass, no warnings.

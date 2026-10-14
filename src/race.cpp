@@ -792,69 +792,53 @@ bool Race::knock_off(Rider& victim, int32_t stamina_damage, int32_t bike_damage,
 // upstream in this caller, preserving the shared-stream position.
 void Race::contact_car(Rider& self, TrafficCar& car) {
     Bike& s = self.bike;
-    const int32_t elasticity = s.i32(0x180);
-    s.i32(0x188) = div256(int64_t(s.i32(0x188)) * elasticity);
-    s.i32(0x184) = div256(int64_t(s.i32(0x184)) * elasticity);
-    const int32_t hit = std::abs(s.i32(0x184));
+    // 0x004049c0 sounds, class routing and knock magnitudes read the
+    // UNSCALED impulses; elasticity applies after (lines 89-93).
+    const int32_t raw184 = s.i32(0x184), raw188 = s.i32(0x188), raw18c = s.i32(0x18c);
+    const int32_t hit = std::abs(raw184);
     // Player sounds (shared with the bike-bike head): silent below both
-    // thresholds (0x004049c0 jumps to LAB_00404c2d with iVar9 = 6).
-    bool silent = false;
+    // thresholds (0x004049c0 jumps to LAB_00404c2d with iVar9 = 6, which the
+    // geometry block below then recomputes). Silence only skips the sounds;
+    // routing stays geometric.
     if (&self == &riders_[0]) {
         if (hit < 0x1771) {
-            if (hit >= 0x7d1 || std::abs(s.i32(0x188)) >= 0x3e9) {
+            if (hit >= 0x7d1 || std::abs(raw188) >= 0x3e9) {
                 sound(SoundEvent((random() & 1) + 3), s);
                 sound(SoundEvent(random() & 1), s);
-            } else {
-                silent = true;
             }
         } else {
             sound(SoundEvent((random() & 1) + 4), s);
             sound(SoundEvent((random() & 1) + 1), s);
         }
-    } else if (hit < 0x7d1 && std::abs(s.i32(0x188)) < 0x3e9) {
-        // The scratch-bike fixture path: the original's silent goto fires
-        // regardless of player identity (the player gate only guards the
-        // sound draws, not the branch).
-        silent = true;
     }
     const int32_t old_steer_rate = s.i32(0xf0);
     const bool contained = (s.u8(0x19c) & 0x40) != 0;
-    const int32_t magnitude = (std::abs(s.i32(0x184)) + std::abs(s.i32(0x188)) +
-                               std::abs(s.i32(0x18c))) >> 10;
-    // Silent hits (iVar9 = 6): the knock-off decision zeroes its params
-    // (0x004052c0 default case: no damage, returns false) and the handler
-    // runs the lateral branch below with local_20 = steer rate.
-    if (silent) {
-        if (car.lateral < s.i32(0x28)) {
-            if (s.i32(0xf0) < 0) s.i32(0xf0) = 0;
-            s.i32(0xf0) += hit / 2;
-            s.i32(0xec) = std::max(0, s.i32(0xec) - div_pow2(hit, 2));
-        } else {
-            if (s.i32(0xf0) > 0) s.i32(0xf0) = 0;
-            s.i32(0xf0) -= hit / 2;
-            s.i32(0xec) = std::max(0, s.i32(0xec) - div_pow2(hit, 2));
-        }
-    } else if (!contained) {
+    const int32_t full = std::abs(raw184) + std::abs(raw188) + std::abs(raw18c);
+    const int32_t magnitude = full >> 10;
+    const int32_t elasticity = s.i32(0x180);
+    s.i32(0x188) = div256(int64_t(raw188) * elasticity);
+    s.i32(0x184) = div256(int64_t(raw184) * elasticity);
+    s.i32(0x18c) = div256(int64_t(raw18c) * elasticity);
+    const int32_t shit = std::abs(s.i32(0x184));   // scaled hit: the lateral branch below
+    // Silent hits run the same geometric routing: the original recomputes
+    // iVar9 from geometry after the sound gate (LAB_00404c2d).
+    if (!contained) {
         // Class 3: glance off the car's side, with the 0x004052c0 decision.
         // 0x004049c0: other lateral < self lateral shoves +f0 (away from the
         // car), else -f0; speed loses |184|/4 either way. The car caller has
-        // +0xc4 & 0xc != 0, so the assembly passes stamina local_20 and bike
-        // damage (local_20 + (iVar8>>31 & 15)) >> 4, where iVar8 is the
-        // pre-shift magnitude sum (|184|+|188|+|18c| before >>10); both scale
-        // by /8 inside the helper.
-        const int32_t full = std::abs(s.i32(0x184)) + std::abs(s.i32(0x188)) + std::abs(s.i32(0x18c));
-        const int32_t swing = (magnitude + ((full >> 31) & 15)) >> 4;
-        const bool down = knock_off(self, magnitude, swing, 3);
+        // +0xc4 & 0xc == 0, so the assembly keeps stamina local_20 and bike
+        // damage iVar10 both at the full magnitude.
+        const bool down = knock_off(self, magnitude, magnitude, 3);
         if (down) {
-            s.i32(0xf4) += div_pow2(hit, 8);
+            s.i32(0xf4) += div_pow2(shit, 8);
         } else if (car.lateral < s.i32(0x28)) {
             if (s.i32(0xf0) < 0) s.i32(0xf0) = 0;
-            s.i32(0xf0) += hit / 2;
-            s.i32(0xec) = std::max(0, s.i32(0xec) - div_pow2(hit, 2));
+            s.i32(0xf0) += shit / 2;
+            s.i32(0xec) = std::max(0, s.i32(0xec) - div_pow2(shit, 2));
         } else {
             if (s.i32(0xf0) > 0) s.i32(0xf0) = 0;
-            s.i32(0xf0) -= hit / 2;
-            s.i32(0xec) = std::max(0, s.i32(0xec) - div_pow2(hit, 2));
+            s.i32(0xf0) -= shit / 2;
+            s.i32(0xec) = std::max(0, s.i32(0xec) - div_pow2(shit, 2));
         }
     } else if (const bool down = knock_off(self, magnitude, magnitude, 2); down) {
         // Class 2 and the rider went down in the decision: the impulse still
@@ -864,16 +848,18 @@ void Race::contact_car(Rider& self, TrafficCar& car) {
         // Class 2, small speed gap: rear-end pushes speed over.
         s.i32(0xec) += s.i32(0x184);
     } else {
-        // Class 2, big speed gap: knocked off with reason 2 (animation 29).
+        // Class 2, big speed gap: knocked off with reason 2 (animation 29),
+        // then the nudge and tail below (no kick: the steer rate is untouched).
+        // The 0x2f4 check sorts the stand-in (already crashed: return) from
+        // the crash library (ride the nudge and tail out first).
         crash_car(self);
-        return;
     }
     if (s.i32(0x2f4) != 0) return;
     // Scenery-marking block (0x004049c0 iVar9 == 0 path): when local_18[3]
     // (speed at entry) exceeds 1000 and the rider's sample differs from the
     // car's +0x1ec sample, mark +0x298 by the car's +0x124 sub-kind, record
     // the sample/time/flags, zero the steer rate and grow +0x288 by half.
-    // Cars never take this path in the golden (iVar9 is 2/3/6: the
+    // Cars never take this path in the golden (iVar9 is 2/3: the
     // else-if/else ladder above), so it is documented, not executed.
     // Nudge apart sideways (0x00404f4d).
     const int32_t push = div_pow2(s.i32(0x174) + 16384, 4) * s.i32(0x18);
@@ -884,7 +870,9 @@ void Race::contact_car(Rider& self, TrafficCar& car) {
     if (s.i32(0xec) < -1000) s.i32(0xec) = 0;
     if (s.i32(0xf4) > 0x600) s.i32(0xf4) = 0x600;
     if (s.i32(0xf4) < -10000) s.i32(0xf4) = -10000;
-    // Steering kick from the steer-rate change (0x00404f93 tail).
+    // Steering kick from the steer-rate change (0x00404f93 tail). The
+    // local_21 down-guard is the 0x2f4 early return above: every down path
+    // (knock_off true, crash_car) returns before reaching this kick.
     if (old_steer_rate != s.i32(0xf0)) {
         const int32_t kick =
             div256(int64_t(s.i32(0x2d8)) * (s.i32(0xf0) - old_steer_rate) * 2);
@@ -894,11 +882,12 @@ void Race::contact_car(Rider& self, TrafficCar& car) {
     }
 }
 
-// Crash entries for contact 0x00403d60. crash_car keeps the reason-2 car path
-// (animation 29); crash_reason carries any reason with the 0x004052c0 vector
-// pair in the assembly's argument order (rider impulse, then bike impulse).
+// Crash entries for contact 0x00403d60. crash_car keeps the reason-2 car path;
+// the impulse pair is the handler's own local_18 (rider {0,0,0x200}, bike
+// {0,0,0x100}), not the knock_off defaults. crash_reason carries any reason
+// with the pair in the assembly's argument order (rider impulse, then bike).
 void Race::crash_car(Rider& r) {
-    crash_reason(r, 2, {-80 - 176, 0, 1792}, {0, 0, 1024});
+    crash_reason(r, 2, {0, 0x200, 0}, {0, 0, 0x100});
 }
 void Race::crash_reason(Rider& r, int32_t reason, std::array<int32_t,3> rider_impulse,
                         std::array<int32_t,3> bike_impulse) {
@@ -922,23 +911,25 @@ void Race::crash_reason(Rider& r, int32_t reason, std::array<int32_t,3> rider_im
 }
 
 void Race::contact(Rider& self, Rider& other) {
-    // Bike-against-bike branch of the contact handler 0x004049c0: the
-    // knock-off decision 0x004052c0 runs on contained hits (reason 2 here;
-    // class 1 needs a short other object, +0x17c < 0x2800, which bikes never
-    // satisfy: bike +0x17c = 0x2300 tall, so the reason-1 branch is dead for
-    // bike-bike). Bikes are tall (>= 0x2000), so the hit is class 2 when the
-    // other bike's width contains ours (+0x19c bit 0x40), otherwise class 3.
+    // Bike-against-bike branch of the contact handler 0x004049c0. Class
+    // routing (lines 77-88): both bikes are tall (+0x17c = 0x2300 >= 0x2000),
+    // so a contained hit (the +0x19c bit 0x40 width rule from 0x00436a40) is
+    // class 1: the other bike is short-ish (+0x17c 0x2300 < 0x2800) and
+    // unflagged (+0xc4 & 0x10 == 0 for bikes). Otherwise the hit is class 3
+    // (glance). The knock-off decision 0x004052c0 runs on both: the bike
+    // caller (+0xc4 & 0xc != 0) zeroes the stamina param and passes the
+    // pre-shift magnitude sum >> 4 as the bike-damage param.
     Bike& s = self.bike; const Bike& o = other.bike;
     if (s.i32(0x2f4) != 0) return;
     const int32_t old_steer_rate = s.i32(0xf0);   // 0x00404f93 tail compares against this
-    const int32_t elasticity = s.i32(0x180);
-    s.i32(0x188) = div256(int64_t(s.i32(0x188)) * elasticity);
-    s.i32(0x184) = div256(int64_t(s.i32(0x184)) * elasticity);
-    const int32_t hit = std::abs(s.i32(0x184));
+    // 0x004049c0 sounds, class routing and knock magnitudes read the
+    // UNSCALED impulses; elasticity applies after (lines 89-93).
+    const int32_t raw184 = s.i32(0x184), raw188 = s.i32(0x188), raw18c = s.i32(0x18c);
+    const int32_t hit = std::abs(raw184);
     if (&self == &riders_[0]) {
         // 0x004049c0: the player grunts and the contact makes a crash sound by its strength.
         if (hit < 0x1771) {
-            if (hit >= 0x7d1 || std::abs(s.i32(0x188)) >= 0x3e9) {
+            if (hit >= 0x7d1 || std::abs(raw188) >= 0x3e9) {
                 if (s.i32(0x2f4) == 0) sound(SoundEvent((random() & 1) + 3), s);
                 sound(SoundEvent(random() & 1), s);
             }
@@ -949,31 +940,42 @@ void Race::contact(Rider& self, Rider& other) {
     }
     const bool contained = (o.i32(0x28) - o.i32(0x174) < s.i32(0x28) - s.i32(0x174) / 2) &&
                            (s.i32(0x28) + s.i32(0x174) / 2 < o.i32(0x28) + o.i32(0x174));
-    // 0x004049c0 class routing for two bikes: contained hits run the 0x004052c0
-    // decision with reason 2 (class 1 is dead for bike-bike: it needs the
-    // other object short, +0x17c < 0x2800, but bikes are 0x2300 tall).
-    // Glancing (class-3) hits run the lateral branch below.
-    const int32_t magnitude = (std::abs(s.i32(0x184)) + std::abs(s.i32(0x188)) +
-                               std::abs(s.i32(0x18c))) >> 10;
+    const int32_t full = std::abs(raw184) + std::abs(raw188) + std::abs(raw18c);
+    const int32_t magnitude = full >> 10;
+    const int32_t swing = (magnitude + ((full >> 31) & 15)) >> 4;
+    const int32_t elasticity = s.i32(0x180);
+    s.i32(0x188) = div256(int64_t(raw188) * elasticity);
+    s.i32(0x184) = div256(int64_t(raw184) * elasticity);
+    s.i32(0x18c) = div256(int64_t(raw18c) * elasticity);
+    const int32_t shit = std::abs(s.i32(0x184));   // scaled hit: the branches below
     bool down = false;   // 0x004052c0 local_21: the kick is skipped when the rider went down
     if (contained) {
-        down = knock_off(self, magnitude, magnitude, 2);
-        if (down) {
+        // Class 1: contained by a short-ish unflagged bike.
+        down = knock_off(self, 0, swing, 1);
+        if (!down && s.i32(0xec) - o.i32(0x108) < 0x1771) {
+            // Class 1, small speed gap: rear-end pushes speed over.
             s.i32(0xec) += s.i32(0x184);
-        } else if (s.i32(0xec) - o.i32(0x108) < 0x1771) {
-            s.i32(0xec) += s.i32(0x184);
-        } else {
-            crash_reason(self, 2, {-256, 0, 1792}, {0, 0, 1024});
-            return;
+        } else if (!down) {
+            // Class 1, big speed gap: the handler's own local_18 pair, then
+            // the nudge and tail below (no kick: the steer rate is untouched).
+            crash_reason(self, 1, {0, 0x200, 0}, {0, 0, 0x100});
         }
-    } else if (o.i32(0x28) < s.i32(0x28)) {
-        if (s.i32(0xf0) < 0) s.i32(0xf0) = 0;
-        s.i32(0xf0) += hit / 2;
-        s.i32(0xec) = std::max(0, s.i32(0xec) - div_pow2(hit, 2));
+        // Class 1 and down: speed is untouched (only class 2 transfers it).
     } else {
-        if (s.i32(0xf0) > 0) s.i32(0xf0) = 0;
-        s.i32(0xf0) -= hit / 2;
-        s.i32(0xec) = std::max(0, s.i32(0xec) - div_pow2(hit, 2));
+        // Class 3 (glance): the knock decision first, then the lateral
+        // branch (or the down vertical transfer).
+        down = knock_off(self, 0, swing, 3);
+        if (down) {
+            s.i32(0xf4) += div256(shit);
+        } else if (o.i32(0x28) < s.i32(0x28)) {
+            if (s.i32(0xf0) < 0) s.i32(0xf0) = 0;
+            s.i32(0xf0) += shit / 2;
+            s.i32(0xec) = std::max(0, s.i32(0xec) - div_pow2(shit, 2));
+        } else {
+            if (s.i32(0xf0) > 0) s.i32(0xf0) = 0;
+            s.i32(0xf0) -= shit / 2;
+            s.i32(0xec) = std::max(0, s.i32(0xec) - div_pow2(shit, 2));
+        }
     }
     // Nudge apart sideways (0x00404f4d).
     const int32_t push = div_pow2(s.i32(0x174) + o.i32(0x174), 4) * s.i32(0x18);

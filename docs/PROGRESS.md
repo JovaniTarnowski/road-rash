@@ -50,6 +50,25 @@ Detailed evidence is in [REVERSE_ENGINEERING.md](REVERSE_ENGINEERING.md) and tes
 
 ## Timeline
 
+### October 14, 2026: tick-208 contact classes (plan 10 Task 5)
+
+- Ported the missing class-3 `knock_off(0, swing, 3)` call plus routing
+  corrections into `Race::contact`/`contact_car` (`src/race.cpp`,
+  `0x004049c0` lines 77–93, `0x004052c0`): contained bike-bike hits are
+  class 1 (other `+0x17c 0x2300 < 0x2800`, `+0xc4 & 0x10 == 0`), sounds and
+  knock magnitudes read unscaled impulses with elasticity applied after
+  (including previously missing `0x18c` scaling), and gap crashes use the
+  handler's `local_18` vectors (`{0,0x200,0}`/`{0,0,0x100}`).
+  `sim-napa-solo-human.tsv` (`--driver=demo`, single green anchor) now
+  matches every field through tick 209 (tick-208 steer exact at 2392);
+  first divergence moved to tick 210 (native-only contact: one 960-unit
+  nudge + 424 speed + 2 RNG draws; frozen-word/grid-setup cause, fix
+  order #1). Demo golden byte-identical. `race-test` gains class-3
+  knock-tail and class-1 transfer cases. Full gate 94/94.
+- Still open: grid-setup port (Task 6 fix order #1; trace in
+  `docs/agent-handoffs/grid-setup-20261014.md`) and working SIM captures
+  (2-tick fault, `docs/agent-handoffs/sim-fault-20261014.md`).
+
 ### October 12, 2026: web port Tasks 2 and 4 (plan 23)
 
 - **Task 2 (full suite under Node):** `ctest --test-dir build-web` is 68/68

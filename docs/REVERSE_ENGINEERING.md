@@ -921,6 +921,20 @@ crashed-rider rejections. Open: stamina words rise in the crash cases with
 no writer found yet; the golden captures it and the port must reproduce it.
 End-to-end parity needs the plan 10 `napa-crash-car` tick scenario.
 
+Contact-class correction (October 14, 2026; plan 10 Task 5, REA 6.4.0
+re-confirmation of `0x004049c0`/`0x004052c0` identical to the exports):
+contained bike-bike hits are class 1, not class 2 — both bikes are tall
+(`+0x17c = 0x2300 >= 0x2000`) but the other bike is short-ish
+(`0x2300 < 0x2800`) and unflagged (`+0xc4 & 0x10 == 0`), so lines 77–88
+route there; the bike caller (`+0xc4 & 0xc != 0`) passes stamina param 0
+and bike param `(mag+bias)>>4`. Sounds, class routing and knock magnitudes
+read the unscaled impulses; elasticity (`0x180` = 192) applies after,
+including `0x18c` scaling. Gap crashes (`0x00403d60` via the class ladder)
+use the handler's `local_18` pair (rider `{0,0x200,0}`, bike `{0,0,0x100}`),
+then fall through to the nudge + `0x00404f93` tail with no kick. Tick-208
+proof: the class-3 `knock_off(0, swing, 3)` tail kick closes steer 2437 to
+exactly 2392 in `sim-napa-solo-human.tsv`.
+
 ### Options screens and pause (October 12, 2026, plan 18 Task 1)
 
 Tables dumped from the reference EXE (image base `0x400000`): screen table

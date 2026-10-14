@@ -7,8 +7,8 @@
   },
   "sim-napa-solo-human.tsv": {
     "trace_sha256": "960282cee293173d8ea62db4b49d1ffef83e23cba906e22f545676b112b317a3",
-    "divergence": "first divergence at frame 207 (tick 208): rider.0.steer original 2392 native 2437",
-    "reason": "Driver-axis replay (--driver=demo), single green anchor, native countdown (player dt 2 at tick 1). Matches every compared field and the brain window through tick 207. Tick 208: first contact (slots 0 vs 2). The 0x004049c0 tail (0x00404f93 steer kick + 0x00404feb impulse clear) is now ported in Race::contact, closing the gap from 1888 (native 504) to 45. Residual: the AI steer exit 0x288 (player is demo/AI-driven) differs by ~46 units; the identical contact kick preserves it. Frozen-opponent volatile words (0x108/0x10c) are stale pool memory in the original and absent from every golden (node rows carry only think/position/kind), so the harness cannot seed them. Needs a current-era SIM capture with frozen bike-word coverage; SIM captures are environmentally blocked (see docs/agent-handoffs/sim-fault-20261014.md). Diagnostic only.",
-    "output_sha256": "67bd8ff6389dd44bb73db781ecb8a05c6b0428cf19ca924dffdbcdce0079627d"
+    "divergence": "first divergence at frame 209 (tick 210): rng original 849046096 native 2140064586",
+    "reason": "Driver-axis replay (--driver=demo), single green anchor, native countdown (player dt 2 at tick 1). Matches every compared field, the brain window and rng through tick 209. Tick 208's class-3 knock tail (0x004052c0 reason 3, stamina param 0) is now ported in Race::contact: tick 208 steer matches exactly (2392). Tick 210: native-only bike-bike contact (slots 0 vs 2): lateral differs by exactly one 960-unit nudge push, speed by exactly shit/4 = 424 from native S184 = -2262, and native rng advances 2 draws from the contact sounds; the original shows no nudge, no speed loss and no draws, so it has no overlap there. Trigger is an uncovered frozen-rider word (grid-setup fix order 1); needs a current-era SIM capture with frozen bike-word coverage (see docs/agent-handoffs/sim-fault-20261014.md). Diagnostic only.",
+    "output_sha256": "aba4616230bcd7adbcf9384f2ea47cc09dcfa79ea90ffd1cd25fa14b51eb0558"
   }
 }
