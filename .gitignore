@@ -25,4 +25,6 @@ analysis/playtest/
 # Agent-tooling receipts and local evidence index (no transcripts/assets committed).
 analysis/agent-gates/
 analysis/agent-tools/
+# Plan 22 Task 2: local fuzz corpora (may hold disc-derived seeds; never committed).
+analysis/fuzz/
 .vercel

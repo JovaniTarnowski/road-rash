@@ -25,6 +25,20 @@ if(RR_TSAN)
     add_compile_options(-fsanitize=thread -fno-omit-frame-pointer -g)
     add_link_options(-fsanitize=thread)
 endif()
+# Plan 22 Task 2: libFuzzer targets for every parser. Separate Homebrew-clang
+# tree only (Apple clang ships no libFuzzer); see cmake/llvm.cmake.
+option(RR_FUZZ "libFuzzer parser targets (requires Homebrew LLVM clang; separate build tree only)" OFF)
+if(RR_FUZZ)
+    if(EMSCRIPTEN OR ANDROID)
+        message(FATAL_ERROR "RR_FUZZ requires a separate native tree (no Emscripten/Android)")
+    endif()
+    include(cmake/llvm.cmake)
+    # Coverage instrumentation for first-party code without linking the fuzzing
+    # engine itself (libFuzzer defines main(), which would clash with every
+    # test and game binary); fuzz executables add -fsanitize=fuzzer at link.
+    add_compile_options(-fsanitize=fuzzer-no-link,address,undefined -fno-sanitize-recover=undefined -fno-omit-frame-pointer -g)
+    add_link_options(-fsanitize=address,undefined -fno-sanitize-recover=undefined)
+endif()
 if(EMSCRIPTEN)
     include(cmake/emscripten.cmake)
 elseif(RR_BUNDLE_SDL)
@@ -41,6 +55,19 @@ target_sources(rr-resource PRIVATE src/family.cpp src/terrain_panels.cpp src/bui
 set_target_properties(rr-resource PROPERTIES POSITION_INDEPENDENT_CODE ON)
 target_include_directories(rr-resource PUBLIC src)
 target_include_directories(rr-resource SYSTEM PRIVATE third_party)   # plan 30 Task 3: vendor headers out of warnings
+if(RR_FUZZ)
+    # Plan 22 Task 2 Step 1: one executable per fuzz/fuzz_*.cpp (fuzz/seeds.cpp
+    # is the seed writer, not a target), each linked against rr-resource.
+    file(GLOB RR_FUZZ_SOURCES fuzz/fuzz_*.cpp)
+    foreach(f ${RR_FUZZ_SOURCES})
+        get_filename_component(name "${f}" NAME_WE)
+        add_executable(${name} ${f})
+        target_link_libraries(${name} PRIVATE rr-resource)
+        target_link_options(${name} PRIVATE -fsanitize=fuzzer,address,undefined -fno-sanitize-recover=undefined)
+    endforeach()
+    add_executable(fuzz-seeds fuzz/seeds.cpp)
+    target_link_libraries(fuzz-seeds PRIVATE rr-resource)
+endif()
 if(ANDROID)
     set(RR_GAME_SOURCES src/game_main.cpp src/road_draw.cpp src/import_ui.cpp src/race_overlay.cpp src/race_helpers.cpp src/game_types.cpp src/race_screen.cpp)
     # The Android build ships the playable game.
