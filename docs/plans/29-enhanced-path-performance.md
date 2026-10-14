@@ -50,11 +50,19 @@ void operator delete(void* p) noexcept;
   Implementation: `operator new` calls `std::malloc`, increments `allocations` when `counting` is set, and throws `std::bad_alloc` on null. `operator delete` calls `std::free`. Guard the definitions with `#ifdef RR_ALLOC_COUNTER_DEFINE` and define that macro in exactly one TU.
 - `rr-bench-render [--threads N] [--scale S] [--frames F]` prints `indexed_ms`, `rgb_ms`, `rgb_fog_ms`, `rgb_upscaled_ms` and a pixel checksum for each path.
 
-- [ ] **Step 1:** Build the synthetic scene in `bench_render.cpp`: 400 textured nodes (8×8 and 64×64 mips, half transparent), 100 flat nodes, and 50 textures with one `upscaled` level (dense 2× copy). Spread the nodes over a 640×480 view mapped to `640*S × 480*S`. Use only synthetic data, as in `bench_web.cpp`.
-- [ ] **Step 2:** Run with `--threads 1 2 4 7` and `--scale 1 2 4`. Record the medians of 5 runs in the handoff; the orchestrator copies them to `VERIFICATION.md` as the baseline.
-- [ ] **Step 3:** Commit: `bench: synthetic render benchmark and allocation counter`.
+- [x] **Step 1:** Build the synthetic scene in `bench_render.cpp`: 400 textured nodes (8×8 and 64×64 mips, half transparent), 100 flat nodes, and 50 textures with one `upscaled` level (dense 2× copy). Spread the nodes over a 640×480 view mapped to `640*S × 480*S`. Use only synthetic data, as in `bench_web.cpp`.
+- [x] **Step 2:** Run with `--threads 1 2 4 7` and `--scale 1 2 4`. Record the medians of 5 runs in the handoff; the orchestrator copies them to `VERIFICATION.md` as the baseline.
+- [x] **Step 3:** Commit: `bench: synthetic render benchmark and allocation counter`.
 
 ---
+
+> Baseline (Apple M1 class, this turn, ms/frame, checksums stable across threads):
+> | scale | indexed t1/t2/t4/t7 | rgb t1 | rgb_fog t1 | rgb_upscaled t1 |
+> | --- | --- | --- | --- | --- |
+> | 1 | 11.9/8.7/6.5/5.7 | 50.0 | 203.3 | 53.8 |
+> | 2 | 47.1/47.3/34.2/29.0 | 88.8 | 232.7 | 85.9 |
+> | 4 | 118.2/110.2/114.0/93.2 | 168.1 | 291.1 | 161.9 |
+> Checksums identical across thread counts on every path (single-threaded RGB ignores the pool).
 
 ### Task 2: No per-node allocations in the RGB path
 
