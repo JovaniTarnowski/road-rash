@@ -134,9 +134,9 @@ using GamepadPtr = std::unique_ptr<SDL_Gamepad, SdlGamepadDeleter>;
 using SurfacePtr = std::unique_ptr<SDL_Surface, SdlSurfaceDeleter>;
 }
 ```
-- [ ] **Step 1: Test** `tests/sdl_handles_test.cpp`: create a surface with `SDL_CreateSurface(4, 4, SDL_PIXELFORMAT_XRGB8888)` inside a `SurfacePtr`, throw from inside a scope, catch it, and assert there was no crash. A null `TexturePtr` must be safe to reset. No window is needed. Register it in the test list.
-- [ ] **Step 2: Replace** every raw `SDL_Texture*`, `SDL_Gamepad*` and `SDL_Surface*` local or member in `game_main.cpp` (`rg -n "SDL_Texture\*|SDL_Gamepad\*|SDL_Surface\*" src/game_main.cpp`) with the aliases, and delete the manual `SDL_Destroy*`/`SDL_Close*` calls at scope ends. The `pad` parameter of `pause_event(…, SDL_Gamepad*& pad, …)` becomes `GamepadPtr&`.
-- [ ] **Step 3: Verify** the baseline hashes, `ctest`, and the ASan tree. Commit: `game: RAII for SDL textures, gamepads and surfaces`.
+- [x] **Step 1: Test** `tests/sdl_handles_test.cpp`: create a surface with `SDL_CreateSurface(4, 4, SDL_PIXELFORMAT_XRGB8888)` inside a `SurfacePtr`, throw from inside a scope, catch it, and assert there was no crash. A null `TexturePtr` must be safe to reset. No window is needed. Register it in the test list.
+- [x] **Step 2: Replace** every raw `SDL_Texture*`, `SDL_Gamepad*` and `SDL_Surface*` local or member in `game_main.cpp` (`rg -n "SDL_Texture\*|SDL_Gamepad\*|SDL_Surface\*" src/game_main.cpp`) with the aliases, and delete the manual `SDL_Destroy*`/`SDL_Close*` calls at scope ends. The `pad` parameter of `pause_event(…, SDL_Gamepad*& pad, …)` becomes `GamepadPtr&`.
+- [x] **Step 3: Verify** the baseline hashes, `ctest`, and the ASan tree. Commit: `game: RAII for SDL textures, gamepads and surfaces`.
 
 ---
 

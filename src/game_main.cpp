@@ -2,6 +2,7 @@
 // Shared native/Android frontend and playable race().
 #include <SDL3/SDL.h>
 #include "race_actions.hpp"
+#include "sdl_handles.hpp"
 #include <SDL3/SDL_main.h>
 #include "assets.hpp"
 #include "bob.hpp"
@@ -141,11 +142,11 @@ auto load_with_indicator(SDL_Renderer* renderer, const char* stage, Work work) {
 #endif
 }
 
-SDL_Gamepad* open_first_gamepad() {
+rr::GamepadPtr open_first_gamepad() {
     int count = 0;
     SDL_JoystickID* ids = SDL_GetGamepads(&count);
-    SDL_Gamepad* pad = nullptr;
-    for (int i = 0; ids && i < count && !pad; ++i) pad = SDL_OpenGamepad(ids[i]);
+    rr::GamepadPtr pad;
+    for (int i = 0; ids && i < count && !pad; ++i) pad.reset(SDL_OpenGamepad(ids[i]));
     SDL_free(ids);
     return pad;
 }
@@ -502,16 +503,13 @@ int riding_frame(const rr::Bike& bike) {
 }
 
 struct SpriteCache {
-    std::vector<SDL_Texture*> textures;
-    void clear() {
-        for (auto* t : textures) SDL_DestroyTexture(t);
-        textures.clear();
-    }
+    std::vector<rr::TexturePtr> textures;
+    void clear() { textures.clear(); }
     ~SpriteCache() { clear(); }
     SDL_Texture* get(SDL_Renderer* r, const Game& g, int frame, int rider) {
-        if (textures.empty()) textures.assign(g.bobs.size() * g.remaps.tables.size(), nullptr);
-        SDL_Texture*& t = textures.at(size_t(rider) * g.bobs.size() + size_t(frame));
-        if (t) return t;
+        if (textures.empty()) textures.resize(g.bobs.size() * g.remaps.tables.size());
+        rr::TexturePtr& t = textures.at(size_t(rider) * g.bobs.size() + size_t(frame));
+        if (t) return t.get();
         const rr::Image8 img = rr::remap(g.bobs.at(size_t(frame)), g.remaps, rider);
         if (!img.width || !img.height) return nullptr;
         std::vector<uint8_t> rgba(size_t(img.width) * img.height * 4);
@@ -519,11 +517,10 @@ struct SpriteCache {
             const uint8_t* c = &g.palette.rgbx[4 * img.pixels[i]];
             rgba[4*i] = c[0]; rgba[4*i+1] = c[1]; rgba[4*i+2] = c[2]; rgba[4*i+3] = img.pixels[i] ? 255 : 0;  // index 0 transparent
         }
-        SDL_Surface* s = SDL_CreateSurfaceFrom(img.width, img.height, SDL_PIXELFORMAT_RGBA32, rgba.data(), img.width * 4);
-        t = s ? SDL_CreateTextureFromSurface(r, s) : nullptr;
-        SDL_DestroySurface(s);
-        if (t) SDL_SetTextureScaleMode(t, crisp_scale);
-        return t;
+        rr::SurfacePtr s(SDL_CreateSurfaceFrom(img.width, img.height, SDL_PIXELFORMAT_RGBA32, rgba.data(), img.width * 4));
+        t.reset(s ? SDL_CreateTextureFromSurface(r, s.get()) : nullptr);
+        if (t) SDL_SetTextureScaleMode(t.get(), crisp_scale);
+        return t.get();
     }
 };
 
@@ -532,11 +529,11 @@ struct CourseCanvas {
     std::vector<uint8_t> rgba=std::vector<uint8_t>(640*480*4);
     int scale_w=640,scale_h=480;   // plan 19 Task 4: 640s x 480s surface
     int wide_w=320;                // plan 21 Task 8: logical width of the surface
-    SDL_Texture* texture=nullptr;
+    rr::TexturePtr texture;
     bool texture_is_rgb = false;  // plan 21 Task 4: RGB path needs ARGB8888 upload
     SDL_ScaleMode scale = crisp_scale;   // plan 18 Task 3: from DisplayDriver (filter setting)
     ~CourseCanvas(){clear();}
-    void clear(){SDL_DestroyTexture(texture);texture=nullptr;}
+    void clear(){texture.reset();}
     void resize(int s,int logical_width=320) {
         if (s < 1 || s > 4) throw std::runtime_error("Render scale out of range 1..4");
         if (logical_width * 2 * s == scale_w && 480 * s == scale_h) return;
@@ -686,20 +683,19 @@ struct CourseCanvas {
         frame.to_rgba(game.palette,rgba.data(),scale_w*4);
         }
         if(!texture || texture_is_rgb != use_rgb) {
-            SDL_DestroyTexture(texture);
-            texture=SDL_CreateTexture(renderer,use_rgb?SDL_PIXELFORMAT_ARGB8888:SDL_PIXELFORMAT_RGBA32,SDL_TEXTUREACCESS_STREAMING,scale_w,scale_h);
+            texture.reset(SDL_CreateTexture(renderer,use_rgb?SDL_PIXELFORMAT_ARGB8888:SDL_PIXELFORMAT_RGBA32,SDL_TEXTUREACCESS_STREAMING,scale_w,scale_h));
             if(!texture)throw std::runtime_error(SDL_GetError());
-            SDL_SetTextureScaleMode(texture,scale);
+            SDL_SetTextureScaleMode(texture.get(),scale);
             texture_is_rgb = use_rgb;
         }
         if(use_rgb) {
-            if(!SDL_UpdateTexture(texture,nullptr,rgb.row(0),scale_w*4))throw std::runtime_error(SDL_GetError());
-        } else if(!SDL_UpdateTexture(texture,nullptr,rgba.data(),scale_w*4))throw std::runtime_error(SDL_GetError());
+            if(!SDL_UpdateTexture(texture.get(),nullptr,rgb.row(0),scale_w*4))throw std::runtime_error(SDL_GetError());
+        } else if(!SDL_UpdateTexture(texture.get(),nullptr,rgba.data(),scale_w*4))throw std::runtime_error(SDL_GetError());
         // Hor+ (plan 21 Task 8): logical presentation is wide*2 x 480,
         // set once per resize below; the texture fills it exactly.
         const SDL_FRect dst{0,0,float(scale_w),float(scale_h)};
         SDL_SetRenderLogicalPresentation(renderer,float(scale_w),float(scale_h),SDL_LOGICAL_PRESENTATION_LETTERBOX);
-        if(!SDL_RenderTexture(renderer,texture,nullptr,&dst))throw std::runtime_error(SDL_GetError());
+        if(!SDL_RenderTexture(renderer,texture.get(),nullptr,&dst))throw std::runtime_error(SDL_GetError());
     }
 };
 
@@ -839,7 +835,7 @@ void play_video(const rr::Assets& assets,const std::string& path,SDL_Renderer* r
     });
     auto& player = *loaded;
     LifecycleWatch lifecycle(&mixer);
-    std::unique_ptr<SDL_Gamepad,decltype(&SDL_CloseGamepad)> pad(open_first_gamepad(),SDL_CloseGamepad);
+    rr::GamepadPtr pad = open_first_gamepad();
     bool running=true;
     display.frame = 0;
     player.update(ticks>=0 ? 0 : SDL_GetTicksNS());
@@ -880,9 +876,9 @@ void play_video(const rr::Assets& assets,const std::string& path,SDL_Renderer* r
         if (lifecycle.state.background()) { SDL_Delay(20);continue; }
         SDL_SetRenderDrawColor(renderer,0,0,0,255);SDL_RenderClear(renderer);player.draw(renderer);
         if (!screenshot.empty()) {
-            SDL_Surface* capture=SDL_RenderReadPixels(renderer,nullptr);
-            if (!capture || !SDL_SaveBMP(capture,screenshot.c_str())) throw std::runtime_error(SDL_GetError());
-            SDL_DestroySurface(capture);running=false;
+            rr::SurfacePtr capture(SDL_RenderReadPixels(renderer,nullptr));
+            if (!capture || !SDL_SaveBMP(capture.get(),screenshot.c_str())) throw std::runtime_error(SDL_GetError());
+            running=false;
         }
         SDL_RenderPresent(renderer);
         display.maybe_toggle();
@@ -923,10 +919,9 @@ struct RaceOptions {
 // background (box-sample down from the window surface).
 static rr::RgbImage capture_race_frame(SDL_Renderer* renderer) {
     rr::RgbImage frame(640, 480, 0);
-    SDL_Surface* raw = SDL_RenderReadPixels(renderer, nullptr);
+    rr::SurfacePtr raw(SDL_RenderReadPixels(renderer, nullptr));
     if (!raw) return frame;
-    SDL_Surface* s = SDL_ConvertSurface(raw, SDL_PIXELFORMAT_XRGB8888);
-    SDL_DestroySurface(raw);
+    rr::SurfacePtr s(SDL_ConvertSurface(raw.get(), SDL_PIXELFORMAT_XRGB8888));
     if (!s) return frame;
     const auto* px = static_cast<const uint32_t*>(s->pixels);
     const int sw = s->w, sh = s->h, pitch = s->pitch / 4;
@@ -943,17 +938,16 @@ static rr::RgbImage capture_race_frame(SDL_Renderer* renderer) {
             frame.at(x, y) = uint32_t(((r / n) << 16) | ((gg / n) << 8) | (b / n));
         }
     }
-    SDL_DestroySurface(s);
     return frame;
 }
 
 // Plan 18 Task 8: while the pause menu is open it owns all input, with the
 // menu loop's mapping (arrows + Enter/Escape, d-pad + A/B, pointer/touch).
-static void pause_event(rr::Frontend* menu, const SDL_Event& e, SDL_Gamepad*& pad, SDL_Renderer* renderer) {
+static void pause_event(rr::Frontend* menu, const SDL_Event& e, rr::GamepadPtr& pad, SDL_Renderer* renderer) {
     rr::MenuInput in;
-    if (e.type == SDL_EVENT_GAMEPAD_ADDED && !pad) { pad = SDL_OpenGamepad(e.gdevice.which); return; }
-    if (e.type == SDL_EVENT_GAMEPAD_REMOVED && pad && SDL_GetGamepadID(pad) == e.gdevice.which) {
-        SDL_CloseGamepad(pad); pad = nullptr; return;
+    if (e.type == SDL_EVENT_GAMEPAD_ADDED && !pad) { pad.reset(SDL_OpenGamepad(e.gdevice.which)); return; }
+    if (e.type == SDL_EVENT_GAMEPAD_REMOVED && pad && SDL_GetGamepadID(pad.get()) == e.gdevice.which) {
+        pad.reset(); return;
     }
     if (e.type == SDL_EVENT_KEY_DOWN) {
         if (!e.key.repeat && e.key.scancode > 0 && e.key.scancode < SDL_SCANCODE_COUNT)
@@ -969,7 +963,7 @@ static void pause_event(rr::Frontend* menu, const SDL_Event& e, SDL_Gamepad*& pa
         case SDLK_ESCAPE: case SDLK_P: case SDLK_AC_BACK: if (!e.key.repeat) in.back = true; break;
         default: break;
         }
-    } else if (e.type == SDL_EVENT_GAMEPAD_BUTTON_DOWN && pad && SDL_GetGamepadID(pad) == e.gbutton.which) {
+    } else if (e.type == SDL_EVENT_GAMEPAD_BUTTON_DOWN && pad && SDL_GetGamepadID(pad.get()) == e.gbutton.which) {
         switch (e.gbutton.button) {
         case SDL_GAMEPAD_BUTTON_DPAD_LEFT: in.left = true; break;
         case SDL_GAMEPAD_BUTTON_DPAD_RIGHT: in.right = true; break;
@@ -1011,14 +1005,14 @@ RaceEnd run_race(Game& g, SDL_Renderer* renderer, const RaceOptions& opt, Displa
     rr::TouchInput touch;
     touch.set_left_handed(opt.left_handed);
     rr::TickClock clock;
-    SDL_Gamepad* pad = open_first_gamepad();
-    SDL_Texture* pause_tex = nullptr;   // plan 18 Task 8: presents the 640x480 pause menu
+    rr::GamepadPtr pad = open_first_gamepad();
+    rr::TexturePtr pause_tex;   // plan 18 Task 8: presents the 640x480 pause menu
     int pause_scale_w = 0;   // plan 19 Task 8: reallocates when the effective scale changes
     rr::RgbImage pause_img;
     // Plan 18 Task 9: FPS + ticks/sec overlay, refreshed twice a second.
     const bool fps_on = opt.show_fps && opt.assets;
     std::unique_ptr<rr::TextRenderer> fps_text;
-    SDL_Texture* fps_tex = nullptr;
+    rr::TexturePtr fps_tex;
     rr::RgbImage fps_img;
     uint64_t fps_next = 0, fps_last = 0;
     int fps_frames = 0, fps_tick_acc = 0, fps_v = 0, tps_v = 0;
@@ -1036,7 +1030,7 @@ RaceEnd run_race(Game& g, SDL_Renderer* renderer, const RaceOptions& opt, Displa
         c.demo = opt.demo; c.career = g.career; c.finished = g.race().finished();
         c.paused = lifecycle.state.paused(); c.quitting = g.quitting;
         c.has_menu = opt.menu != nullptr; c.menu_open = opt.menu && opt.menu->pause_open();
-        c.pad = pad ? SDL_GetGamepadID(pad) : 0;
+        c.pad = pad ? SDL_GetGamepadID(pad.get()) : 0;
         return c;
     };
     auto end_as_quit = [&]() {
@@ -1064,9 +1058,9 @@ RaceEnd run_race(Game& g, SDL_Renderer* renderer, const RaceOptions& opt, Displa
             case rr::RaceAction::restart: restart = true; continue;
             case rr::RaceAction::none: case rr::RaceAction::demo_exit: break;
             }
-            if (e.type == SDL_EVENT_GAMEPAD_ADDED && !pad) pad = SDL_OpenGamepad(e.gdevice.which);
-            if (e.type == SDL_EVENT_GAMEPAD_REMOVED && pad && SDL_GetGamepadID(pad) == e.gdevice.which) {
-                SDL_CloseGamepad(pad); pad = nullptr;
+            if (e.type == SDL_EVENT_GAMEPAD_ADDED && !pad) pad.reset(SDL_OpenGamepad(e.gdevice.which));
+            if (e.type == SDL_EVENT_GAMEPAD_REMOVED && pad && SDL_GetGamepadID(pad.get()) == e.gdevice.which) {
+                pad.reset();
                 lifecycle.state.pause();
             }
             if (e.type == SDL_EVENT_FINGER_DOWN || e.type == SDL_EVENT_FINGER_MOTION ||
@@ -1115,17 +1109,17 @@ RaceEnd run_race(Game& g, SDL_Renderer* renderer, const RaceOptions& opt, Displa
         }
         const int zone = opt.stick_deadzone * 32768 / 100;
         if (pad) {
-            const auto south = SDL_GetGamepadButton(pad, SDL_GAMEPAD_BUTTON_SOUTH);
-            const auto west = SDL_GetGamepadButton(pad, SDL_GAMEPAD_BUTTON_WEST);
-            const auto north = SDL_GetGamepadButton(pad, SDL_GAMEPAD_BUTTON_NORTH);
-            in.accelerate |= south || SDL_GetGamepadAxis(pad, SDL_GAMEPAD_AXIS_RIGHT_TRIGGER) > 8000;
-            in.brake |= SDL_GetGamepadButton(pad, SDL_GAMEPAD_BUTTON_EAST) || SDL_GetGamepadAxis(pad, SDL_GAMEPAD_AXIS_LEFT_TRIGGER) > 8000;
-            in.left |= SDL_GetGamepadButton(pad, SDL_GAMEPAD_BUTTON_DPAD_LEFT);
-            in.right |= SDL_GetGamepadButton(pad, SDL_GAMEPAD_BUTTON_DPAD_RIGHT);
-            in.steer_axis = SDL_GetGamepadAxis(pad, SDL_GAMEPAD_AXIS_LEFTX);
+            const auto south = SDL_GetGamepadButton(pad.get(), SDL_GAMEPAD_BUTTON_SOUTH);
+            const auto west = SDL_GetGamepadButton(pad.get(), SDL_GAMEPAD_BUTTON_WEST);
+            const auto north = SDL_GetGamepadButton(pad.get(), SDL_GAMEPAD_BUTTON_NORTH);
+            in.accelerate |= south || SDL_GetGamepadAxis(pad.get(), SDL_GAMEPAD_AXIS_RIGHT_TRIGGER) > 8000;
+            in.brake |= SDL_GetGamepadButton(pad.get(), SDL_GAMEPAD_BUTTON_EAST) || SDL_GetGamepadAxis(pad.get(), SDL_GAMEPAD_AXIS_LEFT_TRIGGER) > 8000;
+            in.left |= SDL_GetGamepadButton(pad.get(), SDL_GAMEPAD_BUTTON_DPAD_LEFT);
+            in.right |= SDL_GetGamepadButton(pad.get(), SDL_GAMEPAD_BUTTON_DPAD_RIGHT);
+            in.steer_axis = SDL_GetGamepadAxis(pad.get(), SDL_GAMEPAD_AXIS_LEFTX);
             in.punch |= opt.swap_punch_kick ? north : west;
             in.kick |= opt.swap_punch_kick ? west : north;
-            in.backhand |= SDL_GetGamepadButton(pad, SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER);
+            in.backhand |= SDL_GetGamepadButton(pad.get(), SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER);
         }
         uint32_t controls = opt.auto_drive ? autopilot(g.race(), g.traffic()) : rr::controls_from(in, zone);
         if (!opt.auto_drive && opt.custom_keys) controls |= rr::bound_control_bits(opt.key_codes, true, keys);
@@ -1173,16 +1167,15 @@ RaceEnd run_race(Game& g, SDL_Renderer* renderer, const RaceOptions& opt, Displa
             opt.menu->draw(pause_img, pause_scale);
             if (!pause_tex || pause_scale_w != pause_scale) {
                 pause_scale_w = pause_scale;
-                SDL_DestroyTexture(pause_tex);
-                pause_tex = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_XRGB8888, SDL_TEXTUREACCESS_STREAMING,
-                                              640 * pause_scale, 480 * pause_scale);
+                pause_tex.reset(SDL_CreateTexture(renderer, SDL_PIXELFORMAT_XRGB8888, SDL_TEXTUREACCESS_STREAMING,
+                                              640 * pause_scale, 480 * pause_scale));
                 if (!pause_tex) throw std::runtime_error(SDL_GetError());
-                rr::apply_texture_scale(pause_tex, display.config);
+                rr::apply_texture_scale(pause_tex.get(), display.config);
             }
-            SDL_UpdateTexture(pause_tex, nullptr, pause_img.pixels.data(), 640 * pause_scale * 4);
+            SDL_UpdateTexture(pause_tex.get(), nullptr, pause_img.pixels.data(), 640 * pause_scale * 4);
             SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
             SDL_RenderClear(renderer);
-            SDL_RenderTexture(renderer, pause_tex, nullptr, nullptr);
+            SDL_RenderTexture(renderer, pause_tex.get(), nullptr, nullptr);
         } else {
             SDL_SetRenderDrawColor(renderer, 15, 18, 22, 255);
             SDL_RenderClear(renderer);
@@ -1241,35 +1234,31 @@ RaceEnd run_race(Game& g, SDL_Renderer* renderer, const RaceOptions& opt, Displa
                     fps_argb.assign(size_t(w) * 30, 0);
                     for (size_t i = 0; i < fps_argb.size(); ++i)
                         if (fps_img.pixels[i]) fps_argb[i] = 0xff000000u | fps_img.pixels[i];
-                    if (fps_tex) { float tw = 0, th = 0; SDL_GetTextureSize(fps_tex, &tw, &th); if (int(tw) != w || int(th) != 30) { SDL_DestroyTexture(fps_tex); fps_tex = nullptr; } }
+                    if (fps_tex) { float tw = 0, th = 0; SDL_GetTextureSize(fps_tex.get(), &tw, &th); if (int(tw) != w || int(th) != 30) fps_tex.reset(); }
                     if (!fps_tex) {
-                        fps_tex = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STREAMING, w, 30);
-                        if (fps_tex) SDL_SetTextureBlendMode(fps_tex, SDL_BLENDMODE_BLEND);
+                        fps_tex.reset(SDL_CreateTexture(renderer, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STREAMING, w, 30));
+                        if (fps_tex) SDL_SetTextureBlendMode(fps_tex.get(), SDL_BLENDMODE_BLEND);
                     }
-                    if (fps_tex) SDL_UpdateTexture(fps_tex, nullptr, fps_argb.data(), w * 4);
+                    if (fps_tex) SDL_UpdateTexture(fps_tex.get(), nullptr, fps_argb.data(), w * 4);
                 }
             }
             if (fps_tex) {
                 // Logical space is 640 wide in the race; pin to its top-right.
                 float tw = 0, th = 0;
-                SDL_GetTextureSize(fps_tex, &tw, &th);
+                SDL_GetTextureSize(fps_tex.get(), &tw, &th);
                 const SDL_FRect dst{640.f - tw - 8.f, 8.f, tw, th};
-                SDL_RenderTexture(renderer, fps_tex, nullptr, &dst);
+                SDL_RenderTexture(renderer, fps_tex.get(), nullptr, &dst);
             }
         }
         if (!opt.screenshot.empty()) {
-            SDL_Surface* capture = SDL_RenderReadPixels(renderer, nullptr);
-            if (!capture || !SDL_SaveBMP(capture, opt.screenshot.c_str())) throw std::runtime_error(SDL_GetError());
-            SDL_DestroySurface(capture);
+            rr::SurfacePtr capture(SDL_RenderReadPixels(renderer, nullptr));
+            if (!capture || !SDL_SaveBMP(capture.get(), opt.screenshot.c_str())) throw std::runtime_error(SDL_GetError());
             running = false;
             result.quit_app = true;
         }
         SDL_RenderPresent(renderer);
         display.maybe_toggle();
     }
-    if (pad) SDL_CloseGamepad(pad);
-    if (pause_tex) SDL_DestroyTexture(pause_tex);
-    if (fps_tex) SDL_DestroyTexture(fps_tex);
     if (g.mixer) g.mixer->pause(false);
     return result;
 }
@@ -1335,8 +1324,8 @@ int run_game(const rr::Assets& assets, SDL_Window* window, SDL_Renderer* rendere
     g.mixer = &mixer;
     LifecycleWatch audio_lifecycle(&mixer);
     int menu_scale = 0;
-    SDL_Texture* texture = nullptr;
-    SDL_Gamepad* pad = open_first_gamepad();
+    rr::TexturePtr texture;
+    rr::GamepadPtr pad = open_first_gamepad();
     rr::MenuStickInput menu_stick;
     LifecycleWatch lifecycle;
     rr::RgbImage frame;
@@ -1449,8 +1438,8 @@ int run_game(const rr::Assets& assets, SDL_Window* window, SDL_Renderer* rendere
         }
         rr::MenuInput in;
         // Nested race/video loops may have consumed the removal notification.
-        if (pad && !SDL_GamepadConnected(pad)) {
-            SDL_CloseGamepad(pad); pad = open_first_gamepad();
+        if (pad && !SDL_GamepadConnected(pad.get())) {
+            pad = open_first_gamepad();
             menu_stick.suspend();
             lifecycle.state.pause();
         }
@@ -1499,13 +1488,13 @@ int run_game(const rr::Assets& assets, SDL_Window* window, SDL_Renderer* rendere
                 }
                 in.text += rr::to_cp1252(u);
             }
-            if (e.type == SDL_EVENT_GAMEPAD_ADDED && !pad) pad = SDL_OpenGamepad(e.gdevice.which);
-            if (e.type == SDL_EVENT_GAMEPAD_REMOVED && pad && SDL_GetGamepadID(pad) == e.gdevice.which) {
-                SDL_CloseGamepad(pad); pad = open_first_gamepad();
+            if (e.type == SDL_EVENT_GAMEPAD_ADDED && !pad) pad.reset(SDL_OpenGamepad(e.gdevice.which));
+            if (e.type == SDL_EVENT_GAMEPAD_REMOVED && pad && SDL_GetGamepadID(pad.get()) == e.gdevice.which) {
+                pad = open_first_gamepad();
                 menu_stick.suspend();
                 lifecycle.state.pause();
             }
-            if (e.type == SDL_EVENT_GAMEPAD_BUTTON_DOWN && pad && SDL_GetGamepadID(pad) == e.gbutton.which) {
+            if (e.type == SDL_EVENT_GAMEPAD_BUTTON_DOWN && pad && SDL_GetGamepadID(pad.get()) == e.gbutton.which) {
                 switch (e.gbutton.button) {
                 case SDL_GAMEPAD_BUTTON_DPAD_LEFT: in.left = true; break;
                 case SDL_GAMEPAD_BUTTON_DPAD_RIGHT: in.right = true; break;
@@ -1534,8 +1523,7 @@ int run_game(const rr::Assets& assets, SDL_Window* window, SDL_Renderer* rendere
                 if (e.type != SDL_EVENT_MOUSE_MOTION) in.pointer_click = true;
             }
             if (e.type == SDL_EVENT_RENDER_DEVICE_RESET || e.type == SDL_EVENT_RENDER_TARGETS_RESET) {
-                SDL_DestroyTexture(texture);
-                texture = nullptr;
+                texture.reset();
                 menu_scale = 0;
             }
             if (e.type == SDL_EVENT_RENDER_DEVICE_LOST) throw std::runtime_error("Render device lost");
@@ -1544,8 +1532,8 @@ int run_game(const rr::Assets& assets, SDL_Window* window, SDL_Renderer* rendere
         if (lifecycle.state.take_clock_reset() || lifecycle.state.paused()) menu_stick.suspend();
         if (lifecycle.state.paused() && (in.select || in.pointer_click)) { lifecycle.state.resume(); in = {}; }
         if (!lifecycle.state.paused() && pad) {
-            const auto stick = menu_stick.update(SDL_GetGamepadAxis(pad, SDL_GAMEPAD_AXIS_LEFTX),
-                                                 SDL_GetGamepadAxis(pad, SDL_GAMEPAD_AXIS_LEFTY), SDL_GetTicks());
+            const auto stick = menu_stick.update(SDL_GetGamepadAxis(pad.get(), SDL_GAMEPAD_AXIS_LEFTX),
+                                                 SDL_GetGamepadAxis(pad.get(), SDL_GAMEPAD_AXIS_LEFTY), SDL_GetTicks());
             in.left |= stick.left; in.right |= stick.right; in.up |= stick.up; in.down |= stick.down;
         }
         if (!lifecycle.state.paused()) fe.update(in, SDL_GetTicks());
@@ -1555,22 +1543,20 @@ int run_game(const rr::Assets& assets, SDL_Window* window, SDL_Renderer* rendere
         display.apply(480);
         if (menu_scale != display.render_scale) {
             menu_scale = display.render_scale;
-            SDL_DestroyTexture(texture);
-            texture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_XRGB8888, SDL_TEXTUREACCESS_STREAMING,
-                                        640 * menu_scale, 480 * menu_scale);
+            texture.reset(SDL_CreateTexture(renderer, SDL_PIXELFORMAT_XRGB8888, SDL_TEXTUREACCESS_STREAMING,
+                                        640 * menu_scale, 480 * menu_scale));
             if (!texture) throw std::runtime_error(SDL_GetError());
-            rr::apply_texture_scale(texture, display.config);
+            rr::apply_texture_scale(texture.get(), display.config);
         }
         fe.draw(frame, menu_scale);
-        SDL_UpdateTexture(texture, nullptr, frame.pixels.data(), 640 * menu_scale * 4);
+        SDL_UpdateTexture(texture.get(), nullptr, frame.pixels.data(), 640 * menu_scale * 4);
         SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
         SDL_RenderClear(renderer);
-        SDL_RenderTexture(renderer, texture, nullptr, nullptr);
+        SDL_RenderTexture(renderer, texture.get(), nullptr, nullptr);
         if (menu_frames >= 0 && ++frames >= menu_frames) {
             if (!screenshot.empty()) {
-                SDL_Surface* capture = SDL_RenderReadPixels(renderer, nullptr);
-                if (!capture || !SDL_SaveBMP(capture, screenshot.c_str())) throw std::runtime_error(SDL_GetError());
-                SDL_DestroySurface(capture);
+                rr::SurfacePtr capture(SDL_RenderReadPixels(renderer, nullptr));
+                if (!capture || !SDL_SaveBMP(capture.get(), screenshot.c_str())) throw std::runtime_error(SDL_GetError());
             }
             running = false;
         }
@@ -1581,8 +1567,6 @@ int run_game(const rr::Assets& assets, SDL_Window* window, SDL_Renderer* rendere
     rr::save_settings(settings_path, settings);
     music.stop();
     if (text_input) SDL_StopTextInput(window);
-    if (pad) SDL_CloseGamepad(pad);
-    SDL_DestroyTexture(texture);
     return 0;
 }
 
