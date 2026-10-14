@@ -2,10 +2,14 @@
 """Explicit ownership, worktree creation, and durable per-session handoffs."""
 import argparse
 import json
+import os
 import re
+import shutil
 import subprocess
+import sys
+import time
 from pathlib import Path
-from agent_common import ROOT, ResourceClaims, git
+from agent_common import ROOT, ResourceClaims, git, pid_alive
 
 
 def main():
@@ -24,6 +28,12 @@ def main():
     reap = sub.add_parser('reap')
     reap.add_argument('token')
     sub.add_parser('list')
+    builds = sub.add_parser('builds')
+    builds.add_argument('--root', type=Path, default=ROOT)
+    builds.add_argument('--prune', action='store_true')
+    builds.add_argument('--yes', action='store_true')
+    builds.add_argument('--include-recent', action='store_true')
+    builds.add_argument('--older-than', type=float, default=3, metavar='DAYS')
     args = p.parse_args()
     claims = ResourceClaims()
     if args.action == 'list':
@@ -32,6 +42,8 @@ def main():
         claims.release(args.token, args.session)
     elif args.action == 'reap':
         claims.release(args.token, reap=True)
+    elif args.action == 'builds':
+        sys.exit(builds_command(claims, args))
     else:
         if not re.fullmatch(r'[a-zA-Z0-9_-]+', args.session):
             p.error('session must use letters, numbers, hyphens or underscores')
@@ -63,6 +75,76 @@ def main():
             claims.release(token, args.session)
             raise
 
+
+
+
+
+def tree_size(path):
+    # Sizes without following symlinks (plan 30 Task 5).
+    total = 0
+    for entry in os.scandir(path):
+        try:
+            if entry.is_symlink():
+                continue
+            if entry.is_dir(follow_symlinks=False):
+                total += tree_size(entry.path)
+            else:
+                total += entry.stat(follow_symlinks=False).st_size
+        except OSError:
+            continue
+    return total
+
+
+def builds_command(claims, args):
+    # Plan 30 Task 5: claim-aware build-tree listing/pruning. Defaults to
+    # dry-run: lists only. Deletes only with --prune --yes, only unclaimed
+    # trees older than --older-than days, never anything outside build* dirs
+    # at the root, never a tree touched in the last 10 minutes (Focus 5)
+    # unless --include-recent.
+    from agent_common import ROOT as agent_root
+    root = args.root.resolve()
+    now = time.time()
+    live_paths = set()
+    for row in claims.list():
+        try:
+            alive = pid_alive(row['pid'])
+        except (KeyError, TypeError, ValueError):
+            alive = False
+        if alive:
+            for f in row.get('files', row.get('paths', [])):
+                live_paths.add(str(Path(f).resolve()))
+    rows = []
+    for child in sorted(root.iterdir()):
+        if not child.is_dir() or child.is_symlink():
+            continue
+        if child.name == 'build' and root == agent_root.resolve() and not args.prune:
+            pass  # `build` itself lists like any tree; deleted only if named (never by default)
+        if not child.name.startswith('build'):
+            continue
+        try:
+            mtime = child.stat().st_mtime
+        except OSError:
+            continue
+        # A tree is claimed when a live claim covers it or anything under it.
+        claimed = any(str(child.resolve()) == p or str(p).startswith(str(child.resolve()) + os.sep)
+                      for p in live_paths)
+        recent = (now - mtime) < 10 * 60
+        old_enough = (now - mtime) >= args.older_than * 86400
+        prunable = not claimed and old_enough and (args.include_recent or not recent)
+        rows.append({'name': child.name, 'bytes': tree_size(child), 'mtime': mtime,
+                     'claimed': claimed, 'recent': recent, 'prunable': prunable})
+    print(json.dumps(rows, indent=2))
+    if args.prune:
+        if not args.yes:
+            print('refusing to delete without --yes', file=sys.stderr)
+            return 2
+        for row in rows:
+            if not row['prunable']:
+                continue
+            if row['name'] == 'build':
+                continue  # never the session tree unless named explicitly (not supported)
+            shutil.rmtree(root / row['name'], ignore_errors=True)
+    return 0
 
 if __name__ == '__main__':
     main()

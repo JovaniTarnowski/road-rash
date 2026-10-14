@@ -266,6 +266,47 @@ class Tooling(unittest.TestCase):
         bad = self.unlabeled_tests(json.loads(out.stdout))
         self.assertEqual(bad, [])
 
+    def make_builds_repo(self):
+        repo = self.root / 'repo'
+        (repo / 'src').mkdir(parents=True)
+        (repo / 'src' / 'x.cpp').write_text('x')
+        import time
+        old = time.time() - 10 * 86400
+        for name in ['build-a', 'build-b', 'build-c']:
+            d = repo / name
+            d.mkdir()
+            (d / 'f.bin').write_text('data')
+        # build-a old + unclaimed; build-c fresh (now)
+        os.utime(repo / 'build-a', (old, old))
+        return repo
+
+    def run_builds(self, repo, *args):
+        import sys
+        return subprocess.run([sys.executable, str(Path(__file__).resolve().parent.parent / 'tools' / 'agent_workspace.py'),
+                               'builds', '--root', str(repo), *args],
+                              capture_output=True, text=True, env={**os.environ, 'RR_AGENT_STATE': str(self.root / 'resources')})
+
+    def test_builds_dry_run_lists_only_prunable(self):
+        from agent_common import ResourceClaims
+        repo = self.make_builds_repo()
+        ResourceClaims().acquire('s', [repo / 'build-b'], os.getpid())
+        out = self.run_builds(repo)
+        self.assertEqual(out.returncode, 0, out.stderr)
+        rows = json.loads(out.stdout)
+        names = [r['name'] for r in rows if r['prunable']]
+        self.assertEqual(names, ['build-a'])
+
+    def test_builds_prune_removes_only_unclaimed_old(self):
+        from agent_common import ResourceClaims
+        repo = self.make_builds_repo()
+        ResourceClaims().acquire('s', [repo / 'build-b'], os.getpid())
+        out = self.run_builds(repo, '--prune', '--yes')
+        self.assertEqual(out.returncode, 0, out.stderr)
+        self.assertFalse((repo / 'build-a').exists())
+        self.assertTrue((repo / 'build-b').exists())
+        self.assertTrue((repo / 'build-c').exists())
+        self.assertTrue((repo / 'src' / 'x.cpp').exists())
+
     def test_race_constructed_only_in_race_setup(self):
         # Plan 26 Task 4: the only production/replay Race construction lives in
         # src/race_setup.cpp; unit tests with synthetic routes are exempt.
