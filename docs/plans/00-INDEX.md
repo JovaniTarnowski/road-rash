@@ -2,17 +2,17 @@
 
 These plans take the port from its current state to a complete native game on macOS ARM64 and Android ARM64. Read this file first. It holds the current status, the review findings, the order of the remaining plans, and the conventions every plan assumes.
 
-Last reviewed: **October 11, 2026**, three times: the session 23 review, an update after the owner's Napa playtest (plan 11a), and the session 26 replan that added plans 16–20 (gameplay systems, all courses, settings screens, higher resolutions, asset upscaling); plans 21–22 (enhanced visuals, toolchain hardening) were added on October 12. See [../PROGRESS.md](../PROGRESS.md) for the per-session timeline.
+Last reviewed: **October 14, 2026**: plans 25–31 landed (review fixes, one factory, field proxy, race shell, render performance, test/build tooling, this docs pass); plans 21–22 added October 12; plan 21 gained Task 10 (wide menus). See [../PROGRESS.md](../PROGRESS.md) for the per-session timeline.
 
-## Where things stand (October 11, 2026)
+## Where things stand (October 14, 2026)
 
 `rr-game` is a playable game on macOS. The same code builds into an asset-free Android ARM64 APK.
 - **Front end:** the original menus, career, shop, Schmooze, results and saves lead into races.
 - **Napa:** draws with the original scene pipeline: road materials, hills, buildings, shoulders/curbs, static scenery, horizon scroll and the full dashboard.
-- **Other courses:** the other four still use the placeholder renderer.
-- **Race:** the original bike physics, AI racing state, rider contact and combat drive the race. Free traffic has just been added and is uncommitted.
+- **Other courses:** all five draw with the original scene pipeline through the shared race factory (plan 26).
+- **Race:** the original bike physics, AI racing state, rider contact, combat and free traffic drive the race (plan 10 oracle replays with a known divergence at frame 207).
 - **Audio/video:** all effects, the RRA soundtrack and all 59 videos decode and play.
-- **Tests:** native CTest passes 53/53 (this review). Android debug and release assemble.
+- **Tests:** 94 native CTests with slow/sim/disc/unit labels (`test-fast`/`test-sim`); `RR_STRICT_WARNINGS` clean. Android debug and release assemble.
 
 ### Verified against the original (zero tolerance)
 - **Road projection:** 600 CITY frames, 901 moving Napa frames and one Napa start frame.
@@ -116,10 +116,10 @@ The owner also asked for plans covering pedestrians, oil slicks, police and the 
 | **25** | [Review correctness fixes](25-review-correctness-fixes.md) | New (October 13, [code review](../agent-review/CODE-REVIEW-2026-10-13.md)). **Done** (Tasks 1–3, 5–7): restart after finish, render-worker exceptions, RGBA mip cache keying, atomic saves, dead `Race` state, ASan overflows | — |
 | **26** | [One race construction path](26-one-race-construction-path.md) | New (October 13). **Done** (`e1fd264`, `83890a3`, `7f3b840`, `a72bca0`): game, soak and oracle replay build races through one factory; intentional game behaviour change. Follow-up: career keeps the purchased bike (`94f1490`), bad-CAR fallback + restart guard (`91bd535`), finish-wording + race_action notes (`6c937e7`); see [review](../agent-handoffs/review-of-25-28-20261013.md) | — |
 | **27** | [Safe object field access](27-safe-object-field-access.md) | New (October 13). Task 1 done (`9b4c019`; Debug/Release determinism confirmed). Tasks 2–3 (named offsets) decision-gated on the owner | — |
-| **28** | [Race shell: input actions, RAII, race screen](28-race-shell-input-and-raii.md) | New (October 13). Tasks 1–3 done (`b50dac8`, `a3c1c68`, `5632e71`); Task 4 (`RaceScreen`) in progress. Prework for plan 23 Task 3 | — |
-| **29** | [Enhanced render path performance](29-enhanced-path-performance.md) | New (October 13). Not started: allocation-free, band-threaded full-colour raster | — |
-| **30** | [Test and build infrastructure](30-test-and-build-infrastructure.md) | New (October 13). Not started: CTest labels and fast targets, shared checks, zero strict warnings, `ByteReader` adoption, build-tree pruner | — |
-| **31** | [Docs and status hygiene](31-docs-and-status-hygiene.md) | New (October 13). Not started: progress/index refresh, handoff archive, doc-consistency checks. Subagent waves for 25–31: [REVIEW-ORCHESTRATION.md](REVIEW-ORCHESTRATION.md) | — |
+| **28** | [Race shell: input actions, RAII, race screen](28-race-shell-input-and-raii.md) | **Done** (`b50dac8`, `a3c1c68`, `5632e71`, `7ca92ba`); plan 23 Task 3 note open (orchestrator scope) | — |
+| **29** | [Enhanced render path performance](29-enhanced-path-performance.md) | **Done** (Tasks 1–4): benchmark + counter, cached RGBA levels, band-threaded RGB (bit-identical), persistent band scratch | — |
+| **30** | [Test and build infrastructure](30-test-and-build-infrastructure.md) | **Done** (Tasks 1–5): labels/fast targets/guard, Checks, strict clean, ByteReader/ISO parser, build pruner | — |
+| **31** | [Docs and status hygiene](31-docs-and-status-hygiene.md) | In progress (this plan): header/index refresh done; handoff archive + doc checks to follow | — |
 
 ### Order and dependencies
 

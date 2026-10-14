@@ -30,17 +30,17 @@
 
 **Wave:** W1 · **Owns:** drafts in `docs/agent-handoffs/review-31-1.md`; the orchestrator applies them to `docs/PROGRESS.md` (first two sections) and `docs/plans/00-INDEX.md` ("Where things stand", the plan status table) · **Profile:** research
 
-- [ ] **Step 1: Collect facts** into the handoff, each with its source:
+- [x] **Step 1: Collect facts** into the handoff, each with its source:
   - `rg -n CMAKE_CXX_STANDARD CMakeLists.txt` gives the language standard.
   - `git log --oneline -60` and the plan checkboxes (`rg -n "^- \[x\]" docs/plans/1[0-9]*.md docs/plans/2[0-4]*.md`) give the done/open status per plan.
   - `docs/CURRENT_STATUS.md` gives the gate receipts.
   - `rg -n "police|cops" docs/PROGRESS.md | head` gives the police/pedestrian status as last recorded (plan 24).
-- [ ] **Step 2: Draft replacements** for these places:
+- [x] **Step 2: Draft replacements** for these places:
   - the `PROGRESS.md` opening paragraph (standard, which courses use the original scene pipeline, police/pedestrians, plan range);
   - every row of `PROGRESS.md`'s "Status by area" table that the facts contradict;
   - `00-INDEX.md` "Where things stand (date)" (new date, same structure);
   - the status-table cells for plans 19–24 and new rows for 25–31.
-- [ ] **Step 3 (orchestrator):** apply the drafts in one commit, `docs: refresh progress header and plan index (review 2026-10-13)`.
+- [x] **Step 3 (orchestrator):** apply the drafts in one commit, `docs: refresh progress header and plan index (review 2026-10-13)`.
 
 ---
 
