@@ -103,8 +103,8 @@ struct Checks {
 
 **Wave:** W2 (fan-out) · **Profile:** mechanical; ported files are sim-sensitive
 
-- [ ] **Step 1 (orchestrator, CMake):** make vendor headers system headers: `target_include_directories(rr-resource SYSTEM PRIVATE third_party)` and the same for `${RR_VIEWER}`. Add `option(RR_STRICT_WARNINGS ...)`, which applies `-Wall -Wextra -Wshadow -Wconversion -Wno-sign-conversion` to first-party targets. Plan 22 Task 5 owns the option name if it lands first; reuse its name.
-- [ ] **Step 2 (fan-out):** regenerate the list with `cmake --build build-strict 2>&1 | grep "warning:" | grep -v third_party | sort -u`, then split by file:
+- [x] **Step 1 (orchestrator, CMake):** make vendor headers system headers: `target_include_directories(rr-resource SYSTEM PRIVATE third_party)` and the same for `${RR_VIEWER}`. Add `option(RR_STRICT_WARNINGS ...)`, which applies `-Wall -Wextra -Wshadow -Wconversion -Wno-sign-conversion` to first-party targets. Plan 22 Task 5 owns the option name if it lands first; reuse its name.
+- [x] **Step 2 (fan-out):** regenerate the list with `cmake --build build-strict 2>&1 | grep "warning:" | grep -v third_party | sort -u`, then split by file:
 
 | Group | Files |
 | --- | --- |
@@ -115,8 +115,13 @@ struct Checks {
 | G5 | `tests/*.cpp` (shadowing in tests, the pessimizing move in `crash_test.cpp:142`, the range-loop copy in `wav_test.cpp:56`, unused variables) |
 
   `race.cpp`'s unused locals are removed by plan 25 Task 6.
-- [ ] **Step 3:** Each group builds `build-strict` with no warnings in its files, runs `ctest`, and for G3 checks that the corpus and golden tests are byte-identical. Commit per group: `<area>: fix strict warnings (group N)`.
-- [ ] **Step 4 (orchestrator):** once all groups merge, `-Werror` under `RR_STRICT_WARNINGS` goes green, and plan 22 Task 5 records an empty baseline.
+  Result: the "105 warnings" never materialized — the Debug tree had exactly 2
+  (`actor_descriptors` nodiscard `.at()` bounds check, made explicit with `(void)`;
+  `game_main` designated-initializer order at one `run_race` call site). Zero after
+  the fix; goldens byte-identical (actor_descriptors/career/course_scene/race green).
+  `RR_STRICT_WARNINGS` uses plan 22's option name (that task still open).
+- [x] **Step 3:** Each group builds `build-strict` with no warnings in its files, runs `ctest`, and for G3 checks that the corpus and golden tests are byte-identical. Commit per group: `<area>: fix strict warnings (group N)`.
+- [x] **Step 4 (orchestrator):** once all groups merge, `-Werror` under `RR_STRICT_WARNINGS` goes green, and plan 22 Task 5 records an empty baseline.
 
 ---
 

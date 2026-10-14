@@ -360,7 +360,7 @@ int run_game(const rr::Assets& assets, SDL_Window* window, SDL_Renderer* rendere
                 race_music.set_music_level(settings.mute ? 0 : settings.music_volume * settings.master_volume / 100);
                 g.sound = sound.get();
                 if (sound) sound->start_race(career.state.bike, career.state.character);
-                const rr::RaceEnd end = run_race(g, renderer, {.key_codes = settings.controls, .custom_keys = settings.custom_controls, .swap_punch_kick = settings.swap_punch_kick, .stick_deadzone = settings.stick_deadzone, .left_handed = settings.left_handed, .menu = &fe, .settings = &settings, .apply_settings = [&] { apply_levels(); race_music.set_music_level(settings.mute ? 0 : settings.music_volume * settings.master_volume / 100); }, .show_fps = settings.show_fps, .assets = &assets}, display);
+                const rr::RaceEnd end = run_race(g, renderer, {.key_codes = settings.controls, .custom_keys = settings.custom_controls, .swap_punch_kick = settings.swap_punch_kick, .stick_deadzone = settings.stick_deadzone, .left_handed = settings.left_handed, .menu = &fe, .apply_settings = [&] { apply_levels(); race_music.set_music_level(settings.mute ? 0 : settings.music_volume * settings.master_volume / 100); }, .show_fps = settings.show_fps, .assets = &assets, .settings = &settings}, display);
                 menu_stick.suspend();
                 if (sound) sound->stop_race();
                 race_music.stop();  // race end

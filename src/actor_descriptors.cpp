@@ -133,7 +133,7 @@ ActorViewSelection select_actor_view(const ActorAnimationFrame& descriptor,const
     }
     const uint32_t group=base+(d[9]?uint32_t(view):0);
     const uint32_t subframe=uint32_t(byte(d[4])+(d[9]?elevation:view));
-    views.at(group).at(subframe);
+    (void)views.at(group).at(subframe);   // bounds check only; indices recomputed below
     return {group,subframe,result_roll};
 }
 ActorAnimationLibrary::ActorAnimationLibrary(const std::vector<uint8_t>& exe,const std::vector<uint8_t>& global) {
