@@ -106,7 +106,8 @@ RaceAssets load_race_assets(const Assets& assets, const std::vector<uint8_t>& ex
         try {
             out.vehicles = std::make_unique<VehicleLibrary>(assets.read("DATA/CARS/" + config.course + ".CAR"), exe);
         } catch (const std::exception& e) {
-            throw std::runtime_error("DATA/CARS/" + config.course + ".CAR: " + e.what());
+            if (!config.optional_traffic) throw std::runtime_error("DATA/CARS/" + config.course + ".CAR: " + e.what());
+            out.vehicles.reset();   // game logs the course at fallback time (finding 2)
         }
     }
     out.attack_codes = std::make_unique<AttackCodes>(read_attack_codes(exe));

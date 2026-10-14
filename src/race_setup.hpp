@@ -49,6 +49,7 @@ struct RaceConfig {
     int32_t road_base_q8 = 0;                  // Race ctor anchor (game 0; replay measured)
     bool track_ring = true;                    // ring-driven DZHR pedestrians (0x004552e0)
     bool optional_scene = false;               // plan 26 Task 3: game fallback keeps a null scene
+    bool optional_traffic = false;             // finding 2 (2026-10-13): bad .CAR keeps null vehicles
     std::optional<uint32_t> ring_rng_state;    // RNG state loaded just before ring setup
     std::function<void(Race&)> prepare;        // runs after ctor, before ring (demo hold)
 };

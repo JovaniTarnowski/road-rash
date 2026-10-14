@@ -221,6 +221,7 @@ struct Game {
             try {
                 rr::RaceConfig fallback = config;
                 fallback.optional_scene = true;
+                fallback.optional_traffic = true;
                 assets = rr::load_race_assets(a, exe, fallback);
             } catch(const std::exception& e2) { SDL_Log("%s fallback failed: %s", config.course.c_str(), e2.what()); }
         }
@@ -228,6 +229,11 @@ struct Game {
     }
 
     void restart() {
+        // Finding 2 (2026-10-13): without course or actors there is no race to build.
+        if (!assets.course || !assets.actors) {
+            SDL_Log("%s has no course data; not starting the race", config.course.c_str());
+            return;
+        }
         instance = rr::build_race(assets, exe_, config);
         const auto& actors_lib = assets.actors->library();
         actor_states.assign(instance.race->riders().size(),{});
