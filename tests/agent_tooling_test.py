@@ -307,6 +307,16 @@ class Tooling(unittest.TestCase):
         self.assertTrue((repo / 'build-c').exists())
         self.assertTrue((repo / 'src' / 'x.cpp').exists())
 
+    def test_handoff_index_classifies_merged_and_open(self):
+        from handoff_index import classify
+        # merged: cited in docs text; open (resources): uncited + live PIDs.
+        docs = 'see 25-1.md for the restart fix (PROGRESS.md)' 
+        log = 'docs: apply 26-1.md factory order\n'
+        self.assertEqual(classify('25-1.md', '# Handoff 25-1\nno pids here', docs, log), 'merged')
+        self.assertEqual(classify('26-1.md', '# Handoff 26-1', docs, log), 'merged')
+        self.assertEqual(classify('other.md', '# Notes\nPIDs: 1234, capture running', docs, log), 'open (resources)')
+        self.assertEqual(classify('quiet.md', '# Notes\nnothing live', docs, log), 'open')
+
     def test_race_constructed_only_in_race_setup(self):
         # Plan 26 Task 4: the only production/replay Race construction lives in
         # src/race_setup.cpp; unit tests with synthetic routes are exempt.
