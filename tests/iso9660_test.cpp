@@ -30,6 +30,19 @@ int main() {
     try { open().list("ROADRASH/LOOP"); check(false,"directory cycle rejected"); } catch (const std::runtime_error&) {}
     bytes=fixture::iso(); bytes[19*2048]=33;
     try { open().list("ROADRASH"); check(false,"short directory record rejected"); } catch (const std::runtime_error&) {}
+    {
+        // Plan 30 Task 4: every truncation of a valid record throws runtime_error.
+        auto full = fixture::iso();
+        std::vector<uint8_t> rec(full.begin() + 19 * 2048, full.begin() + 19 * 2048 + 40);
+        for (size_t n = 0; n <= 33; ++n) {
+            try {
+                rr::parse_iso_record({rec.data(), n});
+                check(false, "truncated record throws");
+            } catch (const std::runtime_error&) {}
+        }
+        const auto ok = rr::parse_iso_record({rec.data(), rec.size()});
+        check(ok.name == "A.BIN" && ok.sector == 20 && ok.size == 5 && !ok.directory, "valid record parses");
+    }
     std::cout << failures << " failures\n";
     return failures ? 1 : 0;
 }

@@ -1,4 +1,5 @@
 #include "atomic_file.hpp"
+#include "byte_reader.hpp"
 #include "upscale_cache.hpp"
 #include "sha256.hpp"
 #include <array>
@@ -8,10 +9,12 @@
 #include <stdexcept>
 namespace rr {
 namespace {
-uint32_t read_u32(const std::vector<uint8_t>& b,size_t& p) {
-    if (b.size()-p<4) throw std::runtime_error("Truncated rrup");
-    uint32_t v=uint32_t(b[p])|(uint32_t(b[p+1])<<8)|(uint32_t(b[p+2])<<16)|(uint32_t(b[p+3])<<24);
-    p+=4;return v;
+uint32_t read_u32(const ByteReader& r, size_t& p) {
+    // Earlier size checks stay at the call sites (specific fail() path);
+    // the reader adds the checked read (throws std::runtime_error past end).
+    const uint32_t v = r.le<uint32_t>(p);
+    p += 4;
+    return v;
 }
 void write_u32(std::vector<uint8_t>& b,uint32_t v) {
     b.push_back(uint8_t(v));b.push_back(uint8_t(v>>8));b.push_back(uint8_t(v>>16));b.push_back(uint8_t(v>>24));
@@ -81,19 +84,20 @@ std::optional<UpscaledImage> decode_rrup(const std::vector<uint8_t>& bytes,
     UpscaleMethod* method_out,uint32_t* method_version_out,
     std::array<uint8_t,32>* hash_out) {
     size_t p=0;
+    const ByteReader reader(bytes);
     auto fail=[]{return std::optional<UpscaledImage>{};};
     if (bytes.size()<4+p||bytes[0]!='R'||bytes[1]!='R'||bytes[2]!='U'||bytes[3]!='P') return fail();
     p=4;
     try {
-        if (read_u32(bytes,p)!=1) return fail();
+        if (read_u32(reader,p)!=1) return fail();
         if (p>=bytes.size()) return fail();
         const uint8_t m=bytes[p++];
         if (m>1) return fail();
-        const uint32_t mv=read_u32(bytes,p);
+        const uint32_t mv=read_u32(reader,p);
         if (bytes.size()-p<32) return fail();
         std::array<uint8_t,32> h{};
         for (int i=0;i<32;++i) h[size_t(i)]=bytes[p++];
-        const uint32_t w=read_u32(bytes,p),hh=read_u32(bytes,p);
+        const uint32_t w=read_u32(reader,p),hh=read_u32(reader,p);
         if (w==0||hh==0||w>8192||hh>8192) return fail();
         if (p>=bytes.size()) return fail();
         const uint8_t idx=bytes[p++];
@@ -106,7 +110,7 @@ std::optional<UpscaledImage> decode_rrup(const std::vector<uint8_t>& bytes,
         } else {
             if (bytes.size()-p!=n*4) return fail();
             img.rgb.resize(n);
-            for (size_t i=0;i<n;++i) img.rgb[i]=read_u32(bytes,p);
+            for (size_t i=0;i<n;++i) img.rgb[i]=read_u32(reader,p);
             if (p!=bytes.size()) return fail();
         }
         if (method_out) *method_out=UpscaleMethod(m);

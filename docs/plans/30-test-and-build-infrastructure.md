@@ -49,6 +49,7 @@ foreach(t ${RR_DISC_TESTS})
 endforeach()
 ```
   Verified: all names resolve in `ctest -N` (94 tests); `race-soak`/`race_setup` gained `SKIP_RETURN_CODE 77` (they return 77); `course_scene` labelled `disc` (reads the disc, returns 0 without corpus).
+  Verified (done out of plan order, Task 4 before Task 5 per the user's "Task 4 last" correction scope).
   Verify each list against `ctest -N` and the actual skip behaviour: a test that exits 77 without the disc belongs in `disc`. Add anything the review missed, such as `course_scene`, if it reads the disc.
 - [x] **Step 3: Collision audit.** `rg -n "temp_directory_path|/tmp/|first-run-test-pref" tests CMakeLists.txt`. Make every fixed path per-test, for example by appending the test name or `getpid()`.
 - [x] **Step 4: Make targets.**
@@ -143,10 +144,10 @@ public:
 ```
 - Produces: `Iso9660::Entry parse_iso_record(std::span<const uint8_t> record)`, a free function in `iso9660.hpp` moved from `Iso9660::record`.
 
-- [ ] **Step 1: Inventory.** `rg -n "le32\(|le16\(|read_u32\(" src` lists each private helper and its call sites. For each, note in the handoff whether the caller bounds-checks before the call.
-- [ ] **Step 2: Replace each helper.** `le32(b, p)` → `rr::ByteReader(b).le<uint32_t>(p)`. Where a function reads many fields, construct one reader at the top. Pointer forms (`le32(&b[16])` in career.cpp) become `reader.le<uint32_t>(16)` over the whole buffer. Every converted read is now checked. Where the old code relied on an earlier size check, keep that check, because it produces the more specific error message that tests may assert on. Grep the tests for the message strings first.
-- [ ] **Step 3: ISO.** Move `Iso9660::record` into the free function `parse_iso_record` and call it from `import_job.cpp` wherever that file re-decodes directory records (`rg -n "record|0x21|0x20|\[0\]" src/import_job.cpp`). The pull-based control flow stays; only record decoding is shared. Add a truncation test in `tests/iso9660_test.cpp`: every prefix length 0..33 of a valid synthetic record must throw `std::runtime_error`, never anything else.
-- [ ] **Step 4: Verify.** `ctest -R "iso9660|import_job|importer|career|bike|frontend|upscale_cache|byte_reader"`; the corpus tests stay byte-identical. Commit: `io: one little-endian reader and one ISO record parser`.
+- [x] **Step 1: Inventory.** `rg -n "le32\(|le16\(|read_u32\(" src` lists each private helper and its call sites. For each, note in the handoff whether the caller bounds-checks before the call.
+- [x] **Step 2: Replace each helper.** `le32(b, p)` → `rr::ByteReader(b).le<uint32_t>(p)`. Where a function reads many fields, construct one reader at the top. Pointer forms (`le32(&b[16])` in career.cpp) become `reader.le<uint32_t>(16)` over the whole buffer. Every converted read is now checked. Where the old code relied on an earlier size check, keep that check, because it produces the more specific error message that tests may assert on. Grep the tests for the message strings first.
+- [x] **Step 3: ISO.** Move `Iso9660::record` into the free function `parse_iso_record` and call it from `import_job.cpp` wherever that file re-decodes directory records (`rg -n "record|0x21|0x20|\[0\]" src/import_job.cpp`). The pull-based control flow stays; only record decoding is shared. Add a truncation test in `tests/iso9660_test.cpp`: every prefix length 0..33 of a valid synthetic record must throw `std::runtime_error`, never anything else.
+- [x] **Step 4: Verify.** `ctest -R "iso9660|import_job|importer|career|bike|frontend|upscale_cache|byte_reader"`; the corpus tests stay byte-identical. Commit: `io: one little-endian reader and one ISO record parser`.
 
 ---
 

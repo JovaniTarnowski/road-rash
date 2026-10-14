@@ -1,11 +1,11 @@
 #include "career.hpp"
+#include "byte_reader.hpp"
 #include "exe_tables.hpp"
 #include <cstring>
 #include <stdexcept>
 
 namespace rr {
 namespace {
-uint32_t le32(const uint8_t* p) { return uint32_t(p[0]) | uint32_t(p[1]) << 8 | uint32_t(p[2]) << 16 | uint32_t(p[3]) << 24; }
 void put32(uint8_t* p, uint32_t v) { for (int i = 0; i < 4; ++i) p[i] = uint8_t(v >> (8 * i)); }
 constexpr uint32_t save_magic = 0xcafedead;
 constexpr size_t save_size = 0xa0;
@@ -18,13 +18,16 @@ CareerTables read_career_tables(const std::vector<uint8_t>& exe) {
     const auto bikes = read_exe_data(exe, 0x004641c8, t.level_bike.size());
     std::copy(bikes.begin(), bikes.end(), t.level_bike.begin());
     const auto prices = read_exe_data(exe, 0x00468fc0, 4 * t.bike_price.size());
-    for (size_t i = 0; i < t.bike_price.size(); ++i) t.bike_price[i] = le32(&prices[4 * i]);
+    const ByteReader price_reader(prices);
+    for (size_t i = 0; i < t.bike_price.size(); ++i) t.bike_price[i] = price_reader.le<uint32_t>(4 * i);
     const auto standings = read_exe_data(exe, 0x0046ab48, 0x4c * t.prize.size());
-    for (size_t i = 0; i < t.prize.size(); ++i) t.prize[i] = le32(&standings[0x4c * i]);
+    const ByteReader standing_reader(standings);
+    for (size_t i = 0; i < t.prize.size(); ++i) t.prize[i] = standing_reader.le<uint32_t>(0x4c * i);
     for (size_t p = 0; p < 10; ++p) {
         const auto rec = read_exe_data(exe, 0x00464558 + uint32_t(p) * 0x204, 120);
+        const ByteReader rel_reader(rec);
         for (size_t r = 0; r < 10; ++r)
-            for (size_t k = 0; k < 3; ++k) t.default_relations[p][r][k] = int32_t(le32(&rec[12 * r + 4 * k]));
+            for (size_t k = 0; k < 3; ++k) t.default_relations[p][r][k] = int32_t(rel_reader.le<uint32_t>(12 * r + 4 * k));
     }
     for (auto b : t.level_bike)
         if (b >= t.bike_price.size()) throw std::runtime_error("Invalid default bike table");
@@ -197,13 +200,14 @@ std::vector<uint8_t> write_save(const Career& c) {
 
 Career read_save(const std::vector<uint8_t>& b, const CareerTables& t) {
     if (b.size() != save_size) throw std::runtime_error("Save file has the wrong size");
-    if (le32(&b[4]) != save_magic) throw std::runtime_error("Not a Road Rash save file");
-    if (le32(&b[0]) != save_checksum(&b[4], save_size - 4)) throw std::runtime_error("Save file checksum mismatch");
+    const ByteReader save(b);
+    if (save.le<uint32_t>(4) != save_magic) throw std::runtime_error("Not a Road Rash save file");
+    if (save.le<uint32_t>(0) != save_checksum(&b[4], save_size - 4)) throw std::runtime_error("Save file checksum mismatch");
     Career c;
     GameState& s = c.state;
     s.player = b[8]; s.character = b[9]; s.level = b[10]; s.qualified = b[11];
     s.bike = b[12]; s.course = b[13]; s.place = b[14]; s.flags = b[15];
-    s.cash = le32(&b[16]);
+    s.cash = save.le<uint32_t>(16);
     std::memcpy(s.name.data(), &b[20], s.name.size());
     if (s.character > 8 || s.level > 4 || s.qualified > all_qualified || s.bike > 14 || s.course > 5)
         throw std::runtime_error("Save file has out-of-range values");
@@ -211,7 +215,7 @@ Career read_save(const std::vector<uint8_t>& b, const CareerTables& t) {
     c.relations = t.default_relations;   // 0x004078f0 before the saved triples are applied
     const size_t rider = size_t(character_rider(s.character));
     for (size_t p = 0; p < 10; ++p)
-        for (size_t k = 0; k < 3; ++k) c.relations[p][rider][k] = int32_t(le32(&b[40 + 12 * p + 4 * k]));
+        for (size_t k = 0; k < 3; ++k) c.relations[p][rider][k] = int32_t(save.le<uint32_t>(40 + 12 * p + 4 * k));
     c.mode = GameMode::big_game;   // 0x0042f110 -> 0x00444fb0(2)
     c.unsaved = false;
     return c;

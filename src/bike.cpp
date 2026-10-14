@@ -1,4 +1,5 @@
 #include "bike.hpp"
+#include "byte_reader.hpp"
 #include "resource.hpp"
 #include <cstdlib>
 #include <stdexcept>
@@ -10,10 +11,6 @@ int32_t div_pow2(int64_t x, int n) { return int32_t(x / (int64_t(1) << n)); }
 int32_t div256(int64_t x) { return div_pow2(x, 8); }
 int32_t wrap_angle(int32_t a) { return a > 0x800000 ? a - 0x1000000 : a; }
 
-uint32_t le32(const std::vector<uint8_t>& b, size_t p) {
-    if (p > b.size() || b.size() - p < 4) throw std::runtime_error("Read outside buffer");
-    return uint32_t(b[p]) | uint32_t(b[p+1]) << 8 | uint32_t(b[p+2]) << 16 | uint32_t(b[p+3]) << 24;
-}
 }
 
 std::vector<BikeSpec> read_bike_specs(const std::vector<uint8_t>& rsc) {
@@ -22,7 +19,8 @@ std::vector<BikeSpec> read_bike_specs(const std::vector<uint8_t>& rsc) {
         if (r.tag != "SPEC") continue;
         if (r.size < 89 * 4) throw std::runtime_error("SPEC resource too small");
         BikeSpec s;
-        for (size_t k = 0; k < 89; ++k) s.d[k] = int32_t(le32(rsc, r.offset + 4*k));
+        const ByteReader spec(rsc);
+        for (size_t k = 0; k < 89; ++k) s.d[k] = int32_t(spec.le<uint32_t>(r.offset + 4*k));
         if (r.id < 1 || r.id > 64) throw std::runtime_error("SPEC id out of range");
         if (specs.size() < r.id) specs.resize(r.id);
         specs[r.id - 1] = s;
@@ -50,7 +48,7 @@ PhysicsTables read_physics_tables(const std::vector<uint8_t>& exe) {
     constexpr uint32_t data_va = 0x00463000, data_raw = 0x61600, data_size = 0x16400;
     auto word = [&](uint32_t va) {
         if (va < data_va || va + 4 > data_va + data_size) throw std::runtime_error("Table outside .data");
-        return int32_t(le32(exe, data_raw + (va - data_va)));
+        return int32_t(ByteReader(exe).le<uint32_t>(data_raw + (va - data_va)));
     };
     auto byte = [&](uint32_t va) { return int8_t(uint8_t(word(va & ~3u) >> (8 * (va & 3)))); };
     PhysicsTables t;

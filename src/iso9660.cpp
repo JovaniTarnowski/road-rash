@@ -1,4 +1,5 @@
 #include "iso9660.hpp"
+#include "byte_reader.hpp"
 #include <algorithm>
 #include <cctype>
 #include <cstring>
@@ -6,11 +7,11 @@
 #include <stdexcept>
 namespace rr {
 namespace {
-uint32_t le32(const uint8_t* p) { return uint32_t(p[0]) | uint32_t(p[1])<<8 | uint32_t(p[2])<<16 | uint32_t(p[3])<<24; }
-uint32_t both32(const uint8_t* p) {
-    const uint32_t value=le32(p);
-    const uint32_t other=uint32_t(p[4])<<24 | uint32_t(p[5])<<16 | uint32_t(p[6])<<8 | uint32_t(p[7]);
-    if (value!=other) throw std::runtime_error("ISO inconsistent dual-endian field");
+uint32_t both32(const ByteReader& r, size_t off) {
+    const uint32_t value = r.le<uint32_t>(off);
+    const uint32_t other = uint32_t(r.bytes(off + 4, 1)[0]) << 24 | uint32_t(r.bytes(off + 5, 1)[0]) << 16 |
+                           uint32_t(r.bytes(off + 6, 1)[0]) << 8 | uint32_t(r.bytes(off + 7, 1)[0]);
+    if (value != other) throw std::runtime_error("ISO inconsistent dual-endian field");
     return value;
 }
 }
@@ -23,7 +24,7 @@ Iso9660::Iso9660(ReadAt reader) : read_at_(std::move(reader)) {
         if (pvd[0]==255) break;
         if (pvd[0]!=1) continue;
         if (pvd[128]!=0 || pvd[129]!=8 || pvd[130]!=8 || pvd[131]!=0) throw std::runtime_error("ISO block size must be 2048");
-        volume_size_=uint64_t(both32(pvd.data()+80))*2048;
+        volume_size_=uint64_t(both32(ByteReader(pvd),80))*2048;
         uint8_t last=0;
         if (!volume_size_ || read_at_(volume_size_-1,&last,1)!=1) throw std::runtime_error("ISO declared volume is truncated");
         root_=record(pvd.data()+156,pvd.size()-156);
@@ -33,15 +34,28 @@ Iso9660::Iso9660(ReadAt reader) : read_at_(std::move(reader)) {
     }
     if (!found) throw std::runtime_error("ISO primary volume descriptor missing");
 }
-Iso9660::Entry Iso9660::record(const uint8_t* p, size_t available) const {
-    if (available<34 || p[0]<34 || p[0]>available || p[32]>p[0]-33 || !p[32])
+IsoRecord parse_iso_record(std::span<const uint8_t> record) {
+    ByteReader r(record);
+    const size_t available = r.size();
+    if (available < 34) throw std::runtime_error("Malformed ISO directory record");
+    const uint8_t len = r.bytes(0, 1)[0], flags = r.bytes(25, 1)[0];
+    const uint8_t namelen = r.bytes(32, 1)[0];
+    if (len < 34 || len > available || namelen > len - 33 || !namelen)
         throw std::runtime_error("Malformed ISO directory record");
-    if (p[1] || p[26] || p[27] || (p[25]&0x80)) throw std::runtime_error("Unsupported ISO interleaving or multi-extent file");
-    Entry e{std::string(reinterpret_cast<const char*>(p+33),p[32]),both32(p+2),both32(p+10),(p[25]&2)!=0};
+    if (r.bytes(1, 1)[0] || r.bytes(26, 1)[0] || r.bytes(27, 1)[0] || (flags & 0x80))
+        throw std::runtime_error("Unsupported ISO interleaving or multi-extent file");
+    const auto namebytes = r.bytes(33, namelen);
+    IsoRecord e{std::string(reinterpret_cast<const char*>(namebytes.data()), namelen), both32(r, 2),
+                both32(r, 10), (flags & 2) != 0};
+    const auto semicolon = e.name.find(';');
+    if (semicolon != std::string::npos) e.name.resize(semicolon);
+    return e;
+}
+Iso9660::Entry Iso9660::record(const uint8_t* p, size_t available) const {
+    const IsoRecord r = parse_iso_record({p, available});
+    Entry e{r.name, r.sector, r.size, r.directory};
     const uint64_t offset=uint64_t(e.sector)*2048;
     if (offset>volume_size_ || e.size>volume_size_-offset) throw std::runtime_error("ISO extent outside volume");
-    const auto semicolon=e.name.find(';');
-    if (semicolon!=std::string::npos) e.name.resize(semicolon);
     return e;
 }
 std::vector<uint8_t> Iso9660::load(const Entry& e) const {

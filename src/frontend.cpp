@@ -1,5 +1,6 @@
 #include "atomic_file.hpp"
 #include "frontend.hpp"
+#include "byte_reader.hpp"
 #include <SDL3/SDL_scancode.h>
 #include <SDL3/SDL_keyboard.h>
 #include "assets.hpp"
@@ -19,22 +20,20 @@ namespace rr {
 // Slider range {min, max, step} per caption (plan 18 Task 7 dead zone differs).
 static std::array<int, 3> slider_range(int caption);
 namespace {
-uint32_t le32(const std::vector<uint8_t>& b, size_t p) {
-    return uint32_t(b.at(p)) | uint32_t(b.at(p + 1)) << 8 | uint32_t(b.at(p + 2)) << 16 | uint32_t(b.at(p + 3)) << 24;
-}
 
 MenuItem read_item(const std::vector<uint8_t>& exe, uint32_t address) {
     const auto b = read_exe_data(exe, address, 0x38);
     MenuItem m;
-    m.target = int32_t(le32(b, 4));
-    m.caption = int32_t(le32(b, 8));
-    m.x = int32_t(le32(b, 0xc)); m.y = int32_t(le32(b, 0x10)); m.w = int32_t(le32(b, 0x14)); m.h = int32_t(le32(b, 0x18));
+    const ByteReader item(b);
+    m.target = int32_t(item.le<uint32_t>(4));
+    m.caption = int32_t(item.le<uint32_t>(8));
+    m.x = int32_t(item.le<uint32_t>(0xc)); m.y = int32_t(item.le<uint32_t>(0x10)); m.w = int32_t(item.le<uint32_t>(0x14)); m.h = int32_t(item.le<uint32_t>(0x18));
     std::copy(b.begin() + 0x1c, b.begin() + 0x24, m.nav.begin());
-    m.flags = le32(b, 0x24);
+    m.flags = item.le<uint32_t>(0x24);
     m.enabled = b[0x28] != 0;
-    m.handler = le32(b, 0x2c);
-    m.desc = int32_t(le32(b, 0x30));
-    m.format = le32(b, 0x34);
+    m.handler = item.le<uint32_t>(0x2c);
+    m.desc = int32_t(item.le<uint32_t>(0x30));
+    m.format = item.le<uint32_t>(0x34);
     return m;
 }
 
@@ -145,11 +144,12 @@ FrontendData read_frontend_data(const std::vector<uint8_t>& exe) {
                                             {0x13, 0x00474670}, {0x0b, 0x0046ca88}, {0x0d, 0x0046ce80}};
     for (int s = 0; s < 0x24; ++s) {
         const auto e = read_exe_data(exe, 0x0046a390 + uint32_t(s) * 0x14, 0x14);
-        uint32_t count = le32(e, 0);
-        const uint32_t address = le32(e, 4);
-        if (counts.count(s)) count = le32(read_exe_data(exe, counts.at(s), 4), 0);
-        d.screens[size_t(s)].title = int32_t(le32(e, 8));
-        d.screens[size_t(s)].title_format = le32(e, 12);
+        const ByteReader entry(e);
+        uint32_t count = entry.le<uint32_t>(0);
+        const uint32_t address = entry.le<uint32_t>(4);
+        if (counts.count(s)) count = ByteReader(read_exe_data(exe, counts.at(s), 4)).le<uint32_t>(0);
+        d.screens[size_t(s)].title = int32_t(entry.le<uint32_t>(8));
+        d.screens[size_t(s)].title_format = entry.le<uint32_t>(12);
         if (address && count) d.screens[size_t(s)].items = read_items(exe, address, count);
     }
     for (const auto& [address, count] : std::vector<std::pair<uint32_t, uint32_t>>{
@@ -161,22 +161,25 @@ FrontendData read_frontend_data(const std::vector<uint8_t>& exe) {
     d.course_extra[1] = read_item(exe, 0x00469168);   // mano-a-mano: Disconnect
     d.course_extra[2] = read_item(exe, 0x004690f8);   // Big Game: Der Panzer Klub
     for (size_t i = 0; i < 8; ++i) {
-        const uint32_t p = le32(read_exe_data(exe, 0x00473598 + uint32_t(i) * 4, 4), 0);
+        const uint32_t p = ByteReader(read_exe_data(exe, 0x00473598 + uint32_t(i) * 4, 4)).le<uint32_t>(0);
         const auto s = read_exe_data(exe, p, 8);
         d.restroom_patterns[i].assign(s.begin(), s.end());
     }
     const auto len = read_exe_data(exe, 0x00468f58, 4 * d.course_length.size());
-    for (size_t i = 0; i < d.course_length.size(); ++i) d.course_length[i] = le32(len, 4 * i);
+    const ByteReader len_reader(len);
+    for (size_t i = 0; i < d.course_length.size(); ++i) d.course_length[i] = len_reader.le<uint32_t>(4 * i);
     const auto sch = read_exe_data(exe, 0x0046a6e0, 40 * 28);
     for (size_t r = 0; r < 40; ++r)
         for (size_t k = 0; k < 14; ++k) d.schmooze[r][k] = uint16_t(sch[r * 28 + 2 * k] | sch[r * 28 + 2 * k + 1] << 8);
     const auto att = read_exe_data(exe, 0x0046ab44, 4);
     std::copy(att.begin(), att.end(), d.attitude.begin());
     const auto fmt = read_exe_data(exe, 0x0046a680, 4 * d.schmooze_format.size());
-    for (size_t i = 0; i < d.schmooze_format.size(); ++i) d.schmooze_format[i] = le32(fmt, 4 * i);
+    const ByteReader fmt_reader(fmt);
+    for (size_t i = 0; i < d.schmooze_format.size(); ++i) d.schmooze_format[i] = fmt_reader.le<uint32_t>(4 * i);
     for (size_t r = 0; r < 10; ++r) {
         const auto b = read_exe_data(exe, 0x00463c78 + uint32_t(r) * 0x40 + 8, 8);
-        d.body[r] = {int32_t(le32(b, 0)), int32_t(le32(b, 4))};
+        const ByteReader brow(b);
+        d.body[r] = {int32_t(brow.le<uint32_t>(0)), int32_t(brow.le<uint32_t>(4))};
     }
     return d;
 }

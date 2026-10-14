@@ -9,7 +9,9 @@
 // store the offered need, so the lazily-advanced members are mutable. All
 // real state transitions happen in supply()/missing_file()/cancel().
 #include "import_job.hpp"
+#include "byte_reader.hpp"
 #include "importer.hpp"
+#include "iso9660.hpp"
 #include "sha256.hpp"
 #include <algorithm>
 #include <cctype>
@@ -24,12 +26,10 @@ constexpr uint32_t kChunk = 1u << 20;  // file data requests are at most 1 MiB
 constexpr uint64_t kMaxFile = 256ull * 1024 * 1024;
 constexpr uint64_t kMaxDir = 16ull * 1024 * 1024;
 
-uint32_t le32(const uint8_t* p) {
-    return uint32_t(p[0]) | uint32_t(p[1]) << 8 | uint32_t(p[2]) << 16 | uint32_t(p[3]) << 24;
-}
-uint32_t both32(const uint8_t* p) {
-    const uint32_t value = le32(p);
-    const uint32_t other = uint32_t(p[4]) << 24 | uint32_t(p[5]) << 16 | uint32_t(p[6]) << 8 | uint32_t(p[7]);
+uint32_t both32(const ByteReader& r, size_t off) {
+    const uint32_t value = r.le<uint32_t>(off);
+    const uint32_t other = uint32_t(r.bytes(off + 4, 1)[0]) << 24 | uint32_t(r.bytes(off + 5, 1)[0]) << 16 |
+                           uint32_t(r.bytes(off + 6, 1)[0]) << 8 | uint32_t(r.bytes(off + 7, 1)[0]);
     if (value != other) throw std::runtime_error("ISO inconsistent dual-endian field");
     return value;
 }
@@ -119,16 +119,11 @@ struct ImportJob::Impl {
         bool directory = false;
     };
     Record parse_record(const uint8_t* p, size_t available) const {
-        if (available < 34 || p[0] < 34 || p[0] > available || p[32] > p[0] - 33 || !p[32])
-            throw std::runtime_error("Malformed ISO directory record");
-        if (p[1] || p[26] || p[27] || (p[25] & 0x80))
-            throw std::runtime_error("Unsupported ISO interleaving or multi-extent file");
-        Record e{std::string(reinterpret_cast<const char*>(p + 33), p[32]), both32(p + 2), both32(p + 10),
-                 (p[25] & 2) != 0};
+        // Shared decoder (iso9660.hpp); extent checks stay here.
+        const IsoRecord r = parse_iso_record({p, available});
+        Record e{r.name, r.sector, r.size, r.directory};
         const uint64_t offset = uint64_t(e.sector) * 2048;
         if (offset > volume_size || e.size > volume_size - offset) throw std::runtime_error("ISO extent outside volume");
-        const auto semicolon = e.name.find(';');
-        if (semicolon != std::string::npos) e.name.resize(semicolon);
         return e;
     }
 
@@ -334,7 +329,7 @@ struct ImportJob::Impl {
         }
         if (sector[128] != 0 || sector[129] != 8 || sector[130] != 8 || sector[131] != 0)
             throw std::runtime_error("ISO block size must be 2048");
-        volume_size = uint64_t(both32(sector.data() + 80)) * 2048;
+        volume_size = uint64_t(both32(ByteReader(sector), 80)) * 2048;
         if (!volume_size) throw std::runtime_error("ISO declared volume is truncated");
         const Record root = parse_record(sector.data() + 156, sector.size() - 156);
         if (!root.directory) throw std::runtime_error("ISO root is not a directory");
