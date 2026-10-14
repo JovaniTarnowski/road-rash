@@ -19,6 +19,7 @@ int16_t narrow_point(int32_t v) {
 }
 }
 struct RenderThreads::Impl {
+    struct Job { int band = 0, top = 0, bottom = 0; };
     explicit Impl(int n) : stop(false), generation(0), pending(0) {
         for (int i = 0; i < n; ++i) workers.emplace_back([this] { loop(); });
     }
@@ -33,7 +34,8 @@ struct RenderThreads::Impl {
     void loop() {
         uint64_t seen = 0;
         for (;;) {
-            std::function<void()> work;
+            Job work{-1, 0, 0};
+            bool have = false;
             {
                 std::unique_lock<std::mutex> lock(mutex);
                 if (queue.empty()) {
@@ -43,11 +45,15 @@ struct RenderThreads::Impl {
                 } else if (stop) {
                     return;
                 }
-                if (!queue.empty()) { work = std::move(queue.back()); queue.pop_back(); }
+                if (!queue.empty()) { work = queue.back(); queue.pop_back(); have = true; }
             }
-            if (work) {
+            if (have) {
                 std::exception_ptr error;
-                try { work(); } catch (...) { error = std::current_exception(); }
+                try {
+                    // job_ptr is set once per run and cleared after join;
+                    // scratch[band] is this band's alone (Task 4).
+                    (*job_ptr)(work.band, work.top, work.bottom, scratch[size_t(work.band)]);
+                } catch (...) { error = std::current_exception(); }
                 std::lock_guard<std::mutex> lock(mutex);
                 if (error && !first_error) first_error = error;
                 if (--pending == 0) done.notify_all();
@@ -57,7 +63,9 @@ struct RenderThreads::Impl {
     std::mutex mutex;
     std::condition_variable wake, done;
     std::vector<std::thread> workers;
-    std::vector<std::function<void()>> queue;
+    std::vector<Job> queue;
+    std::vector<RasterScratch64> scratch;   // one per band; grown only
+    const std::function<void(int,int,int,RasterScratch64&)>* job_ptr = nullptr;
     bool stop;
     uint64_t generation;
     size_t pending;
@@ -67,46 +75,84 @@ RenderThreads::RenderThreads(int threads) : threads_(threads < 1 ? 1 : threads) 
     if (threads_ > 1) impl_ = new Impl(threads_);
 }
 RenderThreads::~RenderThreads() { delete impl_; }
-void RenderThreads::run(int bands, int height, const std::function<void(int,int,int)>& job) {
+// Shared dispatch: sizes scratch once per (bands, height) growth, sets the
+// job pointer once, queues one small Job per band (no per-band std::function).
+void RenderThreads::run_impl(Impl& impl, int bands, int height,
+                                     const std::function<void(int,int,int,RasterScratch64&)>& job) {
+    const int threads = int(impl.workers.size());
     if (bands < 1 || height < 1) throw std::runtime_error("Render bands out of range");
-    if (threads_ == 1 || bands == 1) {
+    if (int(impl.scratch.size()) < bands) impl.scratch.resize(size_t(bands));
+    for (auto& sc : impl.scratch)
+        if (int(sc.rows.size()) < height) sc.resize(height);
+    if (threads <= 1 || bands == 1) {
         for (int b = 0; b < bands; ++b) {
             const int top = (height * b) / bands, bottom = (height * (b + 1)) / bands - 1;
-            job(b, top, bottom);
+            job(b, top, bottom, impl.scratch[size_t(b)]);
         }
         return;
     }
-    Impl& impl = *impl_;
     {
         std::lock_guard<std::mutex> lock(impl.mutex);
         for (int b = bands - 1; b >= 0; --b) {
             const int top = (height * b) / bands, bottom = (height * (b + 1)) / bands - 1;
-            impl.queue.push_back([job, b, top, bottom] { job(b, top, bottom); });
+            impl.queue.push_back({b, top, bottom});
         }
         impl.pending = size_t(bands);
+        impl.job_ptr = &job;
         ++impl.generation;
     }
     impl.wake.notify_all();
     std::unique_lock<std::mutex> lock(impl.mutex);
     impl.done.wait(lock, [&] { return impl.pending == 0; });
+    impl.job_ptr = nullptr;
     if (impl.first_error) {
         std::exception_ptr error = std::exchange(impl.first_error, nullptr);
         lock.unlock();
         std::rethrow_exception(error);
     }
 }
+void RenderThreads::run(int bands, int height, const std::function<void(int,int,int)>& job) {
+    // Legacy overload: per-band scratch is unused; forward through one shared job.
+    // Single-threaded callers still allocate nothing (scratch sized once here).
+    if (threads_ == 1) {
+        Impl scratch_holder(0);   // no workers; scratch vectors only
+        std::function<void(int,int,int,RasterScratch64&)> wide =
+            [&](int b, int top, int bottom, RasterScratch64&) { job(b, top, bottom); };
+        run_impl(scratch_holder, bands, height, wide);
+        return;
+    }
+    std::function<void(int,int,int,RasterScratch64&)> wide =
+        [&](int b, int top, int bottom, RasterScratch64&) { job(b, top, bottom); };
+    run_impl(*impl_, bands, height, wide);
+}
+void RenderThreads::run(int bands, int height, const std::function<void(int,int,int,RasterScratch64&)>& job) {
+    if (threads_ == 1) {
+        Impl scratch_holder(0);
+        run_impl(scratch_holder, bands, height, job);
+        return;
+    }
+    run_impl(*impl_, bands, height, job);
+}
 // Band entry: the existing node loop with RasterClip rows [top, bottom].
 // Every band renders the whole node list in order, clipped to its rows, so
 // the union is bit-identical to one thread (Review Focus 2).
-void render_nodes_threaded(Framebuffer& fb, const std::vector<DrawNode>& nodes, const ViewMode& mode,
-                           uint32_t flat_mask, RenderThreads& pool, bool perspective_on) {
-    if (fb.width() != mode.surface_width || fb.height() != mode.surface_height)
-        throw std::runtime_error("View/framebuffer size mismatch");
-    const bool wide_surface = mode.surface_width > 640 || mode.surface_height > 480;
-    const int bands = std::max(1, pool.count());
-    pool.run(bands, fb.height(), [&](int, int top, int bottom) {
+struct ThreadedCtx {
+    Framebuffer* fb;
+    const std::vector<DrawNode>* nodes;
+    const ViewMode* mode;
+    uint32_t flat_mask;
+    bool wide_surface;
+    bool perspective_on;
+};
+static void threaded_band(ThreadedCtx& c, int top, int bottom, RasterScratch64& scratch) {
+    Framebuffer& fb = *c.fb;
+    const std::vector<DrawNode>& nodes = *c.nodes;
+    const ViewMode& mode = *c.mode;
+    const uint32_t flat_mask = c.flat_mask;
+    const bool wide_surface = c.wide_surface;
+    const bool perspective_on = c.perspective_on;
+
         RasterClip clip{0, top, fb.width(), bottom};
-        RasterScratch64 scratch(wide_surface ? fb.height() : 0);
         for (const auto& node : nodes) {
             if (!node.texture && !node.flat_index) continue;
             std::array<RasterPoint,4> points;
@@ -182,6 +228,19 @@ void render_nodes_threaded(Framebuffer& fb, const std::vector<DrawNode>& nodes, 
             draw_textured_quad(fb, vertices, mip.sampling_storage.empty() ? mip.pixels : mip.sampling_storage,
                                mip.stride_shift, (texture.flags & 2) != 0, clip);
         }
+}
+void render_nodes_threaded(Framebuffer& fb, const std::vector<DrawNode>& nodes, const ViewMode& mode,
+                           uint32_t flat_mask, RenderThreads& pool, bool perspective_on) {
+    if (fb.width() != mode.surface_width || fb.height() != mode.surface_height)
+        throw std::runtime_error("View/RGB framebuffer size mismatch");
+    const int bands = std::max(1, pool.count());
+    ThreadedCtx ctx{&fb, &nodes, &mode, flat_mask,
+                    mode.surface_width > 640 || mode.surface_height > 480, perspective_on};
+    // Single-pointer capture (8 bytes, std::function SBO-clean): no per-run heap job.
+    ThreadedCtx* pc = &ctx;
+    pool.run(bands, fb.height(), [pc](int, int top, int bottom, RasterScratch64& scratch) {
+        threaded_band(*pc, top, bottom, scratch);
     });
+
 }
 }

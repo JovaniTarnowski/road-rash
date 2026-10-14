@@ -96,6 +96,27 @@ void RasterScratch64::resize(int height) {
     if (height<0 || height>8192) throw std::runtime_error("Raster scratch height out of range");
     rows.assign(size_t(height),TextureEdge64{});
 }
+void texture_edge_wide_vec(std::vector<TextureEdge64>& rows,const TextureVertexWide& from,const TextureVertexWide& to) {
+    if (rows.empty()) throw std::runtime_error("Raster scratch not sized");
+    const int64_t height=int64_t(rows.size());
+    const int64_t dy=(int64_t(to.y)-from.y)<<16;
+    if (!dy || to.y<from.y) return;
+    for (int64_t y=0;y<height;++y) rows[size_t(y)]={empty_edge_value(),0,0};
+    const int64_t reciprocal=int64_t(0x100000000LL)/dy;
+    auto prod=[&](int64_t a){return int64_t((__int128(a)*reciprocal)>>16);};
+    int64_t ax=int64_t(from.x)<<16,au=int64_t(from.u)<<16,av=int64_t(from.v)<<16;
+    const int64_t sx=prod((int64_t(to.x)-from.x)<<16);
+    const int64_t su=prod((int64_t(to.u)-from.u)<<16);
+    const int64_t sv=prod((int64_t(to.v)-from.v)<<16);
+    const int64_t first=std::max<int64_t>(0,from.y),last=std::min<int64_t>(height-1,to.y);
+    const int64_t skip=first-from.y;
+    ax+=sx*skip;au+=su*skip;av+=sv*skip;
+    for (int64_t y=first;y<=last;++y) {
+        rows[size_t(y)]={ax,au,av};
+        ax+=sx;au+=su;av+=sv;
+    }
+    for (int64_t y=0;y<std::min(first,height);++y) rows[size_t(y)]={empty_edge_value(),0,0};
+}
 void texture_edge_wide(RasterScratch64& scratch,const TextureVertexWide& from,const TextureVertexWide& to) {
     if (scratch.rows.empty()) throw std::runtime_error("Raster scratch not sized");
     const int64_t height=int64_t(scratch.rows.size());
@@ -148,25 +169,30 @@ void draw_textured_quad_wide(Framebuffer& fb,const std::array<TextureVertexWide,
     if (bottom==vertices[first].y) return;
     const int64_t empty_sentinel=empty_edge_value();
     const size_t rows=scratch.rows.size();
-    std::vector<TextureEdge64> saved_left(rows),saved_right(rows);
+    // Reused per-thread workspace (same-thread set-and-use only; never
+    // captured across threads). Grown only.
+    thread_local std::vector<TextureEdge64> saved_left, saved_right, side_rows, seg_rows;
+    if (saved_left.size() < rows) {
+        saved_left.resize(rows); saved_right.resize(rows);
+        side_rows.resize(size_t(height)); seg_rows.resize(size_t(height));
+    }
     for (size_t i=0;i<rows;++i) saved_left[i]={empty_sentinel,0,0},saved_right[i]={empty_sentinel,0,0};
     auto chain=[&](std::vector<TextureEdge64>& save,int direction) {
         int index=first;
-        RasterScratch64 side{int(height)},seg{int(height)};
-        for (int64_t y=0;y<height;++y) side.rows[size_t(y)]={empty_sentinel,0,0};
+        for (int64_t y=0;y<height;++y) side_rows[size_t(y)]={empty_sentinel,0,0};
         for (int guard=0;guard<4;++guard) {
             const int next=(index+direction+4)%4;
             if (vertices[size_t(next)].y<vertices[size_t(index)].y) throw std::runtime_error("Textured quad requires normalized monotone edges");
             TextureVertexWide a{vertices[size_t(index)].x,vertices[size_t(index)].y,vertices[size_t(index)].u,vertices[size_t(index)].v};
             TextureVertexWide b{vertices[size_t(next)].x,vertices[size_t(next)].y,vertices[size_t(next)].u,vertices[size_t(next)].v};
-            for (auto& e:seg.rows) e={empty_sentinel,0,0};
-            texture_edge_wide(seg,a,b);
+            for (auto& e:seg_rows) e={empty_sentinel,0,0};
+            texture_edge_wide_vec(seg_rows,a,b);
             for (int64_t y=std::max<int64_t>(0,a.y);y<=std::min<int64_t>(height-1,b.y);++y)
-                if (seg.rows[size_t(y)].x!=empty_sentinel) side.rows[size_t(y)]=seg.rows[size_t(y)];
+                if (seg_rows[size_t(y)].x!=empty_sentinel) side_rows[size_t(y)]=seg_rows[size_t(y)];
             index=next;
             if (vertices[size_t(index)].y==bottom) break;
         }
-        save=std::move(side.rows);
+        save=side_rows;
     };
     chain(saved_left,-1);chain(saved_right,1);
     const int64_t top=std::max<int64_t>({0,vertices[size_t(first)].y,clip.top});

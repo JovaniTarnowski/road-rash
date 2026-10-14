@@ -63,6 +63,7 @@ void operator delete(void* p) noexcept;
 > | 2 | 47.1/47.3/34.2/29.0 | 88.8 | 232.7 | 85.9 |
 > | 4 | 118.2/110.2/114.0/93.2 | 168.1 | 291.1 | 161.9 |
 > Checksums identical across thread counts on every path (single-threaded RGB ignores the pool).
+> Task 4 result: `render_threads_alloc` 0 steady-state allocations (two warm-up frames: worker thread_locals + pool state settle); `hires-render` byte-identical gate below. `indexed_ms` s2: 47.1 -> 46.3 (scratch reuse; the win is allocation count, not time). Deviations: single-pointer capture context (`ThreadedCtx`) for the band job — the fat capturing lambda blew `std::function`'s SBO (1 heap alloc/run); a vector-based `texture_edge_wide_vec` twin (byte-identical stepping — caught an `au+=sv` typo in the copy before landing).
 > Task 3 result: `raster_rgb_threads` byte-identical at 1/2/4/7 threads x 640x480/1366x768/641x479/64x5, fog on/off; ASan + TSan clean. `rgb_ms` t1->t4: 46.8 -> 18.2 (0.39x, beats the 0.5x target); `rgb_fog_ms`: 190.3 -> 64.2. Real bug found: capturing a `thread_local` vector by reference into a worker lambda sees the WORKER's empty instance — `resolved` is now a plain reused static (resolve completes before dispatch; pool mutex orders it), scratch is per-band. Flat/edge `thread_local`s stay (set-then-use on one thread).
 > Task 2 result: `raster_rgb_alloc` 0 allocations, checksum `861b81d25eb5f7db` pinned; `rgb_upscaled_ms` 85.9 -> 84.6 (noise); RGB suites 8/8 green. Deviations: edge buffers hoisted to `thread_local` in `draw_rgb_impl` (the 4 vectors x 500 quads = 2000 allocs dominated); `flat_mip` is `thread_local` with per-node `[0] = argb` store (also fixed a dropped flat colour in the first cut).
 
@@ -97,7 +98,7 @@ void operator delete(void* p) noexcept;
 
 **Wave:** W5 · **Owns:** `src/render_threads.cpp`, `src/render_threads.hpp`, `tests/render_threads_alloc_test.cpp` · **Profile:** careful
 
-- [ ] **Step 1: Failing test:** `render_nodes_threaded` on the bench scene at scale 2 and 4 threads, with zero allocations on the second frame (atomic counter; workers allocate on other threads, which the global counter sees).
-- [ ] **Step 2: Implement.** `Impl` keeps a `std::vector<RasterScratch64>` with one entry per band, resized only when the height grows. The queue holds `struct Job { int band, top, bottom; }`, and the shared `const std::function<void(int,int,int)>*` is set once per `run`, so no `std::function` is copied per band. Pass the band's scratch to the job through a new `run` overload, or let `render_nodes_threaded` own per-band scratch via `pool.scratch(band)`. Choose one, document it in the header, and keep the plan 25 exception propagation.
-- [ ] **Step 3:** `hires-render` must stay byte-identical (1/2/4/7 threads). Alloc test 0. Record `indexed_ms` before and after.
-- [ ] **Step 4:** Commit: `render: persistent band scratch, no per-frame allocation in the pool`.
+- [x] **Step 1: Failing test:** `render_nodes_threaded` on the bench scene at scale 2 and 4 threads, with zero allocations on the second frame (atomic counter; workers allocate on other threads, which the global counter sees).
+- [x] **Step 2: Implement.** `Impl` keeps a `std::vector<RasterScratch64>` with one entry per band, resized only when the height grows. The queue holds `struct Job { int band, top, bottom; }`, and the shared `const std::function<void(int,int,int)>*` is set once per `run`, so no `std::function` is copied per band. Pass the band's scratch to the job through a new `run` overload, or let `render_nodes_threaded` own per-band scratch via `pool.scratch(band)`. Choose one, document it in the header, and keep the plan 25 exception propagation.
+- [x] **Step 3:** `hires-render` must stay byte-identical (1/2/4/7 threads). Alloc test 0. Record `indexed_ms` before and after.
+- [x] **Step 4:** Commit: `render: persistent band scratch, no per-frame allocation in the pool`.
