@@ -174,8 +174,14 @@ struct Game {
     rr::Widescreen widescreen = rr::Widescreen::off;  // plan 21 Task 8: live setting
     rr::Enhancements enhancements;  // plan 21 Task 1: synced per frame; all-off = original
     mutable bool post_teleported = true;  // plan 21 Task 7: first frame seeds blur history
+    mutable bool view_ready = false;
     rr::ViewState view_prev, view_cur, view_drawn;  // plan 21 Task 2: interpolated frame state
-    bool view_ready = false;
+    // Clear interpolation/blur history: the next frame shows the live race
+    // without blending across a discontinuity (restart, resume, teleport).
+    void reset_view_history() const {
+        post_teleported = true;
+        view_ready = false;
+    }
     // Blended position overrides for the current frame (id -> pose).
     const rr::ActorPose* blend_pose(uint32_t id) const {
         for (const auto& p : view_drawn.actors) if (p.id == id) return &p;
@@ -256,6 +262,7 @@ struct Game {
             rr::advance_animation(state,actors->library().playback[0],0);
         }
         countdown = countdown_ticks;
+        reset_view_history();
     }
     std::vector<rr::DrawNode> rider_nodes(const rr::RoadSlice& near,const rr::RoadSlice& far,int road,int32_t ceiling,bool back)const {
         struct Visible {int32_t position;size_t index;bool car,body=false,pedestrian=false;};
@@ -1042,6 +1049,9 @@ RaceEnd run_race(Game& g, SDL_Renderer* renderer, const RaceOptions& opt, Displa
     uint64_t last = SDL_GetTicksNS();
     display.frame = 0;
     display.apply(480);
+    auto reset_clock = [&](uint64_t now_ns) {
+        touch.clear(); clock.reset(); last = now_ns; g.reset_view_history();
+    };
     while (running) {
         SDL_Event e;
         bool restart = false;
@@ -1110,10 +1120,11 @@ RaceEnd run_race(Game& g, SDL_Renderer* renderer, const RaceOptions& opt, Displa
             if (e.type == SDL_EVENT_RENDER_DEVICE_RESET || e.type == SDL_EVENT_RENDER_TARGETS_RESET) {sprites.clear();course_canvas.clear();}
             if (e.type == SDL_EVENT_RENDER_DEVICE_LOST) throw std::runtime_error("Render device lost");
             if (lifecycle.state.take_clock_reset()) {
-                touch.clear(); clock.reset(); last = SDL_GetTicksNS();
+                reset_clock(SDL_GetTicksNS());
             }
         }
         if (!running) break;
+        if (restart) g.restart();   // Enter / pad South / tap after a quick-race finish (README)
         // Plan 18 Task 8: a lifecycle freeze (background return, focus loss,
         // pad removal) opens the pause menu instead of the old PAUSED text.
         if (opt.menu && !opt.menu->pause_open() && lifecycle.state.paused() && !lifecycle.state.background()) {
@@ -1164,7 +1175,7 @@ RaceEnd run_race(Game& g, SDL_Renderer* renderer, const RaceOptions& opt, Displa
         if (!opt.auto_drive && opt.custom_keys) controls |= rr::bound_control_bits(opt.key_codes, true, keys);
 
         const uint64_t now = SDL_GetTicksNS();
-        if (lifecycle.state.take_clock_reset()) { touch.clear(); clock.reset(); last = now; g.post_teleported = true; }
+        if (lifecycle.state.take_clock_reset()) { reset_clock(now); }
         // Plan 18 Task 8: the race loop stops stepping the simulation while
         // pause_open(); the mixer pauses race sounds but the interface levels
         // stay live so the sound sliders apply (no preview click, as in Task 6).
