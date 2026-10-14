@@ -1,3 +1,4 @@
+#include "atomic_file.hpp"
 #include "upscale_cache.hpp"
 #include "sha256.hpp"
 #include <array>
@@ -195,17 +196,8 @@ bool UpscaleCache::store(const std::string& asset,uint32_t index,int scale,
         std::error_code ec;
         std::filesystem::create_directories(p.parent_path(),ec);
         if (ec) return false;
-        // Temporary-write then rename: interrupted stores stay invisible.
-        const auto tmp=std::filesystem::path(std::string(p)+".tmp");
-        {
-            std::ofstream out(tmp,std::ios::binary|std::ios::trunc);
-            if (!out) return false;
-            out.write(reinterpret_cast<const char*>(bytes.data()),long(bytes.size()));
-            out.flush();
-            if (!out) { std::error_code e2;std::filesystem::remove(tmp,e2);return false; }
-        }
-        std::filesystem::rename(tmp,p,ec);
-        return !ec;
+        if (!write_file_atomic(p, bytes.data(), bytes.size())) return false;
+        return true;
     } catch (...) { return false; }
 }
 // ---- Minimal stored-deflate ZIP reader for packs (plan 20 Task 5) ----

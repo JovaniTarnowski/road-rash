@@ -1,3 +1,4 @@
+#include "atomic_file.hpp"
 #include "settings.hpp"
 #include "exe_tables.hpp"
 #include <SDL3/SDL.h>
@@ -229,13 +230,7 @@ Settings load_settings(const std::string& path) {
 }
 
 bool save_settings(const std::string& path, const Settings& s) {
-    const std::string tmp = path + ".tmp";
-    {
-        std::ofstream out(tmp, std::ios::binary | std::ios::trunc);
-        if (!out) return false;
-        out << format_settings(s);
-        if (!out) return false;
-    }
-    return std::rename(tmp.c_str(), path.c_str()) == 0;
+    const std::string text = format_settings(s);
+    return write_file_atomic(path, text.data(), text.size());
 }
 }
