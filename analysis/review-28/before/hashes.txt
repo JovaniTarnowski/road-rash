@@ -1,0 +1,3 @@
+9270293e814f2221eeb796878e498eee  /tmp/28-base-menu.bmp
+2c702c6e1e0772abcb0031a203a6471a  /tmp/28-base-race.bmp
+ea8622aafba24ec6485e8220ca574958  /tmp/28-base-video.bmp

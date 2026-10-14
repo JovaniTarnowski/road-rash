@@ -1,6 +1,7 @@
 #include "rr_build_info.hpp"
 // Shared native/Android frontend and playable race().
 #include <SDL3/SDL.h>
+#include "race_actions.hpp"
 #include <SDL3/SDL_main.h>
 #include "assets.hpp"
 #include "bob.hpp"
@@ -1030,6 +1031,17 @@ RaceEnd run_race(Game& g, SDL_Renderer* renderer, const RaceOptions& opt, Displa
     auto reset_clock = [&](uint64_t now_ns) {
         touch.clear(); clock.reset(); last = now_ns; g.reset_view_history();
     };
+    auto ctx_now = [&]() {
+        rr::RaceActionContext c;
+        c.demo = opt.demo; c.career = g.career; c.finished = g.race().finished();
+        c.paused = lifecycle.state.paused(); c.quitting = g.quitting;
+        c.has_menu = opt.menu != nullptr; c.menu_open = opt.menu && opt.menu->pause_open();
+        c.pad = pad ? SDL_GetGamepadID(pad) : 0;
+        return c;
+    };
+    auto end_as_quit = [&]() {
+        if (!decided) { result.outcome = rr::RaceOutcome::wrecked; result.place = std::max(0, g.race().place(0) - 1); }
+    };
     while (running) {
         SDL_Event e;
         bool restart = false;
@@ -1037,63 +1049,29 @@ RaceEnd run_race(Game& g, SDL_Renderer* renderer, const RaceOptions& opt, Displa
             if (e.type == SDL_EVENT_QUIT) { running = false; result.quit_app = true; }
             if (!lifecycle_event(e.type)) lifecycle.state.handle(e);
             if (g.mixer && !g.mixer->handle(e)) SDL_Log("Audio reopen failed: %s", SDL_GetError());
-            const bool demo_exit = opt.demo && ((e.type == SDL_EVENT_KEY_DOWN && !e.key.repeat) ||
-                e.type == SDL_EVENT_GAMEPAD_BUTTON_DOWN || e.type == SDL_EVENT_GAMEPAD_ADDED ||
-                e.type == SDL_EVENT_FINGER_DOWN || e.type == SDL_EVENT_MOUSE_BUTTON_DOWN);
-            if (demo_exit) { running = false; continue; }   // attract demo: any input exits quietly
-            const bool menu_open = opt.menu && opt.menu->pause_open();
-            if (menu_open) { pause_event(opt.menu, e, pad, renderer); continue; }   // menu owns all input
-            if (e.type == SDL_EVENT_KEY_DOWN && !e.key.repeat) {
-                if (g.quitting) {
-                    // 0x004227d0: a second Escape quits the race (outcome 5), any other key continues.
-                    g.quitting = false;
-                    if (e.key.key == SDLK_ESCAPE) {
-                        if (!decided) { result.outcome = rr::RaceOutcome::wrecked; result.place = std::max(0, g.race().place(0) - 1); }
-                        running = false;
-                    }
-                    continue;
-                }
-                if (e.key.key == SDLK_Q && !g.career) { running = false; result.quit_app = true; }
-                // Plan 18 Task 8: Escape/P/Back opens the pause menu; without one
-                // the old lifecycle freeze stays (headless/smoke paths).
-                if (e.key.key == SDLK_AC_BACK) {
-                    if (opt.menu) { opt.menu->open_pause(capture_race_frame(renderer)); lifecycle.state.resume(); }
-                    else lifecycle.state.pause();
-                }
-                if (e.key.key == SDLK_ESCAPE && g.career && !lifecycle.state.paused()) g.quitting = true;
-                else if (e.key.key == SDLK_ESCAPE || e.key.key == SDLK_P) {
-                    if (opt.menu) { opt.menu->open_pause(capture_race_frame(renderer)); lifecycle.state.resume(); }
-                    else if (lifecycle.state.paused()) lifecycle.state.resume(); else lifecycle.state.pause();
-                }
-                if (e.key.key == SDLK_RETURN) {
-                    if (lifecycle.state.paused()) lifecycle.state.resume();
-                    else if (g.race().finished() && !g.career) restart = true;
-                }
+            const rr::RaceActionContext act_ctx = ctx_now();
+            const rr::RaceAction act = rr::race_action(e, act_ctx);
+            if (act == rr::RaceAction::demo_exit) { running = false; continue; }
+            if (act_ctx.menu_open) { pause_event(opt.menu, e, pad, renderer); continue; }
+            switch (act) {
+            case rr::RaceAction::quit_app: running = false; result.quit_app = true; continue;
+            case rr::RaceAction::open_pause: opt.menu->open_pause(capture_race_frame(renderer)); lifecycle.state.resume(); continue;
+            case rr::RaceAction::toggle_pause: lifecycle.state.paused() ? lifecycle.state.resume() : lifecycle.state.pause(); continue;
+            case rr::RaceAction::resume: lifecycle.state.resume(); continue;
+            case rr::RaceAction::request_quit: g.quitting = true; continue;
+            case rr::RaceAction::cancel_quit: g.quitting = false; continue;
+            case rr::RaceAction::confirm_quit: g.quitting = false; end_as_quit(); running = false; continue;
+            case rr::RaceAction::restart: restart = true; continue;
+            case rr::RaceAction::none: case rr::RaceAction::demo_exit: break;
             }
             if (e.type == SDL_EVENT_GAMEPAD_ADDED && !pad) pad = SDL_OpenGamepad(e.gdevice.which);
             if (e.type == SDL_EVENT_GAMEPAD_REMOVED && pad && SDL_GetGamepadID(pad) == e.gdevice.which) {
                 SDL_CloseGamepad(pad); pad = nullptr;
                 lifecycle.state.pause();
             }
-            if (e.type == SDL_EVENT_GAMEPAD_BUTTON_DOWN && pad && SDL_GetGamepadID(pad) == e.gbutton.which) {
-                if (g.quitting) {
-                    g.quitting = false;
-                    if (e.gbutton.button == SDL_GAMEPAD_BUTTON_BACK) {
-                        if (!decided) { result.outcome = rr::RaceOutcome::wrecked; result.place = std::max(0, g.race().place(0) - 1); }
-                        running = false;
-                    }
-                } else if (e.gbutton.button == SDL_GAMEPAD_BUTTON_START) {
-                    if (opt.menu) { opt.menu->open_pause(capture_race_frame(renderer)); lifecycle.state.resume(); }
-                    else if (lifecycle.state.paused()) lifecycle.state.resume(); else lifecycle.state.pause();
-                } else if (e.gbutton.button == SDL_GAMEPAD_BUTTON_BACK && g.career && !lifecycle.state.paused()) g.quitting = true;
-                else if (e.gbutton.button == SDL_GAMEPAD_BUTTON_SOUTH && !lifecycle.state.paused() && g.race().finished() && !g.career) restart = true;
-            }
             if (e.type == SDL_EVENT_FINGER_DOWN || e.type == SDL_EVENT_FINGER_MOTION ||
                 e.type == SDL_EVENT_FINGER_UP || e.type == SDL_EVENT_FINGER_CANCELED) {
-                if (lifecycle.state.paused()) {
-                    if (e.type == SDL_EVENT_FINGER_DOWN) lifecycle.state.resume();
-                } else if (e.type == SDL_EVENT_FINGER_DOWN && g.race().finished() && !g.career) restart = true;
-                else touch.handle(e);
+                if (act == rr::RaceAction::none) touch.handle(e);
             }
             if (e.type == SDL_EVENT_RENDER_DEVICE_RESET || e.type == SDL_EVENT_RENDER_TARGETS_RESET) {sprites.clear();course_canvas.clear();}
             if (e.type == SDL_EVENT_RENDER_DEVICE_LOST) throw std::runtime_error("Render device lost");

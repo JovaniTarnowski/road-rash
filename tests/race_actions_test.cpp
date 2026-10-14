@@ -1,0 +1,41 @@
+// Plan 28 Task 1: pure race input actions (failing test).
+#include "race_actions.hpp"
+#include <iostream>
+
+static SDL_Event key(SDL_Keycode k, bool repeat = false) {
+    SDL_Event e{}; e.type = SDL_EVENT_KEY_DOWN; e.key.key = k; e.key.repeat = repeat; return e;
+}
+static SDL_Event button(SDL_JoystickID id, Uint8 b) {
+    SDL_Event e{}; e.type = SDL_EVENT_GAMEPAD_BUTTON_DOWN; e.gbutton.which = id; e.gbutton.button = b; return e;
+}
+int main() {
+    int failures = 0;
+    auto check = [&](bool v, const char* what) { if (!v) { ++failures; std::cerr << "FAIL " << what << '\n'; } };
+    using A = rr::RaceAction;
+    rr::RaceActionContext quick; quick.has_menu = true; quick.pad = 7;
+    check(rr::race_action(key(SDLK_ESCAPE), quick) == A::open_pause, "quick Esc opens pause");
+    check(rr::race_action(key(SDLK_ESCAPE, true), quick) == A::none, "key repeat ignored");
+    check(rr::race_action(key(SDLK_RETURN), quick) == A::none, "Enter before finish does nothing");
+    rr::RaceActionContext done = quick; done.finished = true;
+    check(rr::race_action(key(SDLK_RETURN), done) == A::restart, "Enter after finish restarts (finding 1)");
+    check(rr::race_action(button(7, SDL_GAMEPAD_BUTTON_SOUTH), done) == A::restart, "pad South restarts");
+    check(rr::race_action(button(8, SDL_GAMEPAD_BUTTON_SOUTH), done) == A::none, "other pad ignored");
+    SDL_Event tap{}; tap.type = SDL_EVENT_FINGER_DOWN;
+    check(rr::race_action(tap, done) == A::restart, "tap restarts");
+    rr::RaceActionContext career = quick; career.career = true;
+    check(rr::race_action(key(SDLK_ESCAPE), career) == A::request_quit, "career Esc asks to quit");
+    career.quitting = true;
+    check(rr::race_action(key(SDLK_ESCAPE), career) == A::confirm_quit, "second Esc confirms");
+    check(rr::race_action(key(SDLK_A), career) == A::cancel_quit, "other key cancels");
+    rr::RaceActionContext career_done = quick; career_done.career = true; career_done.finished = true;
+    check(rr::race_action(key(SDLK_RETURN), career_done) == A::none, "career never restarts");
+    check(rr::race_action(key(SDLK_Q), quick) == A::quit_app, "Q quits a quick race");
+    rr::RaceActionContext demo; demo.demo = true;
+    check(rr::race_action(key(SDLK_SPACE), demo) == A::demo_exit, "any key exits the demo");
+    rr::RaceActionContext no_menu; no_menu.paused = true;
+    check(rr::race_action(tap, no_menu) == A::resume, "tap resumes without a menu");
+    rr::RaceActionContext menu_open = quick; menu_open.menu_open = true;
+    check(rr::race_action(key(SDLK_ESCAPE), menu_open) == A::none, "menu owns input");
+    if (failures == 0) std::cout << "race_actions OK\n";
+    return failures ? 1 : 0;
+}
