@@ -48,9 +48,9 @@
 
 **Wave:** W2 · **Owns:** `tools/handoff_index.py`, `docs/agent-handoffs/INDEX.md` (generated), `docs/agent-handoffs/archive/` (moves applied by the orchestrator) · **Profile:** mechanical
 
-- [ ] **Step 1: Test first** (a case in `tests/agent_tooling_test.py`). Build a temp `docs/agent-handoffs` with three files: one cited by a commit message (`git log --grep` fixture: initialise a temp git repo), one cited from `PROGRESS.md`, and one cited nowhere and containing `PIDs: 1234`. The tool must classify them as `merged`, `merged` and `open (resources)`.
-- [ ] **Step 2: Implement** `python3 tools/handoff_index.py [--write] [--archive]`. For each `docs/agent-handoffs/*.md`, it records: title (first heading), date (filename or mtime), whether its filename appears in `docs/*.md`, `docs/plans/*.md` or `git log --all --format=%B`, and whether it mentions live resources (`PID`, `pid`, `lock`, `claim` followed by something other than "released"/"none"). `--write` regenerates `INDEX.md` as a table. `--archive` moves `merged` handoffs with no live resources into `archive/YYYY-MM/` and rewrites links in `docs/` (plain string replacement of the relative path).
-- [ ] **Step 3:** Run it with `--write` only. The orchestrator reviews `INDEX.md`, then runs `--archive` in a separate commit: `docs: archive merged handoffs (index kept)`.
+- [x] **Step 1: Test first** (a case in `tests/agent_tooling_test.py`). Build a temp `docs/agent-handoffs` with three files: one cited by a commit message (`git log --grep` fixture: initialise a temp git repo), one cited from `PROGRESS.md`, and one cited nowhere and containing `PIDs: 1234`. The tool must classify them as `merged`, `merged` and `open (resources)`.
+- [x] **Step 2: Implement** `python3 tools/handoff_index.py [--write] [--archive]`. For each `docs/agent-handoffs/*.md`, it records: title (first heading), date (filename or mtime), whether its filename appears in `docs/*.md`, `docs/plans/*.md` or `git log --all --format=%B`, and whether it mentions live resources (`PID`, `pid`, `lock`, `claim` followed by something other than "released"/"none"). `--write` regenerates `INDEX.md` as a table. `--archive` moves `merged` handoffs with no live resources into `archive/YYYY-MM/` and rewrites links in `docs/` (plain string replacement of the relative path).
+- [x] **Step 3:** Run it with `--write` only. The orchestrator reviews `INDEX.md`, then runs `--archive` in a separate commit: `docs: archive merged handoffs (index kept)`.
 
 ---
 
@@ -58,7 +58,7 @@
 
 **Wave:** W6 · **Owns:** `tests/agent_tooling_test.py` (three new cases), `tools/doc_checks.py` · **Profile:** mechanical
 
-- [ ] **Step 1:** `tools/doc_checks.py` exits nonzero with a message per problem:
+- [x] **Step 1:** `tools/doc_checks.py` exits nonzero with a message per problem:
 ```python
 import pathlib, re, sys
 root = pathlib.Path(__file__).resolve().parent.parent
@@ -85,5 +85,5 @@ if f"C++{std}" not in (root / "docs/PROGRESS.md").read_text().split("## Timeline
 print("\n".join(problems) or "doc checks OK")
 sys.exit(1 if problems else 0)
 ```
-- [ ] **Step 2:** Run it on the current tree and record the problem list in the handoff. Fix the broken links it reports in the docs this plan owns; send the rest to the orchestrator as a list.
-- [ ] **Step 3:** Call it from `tests/agent_tooling_test.py` so the existing `agent-tooling` CTest enforces it. Commit: `tools: doc consistency checks in agent-tooling`.
+- [x] **Step 2:** Run it on the current tree and record the problem list in the handoff. Fix the broken links it reports in the docs this plan owns; send the rest to the orchestrator as a list.
+- [x] **Step 3:** Call it from `tests/agent_tooling_test.py` so the existing `agent-tooling` CTest enforces it. Commit: `tools: doc consistency checks in agent-tooling`.

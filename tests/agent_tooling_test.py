@@ -317,6 +317,12 @@ class Tooling(unittest.TestCase):
         self.assertEqual(classify('other.md', '# Notes\nPIDs: 1234, capture running', docs, log), 'open (resources)')
         self.assertEqual(classify('quiet.md', '# Notes\nnothing live', docs, log), 'open')
 
+    def test_doc_checks_pass(self):
+        import subprocess, sys
+        out = subprocess.run([sys.executable, str(Path(__file__).resolve().parent.parent / 'tools' / 'doc_checks.py')],
+                             capture_output=True, text=True)
+        self.assertEqual(out.returncode, 0, out.stdout)
+
     def test_race_constructed_only_in_race_setup(self):
         # Plan 26 Task 4: the only production/replay Race construction lives in
         # src/race_setup.cpp; unit tests with synthetic routes are exempt.
