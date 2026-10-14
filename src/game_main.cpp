@@ -505,7 +505,7 @@ void quad(SDL_Renderer* r, float x0, float x1, float y0, float x2, float x3, flo
 // these inspected frame helpers remain for the other courses.
 // Attack frames picked by inspection of HIBOB.DAT (wind-up, strike) per weapon and side.
 int attack_frame(const rr::Rider& r) {
-    const bool strike = r.attack.timer >= rr::attack_hit_tick;
+    const bool strike = r.attack.timer >= rr::attack_legacy_hit_tick;
     switch (r.attack.weapon) {
     case 1: return r.attack.right ? (strike ? 143 : 141) : (strike ? 142 : 140);   // club
     case 2: return r.attack.right ? (strike ? 102 : 101) : (strike ? 106 : 105);   // chain

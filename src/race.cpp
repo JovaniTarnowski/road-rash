@@ -123,8 +123,12 @@ int32_t race_road_base_q8(int32_t golden_lateral, int32_t route_offset, int32_t 
 Race::Race(std::vector<RouteSample> a, std::vector<RouteSample> b, const PhysicsTables& t,
            const BikeSpec& spec, int32_t rider_value, std::vector<Opponent> opponents, int level, int32_t road_base_q8,
            const std::vector<Personality>& personalities, const std::vector<uint8_t>& exe_image)
-    : routes_{std::move(a), std::move(b)}, tables_(t), level_(level), road_base_(road_base_q8),
-      personalities_exe_(exe_image) {
+    : routes_{std::move(a), std::move(b)}, tables_(t), level_(level), road_base_(road_base_q8) {
+    if (!exe_image.empty()) {
+        std::array<int32_t,5> eager{};
+        for (uint32_t i = 0; i < 5; ++i) eager[i] = exe_word(exe_image, 0x00465a10 + 4u * i);
+        overtake_eagerness_ = eager;
+    }
     if (routes_[0].size() < 64 || routes_[1].size() < 64) throw std::runtime_error("Route too short for a race");
     auto brain_from = [&](AiState& ai, const Personality& p) {
         for (int i = 0; i < 5; ++i) { ai.spd_a[i] = p.cur2_levels[i]; ai.spd_b[i] = p.cur_levels[i]; }
@@ -1390,10 +1394,7 @@ bool Race::ai_can_overtake(Rider& r) {
     // comparison past this needs the cops target (open); without cops the
     // draw decides.
     int32_t table = 0;
-    if (level_ >= 0 && level_ < 5 && !personalities_exe_.empty()) {
-        // 0x00465a10 per-level overtake eagerness (read from the EXE).
-        table = exe_word(personalities_exe_, 0x00465a10 + 4u * uint32_t(level_)) * r.bike.i32(0x18);
-    }
+    if (level_ >= 0 && level_ < 5 && overtake_eagerness_) table = (*overtake_eagerness_)[size_t(level_)] * r.bike.i32(0x18);
     const uint32_t draw = random() & 0xff;
     if (table - int32_t(draw) == 0 || int32_t(draw) > table) return false;
     return true;
@@ -1495,9 +1496,6 @@ void Race::ai_curve_target(Rider& r) {
     AiState& ai = r.brain;
     if ((b.i32(0x1c) >> 8) - (ai.target_position >> 8) != -0x3c0) {
         const auto& route = route_of(r);
-        const size_t next = std::min(r.sample + 1, route.size() - 1);
-        void* u = nullptr;
-        (void)u;
         const int32_t c = curvature(r, r.sample, 8);
         const uint32_t mag = uint32_t(c < 0 ? -c : c);
         if (mag < 0x30000) { ai_straight_target(r); return; }
@@ -1715,7 +1713,6 @@ void Race::ai_state_shadow(Rider& r) {
 // Fight state 5 (0x0040a4f0): overtake gate, else straight target snapped to
 // the target's lateral unless too far ahead, then steering and speed control.
 void Race::ai_state_fight(Rider& r) {
-    Bike& b = r.bike;
     AiState& ai = r.brain;
     if (!ai_overtake(r)) {
         ai_straight_target(r);
@@ -1979,7 +1976,6 @@ void Race::resolve_hit(Rider& r, size_t index) {
     const bool down = knock_off(*target, damage, bike_damage, bike_damage == 0 ? 4 : 5);
     (void)down;
     target->hit_until = ticks_ + (5 - level_) * 6;
-    target->invulnerable_until = target->hit_until;
     if ((random() % (6 - level_)) == 0) { /* repeat-attack decision: requeue handled by the anim tail */ }
     else if (index != 0 && (random() & 3) == 2) { /* queue animation 6 on the attacker: render-side */ }
     Bike& tb = target->bike;
