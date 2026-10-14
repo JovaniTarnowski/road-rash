@@ -86,7 +86,7 @@ Android builds `rr-game` and is current whenever it is rebuilt.
 - [x] **Step 3: Write the failing tests (done).** `traffic_test` synthetic boundaries (hit-box edge ±1, split-roadway exclusion) fail-then-pass; fixture case comparison done ad-hoc, not yet an in-tree golden.
 - [x] **Step 4: Port (done).** `collide_traffic` for player and AI at the traced point in `Race::step`; crash entry with the car reason; original sound events queued.
 - [x] **Step 5: Accept (done, with open remainders).** Live `--steer-into-traffic` 6000-tick run shows `car-crash tick 1249 reason 2` (plus a second crash at 5408). Fixture golden comparison (256 cases in-tree) and the `napa-crash-car` tick scenario remain open (plan 10 oracle work).
-- [ ] **Step 6:** Commit: `sim: rider and car contact with original crash response`.
+- [x] **Step 6:** Commit: `sim: rider and car contact with original crash response` (`1d015d1`, in main).
 
 ---
 
@@ -160,11 +160,11 @@ void update_engine_rpm(Bike& b) {
 - Modify: `run-macos.sh`, `README.md`, `docs/RUN_NATIVE.md`, `docs/USER_GUIDE.md`, `tools/ci.sh`, `tools/verify_macos_app.py`
 - Optionally rename the target: `rr-native` → `rr-viewer` (CMake target, smoke commands in docs and `tools/ci.sh`, plans 00/10–15)
 
-- [ ] **Step 1: Write the failing check.** Add a test to `tools/verify_macos_app.py`. It reads a build stamp from the app (add `RRBuildCommit` to `Info.plist` from `git rev-parse --short HEAD` in `tools/build_macos_app.sh`) and fails if it differs from `HEAD`. Run it against the current October 10 bundle and confirm it fails.
-- [ ] **Step 2:** Make `run-macos.sh` build and launch `rr-game` (passing `--assets` when a mounted disc exists, otherwise the first-run import), and add `run-viewer.sh` for the research viewer. Rename the viewer target to `rr-viewer` and update every reference: `grep -rn "rr-native" --include='*.sh' --include='*.md' --include='*.txt' --include='*.py' .`. Keep the app bundle's display name "Road Rash Native".
-- [ ] **Step 3:** Rebuild the release bundle with `tools/build_macos_app.sh`, run `tools/verify_macos_app.py`, and confirm it passes with the stamp check.
-- [ ] **Step 4:** Have `tools/ci.sh` rebuild the bundle (or fail if it is stale), so it cannot fall behind again.
-- [ ] **Step 5:** README "Run" section: one command to play (`./run-macos.sh`), with the viewer listed separately as a developer tool. Commit: `build: run scripts and app bundle launch the current game; viewer renamed rr-viewer`.
+- [x] **Step 1: Write the failing check.** DONE: `tools/verify_macos_app.py` fails when `RRBuildCommit` differs from `HEAD`; `tools/build_macos_app.sh` stamps it.
+- [x] **Step 2:** DONE: `run-macos.sh`/`run-viewer.sh` match the spec; no `rr-native` references remain anywhere; bundle display name "Road Rash Native".
+- [x] **Step 3:** DONE this turn: bundle rebuilt from `adcf59c`, verifier PASS (ARM64, ad-hoc signature, no game data).
+- [x] **Step 4:** DONE: `tools/ci.sh` runs `verify_macos_app.py` on the bundle when present (stale fails).
+- [x] **Step 5:** DONE: README "Play" section leads with `./run-macos.sh`; viewer separate. (Committed incrementally; this handoff closes the plan boxes.)
 
 ## Exit criteria
 
