@@ -209,6 +209,7 @@ struct Game {
     rr::Mixer* mixer = nullptr;
 
     void load_course(const rr::Assets& assets,const std::vector<uint8_t>& exe) {
+        rr::clear_rgba_mip_cache();   // textures below are rebuilt; pointers may be reused
         scene.reset();
         hud.reset();
         actors.reset();
