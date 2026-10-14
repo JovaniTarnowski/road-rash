@@ -639,17 +639,15 @@ static void render_nodes_rgb_impl(FramebufferRgb& fb, const std::vector<DrawNode
     }
     // Band dispatch: every band draws all resolved nodes with a row clip.
     // The edge walk starts at the polygon top (Focus 1); the clip only skips
-    // writes, so the union is bit-identical to one thread.
+    // writes, so the union is bit-identical to one thread. Scratch comes from
+    // the pool (plan 29 Task 4); the job captures one pointer (SBO-clean).
     const int bands = std::max(1, pool.count());
-    // One scratch per band (NOT thread_local, same capture reason); resized
-    // only when the band count or height grows — no per-frame allocation.
-    static std::vector<RasterScratch64> band_scratch;
-    if (int(band_scratch.size()) < bands) band_scratch.resize(size_t(bands));
-    for (auto& sc : band_scratch)
-        if (int(sc.rows.size()) < fb.height()) sc.resize(fb.height());
-    pool.run(bands, fb.height(), [&](int b, int top, int bottom) {
-        const RasterClip band{0, top, fb.width(), bottom};
-        for (const auto& r : resolved) draw_resolved(fb, r, band, band_scratch[size_t(b)]);
+    struct Ctx { FramebufferRgb* fb; const std::vector<ResolvedNode>* nodes; };
+    Ctx ctx{&fb, &resolved};
+    Ctx* pc = &ctx;
+    pool.run(bands, fb.height(), [pc](int, int top, int bottom, RasterScratch64& scratch) {
+        const RasterClip band{0, top, pc->fb->width(), bottom};
+        for (const auto& r : *pc->nodes) draw_resolved(*pc->fb, r, band, scratch);
     });
 }
 void render_nodes_rgb(FramebufferRgb& fb, const std::vector<DrawNode>& nodes, const ViewMode& mode,

@@ -74,7 +74,11 @@ struct RenderThreads::Impl {
 RenderThreads::RenderThreads(int threads) : threads_(threads < 1 ? 1 : threads) {
     if (threads_ > 1) impl_ = new Impl(threads_);
 }
-RenderThreads::~RenderThreads() { delete impl_; }
+RenderThreads::~RenderThreads() { delete impl_; delete inline_holder_; }
+RenderThreads::Impl& RenderThreads::inline_scratch() const {
+    if (!inline_holder_) inline_holder_ = new Impl(0);
+    return *inline_holder_;
+}
 // Shared dispatch: sizes scratch once per (bands, height) growth, sets the
 // job pointer once, queues one small Job per band (no per-band std::function).
 void RenderThreads::run_impl(Impl& impl, int bands, int height,
@@ -113,22 +117,21 @@ void RenderThreads::run_impl(Impl& impl, int bands, int height,
 }
 void RenderThreads::run(int bands, int height, const std::function<void(int,int,int)>& job) {
     // Legacy overload: per-band scratch is unused; forward through one shared job.
-    // Single-threaded callers still allocate nothing (scratch sized once here).
+    // The 'wide' wrapper captures one pointer (SBO-clean, no heap job).
+    struct Wrap { const std::function<void(int,int,int)>* inner; };
+    Wrap w{&job};
+    Wrap* pw = &w;
+    std::function<void(int,int,int,RasterScratch64&)> wide =
+        [pw](int b, int top, int bottom, RasterScratch64&) { (*pw->inner)(b, top, bottom); };
     if (threads_ == 1) {
-        Impl scratch_holder(0);   // no workers; scratch vectors only
-        std::function<void(int,int,int,RasterScratch64&)> wide =
-            [&](int b, int top, int bottom, RasterScratch64&) { job(b, top, bottom); };
-        run_impl(scratch_holder, bands, height, wide);
+        run_impl(inline_scratch(), bands, height, wide);
         return;
     }
-    std::function<void(int,int,int,RasterScratch64&)> wide =
-        [&](int b, int top, int bottom, RasterScratch64&) { job(b, top, bottom); };
     run_impl(*impl_, bands, height, wide);
 }
 void RenderThreads::run(int bands, int height, const std::function<void(int,int,int,RasterScratch64&)>& job) {
     if (threads_ == 1) {
-        Impl scratch_holder(0);
-        run_impl(scratch_holder, bands, height, job);
+        run_impl(inline_scratch(), bands, height, job);
         return;
     }
     run_impl(*impl_, bands, height, job);

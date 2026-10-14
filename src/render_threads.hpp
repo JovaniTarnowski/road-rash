@@ -25,6 +25,8 @@ public:
 private:
     struct Impl;
     Impl* impl_ = nullptr;
+    mutable Impl* inline_holder_ = nullptr;   // Task 4: scratch for the threads_==1 path (pool-affine)
+    Impl& inline_scratch() const;
     int threads_ = 1;
     static void run_impl(Impl&, int bands, int height,
                          const std::function<void(int,int,int,RasterScratch64&)>& job);
