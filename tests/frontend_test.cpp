@@ -43,6 +43,24 @@ int main(int argc, char** argv) {
     const auto tables = read_career_tables(exe);
     auto data = read_frontend_data(exe);
     add_native_screens(data, false);
+    {
+        // Review 2026-10-13 item 3: every native row fits in 640x480.
+        FrontendData mobile_data = read_frontend_data(exe);
+        add_native_screens(mobile_data, true);
+        for (int pass = 0; pass < 2; ++pass) {
+            const FrontendData& d = pass ? mobile_data : data;
+            for (int scr : {int(screen_id::native_display), int(screen_id::native_enhancements),
+                            int(screen_id::native_sound)}) {
+                const auto& items = d.screens[size_t(scr)].items;
+                for (size_t i = 0; i < items.size(); ++i) {
+                    const auto& m = items[i];
+                    if (m.x + m.w > 640 || m.y + m.h > 480)
+                        { std::cerr << "FAIL layout screen " << scr << " item " << i << " (" << m.x << "," << m.y << "+" << m.w << "x" << m.h << ")" << (pass ? " mobile" : "") << "\n"; ++failures; }
+                }
+            }
+        }
+        if (failures == 0) std::cout << "native layout fits\n";
+    }
     check(data.screens[9].items.size() == 4 && data.screens[0x10].items.size() == 13 && data.screens[0x22].items.size() == 15, "screen tables");
     check(data.restroom_patterns[1] == "YNNYYYYN", "restroom pattern");
     const auto strings = frontend_strings(read_string_resources(assets.read("TEXT/ENU.DLL")));

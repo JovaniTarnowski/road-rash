@@ -251,6 +251,8 @@ if(ANDROID AND RR_DEV_ASSETS)
 endif()
 # Web-planning microbenchmark (plan 23, Task 1, Step 4). Opt-in so the
 # default build is unchanged; the web toolchain file enables it.
+add_executable(dash_bench-test tests/dash_bench.cpp)
+target_link_libraries(dash_bench-test PRIVATE rr-resource SDL3::SDL3)
 option(RR_BENCH_RENDER "Build the rr-bench-render synthetic render benchmark" OFF)
 if(RR_BENCH_RENDER AND NOT ANDROID)
     add_executable(rr-bench-render tests/bench_render.cpp)

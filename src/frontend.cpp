@@ -1422,6 +1422,7 @@ void Frontend::draw_scale1(RgbImage& out) const {
         } else {
             int w = tw + 0x31;
             if (title_slot_ == 6 && w < 0xe6) w = 0xe6;
+            if (w > 640) w = 640;   // item 3: clamp the banner to the screen
             box = {0, 0, w, th + 0x2a};
         }
         fill_from(out, dark_, box.left, box.top, box.right - box.left, box.bottom - box.top);

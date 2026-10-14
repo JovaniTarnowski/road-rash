@@ -2,6 +2,7 @@
 #include "career.hpp"
 #include "frontend.hpp"
 #include "native_strings.hpp"
+#include <algorithm>
 
 namespace rr {
 namespace {
@@ -14,7 +15,9 @@ MenuItem value_item(const MenuItem& t, int y, int caption, int desc, uint32_t po
     m.handler = 0;
     m.desc = desc;
     m.format = t.format;
-    m.flags = item_flag::title_desc | item_flag::description;
+    // Review 2026-10-13 item 3: no title_desc — the focused row's long help
+    // must not become the 72-pt title (original rows never set it either).
+    m.flags = item_flag::description;
     m.enabled = true;
     return m;
 }
@@ -45,6 +48,20 @@ std::vector<MenuItem> build_popup(const std::vector<MenuItem>& tpl, int header_c
     }
     return out;
 }
+}
+
+namespace {
+// Review 2026-10-13 item 3: rows fit in 480 px. step shrinks to fit the row
+// count; h shrinks with it (24-pt rows need ~28 px, like the restroom).
+int fit_step(int tpl_h, int tpl_y, size_t rows) {
+    if (rows == 0) return tpl_h + 4;
+    const int room = (480 - tpl_y - 8) / int(rows);
+    const int step = std::min(tpl_h + 4, room);
+    return std::max(20, step);
+}
+// Original rows never carry title_desc (the screen title persists); strip it
+// from native rows so long help text can't become the banner.
+void strip_title_desc(MenuItem& m) { m.flags &= ~item_flag::title_desc; }
 }
 
 void add_native_screens(FrontendData& data, bool mobile) {
@@ -80,19 +97,29 @@ void add_native_screens(FrontendData& data, bool mobile) {
     screen.title = ns::display_title;
     screen.title_format = data.screens[0x13].title_format;
     screen.items.clear();
-    for (size_t i = 0; i < rows.size(); ++i)
-        screen.items.push_back(value_item(tpl, tpl.y + int(i) * step, rows[i].caption, rows[i].desc, rows[i].popup));
-    MenuItem back = tpl;
-    back.y = tpl.y + int(rows.size()) * step;
-    back.target = 0x13;
-    back.caption = ns::back;
-    back.handler = 0;
-    back.desc = 0;
-    back.flags = item_flag::title_desc | item_flag::escape;
-    back.enabled = true;
-    screen.items.push_back(back);
+    {
+        // Review 2026-10-13 item 3: 11 rows fit in 480 px.
+        const int dstep = fit_step(tpl.h, tpl.y, rows.size() + 1);
+        const int dh = std::min(tpl.h, dstep - 2);
+        for (size_t i = 0; i < rows.size(); ++i) {
+            MenuItem m = value_item(tpl, tpl.y + int(i) * dstep, rows[i].caption, rows[i].desc, rows[i].popup);
+            m.h = dh;
+            screen.items.push_back(m);
+        }
+        MenuItem back = tpl;
+        back.y = tpl.y + int(rows.size()) * dstep;
+        back.h = dh;
+        back.target = 0x13;
+        back.caption = ns::back;
+        back.handler = 0;
+        back.desc = 0;
+        back.flags = item_flag::escape;
+        back.enabled = true;
+        screen.items.push_back(back);
+    }
     const size_t n = screen.items.size();
     for (size_t i = 0; i < n; ++i) {   // vertical chain, wrapping
+        strip_title_desc(screen.items[i]);
         screen.items[i].nav[2] = uint8_t((i + n - 1) % n);
         screen.items[i].nav[3] = uint8_t((i + 1) % n);
         screen.items[i].nav[4] = uint8_t((i + 1) % n);
@@ -145,19 +172,29 @@ void add_native_screens(FrontendData& data, bool mobile) {
             {ns::enh_bloom, native_popup::on_off}, {ns::enh_vig, native_popup::on_off},
             {ns::enh_mb, native_popup::on_off}, {ns::enh_wide, native_popup::widescreen},
         };
-        for (size_t i = 0; i < 10; ++i)
-            enh.items.push_back(value_item(tpl, tpl.y + int(i) * step, erows[i].first, ns::d_enh, erows[i].second));
-        MenuItem back = tpl;
-        back.y = tpl.y + 10 * step;
-        back.target = screen_id::native_display;
-        back.caption = ns::back;
-        back.handler = 0;
-        back.desc = 0;
-        back.flags = item_flag::title_desc | item_flag::escape;
-        back.enabled = true;
-        enh.items.push_back(back);
+        {
+            // Review 2026-10-13 item 3: 11 rows fit in 480 px.
+            const int estep = fit_step(tpl.h, tpl.y, 11);
+            const int eh = std::min(tpl.h, estep - 2);
+            for (size_t i = 0; i < 10; ++i) {
+                MenuItem m = value_item(tpl, tpl.y + int(i) * estep, erows[i].first, ns::d_enh, erows[i].second);
+                m.h = eh;
+                enh.items.push_back(m);
+            }
+            MenuItem back = tpl;
+            back.y = tpl.y + 10 * estep;
+            back.h = eh;
+            back.target = screen_id::native_display;
+            back.caption = ns::back;
+            back.handler = 0;
+            back.desc = 0;
+            back.flags = item_flag::escape;
+            back.enabled = true;
+            enh.items.push_back(back);
+        }
         const size_t n = enh.items.size();
         for (size_t i = 0; i < n; ++i) {
+            strip_title_desc(enh.items[i]);
             enh.items[i].nav[2] = uint8_t((i + n - 1) % n);
             enh.items[i].nav[3] = uint8_t((i + 1) % n);
             enh.items[i].nav[4] = uint8_t((i + 1) % n);
@@ -172,14 +209,18 @@ void add_native_screens(FrontendData& data, bool mobile) {
         sound.title = ns::sound_title;
         sound.title_format = data.screens[0x13].title_format;
         sound.items.clear();
+        // Review 2026-10-13 item 3: 10 rows fit in 480 px.
+        const int sstep = fit_step(tpl.h, tpl.y, 10);
+        const int sh = std::min(tpl.h, sstep - 2);
         for (int i = 0; i < 7; ++i) {
             MenuItem m = tpl;
-            m.y = tpl.y + i * step;
+            m.y = tpl.y + i * sstep;
+            m.h = sh;
             m.caption = caps[i];
             m.handler = 0;
             m.target = 0;
             m.desc = 0;
-            m.flags = item_flag::title_desc | item_flag::native_slider;
+            m.flags = item_flag::native_slider;
             m.enabled = true;
             sound.items.push_back(m);
         }
@@ -187,26 +228,29 @@ void add_native_screens(FrontendData& data, bool mobile) {
                                                      {ns::swap, native_action::toggle_swap}};
         for (int i = 0; i < 2; ++i) {
             MenuItem m = tpl;
-            m.y = tpl.y + (7 + i) * step;
+            m.y = tpl.y + (7 + i) * sstep;
+            m.h = sh;
             m.caption = toggles[i].first;
             m.handler = toggles[i].second;
             m.target = 0;
             m.desc = 0;
-            m.flags = item_flag::title_desc;
+            m.flags = 0;
             m.enabled = true;
             sound.items.push_back(m);
         }
         MenuItem back = tpl;
-        back.y = tpl.y + 9 * step;
+        back.y = tpl.y + 9 * sstep;
+        back.h = sh;
         back.target = 0x10;
         back.caption = ns::back;
         back.handler = 0;
         back.desc = 0;
-        back.flags = item_flag::title_desc | item_flag::escape;
+        back.flags = item_flag::escape;
         back.enabled = true;
         sound.items.push_back(back);
         const size_t n = sound.items.size();
         for (size_t i = 0; i < n; ++i) {
+            strip_title_desc(sound.items[i]);
             sound.items[i].nav[2] = uint8_t((i + n - 1) % n);
             sound.items[i].nav[3] = uint8_t((i + 1) % n);
             sound.items[i].nav[4] = uint8_t((i + 1) % n);
@@ -223,6 +267,7 @@ void add_native_screens(FrontendData& data, bool mobile) {
     auto chain = [&](MenuScreen& screen) {
         const size_t n = screen.items.size();
         for (size_t i = 0; i < n; ++i) {
+            strip_title_desc(screen.items[i]);
             screen.items[i].nav[2] = uint8_t((i + n - 1) % n);
             screen.items[i].nav[3] = uint8_t((i + 1) % n);
             screen.items[i].nav[4] = uint8_t((i + 1) % n);
@@ -236,7 +281,7 @@ void add_native_screens(FrontendData& data, bool mobile) {
         m.desc = desc;
         m.handler = handler;
         m.target = target;
-        m.flags = flags;
+        m.flags = flags & ~item_flag::title_desc;   // item 3: screen title persists
         m.enabled = true;
         return m;
     };
