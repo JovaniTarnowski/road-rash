@@ -63,6 +63,7 @@ void operator delete(void* p) noexcept;
 > | 2 | 47.1/47.3/34.2/29.0 | 88.8 | 232.7 | 85.9 |
 > | 4 | 118.2/110.2/114.0/93.2 | 168.1 | 291.1 | 161.9 |
 > Checksums identical across thread counts on every path (single-threaded RGB ignores the pool).
+> Task 3 result: `raster_rgb_threads` byte-identical at 1/2/4/7 threads x 640x480/1366x768/641x479/64x5, fog on/off; ASan + TSan clean. `rgb_ms` t1->t4: 46.8 -> 18.2 (0.39x, beats the 0.5x target); `rgb_fog_ms`: 190.3 -> 64.2. Real bug found: capturing a `thread_local` vector by reference into a worker lambda sees the WORKER's empty instance — `resolved` is now a plain reused static (resolve completes before dispatch; pool mutex orders it), scratch is per-band. Flat/edge `thread_local`s stay (set-then-use on one thread).
 > Task 2 result: `raster_rgb_alloc` 0 allocations, checksum `861b81d25eb5f7db` pinned; `rgb_upscaled_ms` 85.9 -> 84.6 (noise); RGB suites 8/8 green. Deviations: edge buffers hoisted to `thread_local` in `draw_rgb_impl` (the 4 vectors x 500 quads = 2000 allocs dominated); `flat_mip` is `thread_local` with per-node `[0] = argb` store (also fixed a dropped flat colour in the first cut).
 
 ### Task 2: No per-node allocations in the RGB path
@@ -85,10 +86,10 @@ void operator delete(void* p) noexcept;
 
 **Wave:** W4 (after Task 2 merges; same file) · **Owns:** `src/raster_rgb.cpp`, `tests/raster_rgb_threads_test.cpp` · **Profile:** careful
 
-- [ ] **Step 1: Failing test.** For thread counts {1, 2, 4, 7} and surface sizes {640×480, 1366×768, 641×479, 64×5}, render the bench scene with fog on and off. Every buffer must be byte-identical to the 1-thread result. Use a thread count above the height for the 64×5 case. Add a timing assertion only in the benchmark, never in the test.
-- [ ] **Step 2: Implement.** (a) Resolve pass, single-threaded, before dispatch: for each node compute everything the current loop computes up to the draw call (mapped points, normalization, flip, fog corners, mip pointer and level), into a reused `std::vector<ResolvedNode>` member of a `thread_local` or caller-owned scratch. Reserve it once; `clear()` per frame. (b) `pool.run(bands, fb.height(), job)`, where each band draws all resolved nodes with `RasterClip{0, top, w-1, bottom}`. (c) Make the edge walk band-invariant: step from the polygon's top row as today, skipping writes outside the clip rows. Do not reseed the walk at the clip top unless a test proves identity. Remove `(void)pool;`.
-- [ ] **Step 3:** Tests and benchmark (`rgb_ms` at 4 threads ≤ 0.5× the 1-thread time on an M-series Mac is the target, not a gate). ASan and TSan runs of `raster_rgb_threads-test` must be clean.
-- [ ] **Step 4:** Commit: `render: band-parallel full-colour raster, bit-identical to one thread`.
+- [x] **Step 1: Failing test.** For thread counts {1, 2, 4, 7} and surface sizes {640×480, 1366×768, 641×479, 64×5}, render the bench scene with fog on and off. Every buffer must be byte-identical to the 1-thread result. Use a thread count above the height for the 64×5 case. Add a timing assertion only in the benchmark, never in the test.
+- [x] **Step 2: Implement.** (a) Resolve pass, single-threaded, before dispatch: for each node compute everything the current loop computes up to the draw call (mapped points, normalization, flip, fog corners, mip pointer and level), into a reused `std::vector<ResolvedNode>` member of a `thread_local` or caller-owned scratch. Reserve it once; `clear()` per frame. (b) `pool.run(bands, fb.height(), job)`, where each band draws all resolved nodes with `RasterClip{0, top, w-1, bottom}`. (c) Make the edge walk band-invariant: step from the polygon's top row as today, skipping writes outside the clip rows. Do not reseed the walk at the clip top unless a test proves identity. Remove `(void)pool;`.
+- [x] **Step 3:** Tests and benchmark (`rgb_ms` at 4 threads ≤ 0.5× the 1-thread time on an M-series Mac is the target, not a gate). ASan and TSan runs of `raster_rgb_threads-test` must be clean.
+- [x] **Step 4:** Commit: `render: band-parallel full-colour raster, bit-identical to one thread`.
 
 ---
 

@@ -252,9 +252,9 @@ void draw_rgb_quad_bilinear(FramebufferRgb& fb, const std::array<RgbVertex, 4>& 
 // sinking palette colours instead of indices. Guarantees byte-identity with
 // to_rgba(indexed) for filter=nearest.
 void draw_rgb_quad_nearest_q16(FramebufferRgb& fb, const std::array<TextureVertex, 4>& vertices,
-                               const std::vector<uint8_t>& pixels, unsigned shift, const Palette& palette,
+                               const uint8_t* pixels, size_t pixel_count, unsigned shift, const Palette& palette,
                                bool transparent, RasterClip clip) {
-    if (clip.left != 0 || shift > 8 || pixels.empty() || pixels.size() % (size_t(1) << shift))
+    if (clip.left != 0 || shift > 8 || !pixel_count || pixel_count % (size_t(1) << shift))
         throw std::runtime_error("Invalid textured quad storage/clip");
     int first = 0, bottom = vertices[0].y;
     for (int i = 1; i < 4; ++i) {
@@ -300,7 +300,7 @@ void draw_rgb_quad_nearest_q16(FramebufferRgb& fb, const std::array<TextureVerte
         for (int x = start; x < end; ++x) {
             const uint32_t uu = uint32_t(l.u), vv = uint32_t(l.v);
             const uint32_t address = (((vv & 0xffff0000u) << shift) + uu) >> 16;
-            if (address >= pixels.size()) throw std::runtime_error("Texture span coordinate outside storage");
+            if (address >= pixel_count) throw std::runtime_error("Texture span coordinate outside storage");
             const uint8_t index = pixels[address];
             if (index || !transparent) {
                 const uint8_t* c = &palette.rgbx[4 * index];
@@ -314,11 +314,11 @@ void draw_rgb_quad_nearest_q16(FramebufferRgb& fb, const std::array<TextureVerte
 // Wide-surface nearest-exact sink: mirrors draw_textured_quad_wide's chain
 // merge (64-bit edges) with a palette sink. Guarantees byte-identity at s > 1.
 void draw_rgb_quad_nearest_wide(FramebufferRgb& fb, const std::array<TextureVertexWide, 4>& vertices,
-                                const std::vector<uint8_t>& pixels, unsigned stride_shift,
+                                const uint8_t* pixels, size_t pixel_count, unsigned stride_shift,
                                 const Palette& palette, bool transparent, RasterClip clip,
                                 RasterScratch64& scratch) {
     if (scratch.rows.empty()) throw std::runtime_error("Raster scratch not sized");
-    if (stride_shift > 8 || pixels.empty() || pixels.size() % (size_t(1) << stride_shift))
+    if (stride_shift > 8 || !pixel_count || pixel_count % (size_t(1) << stride_shift))
         throw std::runtime_error("Invalid textured quad storage/clip");
     constexpr int64_t kEmpty = int64_t(INT32_MIN) * 65536 * 4;
     const int64_t height = int64_t(scratch.rows.size());
@@ -385,7 +385,7 @@ void draw_rgb_quad_nearest_wide(FramebufferRgb& fb, const std::array<TextureVert
             // NOTE: stride_shift<=8 so the shift form matches texture_span.
             const uint32_t addr = (((vv & 0xffff0000u) >> 16) * uint32_t(stride)) + (uu >> 16);
             (void)address;
-            if (addr >= pixels.size()) throw std::runtime_error("Texture span coordinate outside storage");
+            if (addr >= pixel_count) throw std::runtime_error("Texture span coordinate outside storage");
             const uint8_t index = pixels[addr];
             if (index || !transparent) {
                 const uint8_t* c = &palette.rgbx[4 * index];
@@ -410,15 +410,69 @@ void draw_rgb_quad_trilinear(FramebufferRgb& fb, const std::array<RgbVertex, 4>&
                   sample_level, fog);
 }
 
+// Task 3: single-threaded resolve output. Everything the draw needs is
+// computed up front (mapped points, mip pointers, fog corners); bands only
+// clip rows, so the union is bit-identical to one thread (Focus 1: the edge
+// walk still starts at the polygon top; the clip only skips writes).
+struct ResolvedNode {
+    enum class Kind { flat, trilinear, nearest_impl, nearest_q16, nearest_wide, bilinear } kind;
+    std::array<RgbVertex, 4> pts{};
+    const RgbaMip* mips = nullptr;
+    size_t mip_count = 0, level = 0;
+    float lod = 0;
+    bool transparent = false;
+    FogState fog{};
+    uint32_t flat_argb = 0;
+    // Nearest-indexed variants (palette sink over index pixels):
+    std::array<TextureVertex, 4> nv{};
+    std::array<TextureVertexWide, 4> nvw{};
+    const uint8_t* srcpx = nullptr;
+    size_t srcpx_size = 0;
+    unsigned stride_shift = 0;
+    const Palette* palette = nullptr;
+};
+static void draw_resolved(FramebufferRgb& fb, const ResolvedNode& r, RasterClip clip, RasterScratch64& scratch) {
+    switch (r.kind) {
+    case ResolvedNode::Kind::flat: {
+        thread_local RgbaMip flat_mip{1, 1, {0}};
+        flat_mip.premultiplied[0] = r.flat_argb;
+        draw_rgb_impl(fb, r.pts, &flat_mip, 1, 0, 0, 0.0, false, clip, sample_nearest, r.fog);
+        break;
+    }
+    case ResolvedNode::Kind::trilinear:
+        draw_rgb_quad_trilinear(fb, r.pts, r.mips, r.mip_count, r.transparent, clip, r.lod, r.fog);
+        break;
+    case ResolvedNode::Kind::nearest_impl:
+        draw_rgb_impl(fb, r.pts, r.mips, r.mip_count, r.level, r.level, 0.0, r.transparent, clip, sample_nearest, r.fog);
+        break;
+    case ResolvedNode::Kind::nearest_q16:
+        draw_rgb_quad_nearest_q16(fb, r.nv, r.srcpx, r.srcpx_size, r.stride_shift, *r.palette,
+                                  r.transparent, clip);
+        break;
+    case ResolvedNode::Kind::nearest_wide:
+        draw_rgb_quad_nearest_wide(fb, r.nvw, r.srcpx, r.srcpx_size, r.stride_shift, *r.palette,
+                                   r.transparent, clip, scratch);
+        break;
+    case ResolvedNode::Kind::bilinear:
+        draw_rgb_quad_bilinear(fb, r.pts, r.mips, r.mip_count, r.transparent, clip, r.fog);
+        break;
+    }
+}
+
 static void render_nodes_rgb_impl(FramebufferRgb& fb, const std::vector<DrawNode>& nodes, const ViewMode& mode,
                                 uint32_t flat_mask, const Palette& palette, const Enhancements& enh,
                                 RenderThreads& pool, bool fog_on, uint32_t fog_colour, int draw_slices) {
     if (fb.width() != mode.surface_width || fb.height() != mode.surface_height)
         throw std::runtime_error("View/RGB framebuffer size mismatch");
-    (void)pool;
     const RasterClip clip{0, 0, fb.width(), fb.height() - 1};
     const uint32_t generation = palette_generation(palette);   // per call; content-keyed
-    thread_local RgbaMip flat_mip{1, 1, {0}};   // flat fills reuse one 1x1 mip (no per-call vector)
+    // Reused per call (NOT thread_local: workers read it via the band
+    // lambda, and thread_local captures resolve to the worker's own empty
+    // instance). Resolve completes before dispatch; pool.run's mutex gives
+    // the happens-before edge.
+    static std::vector<ResolvedNode> resolved;
+    resolved.clear();
+    resolved.reserve(nodes.size());
     for (const auto& node : nodes) {
         if (!node.texture && !node.flat_index) continue;
         std::array<RgbVertex, 4> pts;
@@ -464,8 +518,10 @@ static void render_nodes_rgb_impl(FramebufferRgb& fb, const std::vector<DrawNode
             std::array<RgbVertex, 4> fp = pts;
             for (auto& v : fp) { v.u = 0; v.v = 0; }
             FogState flat_fog{fog_on && (fp[0].fog_q8 | fp[1].fog_q8 | fp[2].fog_q8 | fp[3].fog_q8), fog_colour};
-            flat_mip.premultiplied[0] = argb;
-            draw_rgb_impl(fb, fp, &flat_mip, 1, 0, 0, 0.0, false, clip, sample_nearest, flat_fog);
+            ResolvedNode r;
+            r.kind = ResolvedNode::Kind::flat;
+            r.pts = fp; r.fog = flat_fog; r.flat_argb = argb;
+            resolved.push_back(r);
             continue;
         }
         const auto& texture = *node.texture;
@@ -511,62 +567,90 @@ static void render_nodes_rgb_impl(FramebufferRgb& fb, const std::vector<DrawNode
             const double src = double(std::max(src_w, src_h));
             const float lod = float(std::max(0.0, std::log2(src / std::max(1.0, proj))));
             FogState tex_fog{fog_on && (pts[0].fog_q8 | pts[1].fog_q8 | pts[2].fog_q8 | pts[3].fog_q8), fog_colour};
-            draw_rgb_quad_trilinear(fb, pts, mip_set->data(), mip_set->size(), transparent, clip, lod, tex_fog);
+            ResolvedNode rt;
+            rt.kind = ResolvedNode::Kind::trilinear;
+            rt.pts = pts; rt.mips = mip_set->data(); rt.mip_count = mip_set->size();
+            rt.transparent = transparent; rt.lod = lod; rt.fog = tex_fog;
+            resolved.push_back(rt);
         } else if (enh.filter == TextureFilter::nearest) {
             // Fogged nearest goes through the float path (no exactness claim
             // with fog on); unfogged keeps the Q16-exact walk.
             const bool node_fog = fog_on && (pts[0].fog_q8 | pts[1].fog_q8 | pts[2].fog_q8 | pts[3].fog_q8);
             if (node_fog) {
                 FogState nf{true, fog_colour};
-                draw_rgb_impl(fb, pts, mip_set->data(), mip_set->size(), level, level, 0.0, transparent, clip, sample_nearest, nf);
+                ResolvedNode rn;
+                rn.kind = ResolvedNode::Kind::nearest_impl;
+                rn.pts = pts; rn.mips = mip_set->data(); rn.mip_count = mip_set->size();
+                rn.level = level; rn.transparent = transparent; rn.fog = nf;
+                resolved.push_back(rn);
                 continue;
             }
             // Upscaled active: Q16 walk over the upscaled index pixels.
             if (signed_level < 0) {
                 const auto& srcmip = texture.upscaled.at(size_t(-signed_level - 1));
+                ResolvedNode ru;
+                ru.srcpx = srcmip.pixels.data(); ru.srcpx_size = srcmip.pixels.size();
+                ru.stride_shift = srcmip.stride_shift; ru.palette = &palette;
+                ru.transparent = transparent;
                 if (fb.width() > 640 || fb.height() > 480) {
-                    std::array<TextureVertexWide, 4> nv;
+                    ru.kind = ResolvedNode::Kind::nearest_wide;
                     for (size_t i = 0; i < 4; ++i)
-                        nv[i] = {pts[i].x, pts[i].y, uint16_t(uint16_t(uu[i] >> level) * uv_scale),
-                                 uint16_t(uint16_t(vv[i] >> level) * uv_scale)};
-                    RasterScratch64 scratch(fb.height());
-                    draw_rgb_quad_nearest_wide(fb, nv, srcmip.pixels, srcmip.stride_shift, palette, transparent,
-                                               clip, scratch);
+                        ru.nvw[i] = {pts[i].x, pts[i].y, uint16_t(uint16_t(uu[i] >> level) * uv_scale),
+                                     uint16_t(uint16_t(vv[i] >> level) * uv_scale)};
                 } else {
-                    std::array<TextureVertex, 4> nv;
+                    ru.kind = ResolvedNode::Kind::nearest_q16;
                     for (size_t i = 0; i < 4; ++i)
-                        nv[i] = {int16_t(std::max(-32768, std::min(32767, pts[i].x))),
-                                 int16_t(std::max(-32768, std::min(32767, pts[i].y))),
-                                 uint16_t(uint16_t(uu[i] >> level) * uv_scale),
-                                 uint16_t(uint16_t(vv[i] >> level) * uv_scale)};
-                    draw_rgb_quad_nearest_q16(fb, nv, srcmip.pixels, srcmip.stride_shift, palette, transparent, clip);
+                        ru.nv[i] = {int16_t(std::max(-32768, std::min(32767, pts[i].x))),
+                                    int16_t(std::max(-32768, std::min(32767, pts[i].y))),
+                                    uint16_t(uint16_t(uu[i] >> level) * uv_scale),
+                                    uint16_t(uint16_t(vv[i] >> level) * uv_scale)};
                 }
+                resolved.push_back(ru);
                 continue;
             }
             // Nearest-exact: Q16 walk over the index pixels (byte-identical).
             const auto& srcmip = texture.mips.at(level);
             const auto& srcpx =
                 srcmip.sampling_storage.empty() ? srcmip.pixels : srcmip.sampling_storage;
+            ResolvedNode rq;
+            rq.srcpx = srcpx.data(); rq.srcpx_size = srcpx.size();
+            rq.stride_shift = srcmip.stride_shift; rq.palette = &palette;
+            rq.transparent = transparent;
             if (fb.width() > 640 || fb.height() > 480) {
-                std::array<TextureVertexWide, 4> nv;
+                rq.kind = ResolvedNode::Kind::nearest_wide;
                 for (size_t i = 0; i < 4; ++i)
-                    nv[i] = {pts[i].x, pts[i].y, uint16_t(uu[i] >> level), uint16_t(vv[i] >> level)};
-                RasterScratch64 scratch(fb.height());
-                draw_rgb_quad_nearest_wide(fb, nv, srcpx, srcmip.stride_shift, palette, transparent, clip,
-                                           scratch);
+                    rq.nvw[i] = {pts[i].x, pts[i].y, uint16_t(uu[i] >> level), uint16_t(vv[i] >> level)};
             } else {
-                std::array<TextureVertex, 4> nv;
+                rq.kind = ResolvedNode::Kind::nearest_q16;
                 for (size_t i = 0; i < 4; ++i)
-                    nv[i] = {int16_t(std::max(-32768, std::min(32767, pts[i].x))),
-                             int16_t(std::max(-32768, std::min(32767, pts[i].y))),
-                             uint16_t(uu[i] >> level), uint16_t(vv[i] >> level)};
-                draw_rgb_quad_nearest_q16(fb, nv, srcpx, srcmip.stride_shift, palette, transparent, clip);
+                    rq.nv[i] = {int16_t(std::max(-32768, std::min(32767, pts[i].x))),
+                                int16_t(std::max(-32768, std::min(32767, pts[i].y))),
+                                uint16_t(uu[i] >> level), uint16_t(vv[i] >> level)};
             }
+            resolved.push_back(rq);
         } else {
             FogState bi_fog{fog_on && (pts[0].fog_q8 | pts[1].fog_q8 | pts[2].fog_q8 | pts[3].fog_q8), fog_colour};
-            draw_rgb_quad_bilinear(fb, pts, mip_set->data(), mip_set->size(), transparent, clip, bi_fog);
+            ResolvedNode rb;
+            rb.kind = ResolvedNode::Kind::bilinear;
+            rb.pts = pts; rb.mips = mip_set->data(); rb.mip_count = mip_set->size();
+            rb.transparent = transparent; rb.fog = bi_fog;
+            resolved.push_back(rb);
         }
     }
+    // Band dispatch: every band draws all resolved nodes with a row clip.
+    // The edge walk starts at the polygon top (Focus 1); the clip only skips
+    // writes, so the union is bit-identical to one thread.
+    const int bands = std::max(1, pool.count());
+    // One scratch per band (NOT thread_local, same capture reason); resized
+    // only when the band count or height grows — no per-frame allocation.
+    static std::vector<RasterScratch64> band_scratch;
+    if (int(band_scratch.size()) < bands) band_scratch.resize(size_t(bands));
+    for (auto& sc : band_scratch)
+        if (int(sc.rows.size()) < fb.height()) sc.resize(fb.height());
+    pool.run(bands, fb.height(), [&](int b, int top, int bottom) {
+        const RasterClip band{0, top, fb.width(), bottom};
+        for (const auto& r : resolved) draw_resolved(fb, r, band, band_scratch[size_t(b)]);
+    });
 }
 void render_nodes_rgb(FramebufferRgb& fb, const std::vector<DrawNode>& nodes, const ViewMode& mode,
                       uint32_t flat_mask, const Palette& palette, const Enhancements& enh, RenderThreads& pool) {
