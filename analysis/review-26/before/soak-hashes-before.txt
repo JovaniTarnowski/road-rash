@@ -1,0 +1,3 @@
+NAPA L0: 108000 ticks hash=7aad8b51fb69f0ea
+render-rate independence hash=eb726a28cfdac23b
+interpolation independence hash=eb726a28cfdac23b

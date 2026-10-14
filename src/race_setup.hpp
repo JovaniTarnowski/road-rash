@@ -1,7 +1,10 @@
 #pragma once
 // Stable race-setup factory shared by the game and the replay harness
 // (plan 10 Task 4 specified this factory but it was never extracted;
-// plan 17 Task 2 creates it here with plan 10's names, extended).
+// plan 17 Task 2 creates it here with plan 10's names, extended;
+// plan 26 Task 1 splits it into course-scoped load_race_assets and
+// race-scoped build_race so the game, race-soak and the oracle-sim replay
+// all build races through one factory).
 // One explicit config, no hidden replay-only setup: the player bike/rider
 // resolve through the career tables (0x00415fc0 character -> rider,
 // 0x004641c8 level_bike, 0x00463c78 rider row), opponents through
@@ -17,13 +20,21 @@
 #include "police.hpp"
 #include "pedestrians.hpp"
 #include "race.hpp"
+#include "track_ring.hpp"
 #include "traffic.hpp"
+#include <array>
 #include <cstdint>
+#include <functional>
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
 namespace rr {
+using AttackCodes = std::array<std::array<std::array<int8_t,4>,2>,2>;
+AttackCodes read_attack_codes(const std::vector<uint8_t>& exe);   // 0x004644f8 / 0x00464518, 8 words each
+NitroConfig nitro_from_spec(const BikeSpec&);                     // words 77..82 (+0x14c); all zero -> NitroConfig{}
+
 struct RaceConfig {
     std::string course = "NAPA"; // original file name: "CITY", "HIWAY", "MEDLY", "NAPA", "CANYN"
     int level = 0;               // 0..4 (DAT_004b8a12)
@@ -33,6 +44,11 @@ struct RaceConfig {
     int opponents = 7;           // 0..7, for quick races and solo tests
     bool high_resolution = true; // Settings::high_resolution (plan 18 Task 4)
     bool metric = false;
+    bool solo = false;                         // freeze opponents + scheduler actors (oracle)
+    int32_t road_base_q8 = 0;                  // Race ctor anchor (game 0; replay measured)
+    bool track_ring = true;                    // ring-driven DZHR pedestrians (0x004552e0)
+    std::optional<uint32_t> ring_rng_state;    // RNG state loaded just before ring setup
+    std::function<void(Race&)> prepare;        // runs after ctor, before ring (demo hold)
 };
 // Original per-course/per-level start and finish (plan 17 Task 1 traces the
 // exact nodes; until then the grid slot-0 position and the route finish).
@@ -42,21 +58,34 @@ struct RaceBounds {
     uint32_t finish_position_q8 = 0;
     int route_hint = 0;
 };
-struct RaceSetup {
-    Course course;
+struct RaceAssets {             // course-scoped: loaded once per course
+    // Heap-owned: TrackRing holds a const Course& into it, so the Course
+    // itself must not move when a RaceSetup moves (the spec test moves the
+    // setup and steps the race). Deviation from the spec's `Course course;`
+    // value member, required by Review Focus 1; consumers use course-> / *course.
+    std::unique_ptr<Course> course;
     std::unique_ptr<CourseScene> scene;
     std::unique_ptr<Hud> hud;
     std::unique_ptr<ActorNodes> actors;
-    std::unique_ptr<VehicleLibrary> vehicles;
-    std::unique_ptr<TrafficSystem> traffic;
-    std::unique_ptr<PedestrianSystem> pedestrians;   // DZHR walkers (plan 24 Task 4)
+    std::unique_ptr<VehicleLibrary> vehicles;  // null when the course has no .CAR
+    std::unique_ptr<AttackCodes> attack_codes;
     CrashConfig crash;
     PoliceConfig police;
     RaceBounds bounds;
+    PhysicsTables physics;
+    std::vector<BikeSpec> specs;
+    std::vector<Personality> personalities;
+    int bike_index = 0;
+    int32_t rider_value = 0;
+};
+struct RaceInstance {           // race-scoped: rebuilt on restart
+    std::unique_ptr<TrafficSystem> traffic;
+    std::unique_ptr<PedestrianSystem> pedestrians;
+    std::unique_ptr<TrackRing> ring;
     std::unique_ptr<Race> race;
 };
-// Builds everything for one race. Throws std::runtime_error naming the
-// resource on failure; the caller shows it and returns to the menu
-// (never a crash).
-RaceSetup make_race_setup(const Assets& assets, const std::vector<uint8_t>& exe, const RaceConfig& config);
+RaceAssets load_race_assets(const Assets&, const std::vector<uint8_t>& exe, const RaceConfig&);
+RaceInstance build_race(const RaceAssets&, const std::vector<uint8_t>& exe, const RaceConfig&);
+struct RaceSetup { RaceAssets assets; RaceInstance instance; };
+RaceSetup make_race_setup(const Assets&, const std::vector<uint8_t>& exe, const RaceConfig&);  // load + build
 }

@@ -1,0 +1,18 @@
+{
+  "mode": "diagnostic",
+  "acceptance_met": false,
+  "counts": {
+    "pass": 0,
+    "skip": 1,
+    "known-divergence": 0,
+    "unexpected-failure": 0
+  },
+  "outcomes": [
+    {
+      "fixture": "/Users/archit/Dev/rr/rr-wt-26-1/analysis/oracle/sim-napa-solo.tsv",
+      "mode": "diagnostic",
+      "status": "skip",
+      "error": "[Errno 2] No such file or directory: '/Users/archit/Dev/rr/rr-wt-26-1/analysis/oracle/sim-napa-solo.tsv'"
+    }
+  ]
+}

@@ -37,19 +37,19 @@ struct SoakResult {
 static SoakResult soak(rr::RaceSetup& setup, uint32_t controls) {
     SoakResult out;
     std::map<size_t, int32_t> last_pos;
-    for (; out.ticks < 108000 && !setup.race->finished(); ++out.ticks) {
-        setup.race->step(controls);
+    for (; out.ticks < 108000 && !setup.instance.race->finished(); ++out.ticks) {
+        setup.instance.race->step(controls);
         // Pool bounds (original sizes) every tick.
-        if (setup.traffic) {
+        if (setup.instance.traffic) {
             size_t cars = 0;
-            for (const auto& c : setup.traffic->cars()) if (c.active) ++cars;
+            for (const auto& c : setup.instance.traffic->cars()) if (c.active) ++cars;
             if (cars > 16) throw std::runtime_error("traffic pool exceeds 16");
             size_t ctl = 0, sig = 0;
-            for (const auto& c : setup.traffic->controllers()) if (c.active) ++ctl;
-            for (const auto& s : setup.traffic->signals()) if (s.active) ++sig;
+            for (const auto& c : setup.instance.traffic->controllers()) if (c.active) ++ctl;
+            for (const auto& s : setup.instance.traffic->signals()) if (s.active) ++sig;
             if (ctl > 10 || sig > 40) throw std::runtime_error("intersection pools exceed 10/40");
         }
-        const auto& riders = setup.race->riders();
+        const auto& riders = setup.instance.race->riders();
         for (size_t i = 0; i < riders.size(); ++i) {
             const int32_t pos = riders[i].bike.i32(0x1c);
             auto it = last_pos.find(i);
@@ -60,12 +60,12 @@ static SoakResult soak(rr::RaceSetup& setup, uint32_t controls) {
                 throw std::runtime_error("non-monotonic position outside crash");
             last_pos[i] = pos;
         }
-        const auto snap = setup.race->snapshot();
+        const auto snap = setup.instance.race->snapshot();
         out.hash = fnv(out.hash, uint64_t(snap.tick));
         out.hash = fnv(out.hash, uint64_t(snap.rng));
         for (const auto& f : snap.fields) out.hash = fnv(out.hash, uint64_t(f.value));
     }
-    out.finished = setup.race->finished();
+    out.finished = setup.instance.race->finished();
     return out;
 }
 // Plan 19 Task 7: race results are independent of render scale and frame
@@ -74,25 +74,25 @@ static SoakResult soak(rr::RaceSetup& setup, uint32_t controls) {
 // skipped randomly (render on ~50% of ticks). Per-tick snapshot hashes must
 // be identical (Task 1 Step 3 found no render-time RNG to relocate).
 static uint64_t render_soak(rr::RaceSetup& setup, const std::vector<uint8_t>& exe, uint32_t controls, int scale, uint64_t render_mask) {
-    if (!setup.scene) throw std::runtime_error("render soak needs the course scene");
+    if (!setup.assets.scene) throw std::runtime_error("render soak needs the course scene");
     const auto depths = rr::read_depth_table(exe);
     uint64_t hash = 1469598103934665603ULL;
     uint64_t lcg = 0x12345678u;
     rr::Framebuffer fb(640 * scale, 480 * scale);
     rr::RenderThreads pool(2);
     const rr::ViewMode mode = scale == 1 ? rr::view_mode(true) : rr::view_mode_scaled(scale);
-    for (int tick = 0; tick < 3600 && !setup.race->finished(); ++tick) {
-        setup.race->step(controls);
+    for (int tick = 0; tick < 3600 && !setup.instance.race->finished(); ++tick) {
+        setup.instance.race->step(controls);
         lcg = lcg * 1103515245u + 12345u;
         if ((lcg & render_mask) == 0) {
-            const auto slices = rr::project_road(setup.race->route(), setup.race->camera_position(),
-                                                 setup.race->camera(), depths);
-            setup.scene->draw_horizon(fb, setup.race->horizon_scroll());
-            rr::render_nodes_threaded(fb, setup.scene->draw_nodes(setup.race->route(), slices,
-                                                                  setup.race->camera(), depths),
+            const auto slices = rr::project_road(setup.instance.race->route(), setup.instance.race->camera_position(),
+                                                 setup.instance.race->camera(), depths);
+            setup.assets.scene->draw_horizon(fb, setup.instance.race->horizon_scroll());
+            rr::render_nodes_threaded(fb, setup.assets.scene->draw_nodes(setup.instance.race->route(), slices,
+                                                                  setup.instance.race->camera(), depths),
                                       mode, 16, pool);
         }
-        const auto snap = setup.race->snapshot();
+        const auto snap = setup.instance.race->snapshot();
         hash = fnv(hash, uint64_t(snap.tick));
         hash = fnv(hash, uint64_t(snap.rng));
         for (const auto& f : snap.fields) hash = fnv(hash, uint64_t(f.value));
@@ -160,10 +160,10 @@ int main() {
         uint64_t hash = 1469598103934665603ULL;
         rr::ViewState prev, cur, drawn;
         bool ready = false;
-        for (int tick = 0; tick < 3600 && !c.race->finished(); ++tick) {
-            c.race->step(controls);
+        for (int tick = 0; tick < 3600 && !c.instance.race->finished(); ++tick) {
+            c.instance.race->step(controls);
             prev = std::move(cur);
-            rr::capture_view(cur, *c.race, nullptr);
+            rr::capture_view(cur, *c.instance.race, nullptr);
             ready = true;
             // Vary alpha across the tick like a 120 Hz display would sample.
             // (Blended cameras past the route end cannot project; skip those,
@@ -171,12 +171,12 @@ int main() {
             for (uint32_t alpha : {0u, 21745u, 43590u, 65536u}) {
                 rr::blend_view(drawn, prev, cur, alpha);
                 try {
-                    const auto slices = rr::project_road(c.race->route(), drawn.camera_position_q8,
+                    const auto slices = rr::project_road(c.instance.race->route(), drawn.camera_position_q8,
                                                          drawn.camera, depths);
                     (void)slices;
                 } catch (const std::runtime_error&) {}
             }
-            const auto snap = c.race->snapshot();
+            const auto snap = c.instance.race->snapshot();
             hash = fnv(hash, uint64_t(snap.tick));
             hash = fnv(hash, uint64_t(snap.rng));
             for (const auto& f : snap.fields) hash = fnv(hash, uint64_t(f.value));
