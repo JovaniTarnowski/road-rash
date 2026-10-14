@@ -1,5 +1,22 @@
 # Verification log (all sessions September 28, 2026)
 
+## Previous-copy sync (October 14, 2026, plan 10 Task 6 fix order #1a)
+
+- `cmake --build build-integrator --target race-test oracle-sim-test`:
+  exit 0, no warnings.
+- `./build-integrator/race-test`: 0 failures.
+- `oracle-sim-test --driver=demo sim-napa-solo.tsv`: first divergence at
+  frame 221 (tick 222) lateral, rng in sync; output hash matches the
+  refreshed `tools/sim_known_divergences.json` demo entry.
+- `oracle-sim-test --driver=demo sim-napa-solo-human.tsv`: byte-identical
+  output, still frame 209 (tick 210) rng.
+- `verify_sim.py --mode diagnostic --binary
+  build-integrator/oracle-sim-test`: exit 0, known-divergence.
+  (Note: the default `--binary build/oracle-sim-test` is stale; pass the
+  owned build dir explicitly.)
+- `ctest --test-dir build-integrator --output-on-failure`: **94/94 pass**.
+- Open: 0x28 placement anchor (fix order #1b); SIM-capture 2-tick fault.
+
 ## Tick-208 contact classes (October 14, 2026, plan 10 Task 5)
 
 - `cmake --build build-integrator --parallel`: exit 0, no warnings.

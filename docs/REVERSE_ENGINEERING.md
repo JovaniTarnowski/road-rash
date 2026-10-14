@@ -935,6 +935,14 @@ then fall through to the nudge + `0x00404f93` tail with no kick. Tick-208
 proof: the class-3 `knock_off(0, swing, 3)` tail kick closes steer 2437 to
 exactly 2392 in `sim-napa-solo-human.tsv`.
 
+Previous-copy sync (October 14, 2026; plan 10 Task 6 fix order #1a):
+`0x00438930` copies words `0x1c..0x2c` to `0x30..0x40` (the int-indexed
+`piVar1[0xc..0x10]` loop — five words, not six), and `move()` re-syncs the
+same five every tick, so the build values matter for tick 1 and for frozen
+riders. `place_rider` now does the same copy. Effect: the demo golden's
+tick-208 contact disappears (lateral gate culls with true prev-laterals)
+and its first divergence moves to tick 222 with rng in sync.
+
 ### Options screens and pause (October 12, 2026, plan 18 Task 1)
 
 Tables dumped from the reference EXE (image base `0x400000`): screen table

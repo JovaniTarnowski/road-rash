@@ -1,9 +1,9 @@
 {
   "sim-napa-solo.tsv": {
     "trace_sha256": "3ab614a032666d75d6cf241efd9c0dd7148c958fc969c95579a531ffaec7e2a6",
-    "divergence": "first divergence at frame 207 (tick 208): rider.0.position original 13746 native 13778",
-    "reason": "Driver-axis replay (--driver=demo), single green anchor, native countdown (59 ticks, player dt 2 at tick 1). Ring RNG, AI replan/overtake/transitions, the 0x004368f0 list walk and 0x00436a40 separation reproduce the original through tick 207. Tick 208: first contact with a frozen bike; this capture has no node laterals, so frozen bikes keep native grid laterals (the original places them at grid + position - 0x2b00, untraced). The human-era capture with a node dump reaches tick 208 on rider.0.steer instead. Diagnostic only.",
-    "output_sha256": "f03e56e981936a5323496c90cb057033aefbc6cb7cadf38f5dd1834700bbab79"
+    "divergence": "first divergence at frame 221 (tick 222): rider.0.lateral original 43537 native 43777",
+    "reason": "Driver-axis replay (--driver=demo), single green anchor, native countdown (59 ticks, player dt 2 at tick 1). Matches every compared field with rng in sync through tick 221. The 0x00438930 five-word previous-copy sync (0x1c..0x2c to 0x30..0x40) removed the old tick-208 contact here: the 0x00436a40 lateral gate now culls with true prev-laterals, as in the original. Tick 222: lateral off by 240 with rng still matched; remaining placement-anchor error (sub-slice +0xcc vs route-offset, grid-setup fix order 1b). This capture has no node laterals, so frozen bikes keep native grid laterals. Diagnostic only.",
+    "output_sha256": "6ebdca2f288d985349e6748898dead397ca91b25f4f68f847ce98764c54db868"
   },
   "sim-napa-solo-human.tsv": {
     "trace_sha256": "960282cee293173d8ea62db4b49d1ffef83e23cba906e22f545676b112b317a3",

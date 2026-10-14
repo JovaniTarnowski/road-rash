@@ -335,6 +335,7 @@ int main() {
         you.bike.i32(0x108) = 5526;
         you.bike.i32(0x10c) = 0x2000;
         you.bike.i32(0x3c) = -20000;   // stale prev-lateral: separate() takes the lateral branch
+        you.bike.i32(0x30) = -20000;   // stale prev-position: me approaches from behind, so the forward branch runs
         you.bike.i32(0x2f0) = 10000;
         me.bike.i32(0x1c) = you.bike.i32(0x1c);
         me.bike.i32(0x28) = you.bike.i32(0x28) + 0x1000;   // alongside, not contained

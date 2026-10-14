@@ -50,6 +50,19 @@ Detailed evidence is in [REVERSE_ENGINEERING.md](REVERSE_ENGINEERING.md) and tes
 
 ## Timeline
 
+### October 14, 2026: previous-copy sync (plan 10 Task 6 fix order #1a)
+
+- `place_rider` now copies the five placed words `0x1c..0x2c` to the
+  previous-position copies `0x30..0x40`, mirroring the `0x00438930` loop
+  (grid trace's "0x30..0x44" corrected to five words). Demo golden
+  improved 14 ticks: first divergence moved frame 207 (tick 208) to
+  frame 221 (tick 222, lateral 43537 vs 43777, rng in sync); the old
+  tick-208 contact is culled by the `0x00436a40` lateral gate with true
+  prev-laterals. Human golden byte-identical (still tick 210; the 0x28
+  placement anchor is next, fix order #1b). The knock-kick fixture's
+  contact had relied on the zero-prev bug; it now seeds `0x30 = -20000`
+  explicitly. Full gate 94/94.
+
 ### October 14, 2026: tick-208 contact classes (plan 10 Task 5)
 
 - Ported the missing class-3 `knock_off(0, swing, 3)` call plus routing

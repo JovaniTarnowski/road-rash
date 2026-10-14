@@ -160,6 +160,11 @@ Race::Race(std::vector<RouteSample> a, std::vector<RouteSample> b, const Physics
         // brain's lane bias (+0x190), which 0x004091f0 adds to its target.
         r.brain.bias = lat;
         r.bike.i32(0x2f0) = r.bike.i32(0x2ec);   // bike condition (0x00405c80)
+        // 0x00438930: the build copies the five placed words 0x1c..0x2c to
+        // the previous-position copies 0x30..0x40. move() re-syncs them every
+        // tick, so this matters for tick 1 and for frozen riders, which never
+        // move (their 0x3c feeds the 0x00436a40 lateral gate).
+        for (int k = 0; k < 5; ++k) r.bike.i32(0x30 + 4 * k) = r.bike.i32(0x1c + 4 * k);
         return r;
     };
     Rider player = place_rider(spec, rider_value, 0, 0, 0);
