@@ -57,7 +57,6 @@ struct Attack {
     bool fired = false; // descriptor frame-2 hit event consumed this swing (0x004096f0)
 };
 constexpr int attack_legacy_hit_tick = 7;   // pre-descriptor stand-in, used only with no animation bank
-constexpr int attack_hit_tick = attack_legacy_hit_tick;  // compat alias (game_main attack frames)
 constexpr int attack_ticks = 18;             // swing length cap without descriptor completion
 
 // An AI opponent (bike + rider pair built by 0x00405990 with the AI tables).
@@ -177,7 +176,6 @@ struct Rider {
     // Riding animation selected by contact 0x004052c0 reason 4 without a crash
     // (+0x80/+0x81 via 0x0040ac70); -1 when none pending.
     int8_t contact_animation = -1;
-    int32_t invulnerable_until = 0;         // legacy alias of hit_until (+0x1d0)
     // Nitro (player-global 0x0040b110/0x0040b170/0x0040b1a0/0x0040adb0):
     // per-rider copies of the charge accumulator (Q8) and throttle force.
     int32_t nitro_charge = 0;               // accumulator Q8 (DAT_004c5f10)
@@ -238,13 +236,6 @@ public:
         for (auto& r : riders_) r.nitro_charge = c.max << 8; }
     const NitroConfig& nitro() const { return nitro_; }
     int32_t nitro_charges() const { return nitro_charges_; }
-    // Demo hold (DAT_004753c8): attract/demo races and oracle captures run
-    // with this set; the player rider think takes the AI branch (0x00434660
-    // head: stamina regen, then 0x00407bd0) and ignores the control word.
-    // Human races leave it clear. The attract demo (plan 13) will set it.
-    // Enabling also seeds the player AI brain like an opponent build
-    // (0x00405990/0x00407990/0x00405c80): base/current speed, lane, bias.
-    // The oracle demo player is character 1's rider 8 (base 95).
     // Demo hold (DAT_004753c8): attract/demo races and oracle captures run
     // with this set; the player rider think takes the AI branch (0x00434660
     // head: stamina regen, then 0x00407bd0) and ignores the control word.
@@ -430,7 +421,9 @@ private:
     bool demo_hold_ = false;   // DAT_004753c8 (see set_demo_hold)
     int32_t road_base_ = 0;   // absolute Q8 anchor (ctor param)
     int32_t finish_q8_ = 0;   // global finish DAT_004b6e58 (Q8); 0 = route end (0x00454240/0x00406890)
-    std::vector<uint8_t> personalities_exe_;   // reference image for EXE-resident tables (e.g. 0x00465a10)
+    // 0x00465a10: per-level overtake eagerness, read once from the EXE; empty
+    // image -> no table (the draw alone decides, as before).
+    std::optional<std::array<int32_t,5>> overtake_eagerness_;
     uint32_t seed_ = 1;   // MSVC rand() state (0x00455eb0)
     std::vector<SoundEventRecord> sound_events_;
     void sound(SoundEvent, const Bike&);

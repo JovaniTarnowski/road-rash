@@ -1,0 +1,52 @@
+UpdateCTestConfiguration  from :/Users/archit/Dev/rr/rr-wt-25-6/build-wt-25-6/DartConfiguration.tcl
+Parse Config file:/Users/archit/Dev/rr/rr-wt-25-6/build-wt-25-6/DartConfiguration.tcl
+Test project /Users/archit/Dev/rr/rr-wt-25-6/build-wt-25-6
+Constructing a list of tests
+Done constructing a list of tests
+Updating test list for fixtures
+Added 0 tests to meet fixture requirements
+Checking test dependency graph...
+Checking test dependency graph end
+test 3
+    Start 3: oracle-sim
+
+3: Test command: /opt/homebrew/Frameworks/Python.framework/Versions/3.14/bin/python3.14 "/Users/archit/Dev/rr/rr-wt-25-6/tools/verify_sim.py" "--mode" "diagnostic" "--binary" "/Users/archit/Dev/rr/rr-wt-25-6/build-wt-25-6/oracle-sim-test" "--report" "/Users/archit/Dev/rr/rr-wt-25-6/build-wt-25-6/oracle-diagnostic.json"
+3: Working Directory: /Users/archit/Dev/rr/rr-wt-25-6/build-wt-25-6
+3: Test timeout computed to be: 1500
+3: {
+3:   "mode": "diagnostic",
+3:   "acceptance_met": false,
+3:   "counts": {
+3:     "pass": 0,
+3:     "skip": 0,
+3:     "known-divergence": 1,
+3:     "unexpected-failure": 0
+3:   },
+3:   "outcomes": [
+3:     {
+3:       "fixture": "/Users/archit/Dev/rr/rr-wt-25-6/analysis/oracle/sim-napa-solo.tsv",
+3:       "mode": "diagnostic",
+3:       "schema": "rr-oracle 1",
+3:       "exe_sha256": "73d7f9744b5b1a9482b3909950cdf3fe34119fe13d023b031e9c6739a60f18a2",
+3:       "scenario": "sim-napa-solo-b",
+3:       "frames": 2402,
+3:       "tick_start": 1,
+3:       "tick_end": 2402,
+3:       "seed": 1,
+3:       "control_branch": "unverified",
+3:       "trace_sha256": "3ab614a032666d75d6cf241efd9c0dd7148c958fc969c95579a531ffaec7e2a6",
+3:       "complete": true,
+3:       "exit_code": 1,
+3:       "output": "road_base: 1792 (golden lat 18176 - route[50].offset*256 - grid 16384)\nring setup closes on the green anchor (+11 draws)\n[single-anchor] start-hold: 59 frozen frames, green at tick 60 driver=demo (cli override) think=0xffffffffffffffff count=-1 rider.0.think=4225680 rider.1.think=4408928 (0x00434660=4408928)\ncountdown: 58 native ticks, brain equal\nfirst divergence at frame 207 (tick 208): rider.0.position original 13746 native 13778\nrng history (last 8 ticks, golden vs native): (1793882572,1793882572) (1793882572,1793882572) (1793882572,1793882572) (1793882572,1793882572) (1793882572,1793882572) (1793882572,1793882572) (1793882572,1793882572) (2193798822,2193798822)\n",
+3:       "status": "known-divergence"
+3:     }
+3:   ]
+3: }
+1/1 Test #3: oracle-sim .......................   Passed    2.44 sec
+
+The following tests passed:
+	oracle-sim
+
+100% tests passed, 0 tests failed out of 1
+
+Total Test time (real) =   2.44 sec
