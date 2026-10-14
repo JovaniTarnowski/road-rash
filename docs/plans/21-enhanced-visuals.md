@@ -305,6 +305,25 @@ int main() {
 
 ---
 
+### Task 10: Wide menus (blurred side fill)
+
+**Spec:** review `../agent-handoffs/review-widescreen-menus-20261013.md` item 4 (owner playtest question, 2026-10-13).
+
+**Files:**
+- Modify: `src/frontend.cpp` (menu presentation + input offset), `src/game_main.cpp` (menu loop surface), `tests/frontend_test.cpp`, `docs/USER_GUIDE.md`
+- Reuse: plan 20 Task 6's GPU filter infrastructure if present; else a CPU box blur.
+
+**Interfaces:**
+- Produces: menus draw unchanged at 640x480 centred; side bars fill with a blurred, darkened, stretched copy of the current background, computed once per screen change. Mouse/touch input subtracts the side offset. Behind `Settings::widescreen` (off = black pillarbox bars, the unchanged 640x480 fidelity baseline); Original visual style always keeps black bars.
+
+**Constraints:**
+- Original layout, hit-testing rects (in 640x480 coordinates) and the pixel-comparison baseline stay as they are; only the bar fill + input offset are new.
+- Stretching the art to 16:9 is explicitly out (distorts); the dashboard-style edge extension is out for menus (worse on photographic art).
+
+- [ ] **Step 1:** Failing test: wide presentation renders the 640x480 menu centred with non-black side bars derived from the background; input at (bar + menu-x) hits the menu rect.
+- [ ] **Step 2:** Implement: side-fill composition on screen change + presentation/input offset.
+- [ ] **Step 3:** Gate + USER_GUIDE. Commit: `menus: blurred side fill behind Widescreen`.
+
 ### Task 9: Presets, Enhancements screen and measured defaults
 
 **Files:**
@@ -321,3 +340,4 @@ int main() {
 - With all enhancements off, every original-exact test passes unchanged; with all on, the simulation hash test passes.
 - Interpolation shows no teleport smears; filtered sprites have no halos; the widescreen centre crop equals the 4:3 frame.
 - The Enhanced preset's frame times are measured and recorded.
+- Wide menus (Task 10) stay behind the Widescreen setting; Original keeps black bars.

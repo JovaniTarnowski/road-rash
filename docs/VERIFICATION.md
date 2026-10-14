@@ -898,3 +898,15 @@ Owned edits: `src/import_job.hpp/.cpp` (new), `src/sha256.hpp/.cpp`
   82 fast + soak/oracle green (Tasks 2–3).
 - Open: plan 28 Task 4 manual race (pause/resume/restart) — headless only
   so far; plan 26 manual Napa play — headless only (see handoff 26-3).
+
+## Widescreen review item 2 (October 13/14, 2026): dashboard once per frame
+
+- `dash_bench` (Release, Napa 900 autopilot ticks, `Canvas::draw` ms/frame,
+  scratch `tests/dash_bench.cpp`, not committed):
+- Original 2x 16:9: 33.0 -> 6.7 ms/frame (compose once + exact index memo;
+  the per-pixel 255-entry search is gone; RGB path reuses the image).
+- Enhanced 2x 16:9: 61.2 -> 34.1 ms/frame (same fix; remainder is RGB
+  raster + post chain — plan 29 Tasks 3–4).
+- Correctness: `DashLut` is an exact per-color memo (a 32K RGB555 cell table
+  was tried first and REJECTED — two colors in one cell can map to different
+  indices, `hud-test` caught it); `hud` suite green, `race-soak` green.
