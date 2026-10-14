@@ -1,22 +1,16 @@
-#include "actor_nodes.hpp"
 #include "assets.hpp"
 #include "bike.hpp"
 #include "career.hpp"
 #include "course.hpp"
-#include "course_scene.hpp"
-#include "crash.hpp"
 #include "exe_tables.hpp"
 #include "golden.hpp"
-#include "pedestrians.hpp"
 #include "race.hpp"
-#include "track_ring.hpp"
-#include "traffic.hpp"
-#include <cstring>
-#include <filesystem>
+#include "race_setup.hpp"
 #include <cstdio>
+#include <filesystem>
 #include <functional>
-#include <sstream>
 #include <optional>
+#include <sstream>
 #include <iostream>
 
 // Plan 10 task 5 step 2a (+ replay-harness corrections, Oct 12): DEFAULT is a
@@ -29,31 +23,14 @@
 // Exit 0 on full match, 1 on divergence (first tick/field + last-8 RNG both
 // sides), 77 when the golden is missing. Car/node comparison is task 7 work.
 namespace {
-// Shared race-construction factory (game + replay, one mechanism). The game
-// builds its race in Game::load_course/restart (src/game_main.cpp); the
-// replay below builds the same objects from the golden header the same way:
-// header-driven bike/rider selection (no SPEC-1 default), the course's own
-// vehicle library WITH its EXE descriptors (traffic.cpp requires the EXE
-// for views/playback), traffic + crash config attached to the Race, and
-// grid-lateral placement from the game's own route data (no absolute
-// course-specific anchor: Race lateralises from route offset + grid word,
-// exactly as 0x00405990 reads sub-slice +0xcc plus the grid offset).
-struct RaceBundle {
-    rr::Course course;
-    std::vector<rr::RouteSample> route_a, route_b;
-    rr::PhysicsTables physics;
-    rr::BikeSpec spec;
-    int32_t rider_value = 90;
-    std::vector<rr::Opponent> opponents;
-    std::vector<rr::Personality> personalities;
-    std::unique_ptr<rr::CourseScene> scene;
-    std::unique_ptr<rr::VehicleLibrary> vehicles;
-    std::unique_ptr<rr::TrafficSystem> traffic;
-    std::unique_ptr<rr::ActorNodes> actors;
-    std::unique_ptr<rr::PedestrianSystem> pedestrians;
-    std::unique_ptr<rr::TrackRing> ring;
-    rr::CrashConfig crash_config;
-};
+// The replay builds its race through the shared rr::make_race_setup factory
+// (plan 26 Task 2), the same mechanism the game uses: header-driven
+// bike/rider selection (no SPEC-1 default), the course's own vehicle library
+// WITH its EXE descriptors (traffic.cpp requires the EXE for views/playback),
+// traffic + crash config attached to the Race, and grid-lateral placement
+// from the game's own route data (no absolute course-specific anchor: Race
+// lateralises from route offset + grid word, exactly as 0x00405990 reads
+// sub-slice +0xcc plus the grid offset).
 int32_t exe_i32(const std::vector<uint8_t>& exe, uint32_t va) {
     // .data section mapping of the reference executable (see read_physics_tables).
     constexpr uint32_t data_va = 0x00463000, data_raw = 0x61600, data_size = 0x16400;
@@ -72,50 +49,6 @@ RiderRow read_rider_row(const std::vector<uint8_t>& exe, int rider) {
     return {exe_i32(exe, row + 0xc) / 2, exe_i32(exe, row + 0x18),
             {exe_i32(exe, row + 0x30), exe_i32(exe, row + 0x34),
              exe_i32(exe, row + 0x38), exe_i32(exe, row + 0x3c)}};
-}
-RaceBundle make_race_bundle(rr::Assets& assets, const std::vector<uint8_t>& exe,
-                            const std::string& course_name, int level, bool solo) {
-    // Mirrors Game::load_course + the career race-setup path (game_main.cpp):
-    // default character 1 / level-0 bike from the career tables, opponents
-    // from original_opponents, scene + vehicle library + traffic + crash
-    // config owned by the bundle. Throws std::runtime_error on bad data.
-    RaceBundle b;
-    b.course = rr::read_course(assets.read("DATA/COURSES/" + course_name + ".CRS"));
-    b.route_a = rr::make_route(b.course, false);
-    b.route_b = rr::make_route(b.course, true);
-    b.physics = rr::read_physics_tables(exe);
-    const auto specs = rr::read_bike_specs(assets.read("DATA/BIKESPEC.RSC"));
-    const auto tables = rr::read_career_tables(exe);
-    // Header-driven selection: default character 1 (-> rider 8, 0x00415fc0)
-    // at level 0, exactly as reset_for_character picks the career default.
-    // No SPEC-1 / weight / stats hard-codes: everything comes from the EXE.
-    const int rider = rr::character_rider(1);
-    const size_t bike = tables.level_bike.at(size_t(level) + size_t(rider) * 5);
-    if (bike >= specs.size()) throw std::runtime_error("Default bike index out of range");
-    b.spec = specs[bike];
-    const RiderRow row = read_rider_row(exe, rider);
-    b.rider_value = row.value;
-    // Solo captures still build the full original field (0x00405600:
-    // DAT_004642d4 = 0x10, slots 1..14) and freeze every node but the
-    // player's; the frozen bikes stay on the grid where the demo AI's ring
-    // scans find them (measured: frame-0 node dump, 14 bike/half pairs).
-    b.opponents = rr::original_opponents(exe, specs, level, solo ? 14 : 7);
-    if (solo) for (auto& o : b.opponents) o.frozen = true;
-    if (course_name == "NAPA") {
-        b.scene = std::make_unique<rr::CourseScene>(assets, exe, b.course, course_name, 1, level);
-        b.actors = std::make_unique<rr::ActorNodes>(assets, exe, true);
-        b.crash_config = rr::read_crash_config(exe);
-    }
-    if (assets.exists("DATA/CARS/" + course_name + ".CAR")) {
-        // WITH EXE descriptors (views + playback banks): without them the
-        // library carries animation frames only, unlike the game's.
-        b.vehicles = std::make_unique<rr::VehicleLibrary>(
-            assets.read("DATA/CARS/" + course_name + ".CAR"), exe);
-        b.traffic = std::make_unique<rr::TrafficSystem>(*b.vehicles, exe);
-        b.traffic->configure(6);
-    }
-    b.personalities = rr::read_personalities(exe);
-    return b;
 }
 // The intended per-tick comparison set (plan 10 acceptance): every native
 // snapshot field for every live rider plus every traffic pool slot, plus
@@ -371,7 +304,6 @@ int main(int argc, char** argv) {
     rr::Assets assets(assets_root);
     std::vector<uint8_t> exe = assets.read("ROADRASH.EXE");
     const std::string course_name = original_courses[course_entry - 1];
-    RaceBundle bundle = make_race_bundle(assets, exe, course_name, level, solo);
     // Grid lateral: the original places the player at sub-slice +0xcc (the
     // absolute road centre at the grid sample) plus the 0x00464218 grid
     // word. The native route stores centres relative to the course root,
@@ -379,20 +311,40 @@ int main(int argc, char** argv) {
     // via the shared rr::race_road_base_q8 helper (same ctor the game
     // uses; the game passes 0 = relative frame). Measured per golden (not
     // a course constant), reported every run.
-    auto hpos = h.find("rider.0.position"), hlad = h.find("rider.0.lateral");
     int32_t road_base = 0;
-    if (hpos != h.end() && hlad != h.end()) {
-        const size_t sample = size_t(uint32_t(hpos->second) >> 8);
-        const int32_t grid_word = exe_i32(exe, 0x00464218 + 8u * uint32_t(level));
-        const std::vector<rr::RouteSample>& ref = bundle.route_a;
-        if (sample < ref.size())
-            road_base = rr::race_road_base_q8(int32_t(hlad->second), ref[sample].offset, grid_word);
-        std::cout << "road_base: " << road_base << " (golden lat " << hlad->second
-                  << " - route[" << sample << "].offset*256 - grid " << grid_word << ")\n";
+    {
+        // Local course read for the sample offset (the factory reads the
+        // course again for the race itself).
+        const rr::Course course = rr::read_course(assets.read("DATA/COURSES/" + course_name + ".CRS"));
+        const std::vector<rr::RouteSample>& ref = rr::make_route(course, false);
+        auto hpos = h.find("rider.0.position"), hlad = h.find("rider.0.lateral");
+        if (hpos != h.end() && hlad != h.end()) {
+            const size_t sample = size_t(uint32_t(hpos->second) >> 8);
+            const int32_t grid_word = exe_i32(exe, 0x00464218 + 8u * uint32_t(level));
+            if (sample < ref.size())
+                road_base = rr::race_road_base_q8(int32_t(hlad->second), ref[sample].offset, grid_word);
+            std::cout << "road_base: " << road_base << " (golden lat " << hlad->second
+                      << " - route[" << sample << "].offset*256 - grid " << grid_word << ")\n";
+        }
     }
-    rr::Race race(std::move(bundle.route_a), std::move(bundle.route_b),
-                  bundle.physics, bundle.spec, bundle.rider_value, std::move(bundle.opponents), level,
-                  road_base, bundle.personalities, exe);
+    rr::RaceConfig config;
+    config.course = course_name;
+    config.level = level;
+    config.character = 1;
+    config.career = true;
+    config.solo = solo;
+    config.road_base_q8 = road_base;
+    // Track ring (plan 10 Task 5): the original builds it inside the setup
+    // stream, srand(seed) + ring.pre_draws (9,098 on the Napa solo
+    // captures, measured by ring-probe), then 0x00405600 and the countdown
+    // consume ring.post_draws (11) before green. The factory loads this
+    // state just before ring setup (0x004552e0).
+    {
+        const int64_t pre = h.count("ring.pre_draws") ? h.at("ring.pre_draws") : 9098;
+        uint32_t state = uint32_t(h.count("seed") ? h.at("seed") : 1);
+        for (int64_t k = 0; k < pre; ++k) state = state * 0x343fdu + 0x269ec3u;
+        config.ring_rng_state = state;
+    }
     // Demo goldens (DAT_004753c8=1): the "player" is AI-driven and ignores
     // the recorded control words. Human goldens (DAT_004753c8=0) leave demo
     // hold clear so race.step consumes the control words via apply_controls.
@@ -405,104 +357,56 @@ int main(int argc, char** argv) {
     // measured base (demo.base_speed) or personality row 0, while
     // bike/value/weapon/stats stay rider-8 (character 1). A future oracle
     // probe should record DAT_00467a6c directly (open: analysis/replay-notes.md).
+    // Runs after the ctor, before the ring (the factory's prepare hook).
     if (demo) {
-        const int rider = rr::character_rider(1);
-        const RiderRow row = read_rider_row(exe, rider);
-        const auto personalities = rr::read_personalities(exe);
-        const int64_t dbase = hfind("demo.base_speed");
-        const int64_t dlane = hfind("demo.lane"), dbias = hfind("grid.bias");
-        const int64_t dweapon = hfind("demo.weapon");
-        const int64_t dstr = hfind("demo.stats_strength"), dbas = hfind("demo.stats_base");
-        const int64_t dmax = hfind("demo.stats_max"), dcur_st = hfind("demo.stats_current");
-        // Brain row: measured base matched against the personality table
-        // (proves which row the original used); default row 0 (bootstrap).
-        int brain_row = 0;
-        if (dbase >= 0 && !personalities.empty()) {
-            for (size_t k = 0; k < personalities.size(); ++k)
-                if (personalities[k].cur_levels[0] == int(dbase)) { brain_row = int(k); break; }
-        }
-        const int base = dbase >= 0 ? int(dbase)
-            : !personalities.empty() ? personalities[size_t(brain_row)].cur_levels[0] : 95;
-        const int lane = dlane >= 0 ? int(dlane) : 1;
-        // Unmeasured: the grid offset the ctor stored (0x00405990 -> +0x190;
-        // the human-era golden reads brain_190 = 16384 = the level-0 word).
-        const int32_t bias = dbias >= 0 ? int32_t(dbias) : race.riders().at(0).brain.bias;
-        const int weapon = dweapon >= 0 ? int(dweapon) : row.weapon0;
-        const rr::RiderStats stats{dstr >= 0 ? int32_t(dstr) : row.stats.strength,
-                                  dbas >= 0 ? int32_t(dbas) : row.stats.base,
-                                  dmax >= 0 ? int32_t(dmax) : row.stats.max,
-                                  dcur_st >= 0 ? int32_t(dcur_st) : row.stats.current};
-        // Seed the player brain tables from the measured row BEFORE
-        // set_demo_hold (the ctor loaded personalities[0]; correct it when
-        // the measurement points elsewhere).
-        if (!personalities.empty() && brain_row != 0 && !race.riders().empty()) {
-            auto& brain = race.riders()[0].brain;
-            const auto& p = personalities[size_t(brain_row)];
-            for (int i = 0; i < 5; ++i) { brain.spd_a[i] = p.cur2_levels[i]; brain.spd_b[i] = p.cur_levels[i]; }
-            for (int i = 0; i < 30; ++i) { brain.rating[i] = p.rating[i]; brain.rating_tgt[i] = p.rating_tgt[i]; }
-            for (int i = 0; i < 3; ++i) brain.ease[i] = p.ease[i];
-            brain.overtake_index = p.overtake_index;
-            brain.reach = p.reach;
-        }
-        race.set_demo_hold(true, base, lane, bias, weapon, stats);
-    }
-    // Track ring (plan 10 Task 5): the original builds it inside the setup
-    // stream, srand(seed) + ring.pre_draws (9,098 on the Napa solo
-    // captures, measured by ring-probe), then 0x00405600 and the countdown
-    // consume ring.post_draws (11) before green. Pedestrians take the ring's
-    // DZHR spawns (pool only: the actor source is the ring); solo freezes
-    // them like every non-player scheduler node.
-    std::optional<uint32_t> ring_end_state;
-    int64_t ring_post = -1;
-    if (bundle.scene) {
-        auto* scene = bundle.scene.get();
-        static const std::vector<rr::DzhrActor> no_actors;
-        bundle.pedestrians = std::make_unique<rr::PedestrianSystem>(
-            [](const rr::RouteSample&) -> const std::vector<rr::DzhrActor>& { return no_actors; },
-            [scene](const rr::RouteSample& s, uint8_t selector) { return scene->pedestrian_look(s.section, s.local, selector); }, exe);
-        race.set_pedestrians(bundle.pedestrians.get());
-        if (solo) race.set_freeze_actors(true);
-        const int64_t pre = h.count("ring.pre_draws") ? h.at("ring.pre_draws") : 9098;
-        ring_post = h.count("ring.post_draws") ? h.at("ring.post_draws") : 11;
-        uint32_t state = uint32_t(h.count("seed") ? h.at("seed") : 1);
-        for (int64_t k = 0; k < pre; ++k) state = state * 0x343fdu + 0x269ec3u;
-        race.set_rng_state(state);
-        bundle.ring = std::make_unique<rr::TrackRing>(bundle.course, level);
-        race.set_track_ring(bundle.ring.get());
-        ring_end_state = race.rng_state();
-    }
-    if (bundle.scene) race.set_terrain_source([&](const rr::RouteSample& s) -> const rr::TerrainSlice& { return bundle.scene->terrain(s.section, s.local); });
-    if (bundle.traffic) race.set_traffic(bundle.traffic.get());
-    if (bundle.actors) race.set_crash_library(bundle.actors->library(), bundle.crash_config);
-    // Plan 16: descriptor-frame combat timing needs the ride bank + attack
-    // codes (same library the game uses); nitro setup copies the player
-    // spec +0x14c words (0x0040b0e0, from 0x00405600 after the player build).
-    if (bundle.actors) {
-        static std::array<std::array<std::array<int8_t,4>,2>,2> attack_codes{};
-        static bool attacks_loaded = false;
-        if (!attacks_loaded) {
-            for (int side = 0; side < 2; ++side) {
-                const auto bytes = rr::read_exe_data(exe, side ? 0x464518 : 0x4644f8, 32);
-                for (int kind = 0; kind < 2; ++kind)
-                    for (int weapon = 0; weapon < 4; ++weapon)
-                        attack_codes[side][kind][weapon] = int8_t(bytes[(kind * 4 + weapon) * 4]);
+        config.prepare = [&](rr::Race& rr) {
+            const int rider = rr::character_rider(1);
+            const RiderRow row = read_rider_row(exe, rider);
+            const auto personalities = rr::read_personalities(exe);
+            const int64_t dbase = hfind("demo.base_speed");
+            const int64_t dlane = hfind("demo.lane"), dbias = hfind("grid.bias");
+            const int64_t dweapon = hfind("demo.weapon");
+            const int64_t dstr = hfind("demo.stats_strength"), dbas = hfind("demo.stats_base");
+            const int64_t dmax = hfind("demo.stats_max"), dcur_st = hfind("demo.stats_current");
+            // Brain row: measured base matched against the personality table
+            // (proves which row the original used); default row 0 (bootstrap).
+            int brain_row = 0;
+            if (dbase >= 0 && !personalities.empty()) {
+                for (size_t k = 0; k < personalities.size(); ++k)
+                    if (personalities[k].cur_levels[0] == int(dbase)) { brain_row = int(k); break; }
             }
-            attacks_loaded = true;
-        }
-        race.set_ride_library(&bundle.actors->library(), &attack_codes);
+            const int base = dbase >= 0 ? int(dbase)
+                : !personalities.empty() ? personalities[size_t(brain_row)].cur_levels[0] : 95;
+            const int lane = dlane >= 0 ? int(dlane) : 1;
+            // Unmeasured: the grid offset the ctor stored (0x00405990 -> +0x190;
+            // the human-era golden reads brain_190 = 16384 = the level-0 word).
+            const int32_t bias = dbias >= 0 ? int32_t(dbias) : rr.riders().at(0).brain.bias;
+            const int weapon = dweapon >= 0 ? int(dweapon) : row.weapon0;
+            const rr::RiderStats stats{dstr >= 0 ? int32_t(dstr) : row.stats.strength,
+                                      dbas >= 0 ? int32_t(dbas) : row.stats.base,
+                                      dmax >= 0 ? int32_t(dmax) : row.stats.max,
+                                      dcur_st >= 0 ? int32_t(dcur_st) : row.stats.current};
+            // Seed the player brain tables from the measured row BEFORE
+            // set_demo_hold (the ctor loaded personalities[0]; correct it when
+            // the measurement points elsewhere).
+            if (!personalities.empty() && brain_row != 0 && !rr.riders().empty()) {
+                auto& brain = rr.riders()[0].brain;
+                const auto& p = personalities[size_t(brain_row)];
+                for (int i = 0; i < 5; ++i) { brain.spd_a[i] = p.cur2_levels[i]; brain.spd_b[i] = p.cur_levels[i]; }
+                for (int i = 0; i < 30; ++i) { brain.rating[i] = p.rating[i]; brain.rating_tgt[i] = p.rating_tgt[i]; }
+                for (int i = 0; i < 3; ++i) brain.ease[i] = p.ease[i];
+                brain.overtake_index = p.overtake_index;
+                brain.reach = p.reach;
+            }
+            rr.set_demo_hold(true, base, lane, bias, weapon, stats);
+        };
     }
-    {
-        rr::NitroConfig nitro;
-        bool spec_nitro = false;
-        for (int k = 0; k < 6; ++k)
-            if (bundle.spec.d[size_t(77 + k)] != 0) spec_nitro = true;
-        if (spec_nitro) {
-            nitro.recharge = bundle.spec.d[77]; nitro.boost = bundle.spec.d[78];
-            nitro.max = bundle.spec.d[79]; nitro.charges = bundle.spec.d[80];
-            nitro.minimum = bundle.spec.d[81]; nitro.tail = bundle.spec.d[82];
-        }
-        race.set_nitro(nitro);
-    }
+    rr::RaceSetup setup = rr::make_race_setup(assets, exe, config);
+    rr::Race& race = *setup.instance.race;
+    // The factory's last RNG draw is the ring setup's end (0x004552e0);
+    // the countdown then consumes ring.post_draws (11) before green.
+    const std::optional<uint32_t> ring_end_state = race.rng_state();
+    const int64_t ring_post = h.count("ring.post_draws") ? h.at("ring.post_draws") : 11;
     // The golden rng is the live CRT state AFTER each tick's step (the hook
     // dumps after 0x0044b3b0). The race-setup stream (menu entry through grid
     // build, 11,461 calls) is not reproduced: a single anchor at green covers
