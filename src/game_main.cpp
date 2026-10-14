@@ -1,5 +1,5 @@
 #include "rr_build_info.hpp"
-// Shared native/Android frontend and playable race.
+// Shared native/Android frontend and playable race().
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_main.h>
 #include "assets.hpp"
@@ -9,6 +9,7 @@
 #include "importer.hpp"
 #include "import_ui.hpp"
 #include "race.hpp"
+#include "race_setup.hpp"
 #include "traffic.hpp"
 #include "pedestrians.hpp"
 #include "road_draw.hpp"
@@ -150,20 +151,20 @@ SDL_Gamepad* open_first_gamepad() {
 
 struct Game {
     rr::DepthTable depth;
-    rr::PhysicsTables physics;
-    std::vector<rr::BikeSpec> specs;
-    rr::Course course;
-    std::unique_ptr<rr::CourseScene> scene;
-    std::unique_ptr<rr::Hud> hud;
-    std::unique_ptr<rr::ActorNodes> actors;
+    rr::RaceAssets assets;       // plan 26 Task 3: course-scoped (scene, hud, actors, specs, ...)
+    rr::RaceInstance instance;   // plan 26 Task 3: race-scoped (race, traffic, pedestrians, ring)
+    rr::RaceConfig config;       // plan 26 Task 3: course/level/bike/career/opponents for (re)builds
+    std::vector<uint8_t> exe_;   // plan 26 Task 3: EXE image for (re)builds
+    // Thin accessors so call-site churn stays mechanical.
+    rr::Race& race() { return *instance.race; }
+    const rr::Race& race() const { return *instance.race; }
+    rr::CourseScene* scene() { return assets.scene.get(); }
+    const rr::CourseScene* scene() const { return assets.scene.get(); }
+    rr::TrafficSystem* traffic() { return instance.traffic.get(); }
+    const rr::TrafficSystem* traffic() const { return instance.traffic.get(); }
     std::vector<rr::ActorAnimationState> actor_states;
     std::vector<int> previous_attacks;
     std::vector<bool> previous_crashes;
-    rr::CrashConfig crash_config;
-    std::array<std::array<std::array<int8_t,4>,2>,2> attack_codes{};
-    std::unique_ptr<rr::VehicleLibrary> vehicles;
-    std::unique_ptr<rr::TrafficSystem> traffic;
-    std::unique_ptr<rr::PedestrianSystem> pedestrians;   // DZHR pedestrians (plan 24 Task 4); needs the course scene
     bool metric=false;
     std::string player_name="Player";
     std::vector<std::string> rider_names;
@@ -187,20 +188,16 @@ struct Game {
         for (const auto& p : view_drawn.actors) if (p.id == id) return &p;
         return nullptr;
     }
-    uint32_t blend_camera_position() const { return view_ready ? view_drawn.camera_position_q8 : race->camera_position(); }
-    rr::Camera blend_camera() const { return view_ready ? view_drawn.camera : race->camera(); }
+    uint32_t blend_camera_position() const { return view_ready ? view_drawn.camera_position_q8 : race().camera_position(); }
+    rr::Camera blend_camera() const { return view_ready ? view_drawn.camera : race().camera(); }
     int32_t logical_width() const {
         const rr::Widescreen w = enhancements.any() ? enhancements.widescreen : widescreen;
         return rr::logical_width_for(w);
     }
-    std::unique_ptr<rr::Race> race;
     int countdown = countdown_ticks;
     std::vector<rr::Image8> bobs;
     rr::RiderRemaps remaps;
     rr::Palette palette;
-    std::vector<rr::Opponent> opponents;
-    int level = 0;
-    int32_t rider_value = 90;   // rider table +0xc / 2 for the player's rider
     bool career = false;        // race ends after the finish delay instead of restarting
     std::string quit_prompt;    // string 316, shown after Escape in a career race
     bool quitting = false;
@@ -208,62 +205,42 @@ struct Game {
     rr::SoundSystem* sound = nullptr;   // race effects and engines (0x00434980)
     rr::Mixer* mixer = nullptr;
 
-    void load_course(const rr::Assets& assets,const std::vector<uint8_t>& exe) {
+    void load_course(const rr::Assets& a,const std::vector<uint8_t>& exe) {
         rr::clear_rgba_mip_cache();   // textures below are rebuilt; pointers may be reused
-        scene.reset();
-        hud.reset();
-        actors.reset();
-        course=rr::read_course(assets.read("DATA/COURSES/"+course_name+".CRS"));
-        // Plan 17 Task 2: the original scene, dashboard and actors on every
-        // course ("playable, not yet verified" off Napa). A course whose scene
-        // data fails to resolve keeps the dashboard and actors and falls back
-        // to the flat debug road, logging the missing resource.
-        {
-            try { scene=std::make_unique<rr::CourseScene>(assets,exe,course,course_name,1,level); }
-            catch(const std::exception& e) { SDL_Log("%s scene unavailable: %s",course_name.c_str(),e.what()); }
-            // (Plan 20 Task 3 attach happens lazily in the draw path.)
-            hud=std::make_unique<rr::Hud>(assets,exe,bike,metric);
-            actors=std::make_unique<rr::ActorNodes>(assets,exe,true);
-            crash_config=rr::read_crash_config(exe);
-            for(int side=0;side<2;++side) {
-                const auto bytes=rr::read_exe_data(exe,side?0x464518:0x4644f8,32);
-                for(int kind=0;kind<2;++kind)for(int weapon=0;weapon<4;++weapon)attack_codes[side][kind][weapon]=int8_t(bytes[(kind*4+weapon)*4]);
-            }
-        }
-        // Free traffic from the course's own vehicle container (0x0044db80 /
-        // 0x004465f0). A malformed container disables traffic rather than the
-        // race; the importer has already hash-verified the files.
-        pedestrians.reset();
-        if(scene)pedestrians=std::make_unique<rr::PedestrianSystem>(
-            [this](const rr::RouteSample& s)->const std::vector<rr::DzhrActor>&{return scene->dzhr_actors(s.section,s.local);},
-            [this](const rr::RouteSample& s,uint8_t selector){return scene->pedestrian_look(s.section,s.local,selector);},exe);
-        traffic.reset();
-        if(assets.exists("DATA/CARS/"+course_name+".CAR")) {
+        exe_ = exe;
+        // Plan 26 Task 3: course-scoped assets come from the shared factory.
+        // Scene failure keeps the explicit flat-road fallback (no scene, no
+        // terrain source); the wiring log records it.
+        try {
+            assets = rr::load_race_assets(a, exe, config);
+        } catch(const std::exception& e) {
+            SDL_Log("%s assets unavailable: %s", config.course.c_str(), e.what());
             try {
-                vehicles=std::make_unique<rr::VehicleLibrary>(assets.read("DATA/CARS/"+course_name+".CAR"),exe);
-                traffic=std::make_unique<rr::TrafficSystem>(*vehicles,exe);
-                traffic->configure(6);
-            } catch(const std::exception&) {traffic.reset();}
+                rr::RaceConfig fallback = config;
+                fallback.optional_scene = true;
+                assets = rr::load_race_assets(a, exe, fallback);
+            } catch(const std::exception& e2) { SDL_Log("%s fallback failed: %s", config.course.c_str(), e2.what()); }
         }
+        upscaled_attached = false;
     }
 
     void restart() {
-        race = std::make_unique<rr::Race>(rr::make_route(course, false), rr::make_route(course, true),
-                                          physics, specs.at(size_t(bike)), rider_value, opponents, level);
-        if(scene)race->set_terrain_source([this](const rr::RouteSample& sample)->const rr::TerrainSlice&{return scene->terrain(sample.section,sample.local);});
-        if(traffic)race->set_traffic(traffic.get());
-        if(pedestrians){pedestrians->reset();race->set_pedestrians(pedestrians.get());}
-        if(actors)race->set_crash_library(actors->library(),crash_config);
-        actor_states.assign(race->riders().size(),{});
-        previous_attacks.assign(race->riders().size(),0);
-        previous_crashes.assign(race->riders().size(),false);
-        if(actors)for(auto& state:actor_states) {
-            rr::set_animation_with_fallback(state,actors->library().playback[0],2,0,actors->library().fallback);
-            rr::queue_animation(state,actors->library().playback[0],2); // 0x00446060 initializes current and queued riding
-            rr::advance_animation(state,actors->library().playback[0],0);
+        instance = rr::build_race(assets, exe_, config);
+        const auto& actors_lib = assets.actors->library();
+        actor_states.assign(instance.race->riders().size(),{});
+        previous_attacks.assign(instance.race->riders().size(),0);
+        previous_crashes.assign(instance.race->riders().size(),false);
+        for(auto& state:actor_states) {
+            rr::set_animation_with_fallback(state,actors_lib.playback[0],2,0,actors_lib.fallback);
+            rr::queue_animation(state,actors_lib.playback[0],2); // 0x00446060 initializes current and queued riding
+            rr::advance_animation(state,actors_lib.playback[0],0);
         }
         countdown = countdown_ticks;
         reset_view_history();
+        const rr::RaceWiring w = instance.race->wiring();
+        SDL_Log("race wiring: terrain=%d traffic=%d pedestrians=%d ring=%d crash_library=%d ride_library=%d nitro=%d finish=%d personalities=%d",
+            int(w.terrain), int(w.traffic), int(w.pedestrians), int(w.ring), int(w.crash_library),
+            int(w.ride_library), int(w.nitro), int(w.finish), int(w.personalities));
     }
     std::vector<rr::DrawNode> rider_nodes(const rr::RoadSlice& near,const rr::RoadSlice& far,int road,int32_t ceiling,bool back)const {
         struct Visible {int32_t position;size_t index;bool car,body=false,pedestrian=false;};
@@ -274,8 +251,8 @@ struct Game {
         auto rider_pose = [&](size_t i,bool body) -> const rr::ActorPose* {
             return view_ready ? blend_pose(uint32_t(body ? 1000 + i : i + 1)) : nullptr;
         };
-        for(size_t i=0;i<race->riders().size();++i) {
-            const auto& rd=race->riders()[i];
+        for(size_t i=0;i<race().riders().size();++i) {
+            const auto& rd=race().riders()[i];
             auto include=[&](const rr::Bike& actor,int route,const rr::ActorAnimationState& state,bool body) {
                 const auto pos=uint32_t(actor.i32(0x1c));
                 if((pos>>8)!=near.sample || ((pos&255)>=128)!=back || !state.selected)return;
@@ -288,8 +265,8 @@ struct Game {
                 include(rd.crash_actor.motion,rd.crash_actor.route,rd.crash_actor.animation,true);
             }else include(rd.bike,rd.route,actor_states[i],false);
         }
-        if(traffic && road==near.own)for(size_t i=0;i<traffic->cars().size();++i) {
-            const auto& car=traffic->cars()[i];const auto pos=uint32_t(car.position);
+        if(instance.traffic && road==near.own)for(size_t i=0;i<instance.traffic->cars().size();++i) {
+            const auto& car=instance.traffic->cars()[i];const auto pos=uint32_t(car.position);
             if(car.active && (pos>>8)==near.sample && ((pos&255)>=128)==back) {
                 if(view_ready) {
                     if(const auto* pose=blend_pose(uint32_t(2000 + i)))visible.push_back({int32_t(pose->position_q8),i,true});
@@ -297,8 +274,8 @@ struct Game {
                 } else visible.push_back({car.position,i,true});
             }
         }
-        if(pedestrians && road==near.own)for(size_t i=0;i<pedestrians->pool().size();++i) {
-            const auto& p=pedestrians->pool()[i];const auto pos=uint32_t(p.body.bike.i32(0x1c));
+        if(instance.pedestrians && road==near.own)for(size_t i=0;i<instance.pedestrians->pool().size();++i) {
+            const auto& p=instance.pedestrians->pool()[i];const auto pos=uint32_t(p.body.bike.i32(0x1c));
             if(p.active && (pos>>8)==near.sample && ((pos&255)>=128)==back)visible.push_back({int32_t(pos),i,false,false,true});
         }
         std::stable_sort(visible.begin(),visible.end(),[](const Visible& a,const Visible& b){return a.position>b.position;});
@@ -306,20 +283,20 @@ struct Game {
         for(const auto& item:visible) {
             const size_t i=item.index;
             if(item.pedestrian) {
-                if(auto node=rr::pedestrian_node(pedestrians->pool()[i],near,far,road,race->route().at(near.sample),race->camera(),depth,ceiling,logical_width()))output.push_back(*node);
+                if(auto node=rr::pedestrian_node(instance.pedestrians->pool()[i],near,far,road,race().route().at(near.sample),race().camera(),depth,ceiling,logical_width()))output.push_back(*node);
                 continue;
             }
             if(item.car) {
-                const auto& car=traffic->cars()[i];
+                const auto& car=instance.traffic->cars()[i];
                 int32_t bpos = 0, blat = 0; bool use_blend = false;
                 if(view_ready) {
                     if(const auto* pose=blend_pose(uint32_t(2000 + i))) { bpos=int32_t(pose->position_q8); blat=pose->lateral_q8; use_blend=true; }
                 }
-                if(auto node=rr::traffic_car_node(traffic->library().vehicles().at(car.vehicle),car,near,far,road,race->route().at(near.sample),blend_camera(),depth,int32_t(blend_camera_position()),ceiling,logical_width(),bpos,blat,use_blend))output.push_back(*node);
+                if(auto node=rr::traffic_car_node(instance.traffic->library().vehicles().at(car.vehicle),car,near,far,road,race().route().at(near.sample),blend_camera(),depth,int32_t(blend_camera_position()),ceiling,logical_width(),bpos,blat,use_blend))output.push_back(*node);
                 continue;
             }
-            const auto& rd=race->riders()[i];const auto& bike=item.body?rd.crash_actor.motion:rd.bike;
-            const auto& sample=race->route_for(item.body?rd.crash_actor.route:rd.route).at(near.sample);
+            const auto& rd=race().riders()[i];const auto& bike=item.body?rd.crash_actor.motion:rd.bike;
+            const auto& sample=race().route_for(item.body?rd.crash_actor.route:rd.route).at(near.sample);
             const auto& a=near.road[road];const auto& b=far.road[road];const auto camera=blend_camera();
             // Plan 21 Task 2: drawn position/lateral/ground/heading/roll come
             // from the blended pose; sample membership above stays live.
@@ -332,18 +309,18 @@ struct Game {
             rr::ActorOrientation orientation;orientation.depth=near.depth;orientation.position=pos_q8;orientation.road_x=a.road_x+camera.x;orientation.lateral_q8=lat_q8-sample.offset*256;orientation.road_heading=a.heading;orientation.heading=head;orientation.roll=roll;orientation.rider=!rd.crash_active || item.body;
             rr::ActorProjection projection;projection.road_x=orientation.road_x;projection.far_x=b.road_x+camera.x;projection.road_y=a.world_y;projection.far_y=b.world_y;projection.lateral=orientation.lateral_q8/256;projection.ground=gnd_q8;projection.depth=near.depth;projection.fraction=uint8_t(orientation.position);projection.occlusion=ceiling;
             const auto& state=rd.crash_active?(item.body?rd.crash_actor.animation:rd.crash_bike_animation):actor_states[i];
-            const auto selected=*state.selected;const auto& descriptor=actors->library().playback[0].at(size_t(selected[0]))->at(size_t(selected[1]));
-            const auto nodes=actors->rider(descriptor,0,rd.colour,orientation,projection,camera,depth,bike.i32(0x20),nullptr,logical_width());output.insert(output.end(),nodes.begin(),nodes.end());
+            const auto selected=*state.selected;const auto& descriptor=assets.actors->library().playback[0].at(size_t(selected[0]))->at(size_t(selected[1]));
+            const auto nodes=assets.actors->rider(descriptor,0,rd.colour,orientation,projection,camera,depth,bike.i32(0x20),nullptr,logical_width());output.insert(output.end(),nodes.begin(),nodes.end());
         }
         return output;
     }
     void tick(uint32_t controls) {
         if (countdown > 0) --countdown;   // race clock starts after the countdown
         else {
-            race->step(controls);
-            if(actors)for(size_t i=0;i<actor_states.size();++i) {
-                const auto& rider=race->riders()[i];const auto& b=rider.bike;auto& state=actor_states[i];
-                const auto& library=actors->library();
+            race().step(controls);
+            if(assets.actors)for(size_t i=0;i<actor_states.size();++i) {
+                const auto& rider=race().riders()[i];const auto& b=rider.bike;auto& state=actor_states[i];
+                const auto& library=assets.actors->library();
                 if(b.i32(0x2f4)){previous_crashes[i]=true;continue;}
                 if(previous_crashes[i]){state=rider.crash_bike_animation;previous_crashes[i]=false;previous_attacks[i]=0;}
                 // Race still uses its documented combat timer. Bridge its
@@ -351,17 +328,17 @@ struct Game {
                 // original hit/event scheduling replaces that timer.
                 if(!rider.attack.timer && previous_attacks[i])rr::queue_animation_with_fallback(state,library.playback[0],2,library.fallback);
                 previous_attacks[i]=rider.attack.timer;
-                if(rider.attack.timer==1)rr::set_animation_with_fallback(state,library.playback[0],attack_codes[rider.attack.right][rider.attack.backhand][rider.attack.weapon],uint32_t(race->ticks()),library.fallback);
-                rr::RidingAnimationInput input;input.speed=b.i32(0xec);input.throttle=b.i32(0x114);input.lateral_speed=b.i32(0x100);input.boost=b.i32(0xf4);input.flags=b.u8(0x278);input.player=i==0;input.wrecked=(b.u8(0xc0)&0x10)!=0;input.camera_distance=std::abs(b.i32(0x1c)-int32_t(race->camera_position()));
-                rr::advance_riding_animation(state,library.playback[0],library.fallback,input,uint32_t(race->ticks()));
+                if(rider.attack.timer==1)rr::set_animation_with_fallback(state,library.playback[0],(*assets.attack_codes)[rider.attack.right][rider.attack.backhand][rider.attack.weapon],uint32_t(race().ticks()),library.fallback);
+                rr::RidingAnimationInput input;input.speed=b.i32(0xec);input.throttle=b.i32(0x114);input.lateral_speed=b.i32(0x100);input.boost=b.i32(0xf4);input.flags=b.u8(0x278);input.player=i==0;input.wrecked=(b.u8(0xc0)&0x10)!=0;input.camera_distance=std::abs(b.i32(0x1c)-int32_t(race().camera_position()));
+                rr::advance_riding_animation(state,library.playback[0],library.fallback,input,uint32_t(race().ticks()));
             }
         }
         if (sound) {
-            for (const auto& e : race->take_sound_events()) sound->post(e);
-            if (traffic) for (const auto& e : traffic->take_sound_events()) sound->post(e);
-            sound->update(*race);
+            for (const auto& e : race().take_sound_events()) sound->post(e);
+            if (instance.traffic) for (const auto& e : instance.traffic->take_sound_events()) sound->post(e);
+            sound->update(race());
         } else {
-            rr::update_engine_rpm(race->riders()[0].bike);   // 0x00434980 without sound
+            rr::update_engine_rpm(race().riders()[0].bike);   // 0x00434980 without sound
         }
     }
 };
@@ -583,11 +560,11 @@ struct CourseCanvas {
         // Plan 19 Task 8: the dashboard composes at the race scale (Task 5).
         // The quick-race boot path has no HUD (dashboard is a career-mode
         // surface); without one the scene stands alone as in Task 4 shots.
-        if (game.hud) {
+        if (game.assets.hud) {
             // Plan 19 Task 8: the dashboard composes at the race scale. Its
             // RgbImage pixels are palette-mapped into the indexed frame.
-            const auto dash = game.hud->compose(game.hud->state(*game.race, game.player_name, game.rider_names),
-                                                game.physics, rr::DashMode::full, s);
+            const auto dash = game.assets.hud->compose(game.assets.hud->state(game.race(), game.player_name, game.rider_names),
+                                                game.assets.physics, rr::DashMode::full, s);
             // Centred 4:3 dashboard (plan 21 Task 8): offset by the side
             // margin so it sits in the middle of the wide frame.
             const int xoff = margin * 2 * s;
@@ -641,15 +618,15 @@ struct CourseCanvas {
                              game.enhancements.fog > 0 || game.enhancements.grade != rr::Grade::none;
         // Plan 20 Task 3: lazy attach/detach on detail flips (load_course runs
         // before the settings sync, so attach here where the setting is live).
-        if (game.texture_detail && !game.upscaled_attached && game.scene) {
+        if (game.texture_detail && !game.upscaled_attached && game.scene()) {
             rr::UpscaleCache cache((std::filesystem::path(pref_directory()) / "upscaled").string());
-            game.scene->attach_upscaled(cache);
+            game.assets.scene->attach_upscaled(cache);
             game.upscaled_attached = true;
-        } else if (!game.texture_detail && game.upscaled_attached && game.scene) {
-            game.scene->clear_upscaled();
+        } else if (!game.texture_detail && game.upscaled_attached && game.scene()) {
+            game.assets.scene->clear_upscaled();
             game.upscaled_attached = false;
         }
-        auto nodes=game.scene->draw_nodes(game.race->route(),slices,game.race->camera(),game.depth,[&](const rr::RoadSlice& near,const rr::RoadSlice& far,int road,int32_t ceiling,bool back){return game.rider_nodes(near,far,road,ceiling,back);},wide);
+        auto nodes=game.assets.scene->draw_nodes(game.race().route(),slices,game.race().camera(),game.depth,[&](const rr::RoadSlice& near,const rr::RoadSlice& far,int road,int32_t ceiling,bool back){return game.rider_nodes(near,far,road,ceiling,back);},wide);
         if (margin) for (auto& n:nodes) for (auto& v:n.view_points) v.x+=margin*65536;
         if (use_rgb) {
             if (rgb.width() != scale_w || rgb.height() != scale_h) rgb.resize(scale_w, scale_h);
@@ -657,7 +634,7 @@ struct CourseCanvas {
             // Horizon into RGB: convert the indexed horizon rows via palette.
             {
                 rr::Framebuffer hz(scale_w, scale_h);
-                game.scene->draw_horizon(hz,game.race->horizon_scroll(),wide);
+                game.assets.scene->draw_horizon(hz,game.race().horizon_scroll(),wide);
                 for (int y = 0; y < scale_h; ++y)
                     for (int x = 0; x < scale_w; ++x) {
                         const uint8_t* c = &game.palette.rgbx[4 * hz.row(y)[x]];
@@ -683,15 +660,15 @@ struct CourseCanvas {
             // drawn tick, never a sim write); pause/teleport resets history.
             post_chain.configure(game.enhancements);
             if (post_chain.any()) {
-                const float speed = float(std::abs(game.race->speed()));
+                const float speed = float(std::abs(game.race().speed()));
                 post_chain.apply(reinterpret_cast<uint32_t*>(rgb.row(0)), scale_w, scale_h, speed,
                                  game.post_teleported);
                 game.post_teleported = false;
             }
             // Dashboard composited directly (no palette round-trip).
-            if (game.hud) {
-                const auto dash = game.hud->compose(game.hud->state(*game.race, game.player_name, game.rider_names),
-                                                    game.physics, rr::DashMode::full, s);
+            if (game.assets.hud) {
+                const auto dash = game.assets.hud->compose(game.assets.hud->state(game.race(), game.player_name, game.rider_names),
+                                                    game.assets.physics, rr::DashMode::full, s);
                 const int xoff = margin * 2 * s;
                 for (int y = 0; y < dash.height && y < scale_h; ++y)
                     for (int x = 0; x < dash.width && x + xoff < scale_w; ++x) {
@@ -701,7 +678,7 @@ struct CourseCanvas {
                     }
             }
         } else {
-        game.scene->draw_horizon(frame,game.race->horizon_scroll(),wide);
+        game.assets.scene->draw_horizon(frame,game.race().horizon_scroll(),wide);
         // The dashboard stays a centred 4:3 image (plan 21 Task 8); side
         // panels are drawn from its edge columns below.
         rr::render_nodes_threaded(frame,nodes,rr::view_mode_wide(s,wide),16,*workers,game.enhancements.perspective);
@@ -727,9 +704,9 @@ struct CourseCanvas {
 
 // Player bike: original sprite, horizontal position projected at the bike's depth, bottom of the view.
 void draw_bike(SDL_Renderer* r, const Game& g, SpriteCache& cache,const std::vector<rr::RoadSlice>& slices) {
-    const rr::Race& race = *g.race;
+    const rr::Race& race = g.race();
     const auto& me = race.riders()[0];
-    if(g.actors)return;
+    if(g.assets.actors)return;
     const int frame = race.crashed() ? 21 : me.attack.timer ? attack_frame(me) : riding_frame(race.bike());
     SDL_Texture* t = cache.get(r, g, frame, 0);
     if (!t) return;
@@ -752,12 +729,12 @@ void draw_bike(SDL_Renderer* r, const Game& g, SpriteCache& cache,const std::vec
 // by depth relative to depth 512, capped at the player sprite's size and baseline so riders level
 // with the player match it. The original sprite scale law, raster and sort order are plan 03 work.
 void draw_opponents(SDL_Renderer* r, const Game& g, SpriteCache& cache, const std::vector<rr::RoadSlice>& slices) {
-    const rr::Race& race = *g.race;
+    const rr::Race& race = g.race();
     struct Item { int32_t depth; float x, y, scale; int frame, colour; };
     std::vector<Item> items;
     for (size_t i = 1; i < race.riders().size(); ++i) {
         const rr::Rider& rd = race.riders()[i];
-        if(g.actors)continue;
+        if(g.assets.actors)continue;
         const uint32_t pos = uint32_t(rd.bike.i32(0x1c));
         if (pos >> 8 < slices.front().sample || pos >> 8 >= slices.back().sample) continue;
         const size_t n = (pos >> 8) - slices.front().sample;
@@ -791,14 +768,14 @@ void draw_opponents(SDL_Renderer* r, const Game& g, SpriteCache& cache, const st
 }
 
 void draw_hud(SDL_Renderer* r, const Game& g) {
-    const rr::Race& race = *g.race;
+    const rr::Race& race = g.race();
     char line[160];
     const int seconds = race.ticks() / rr::ticks_per_second;
     const int progress = int(uint64_t(race.position() >> 8) * 100 / (race.route().size() - 1));
     SDL_SetRenderDrawColor(r, 255, 255, 255, 255);
     SDL_snprintf(line, sizeof line, "%s  PLACE %d/%zu  SPEED %3d  GEAR %d  TIME %d:%02d  %3d%%", g.course_name.c_str(),
                  race.place(0), race.riders().size(), race.speed() / 100, race.gear() + 1, seconds / 60, seconds % 60, progress);
-    if(!g.hud)SDL_RenderDebugText(r, 8, 8, line);
+    if(!g.assets.hud)SDL_RenderDebugText(r, 8, 8, line);
     if (g.countdown > 0) {
         SDL_snprintf(line, sizeof line, "GET READY  %d", g.countdown / rr::ticks_per_second + 1);
         SDL_SetRenderScale(r, 3, 3);
@@ -824,7 +801,7 @@ void draw_hud(SDL_Renderer* r, const Game& g) {
         SDL_SetRenderDrawColor(r, 40, 40, 40, 255); SDL_RenderFillRect(r, &back);
         SDL_SetRenderDrawColor(r, 220, 60, 40, 255); SDL_RenderFillRect(r, &fill);
     };
-    if(!g.hud) {
+    if(!g.assets.hud) {
         bar(24, "YOU", race.riders()[0].stamina);
         if (race.last_target() > 0) bar(36, "THEM", race.riders()[size_t(race.last_target())].stamina);
     }
@@ -1071,7 +1048,7 @@ RaceEnd run_race(Game& g, SDL_Renderer* renderer, const RaceOptions& opt, Displa
                     // 0x004227d0: a second Escape quits the race (outcome 5), any other key continues.
                     g.quitting = false;
                     if (e.key.key == SDLK_ESCAPE) {
-                        if (!decided) { result.outcome = rr::RaceOutcome::wrecked; result.place = std::max(0, g.race->place(0) - 1); }
+                        if (!decided) { result.outcome = rr::RaceOutcome::wrecked; result.place = std::max(0, g.race().place(0) - 1); }
                         running = false;
                     }
                     continue;
@@ -1090,7 +1067,7 @@ RaceEnd run_race(Game& g, SDL_Renderer* renderer, const RaceOptions& opt, Displa
                 }
                 if (e.key.key == SDLK_RETURN) {
                     if (lifecycle.state.paused()) lifecycle.state.resume();
-                    else if (g.race->finished() && !g.career) restart = true;
+                    else if (g.race().finished() && !g.career) restart = true;
                 }
             }
             if (e.type == SDL_EVENT_GAMEPAD_ADDED && !pad) pad = SDL_OpenGamepad(e.gdevice.which);
@@ -1102,20 +1079,20 @@ RaceEnd run_race(Game& g, SDL_Renderer* renderer, const RaceOptions& opt, Displa
                 if (g.quitting) {
                     g.quitting = false;
                     if (e.gbutton.button == SDL_GAMEPAD_BUTTON_BACK) {
-                        if (!decided) { result.outcome = rr::RaceOutcome::wrecked; result.place = std::max(0, g.race->place(0) - 1); }
+                        if (!decided) { result.outcome = rr::RaceOutcome::wrecked; result.place = std::max(0, g.race().place(0) - 1); }
                         running = false;
                     }
                 } else if (e.gbutton.button == SDL_GAMEPAD_BUTTON_START) {
                     if (opt.menu) { opt.menu->open_pause(capture_race_frame(renderer)); lifecycle.state.resume(); }
                     else if (lifecycle.state.paused()) lifecycle.state.resume(); else lifecycle.state.pause();
                 } else if (e.gbutton.button == SDL_GAMEPAD_BUTTON_BACK && g.career && !lifecycle.state.paused()) g.quitting = true;
-                else if (e.gbutton.button == SDL_GAMEPAD_BUTTON_SOUTH && !lifecycle.state.paused() && g.race->finished() && !g.career) restart = true;
+                else if (e.gbutton.button == SDL_GAMEPAD_BUTTON_SOUTH && !lifecycle.state.paused() && g.race().finished() && !g.career) restart = true;
             }
             if (e.type == SDL_EVENT_FINGER_DOWN || e.type == SDL_EVENT_FINGER_MOTION ||
                 e.type == SDL_EVENT_FINGER_UP || e.type == SDL_EVENT_FINGER_CANCELED) {
                 if (lifecycle.state.paused()) {
                     if (e.type == SDL_EVENT_FINGER_DOWN) lifecycle.state.resume();
-                } else if (e.type == SDL_EVENT_FINGER_DOWN && g.race->finished() && !g.career) restart = true;
+                } else if (e.type == SDL_EVENT_FINGER_DOWN && g.race().finished() && !g.career) restart = true;
                 else touch.handle(e);
             }
             if (e.type == SDL_EVENT_RENDER_DEVICE_RESET || e.type == SDL_EVENT_RENDER_TARGETS_RESET) {sprites.clear();course_canvas.clear();}
@@ -1138,7 +1115,7 @@ RaceEnd run_race(Game& g, SDL_Renderer* renderer, const RaceOptions& opt, Displa
                 if (ev.kind == rr::FrontendEvent::Kind::resume_race) lifecycle.state.resume();
                 else if (ev.kind == rr::FrontendEvent::Kind::quit_race) {
                     lifecycle.state.resume();
-                    if (!decided) { result.outcome = rr::RaceOutcome::wrecked; result.place = std::max(0, g.race->place(0) - 1); }
+                    if (!decided) { result.outcome = rr::RaceOutcome::wrecked; result.place = std::max(0, g.race().place(0) - 1); }
                     running = false;
                 } else if (ev.kind == rr::FrontendEvent::Kind::apply_display) display.apply(480);
                 else if (ev.kind == rr::FrontendEvent::Kind::apply_mixer && opt.apply_settings) opt.apply_settings();
@@ -1172,7 +1149,7 @@ RaceEnd run_race(Game& g, SDL_Renderer* renderer, const RaceOptions& opt, Displa
             in.kick |= opt.swap_punch_kick ? west : north;
             in.backhand |= SDL_GetGamepadButton(pad, SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER);
         }
-        uint32_t controls = opt.auto_drive ? autopilot(*g.race, g.traffic.get()) : rr::controls_from(in, zone);
+        uint32_t controls = opt.auto_drive ? autopilot(g.race(), g.traffic()) : rr::controls_from(in, zone);
         if (!opt.auto_drive && opt.custom_keys) controls |= rr::bound_control_bits(opt.key_codes, true, keys);
 
         const uint64_t now = SDL_GetTicksNS();
@@ -1189,12 +1166,12 @@ RaceEnd run_race(Game& g, SDL_Renderer* renderer, const RaceOptions& opt, Displa
         for (int step = 0; step < steps && !frozen; ++step) {
             g.tick(controls);
             if (!g.career) continue;
-            if (!decided && (g.race->finished() || g.race->wrecked())) {
+            if (!decided && (g.race().finished() || g.race().wrecked())) {
                 decided = true;
                 end_ticks = race_end_delay;
-                result.place = std::max(0, g.race->place(0) - 1);
+                result.place = std::max(0, g.race().place(0) - 1);
                 // 0x00416010: finished becomes won for places 1-3 (0-based < 3), lost otherwise.
-                result.outcome = g.race->finished() ? (result.place < 3 ? rr::RaceOutcome::won : rr::RaceOutcome::lost)
+                result.outcome = g.race().finished() ? (result.place < 3 ? rr::RaceOutcome::won : rr::RaceOutcome::lost)
                                                     : rr::RaceOutcome::wrecked;
             } else if (decided && --end_ticks <= 0) running = false;
         }
@@ -1203,7 +1180,7 @@ RaceEnd run_race(Game& g, SDL_Renderer* renderer, const RaceOptions& opt, Displa
         // interpolation off, alpha=65536 reproduces the live frame exactly.
         if (steps > 0 && !frozen) {
             g.view_prev = std::move(g.view_cur);
-            rr::capture_view(g.view_cur, *g.race, g.traffic.get());
+            rr::capture_view(g.view_cur, g.race(), g.traffic());
             g.view_ready = true;
         }
         if (g.view_ready) {
@@ -1231,7 +1208,7 @@ RaceEnd run_race(Game& g, SDL_Renderer* renderer, const RaceOptions& opt, Displa
         } else {
             SDL_SetRenderDrawColor(renderer, 15, 18, 22, 255);
             SDL_RenderClear(renderer);
-            const auto slices = rr::project_road(g.race->route(), g.blend_camera_position(), g.blend_camera(), g.depth);
+            const auto slices = rr::project_road(g.race().route(), g.blend_camera_position(), g.blend_camera(), g.depth);
             int dw = 0, dh = 0;
             if (display.window) SDL_GetWindowSize(display.window, &dw, &dh);
             const int race_scale = opt.menu && opt.settings ? rr::effective_render_scale(*opt.settings, dw, dh, kMobileDisplay)
@@ -1241,7 +1218,7 @@ RaceEnd run_race(Game& g, SDL_Renderer* renderer, const RaceOptions& opt, Displa
                 g.enhancements = opt.settings->enhancements;
                 g.texture_detail = opt.settings->texture_detail;
             }
-            if (g.scene) course_canvas.draw(renderer, g, slices, race_scale, display.render_threads);
+            if (g.scene()) course_canvas.draw(renderer, g, slices, race_scale, display.render_threads);
             else rr::draw_road(renderer, slices);
             draw_opponents(renderer, g, sprites, slices);
             draw_bike(renderer, g, sprites,slices);
@@ -1425,22 +1402,23 @@ int run_game(const rr::Assets& assets, SDL_Window* window, SDL_Renderer* rendere
             } else if (ev.kind == rr::FrontendEvent::Kind::start_race) {
                 // Race set-up from the career: course, level, bike, rider weight, opponents (plan 05).
                 g.course_name = original_course_files[ev.course - 1];
-                g.level = career.state.level;
-                g.bike = career.state.bike;
+                g.config.course = g.course_name;
+                g.config.level = career.state.level;
+                g.config.bike = career.state.bike;
+                g.config.character = career.state.character;
+                g.config.career = true;
+                g.config.opponents = 7;
                 g.metric=settings.metric;g.player_name=fe.player_name();
                 g.rider_names.clear();g.rider_names.push_back(g.player_name);
                 for(int i=1;i<8;++i)g.rider_names.push_back(personality_name(i));
                 g.load_course(assets,exe);
-                const auto body = rr::read_exe_data(exe, 0x00463c78 + uint32_t(rr::character_rider(career.state.character)) * 0x40 + 0xc, 4);
-                g.rider_value = int32_t(uint32_t(body[0]) | uint32_t(body[1]) << 8) / 2;
-                g.opponents = rr::original_opponents(exe, g.specs, g.level, 7);
                 g.career = true;
                 g.quit_prompt = fe.string_slot(316);
                 g.restart();
                 if (ev.demo) {
                     // Attract demo (plan 13 Task 5): AI drives (DAT_004753c8); any input exits to the menu.
                     g.career = false;
-                    if (g.race) g.race->set_demo_hold(true, 95);
+                    g.race().set_demo_hold(true, 95);
                     music.stop();
                     race_music.play_race(ev.course, fe.player_name());
                     g.race_music = &race_music;
@@ -1476,8 +1454,8 @@ int run_game(const rr::Assets& assets, SDL_Window* window, SDL_Renderer* rendere
                 if (end.quit_app) { running = false; break; }
                 // Finishing order: riders who finished, by finish tick (0x00420e30 rows).
                 std::vector<std::pair<int32_t, size_t>> order;
-                for (size_t i = 0; i < g.race->riders().size(); ++i)
-                    if (g.race->riders()[i].finished) order.emplace_back(g.race->riders()[i].finish_tick, i);
+                for (size_t i = 0; i < g.race().riders().size(); ++i)
+                    if (g.race().riders()[i].finished) order.emplace_back(g.race().riders()[i].finish_tick, i);
                 std::sort(order.begin(), order.end());
                 std::vector<rr::Standing> standings;
                 for (const auto& [tick, i] : order)
@@ -1639,6 +1617,7 @@ int main(int argc, char** argv) {
     int course = 0, bike = 0, level = 0, opponents = 7;
     long run_ticks = -1, menu_frames = -1;
     bool auto_drive = false, into_traffic = false, start_paused = false, first_run_smoke = false, quick_race = false;
+    bool print_wiring = false;  // plan 26 Task 3: print race wiring after the first tick and exit
     int render_scale = 1;   // plan 19 Task 4: --render-scale 1..4
     std::string menu_script;
     CliDisplayOverride cli;
@@ -1664,6 +1643,7 @@ int main(int argc, char** argv) {
         else if (a == "--window-scale" && i + 1 < argc) cli.window_scale = std::atoi(argv[++i]);
         else if (a == "--render-scale" && i + 1 < argc) { render_scale = std::atoi(argv[++i]); quick_race = true; }
         else if (a == "--toggle-fullscreen-at" && i + 1 < argc) cli.toggle_at = std::atol(argv[++i]);
+        else if (a == "--print-wiring") { print_wiring = true; quick_race = true; }
     }
     if (course < 0 || course > 4 || level < 0 || level > 4 || opponents < 0 || opponents > 7) return 2;
     if (render_scale < 1 || render_scale > 4) return 2;
@@ -1685,6 +1665,9 @@ int main(int argc, char** argv) {
             if (!rr::Assets(root).exists("ROADRASH.EXE")) root = "game";
 #endif
         }
+        if (print_wiring && !rr::Assets(root).exists("ROADRASH.EXE")) {
+            SDL_DestroyRenderer(renderer);SDL_DestroyWindow(window);SDL_Quit();return 77;
+        }  // plan 26 Task 3: skip without the disc
         if (!rr::Assets(root).exists("ROADRASH.EXE")) {
             if (!rr::run_import_screen(window, renderer, root, screenshot, first_run_smoke)) {
                 SDL_DestroyRenderer(renderer); SDL_DestroyWindow(window); SDL_Quit();
@@ -1702,8 +1685,9 @@ int main(int argc, char** argv) {
         const auto exe = load_with_indicator(renderer, "Reading game data...", [&] {
             auto bytes = assets.read("ROADRASH.EXE");
             g.depth = rr::read_depth_table(bytes);
-            g.physics = rr::read_physics_tables(bytes);
-            g.specs = rr::read_bike_specs(assets.read("DATA/BIKESPEC.RSC"));
+            g.assets.physics = rr::read_physics_tables(bytes);
+            // specs validated below from a local read (factory owns the game copy).
+            (void)rr::read_bike_specs(assets.read("DATA/BIKESPEC.RSC"));
             g.bobs = rr::read_bobs(assets.read("DATA/BIKERS/HIBOB.DAT"), rr::bob_frames);
             g.remaps = rr::read_rider_remaps(bytes, 9);
             g.palette = rr::Palette::from_raw(assets.read("DATA/PALETTE.RAW"));
@@ -1714,35 +1698,50 @@ int main(int argc, char** argv) {
             result = run_game(assets, window, renderer, g, exe, screenshot, menu_frames, cli, menu_script);
         } else {
             g.course_name = course_names[course];
-            if (bike < 0 || size_t(bike) >= g.specs.size()) throw std::runtime_error("Bike index out of range");
-            g.bike = bike;
-            g.level = level;
+            {
+                const auto specs = rr::read_bike_specs(assets.read("DATA/BIKESPEC.RSC"));
+                if (bike < 0 || size_t(bike) >= specs.size()) throw std::runtime_error("Bike index out of range");
+                for (const auto& o : rr::original_opponents(exe, specs, level, opponents)) (void)o;
+            }
+            g.config.course = g.course_name;
+            g.config.level = level;
+            g.config.bike = bike;
+            g.config.career = false;
+            g.config.opponents = opponents;
             g.load_course(assets,exe);
-            g.opponents = rr::original_opponents(exe, g.specs, level, opponents);
             // Dashboard target names: personality +0x165 -> 0x00464188 ->
             // string slot (0x00437860), as the career path resolves them.
             {
                 const auto strings = rr::frontend_strings(rr::read_string_resources(assets.read(rr::language_dll(rr::default_language()))));
                 const auto name_table = rr::read_exe_data(exe, 0x00464188, 9 * 4);
+                g.restart();
                 g.rider_names.assign(1, g.player_name);
-                for (const auto& o : g.opponents) {
-                    const int p = o.rider;
+                for (size_t i = 1; i < g.race().riders().size(); ++i) {
+                    const int p = g.race().riders()[i].rider_idx;
                     const uint32_t slot = p >= 0 && p < 9 ? uint32_t(name_table[size_t(p) * 4]) | uint32_t(name_table[size_t(p) * 4 + 1]) << 8 : 0;
                     g.rider_names.push_back(slot && slot < strings.size() ? strings[slot] : std::string());
                 }
             }
-            g.restart();
+            if (print_wiring) {   // plan 26 Task 3: wiring report after the first tick, then exit
+                g.tick(0);
+                const rr::RaceWiring w = g.race().wiring();
+                std::printf("terrain=%d traffic=%d pedestrians=%d ring=%d crash_library=%d ride_library=%d nitro=%d finish=%d personalities=%d\n",
+                    int(w.terrain), int(w.traffic), int(w.pedestrians), int(w.ring), int(w.crash_library),
+                    int(w.ride_library), int(w.nitro), int(w.finish), int(w.personalities));
+                std::fflush(stdout);
+                SDL_DestroyRenderer(renderer);SDL_DestroyWindow(window);SDL_Quit();return 0;
+            }
             if (run_ticks >= 0) {   // headless-style verification run
                 const bool hunt = into_traffic;
                 if (hunt) auto_drive = true;
                 int car_crashes = 0, any_crash = 0;
                 long t = 0;
-                for (; t < run_ticks && !g.race->finished(); ++t) {
-                    g.tick(hunt ? steer_into_traffic(*g.race) : (auto_drive ? autopilot(*g.race, g.traffic.get()) : 0));
-                    const auto& b = g.race->bike();
+                for (; t < run_ticks && !g.race().finished(); ++t) {
+                    g.tick(hunt ? steer_into_traffic(g.race()) : (auto_drive ? autopilot(g.race(), g.traffic()) : 0));
+                    const auto& b = g.race().bike();
                     if (hunt && t % 1000 == 0) {
                         int active = 0;
-                        if (g.traffic) for (const auto& car : g.traffic->cars()) if (car.active) ++active;
+                        if (g.traffic()) for (const auto& car : g.instance.traffic->cars()) if (car.active) ++active;
                         std::printf("hunt t=%ld pos=%d lat=%d speed=%d crash=%d reason=%d cars=%d\n",
                                     t, b.i32(0x1c), b.i32(0x28), b.i32(0xec),
                                     b.i32(0x2f4), b.i32(0x2f8), active);
@@ -1764,18 +1763,18 @@ int main(int argc, char** argv) {
                         ++car_crashes;
                     }
                 }
-                std::printf("end tick %ld pos %u of %zu finished %d place %d\n", t, g.race->position() >> 8,
-                            g.race->route().size(), int(g.race->finished()), g.race->place(0));
-                if (g.traffic) {
+                std::printf("end tick %ld pos %u of %zu finished %d place %d\n", t, g.race().position() >> 8,
+                            g.race().route().size(), int(g.race().finished()), g.race().place(0));
+                if (g.traffic()) {
                     int cars = 0, crossing = 0, controllers = 0;
-                    for (const auto& car : g.traffic->cars()) if (car.active) { ++cars; crossing += car.kind & 1; }
-                    for (const auto& c : g.traffic->controllers()) controllers += c.active;
+                    for (const auto& car : g.instance.traffic->cars()) if (car.active) { ++cars; crossing += car.kind & 1; }
+                    for (const auto& c : g.instance.traffic->controllers()) controllers += c.active;
                     std::printf("traffic cars %d crossing %d intersections %d\n", cars, crossing, controllers);
                 }
-                if (g.pedestrians) {
+                if (g.instance.pedestrians) {
                     int active = 0, crossing = 0, down = 0;
-                    for (const auto& p : g.pedestrians->pool()) if (p.active) { ++active; crossing += p.state == 1; down += p.state == 2; }
-                    std::printf("pedestrians spawned %d active %d crossing %d down %d\n", g.pedestrians->spawned(), active, crossing, down);
+                    for (const auto& p : g.instance.pedestrians->pool()) if (p.active) { ++active; crossing += p.state == 1; down += p.state == 2; }
+                    std::printf("pedestrians spawned %d active %d crossing %d down %d\n", g.instance.pedestrians->spawned(), active, crossing, down);
                 }
                 std::fflush(stdout);
             }

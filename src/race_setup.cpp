@@ -83,7 +83,8 @@ RaceAssets load_race_assets(const Assets& assets, const std::vector<uint8_t>& ex
     try {
         out.scene = std::make_unique<CourseScene>(assets, exe, *out.course, config.course, 1, config.level);
     } catch (const std::exception& e) {
-        throw std::runtime_error("course scene " + config.course + ": " + e.what());
+        if (!config.optional_scene) throw std::runtime_error("course scene " + config.course + ": " + e.what());
+        out.scene.reset();
     }
     try {
         out.hud = std::make_unique<Hud>(assets, exe, bike_index, config.metric);

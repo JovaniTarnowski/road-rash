@@ -174,13 +174,13 @@ int main() {
 - Consumes: `load_race_assets`, `build_race`, `RaceConfig`, `RaceWiring`.
 - Produces: `Game::assets` (`rr::RaceAssets`), `Game::instance` (`rr::RaceInstance`) and `Game::config` (`rr::RaceConfig`). The old members `course`, `scene`, `hud`, `actors`, `vehicles`, `traffic`, `pedestrians`, `race`, `crash_config`, `attack_codes`, `physics`, `specs`, `opponents` and `rider_value` are removed. Keep thin accessors `rr::Race& race()`, `rr::CourseScene* scene()` and `rr::TrafficSystem* traffic()` so the call-site churn stays mechanical.
 
-- [ ] **Step 1: List the call sites.** `rg -n "g\.(race|scene|traffic|actors|pedestrians|hud|course|crash_config|attack_codes|specs|physics|opponents|rider_value)\b|\b(race|scene|traffic|actors|pedestrians|hud)->" src/game_main.cpp > /tmp/26-3-sites.txt`; attach the count to the handoff.
-- [ ] **Step 2: `load_course`** becomes: `rr::clear_rgba_mip_cache(); assets = rr::load_race_assets(a, exe, config);`. On exception, keep today's fallback: log `"%s scene unavailable: %s"` and fall back to the flat-road path. Implement it as `config.track_ring = false` with a `RaceAssets` that has no scene, so `load_race_assets` needs a non-throwing scene step. Add `bool optional_scene = false` to `RaceConfig`; when true, a scene failure leaves `scene` null instead of throwing. That one-field `race_setup.cpp` change goes through the orchestrator.
-- [ ] **Step 3: `restart`** becomes `instance = rr::build_race(assets, exe, config);`, followed by the existing actor-state initialisation and `reset_view_history()`. The quick-race bike (`--bike`, Thrash) maps to `config.career = false; config.bike = bike;`.
-- [ ] **Step 4: Log the wiring once per race** (`SDL_Log("race wiring: terrain=%d traffic=%d ...")`). Add a `--print-wiring` CLI flag that prints that line to stdout and exits after the first tick.
-- [ ] **Step 5: Register the headless check** (CMake hunk via the orchestrator): `add_test(NAME game-race-wiring COMMAND rr-game --assets ${RR_SOURCE_DIR}/../cdrom/ROADRASH --race --print-wiring)` with `PASS_REGULAR_EXPRESSION "terrain=1 .*ring=1 .*ride_library=1 .*nitro=1 .*finish=1 .*personalities=1"`. Without the disc, the game must exit 77 for `--print-wiring` (set `SKIP_RETURN_CODE 77`).
-- [ ] **Step 6: Verify.** Full `ctest`; `rr-game --race --ticks 3600 --autopilot --screenshot` exits 0 on all five courses (`--course 0..4`); manual play of one Napa race: opponents overtake, attacks land on descriptor frames, the race ends at the original finish line, and Enter restarts with no cars carried over. Record what was observed in the handoff. This is an intentional behaviour change, so describe it in `PROGRESS.md` via the orchestrator.
-- [ ] **Step 7: Commit.** `game: build races through the shared factory (personalities, ride bank, nitro, ring, finish)`
+- [x] **Step 1: List the call sites.** DONE: 88 sites (`/tmp/26-3-sites.txt`); census attached to handoff.
+- [x] **Step 2: `load_course`** becomes factory assets + `optional_scene` fallback (one-field `race_setup` change, orchestrator-owned). DONE.
+- [x] **Step 3: `restart`** becomes `build_race` + actor-state init + `reset_view_history()`; quick-race bike maps to `career=false, bike`. DONE.
+- [x] **Step 4: Log the wiring once per race** + `--print-wiring` flag. DONE.
+- [x] **Step 5: Register the headless check** `game-race-wiring` (PASS_REGULAR_EXPRESSION + SKIP 77; exit-77 path added before the import screen). DONE.
+- [x] **Step 6: Verify.** DONE headless: 5/5 courses exit 0 at 3600 ticks with 9/9 hooks; 79 fast + soak/oracle/wiring suites green. Manual Napa play (overtakes, descriptor attacks, finish line, Enter restart): NOT performed — headless only, no interactive session; recorded as open.
+- [x] **Step 7: Commit.** `game: build races through the shared factory (personalities, ride bank, nitro, ring, finish)`
 
 ---
 
