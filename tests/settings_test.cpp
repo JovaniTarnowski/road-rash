@@ -35,6 +35,12 @@ int main() {
               "native fields reject out-of-range values");
         const rr::Settings old = rr::parse_settings("hires=1\nmaster_volume=40\n");   // a file written before this task
         check(old.high_resolution && old.master_volume == 40 && old.window_scale == d.window_scale, "old files still load");
+        // Review Focus 2: hand-edited file with a truncated last line (no '=',
+        // no trailing newline) keeps the good keys and ignores the bad line.
+        const rr::Settings trunc = rr::parse_settings("show_fps=1\ntouch_opacity=20\nhaptics=1");
+        check(trunc.show_fps && trunc.touch_opacity == 20 && trunc.haptics, "unterminated last line parses");
+        const rr::Settings cut = rr::parse_settings("show_fps=1\ntouch_opacity=20\nvsync");
+        check(cut.show_fps && cut.touch_opacity == 20 && cut.vsync == d.vsync, "truncated last line ignored");
     }
     {
         // Plan 18 Task 7 Step 2: bindings round-trip; an unknown code falls back
