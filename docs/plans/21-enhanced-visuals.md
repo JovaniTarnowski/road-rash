@@ -307,7 +307,7 @@ int main() {
 
 ### Task 10: Wide menus (blurred side fill)
 
-**Spec:** review `../agent-handoffs/review-widescreen-menus-20261013.md` item 4 (owner playtest question, 2026-10-13).
+**Spec:** review `../agent-handoffs/archive/2026-10/review-widescreen-menus-20261013.md` item 4 (owner playtest question, 2026-10-13).
 
 **Files:**
 - Modify: `src/frontend.cpp` (menu presentation + input offset), `src/game_main.cpp` (menu loop surface), `tests/frontend_test.cpp`, `docs/USER_GUIDE.md`

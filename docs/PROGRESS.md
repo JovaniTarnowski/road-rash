@@ -722,7 +722,7 @@ racing; sliders apply levels live with no preview click.
 Plans 25 (review correctness fixes), 26 (one race construction path), 27
 Task 1 (safe field proxy) and 28 Tasks 1–3 (race shell) landed on main.
 Evidence: handoffs `25-1/2/3/5/6/7`, `26-1/2/3`, review
-`agent-handoffs/review-of-25-28-20261013.md`.
+`agent-handoffs/archive/2026-10/review-of-25-28-20261013.md`.
 
 - **Plan 25 (done: Tasks 1–3, 5–7):** restart-after-finish restored plus a
   shared `reset_clock` that also resets view history; render-worker

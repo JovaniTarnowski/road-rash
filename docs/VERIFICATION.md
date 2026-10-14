@@ -741,7 +741,7 @@ Owned edits: `src/bike.cpp`, `tests/bike_test.cpp`, `tests/importer_test.cpp`,
   native ARM64 values exactly on all previously-valid inputs.
 - Evidence: `build-web/ctest-full.log` (pre-skip-mapping run),
   `build-web/oracle-diagnostic.json`, `build-asan-*.log`. Handoff:
-  `docs/agent-handoffs/2026-10-12-web-task2.md`.
+  `docs/agent-handoffs/archive/2026-10/2026-10-12-web-task2.md`.
 
 ## Web port Task 4 (October 12, 2026): pull-based import job
 
@@ -767,7 +767,7 @@ Owned edits: `src/import_job.hpp/.cpp` (new), `src/sha256.hpp/.cpp`
   `missing` and continue; `fail_source` would abort everything) and lazy
   `mutable` need storage (observing the job stores the offer; transitions
   happen in `supply()`).
-- Handoff: `docs/agent-handoffs/2026-10-12-web-task4.md`.
+- Handoff: `docs/agent-handoffs/archive/2026-10/2026-10-12-web-task4.md`.
 
 ## Plan 18 Task 3 Step 6 (October 12, 2026): display fullscreen toggle
 
