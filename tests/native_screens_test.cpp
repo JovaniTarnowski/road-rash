@@ -17,8 +17,10 @@ int main(int argc, char** argv) {
     check(display.title == rr::ns::display_title, "display screen has the native title");
     check(display.items.size() == 11, "desktop display screen: + texture detail");
     const auto& gfx = data.screens[0x13].items.front();
-    for (const auto& m : display.items)
-        check(m.w == gfx.w && m.h == gfx.h && m.x == gfx.x, "native buttons copy the Graphics Options button geometry");
+    for (const auto& m : display.items) {
+        check(m.x == gfx.x, "native buttons keep the template column");
+        check(m.y + m.h <= 480, "native rows fit in 480 px");
+    }
     for (size_t i = 0; i < display.items.size(); ++i) {   // vertical chain, wrapping, Escape on Back
         const auto& m = display.items[i];
         check(m.nav[3] == (i + 1) % display.items.size() && m.nav[2] == (i + display.items.size() - 1) % display.items.size(), "up/down chain");

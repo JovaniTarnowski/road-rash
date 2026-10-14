@@ -3,11 +3,12 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <unistd.h>
 
 int main() {
     int failures = 0;
     auto check = [&](bool v, const char* what) { if (!v) { ++failures; std::cerr << "FAIL " << what << '\n'; } };
-    auto dir = std::filesystem::temp_directory_path() / "rr-assets-test";
+    auto dir = std::filesystem::temp_directory_path() / ("rr-assets-test-" + std::to_string(::getpid()));
     std::filesystem::create_directories(dir / "DATA");
     { std::ofstream(dir / "DATA" / "X.BIN", std::ios::binary) << "abc"; }
     rr::Assets assets(dir.string());

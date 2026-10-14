@@ -237,6 +237,35 @@ class Tooling(unittest.TestCase):
             sanitizer = identity('Debug', 'test-compiler', cache)
         self.assertNotEqual(normal['configuration_sha256'], sanitizer['configuration_sha256'])
 
+    @staticmethod
+    def unlabeled_tests(payload):
+        # Plan 30 Task 1: every test needs a label from {slow, sim, disc, unit}.
+        # ctest --show-only=json-v1 lists properties as [{name, value}].
+        bad = []
+        for t in payload.get('tests', []):
+            labels = set()
+            for prop in t.get('properties', []):
+                if prop.get('name') == 'LABELS':
+                    v = prop.get('value', [])
+                    labels.update(v if isinstance(v, list) else str(v).split(';'))
+            if not (labels & {'slow', 'sim', 'disc', 'unit'}):
+                bad.append(t.get('name', '?'))
+        return bad
+
+    def test_ctest_labels_cover_every_test(self):
+        build = os.environ.get('RR_BUILD_DIR')
+        if not build:
+            # Synthetic: the checker flags the unlabeled entry only.
+            payload = {'tests': [{'name': 'a', 'properties': [{'name': 'LABELS', 'value': ['slow', 'sim']}]},
+                                 {'name': 'b', 'properties': []}]}
+            self.assertEqual(self.unlabeled_tests(payload), ['b'])
+            return
+        out = subprocess.run(['ctest', '--test-dir', build, '--show-only=json-v1'],
+                             capture_output=True, text=True)
+        self.assertEqual(out.returncode, 0, 'ctest show-only must succeed')
+        bad = self.unlabeled_tests(json.loads(out.stdout))
+        self.assertEqual(bad, [])
+
     def test_race_constructed_only_in_race_setup(self):
         # Plan 26 Task 4: the only production/replay Race construction lives in
         # src/race_setup.cpp; unit tests with synthetic routes are exempt.

@@ -2,6 +2,7 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <unistd.h>
 namespace {
 std::vector<uint8_t> source_for(const std::string& asset,uint32_t index) {
     if (asset=="DATA/X.CEL"&&index==3) return {1,2,3,4};
@@ -40,7 +41,7 @@ std::vector<uint8_t> zip_stored(const std::vector<std::pair<std::string,std::vec
 int main() {
     int failures=0;
     auto check=[&](bool ok,const char* what){ if(!ok){++failures;std::cerr<<what<<'\n';} };
-    const auto root=(std::filesystem::temp_directory_path()/"rr-upscale-test").string();
+    const auto root=(std::filesystem::temp_directory_path()/("rr-upscale-test-" + std::to_string(::getpid()))).string();
     std::error_code ec;std::filesystem::remove_all(root,ec);
     rr::UpscaleCache cache(root);
     const std::vector<uint8_t> src{1,2,3,4};

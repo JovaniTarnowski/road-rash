@@ -3,6 +3,7 @@
 #include <cstdio>
 #include <filesystem>
 #include <iostream>
+#include <unistd.h>
 
 int main() {
     int failures = 0;
@@ -16,7 +17,7 @@ int main() {
     const rr::Settings g = rr::parse_settings("video_mode=9\nmaster_volume=-1\nhires=yes\nnonsense\n=\nalias=" + std::string(40, 'x') + "\n");
     const rr::Settings d = rr::default_settings();
     check(g.video_mode == d.video_mode && g.master_volume == d.master_volume && g.high_resolution == d.high_resolution && g.alias.empty(), "invalid values ignored");
-    const auto path = (std::filesystem::temp_directory_path() / "rr-settings-test.txt").string();
+    const auto path = (std::filesystem::temp_directory_path() / ("rr-settings-test-" + std::to_string(::getpid()) + ".txt")).string();
     check(rr::save_settings(path, s) && rr::load_settings(path).alias == "Rasher", "file round trip");
     std::remove(path.c_str());
     check(rr::load_settings(path).video_mode == d.video_mode, "missing file gives defaults");

@@ -10,7 +10,7 @@ BIKE       ?=
 JOBS       ?= $(shell sysctl -n hw.ncpu 2>/dev/null || nproc 2>/dev/null || echo 4)
 JAVA_HOME  ?= /opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home
 
-.PHONY: help all configure build run run-first viewer video test corpus smoke \
+.PHONY: help all configure build run run-first viewer video test test-fast test-sim corpus smoke \
         import app apk apk-release decompile inventory ci clean distclean \
         doctor gate-native gate-sanitizers verify-sim gate-android-debug \
         gate-android-release gate-package agent-status analysis-index agent-sessions lsp-check agent-tools-test \
@@ -24,6 +24,8 @@ help:
 	@echo "  viewer       build and launch the asset research viewer"
 	@echo "  video        play a cutscene: make video VIDEO=VIDEO/INTRO.AVI"
 	@echo "  test         run ctest"
+	@echo "  test-fast    ctest without slow tests, parallel"
+	@echo "  test-sim     ctest simulation tests, parallel"
 	@echo "  smoke        viewer smoke check and corpus check"
 	@echo "  corpus       python3 tools/check_corpus.py"
 	@echo "  import       import an ISO: make import ISO=path/to.iso DEST=path/ROADRASH"
@@ -78,6 +80,11 @@ video: build
 
 test: build
 	ctest --test-dir $(BUILD_DIR) --output-on-failure
+
+test-fast: build
+	ctest --test-dir $(BUILD_DIR) -LE slow -j $(JOBS) --output-on-failure
+test-sim: build
+	ctest --test-dir $(BUILD_DIR) -L sim -j $(JOBS) --output-on-failure
 
 smoke: build corpus
 	$(BUILD_DIR)/rr-viewer --assets $(ASSETS) --smoke

@@ -5,6 +5,7 @@
 #include "upscale_import.hpp"
 #include <filesystem>
 #include <iostream>
+#include <unistd.h>
 
 int main() {
     int failures = 0;
@@ -19,7 +20,7 @@ int main() {
         for (int i = 0; i < 64; ++i) m.pixels[size_t(i)] = uint8_t(i % 4);
         tex.mips.push_back(std::move(m));
         const std::string root =
-            (std::filesystem::temp_directory_path() / "rr-upscale-import-test").string();
+            (std::filesystem::temp_directory_path() / ("rr-upscale-import-test-" + std::to_string(::getpid()))).string();
         std::error_code ec;
         std::filesystem::remove_all(root, ec);
         rr::UpscaleCache cache(root);

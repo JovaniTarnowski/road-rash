@@ -10,6 +10,7 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <unistd.h>
 
 using namespace rr;
 
@@ -64,7 +65,7 @@ int main(int argc, char** argv) {
     check(data.screens[9].items.size() == 4 && data.screens[0x10].items.size() == 13 && data.screens[0x22].items.size() == 15, "screen tables");
     check(data.restroom_patterns[1] == "YNNYYYYN", "restroom pattern");
     const auto strings = frontend_strings(read_string_resources(assets.read("TEXT/ENU.DLL")));
-    const std::string saves = (std::filesystem::temp_directory_path() / "rr-frontend-test-saves").string();
+    const std::string saves = (std::filesystem::temp_directory_path() / ("rr-frontend-test-saves-" + std::to_string(::getpid()))).string();
     std::filesystem::remove_all(saves);
     Career career;
     Settings settings;

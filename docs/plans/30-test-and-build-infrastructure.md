@@ -31,8 +31,8 @@
 
 **Wave:** W1 · **Owns:** `CMakeLists.txt` (test section only), `Makefile` (`test-fast`, `test-sim`), `tests/agent_tooling_test.py` (label guard) · **Profile:** mechanical
 
-- [ ] **Step 1: Measure.** Run `ctest --test-dir build-wt-30-1 -j1` and record per-test times (the review run: `hires-render` 177 s, `race-soak` 176 s, `course_scene` 54 s, `race_setup` 35 s, `raster-rgb` 18 s, `widescreen` 17 s, `oracle-scene` 16 s; total 566 s serial).
-- [ ] **Step 2: Assign labels** at the end of the test section:
+- [x] **Step 1: Measure.** Run `ctest --test-dir build-wt-30-1 -j1` and record per-test times (the review run: `hires-render` 177 s, `race-soak` 176 s, `course_scene` 54 s, `race_setup` 35 s, `raster-rgb` 18 s, `widescreen` 17 s, `oracle-scene` 16 s; total 566 s serial).
+- [x] **Step 2: Assign labels** at the end of the test section:
 ```cmake
 set(RR_SLOW_TESTS hires-render race-soak course_scene race_setup raster-rgb widescreen oracle-scene)
 set(RR_SIM_TESTS oracle-sim race race-soak race_setup bike crash traffic actor_traffic pedestrian police sim_fields track_ring)
@@ -48,9 +48,10 @@ foreach(t ${RR_DISC_TESTS})
     set_property(TEST ${t} APPEND PROPERTY LABELS disc)
 endforeach()
 ```
+  Verified: all names resolve in `ctest -N` (94 tests); `race-soak`/`race_setup` gained `SKIP_RETURN_CODE 77` (they return 77); `course_scene` labelled `disc` (reads the disc, returns 0 without corpus).
   Verify each list against `ctest -N` and the actual skip behaviour: a test that exits 77 without the disc belongs in `disc`. Add anything the review missed, such as `course_scene`, if it reads the disc.
-- [ ] **Step 3: Collision audit.** `rg -n "temp_directory_path|/tmp/|first-run-test-pref" tests CMakeLists.txt`. Make every fixed path per-test, for example by appending the test name or `getpid()`.
-- [ ] **Step 4: Make targets.**
+- [x] **Step 3: Collision audit.** `rg -n "temp_directory_path|/tmp/|first-run-test-pref" tests CMakeLists.txt`. Make every fixed path per-test, for example by appending the test name or `getpid()`.
+- [x] **Step 4: Make targets.**
 ```make
 test-fast: build
 	ctest --test-dir $(BUILD_DIR) -LE slow -j $(JOBS) --output-on-failure
@@ -58,8 +59,8 @@ test-sim: build
 	ctest --test-dir $(BUILD_DIR) -L sim -j $(JOBS) --output-on-failure
 ```
   Add both to `.PHONY` and `help`.
-- [ ] **Step 5: Label guard.** Add a check to `tests/agent_tooling_test.py` that parses `ctest --test-dir <dir> --show-only=json-v1` when a build dir is given through `RR_BUILD_DIR`. Every test must have at least one label from `{slow, sim, disc, unit}`; unlabelled tests get `unit` through a final CMake loop over `get_property(... TESTS)`, so the guard catches a missing loop rather than a missing name.
-- [ ] **Step 6: Verify.** `make test-fast` time versus the full serial run (record both); `ctest -j $(sysctl -n hw.ncpu)` passes with the same results as `-j1`, run three times. Commit: `test: labels (slow/sim/disc/unit), parallel fast targets, label guard`.
+- [x] **Step 5: Label guard.** Add a check to `tests/agent_tooling_test.py` that parses `ctest --test-dir <dir> --show-only=json-v1` when a build dir is given through `RR_BUILD_DIR`. Every test must have at least one label from `{slow, sim, disc, unit}`; unlabelled tests get `unit` through a final CMake loop over `get_property(... TESTS)`, so the guard catches a missing loop rather than a missing name.
+- [x] **Step 6: Verify.** `make test-fast` time versus the full serial run (record both); `ctest -j $(sysctl -n hw.ncpu)` passes with the same results as `-j1`, run three times. Commit: `test: labels (slow/sim/disc/unit), parallel fast targets, label guard`.
 
 ---
 

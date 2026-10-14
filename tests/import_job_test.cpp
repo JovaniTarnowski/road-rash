@@ -6,6 +6,7 @@
 #include <fstream>
 #include <iostream>
 #include <map>
+#include <unistd.h>
 
 namespace fs = std::filesystem;
 namespace {
@@ -67,8 +68,8 @@ int main() {
         check(sink.committed && !sink.aborted, "sink committed, not aborted");
         check(sink.files.count("A.BIN") && sink.files["A.BIN"] == std::vector<uint8_t>{'h', 'e', 'l', 'l', 'o'},
             "imported bytes match");
-        const auto tmp = fs::temp_directory_path() / ("rr-import-job-sync.iso");
-        const auto dest = fs::temp_directory_path() / ("rr-import-job-sync.out");
+        const auto tmp = fs::temp_directory_path() / ("rr-import-job-sync-" + std::to_string(::getpid()) + ".iso");
+        const auto dest = fs::temp_directory_path() / ("rr-import-job-sync-" + std::to_string(::getpid()) + ".out");
         fs::remove_all(dest);
         { std::ofstream f(tmp, std::ios::binary); f.write(reinterpret_cast<const char*>(image.data()), std::streamsize(image.size())); }
         const auto expected = rr::import_game(tmp.string(), dest.string(), table());
