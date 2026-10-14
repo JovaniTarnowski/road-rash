@@ -931,3 +931,18 @@ Owned edits: `src/import_job.hpp/.cpp` (new), `src/sha256.hpp/.cpp`
   for tick-annotated dash frames, plus countdown alignment (original green
   ~frame 108 vs native tick 180). Native rpm trace (trace-fed
   `update_engine_rpm` over `sim-napa-solo.tsv`) recorded in the handoff.
+
+## Plan 11a Task 3 Step 5 (October 14, 2026): mid-jump hunt (partial)
+
+- Searched for original air in 5 captures (Napa solo/drive, CITY
+  drive 2/straight/hold-left, MEDLY drive 2) via scene-dump bike `+0x20`
+  scans: all grounded. New proxy drive mode 3 (accelerate + hold left) for
+  crest hunting, committed in `oracle/aweman_proxy.c`.
+- Hold-left CITY run reaches lateral -153600 (the native jump territory) but
+  stopped against the wall (speed 0, grounded); it wall-bounces to the right
+  by frame 380. Native servo to the same spot: grounded at low speed (~500),
+  airborne at 3250+ — speed-dependent in both observed cases, no vertical
+  divergence. Native air elsewhere is far off-line bend drift onto shoulder
+  edges (CITY tick ~469+, MEDLY tick ~911+).
+- OPEN: an original mid-air frame on a drive line (for the shadow-while-
+  airborne node comparison); the tooling is ready when a line is found.

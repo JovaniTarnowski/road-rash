@@ -118,6 +118,7 @@ static uint32_t __cdecl hook_controls(void) {
     if (g_input) return ((uint32_t(__cdecl*)(void))0x0044f800)();
     if(!g_drive)return ((uint32_t (__cdecl*)(void))0x0044f800)();
     uint32_t controls=1; // original accelerate bit
+    if(g_drive==3) return 1|4;   // plan 11a Task 3 Step 5: accelerate + hold left (crest hunting)
     if(g_drive==2) {
         const uintptr_t rider=*(uint32_t*)0x004642d8;
         if(readable(rider,0x144)) {
@@ -1971,7 +1972,7 @@ static int rr_install_hooks(void) {
     if (GetEnvironmentVariableA("RR_ORACLE_PIXELS",buf,sizeof buf)) g_pixels=atoi(buf)!=0;
     if (GetEnvironmentVariableA("RR_ORACLE_GROUPS",buf,sizeof buf)) g_groups=atoi(buf)!=0;
     if (GetEnvironmentVariableA("RR_ORACLE_DRIVE",buf,sizeof buf)) {
-        g_drive=atoi(buf);if(g_drive<0 || g_drive>2)return 0;
+        g_drive=atoi(buf);if(g_drive<0 || g_drive>3)return 0;
     }
     if (GetEnvironmentVariableA("RR_ORACLE_SIM",buf,sizeof buf)) g_sim=atoi(buf)!=0;
     if (GetEnvironmentVariableA("RR_ORACLE_SEED",buf,sizeof buf)) g_seed=atoi(buf);
