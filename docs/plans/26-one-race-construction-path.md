@@ -188,12 +188,12 @@ int main() {
 
 **Wave:** W5 · **Owns:** `src/race_setup.hpp`, `tools/` (one new check), `CMakeLists.txt` hunk · **Profile:** mechanical
 
-- [ ] **Step 1:** `rg -n "std::make_unique<rr::Race>|rr::Race race\(|new rr::Race" src tests` must list only `race_setup.cpp` and unit tests that use synthetic routes (`race_test`, `crash_test`, `bike_test`, `actor_traffic_test`, ...). Record the list.
-- [ ] **Step 2:** Add the comment `// The only production/replay constructor of Race; tests with synthetic routes may build Race directly.` to `race_setup.hpp`. Add an `agent-tooling` check (`tests/agent_tooling_test.py` style) that fails if `src/` constructs `rr::Race` outside `race_setup.cpp`:
+- [x] **Step 1:** `rg -n "std::make_unique<rr::Race>|rr::Race race\(|new rr::Race" src tests` must list only `race_setup.cpp` and unit tests that use synthetic routes (`race_test`, `crash_test`, `bike_test`, `actor_traffic_test`, ...). Record the list.
+- [x] **Step 2:** Add the comment `// The only production/replay constructor of Race; tests with synthetic routes may build Race directly.` to `race_setup.hpp`. Add an `agent-tooling` check (`tests/agent_tooling_test.py` style) that fails if `src/` constructs `rr::Race` outside `race_setup.cpp`:
 ```python
 import pathlib, re, sys
 hits = [p for p in pathlib.Path("src").glob("*.cpp")
         if p.name != "race_setup.cpp" and re.search(r"make_unique<\s*(rr::)?Race\s*>|\bRace\s+\w+\s*\(", p.read_text())]
 sys.exit(f"Race constructed outside race_setup.cpp: {hits}" if hits else 0)
 ```
-- [ ] **Step 3:** Run the full gate, `tools/ci.sh` (Android debug assemble included), and commit: `race: single construction path guard`.
+- [x] **Step 3:** Run the full gate, `tools/ci.sh` (Android debug assemble included), and commit: `race: single construction path guard`.
