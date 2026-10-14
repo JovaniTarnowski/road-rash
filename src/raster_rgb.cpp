@@ -204,6 +204,19 @@ std::vector<RgbaMip> convert_mips(const CelTexture& tex, const Palette& palette)
 }
 }  // namespace
 
+uint32_t palette_generation(const Palette& p) {
+    uint32_t h = 2166136261u;
+    for (uint8_t b : p.rgbx) { h ^= b; h *= 16777619u; }
+    return h;
+}
+void clear_rgba_mip_cache() {
+    std::lock_guard<std::mutex> lock(g_mutex);
+    g_cache.clear();
+}
+size_t rgba_mip_cache_size() {
+    std::lock_guard<std::mutex> lock(g_mutex);
+    return g_cache.size();
+}
 const std::vector<RgbaMip>& rgba_mips(const CelTexture& tex, const Palette& palette, uint32_t generation) {
     std::lock_guard<std::mutex> lock(g_mutex);
     const auto key = std::make_pair(&tex, generation);
@@ -385,7 +398,7 @@ static void render_nodes_rgb_impl(FramebufferRgb& fb, const std::vector<DrawNode
         throw std::runtime_error("View/RGB framebuffer size mismatch");
     (void)pool;
     const RasterClip clip{0, 0, fb.width(), fb.height() - 1};
-    const uint32_t generation = 0;  // bumped on palette change (course load, minidash, fade)
+    const uint32_t generation = palette_generation(palette);   // per call; content-keyed
     for (const auto& node : nodes) {
         if (!node.texture && !node.flat_index) continue;
         std::array<RgbVertex, 4> pts;
