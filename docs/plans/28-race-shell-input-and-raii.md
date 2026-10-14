@@ -115,6 +115,8 @@ int main() {
 
 ---
 
+> Review note (2026-10-13, finding 4): two small intentional changes versus the old loop, kept as the new behaviour. Without a pause menu, Android Back (`SDLK_AC_BACK`) now toggles pause (before: pause-only). While paused, finger MOTION/UP now reach `touch.handle` via the `none` fallthrough (before: dropped) — avoids stuck-finger state.
+
 ### Task 2: RAII SDL handles
 
 **Wave:** W6 (after Task 1) · **Owns:** `src/sdl_handles.hpp`, `tests/sdl_handles_test.cpp`, `src/game_main.cpp` · **Profile:** mechanical

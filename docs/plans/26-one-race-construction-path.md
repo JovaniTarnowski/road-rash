@@ -4,7 +4,8 @@
 
 **Goal:** The playable game, `race-soak` and the `oracle-sim` replay all build races through one factory, so behaviour verified against the original is the behaviour players get.
 
-**Architecture:** Split `make_race_setup` (src/race_setup.*) into course-scoped `load_race_assets` and race-scoped `build_race`. `build_race` attaches **every** `Race` hook: personalities and EXE image, finish line, terrain, traffic, pedestrians, track ring, crash library, ride library, attack codes and nitro. `Race::wiring()` reports which hooks are attached so tests can assert completeness. The oracle harness adopts the factory first, with a byte-identical diagnostic report as proof. Then the game adopts it, which intentionally changes game behaviour to the verified path.
+**Architecture:** Split `make_race_setup` (src/race_setup.*) into course-scoped `load_race_assets` and race-scoped `build_race`. `build_race` attaches **every** `Race` hook: personalities and EXE image, finish line, terrain, traffic, pedestrians, track ring, crash library, ride library, attack codes and nitro.
+> Review correction (2026-10-13, finding 3): `bounds.finish_position_q8` is the route-end placeholder ("until plan 17 Task 1 traces the exact nodes"), so `wiring().finish == 1` means only that the finish hook is attached — not that the race ends at the original finish. `Race::wiring()` reports which hooks are attached so tests can assert completeness. The oracle harness adopts the factory first, with a byte-identical diagnostic report as proof. Then the game adopts it, which intentionally changes game behaviour to the verified path.
 
 **Tech Stack:** C++20, CTest, `tools/verify_sim.py`, the disc under `../cdrom/ROADRASH` (golden-backed steps exit 77 without it).
 
