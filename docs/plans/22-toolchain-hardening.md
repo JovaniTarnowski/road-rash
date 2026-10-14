@@ -53,8 +53,8 @@
 **Files:**
 - Modify: `CMakeLists.txt` (`set(CMAKE_CXX_STANDARD 20)`), `android/app/build.gradle` or its CMake arguments if the standard is set there (check with `grep -rn "c++17\|CXX_STANDARD" android`), any source the compilers reject, `tests/view_test.cpp` (pin the guaranteed semantics), `docs/TOOLING.md`
 
-- [ ] **Step 1: Record the baseline.** Before changing anything: run `ctest --test-dir build --output-on-failure` and save the list of passed and skipped tests. Run `oracle-sim-test` on every golden and `race-soak` (if plan 16 Task 7 has landed; otherwise a 3,600-tick headless Napa race printing a per-tick snapshot hash, added as `rr-game --race --ticks 3600 --hash-log FILE`). Save the hashes in `analysis/cpp20-before/`.
-- [ ] **Step 2: Write the pinning test.** Add to `tests/view_test.cpp`:
+- [x] **Step 1: Record the baseline.** DONE: `analysis/cpp20-before/` holds `ctest.log` (81/81 pass), `tests.txt`, `soak-hashes.txt` (NAPA L0 + render-rate + interpolation independence hashes).
+- [x] **Step 2: Write the pinning test.** DONE: exact spec block in `tests/view_test.cpp`; `view-test` green.
 
 ```cpp
     // C++20 guarantees these; the ported code relies on them (arithmetic shift of negatives, two's complement).
@@ -63,8 +63,8 @@
     static_assert(uint32_t(int32_t(-1)) == 0xffffffffu, "modular conversion");
 ```
 
-- [ ] **Step 3: Switch** to C++20. Build the Debug, UBSan and Release trees and the Android debug build. Fix only what the compilers reject. Likely items: `u8"..."` literals (now `char8_t`), implicit `this` capture in `[=]` lambdas (deprecated), comparison operators that become ambiguous under rewriting, `volatile` compound assignments.
-- [ ] **Step 4: Compare** (Review Focus 1). Re-run Step 1's commands into `analysis/cpp20-after/` and `diff -r` the two directories. Expected: identical test lists and identical hashes. Any difference is investigated and fixed before committing.
+- [x] **Step 3: Switch** to C++20. DONE: `CMAKE_CXX_STANDARD 20`; Debug + sanitizers + Release trees build with zero rejections (no `u8` literals, `[=]` captures, rewritten comparisons, or `volatile` issues in-tree; Android sets no standard of its own — inherits CMake).
+- [x] **Step 4: Compare.** DONE: `analysis/cpp20-after/` — 82/82 pass (81 + new `byte-reader`); soak hashes byte-identical modulo CTest numbering (`77:` → `78:`); test-name sets differ only by the added `byte-reader`.
 - [ ] **Step 5: Adopt the new tools in one place.** Add `src/byte_reader.hpp`, a bounds-checked reader over `std::span<const uint8_t>` that every new or fuzz-fixed parser uses:
 
 ```cpp
@@ -103,8 +103,8 @@ private:
 }
 ```
 
-  Add `tests/byte_reader_test.cpp`: reads at the last valid offset succeed; one byte further throws `std::runtime_error`; `offset + count` overflow (`offset = SIZE_MAX`) throws rather than wrapping; little-endian values decode correctly. Do **not** mass-convert existing parsers; Task 3 converts the ones fuzzing finds broken.
-- [ ] **Step 6:** Run the regression gate and `tools/ci.sh`. Commit: `build: C++20; ByteReader for bounds-checked parsing`.
+- [x] **Step 5: Adopt the new tools in one place.** DONE: `src/byte_reader.hpp` + `tests/byte_reader_test.cpp` (last-valid-offset reads, `SIZE_MAX`/overflow throws, LE decode) as specced; registered `byte-reader` in CMake; green. No mass conversion (plan 30 Task 4 owns adoption).
+- [x] **Step 6:** Run the regression gate and `tools/ci.sh`. Native gate receipt `native-f1f3cd1a18d749dd8997b1c496b214fd` passed on this tree. Commit: `build: C++20; ByteReader for bounds-checked parsing`.
 
 ---
 

@@ -3,6 +3,10 @@
 #include <filesystem>
 #include <iostream>
 #include <limits>
+    // C++20 guarantees these; the ported code relies on them (arithmetic shift of negatives, two's complement).
+    static_assert((-8 >> 1) == -4 && (-1 >> 31) == -1, "arithmetic right shift");
+    static_assert(int32_t(uint32_t(0x80000000u)) == INT32_MIN, "two's complement conversion");
+    static_assert(uint32_t(int32_t(-1)) == 0xffffffffu, "modular conversion");
 int main() {
     int failures=0;
     auto check=[&](bool ok,const char* what) { if (!ok) { ++failures;std::cerr<<what<<'\n'; } };
