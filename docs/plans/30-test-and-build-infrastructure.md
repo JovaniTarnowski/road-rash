@@ -94,7 +94,7 @@ struct Checks {
 };
 }
 ```
-- [ ] **Step 1:** Add the header and `tests/check_test.cpp`. The test exercises pass, fail, `eq` with integers and `finish`'s return values; for the failing case, construct a separate `Checks` object and assert its `failures == 1`. Commit: `test: shared Checks helper`.
+- [x] **Step 1:** Add the header and `tests/check_test.cpp`. The test exercises pass, fail, `eq` with integers and `finish`'s return values; for the failing case, construct a separate `Checks` object and assert its `failures == 1`. Commit: `test: shared Checks helper`.
 - [ ] **Step 2 (W3 fan-out, optional, one worker per 10 files, disjoint lists from `rg -l "auto check = \[&\]" tests`):** replace the local lambda with `rr::test::Checks check;`, keep each call site's message text, and end `main` with `return check.finish("<name>");`. Exit codes and outputs other than the final summary line stay the same. Commit per group: `test: adopt Checks (group N)`.
 
 ---
