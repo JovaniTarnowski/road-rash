@@ -930,6 +930,7 @@ void Race::contact(Rider& self, Rider& other) {
     // other bike's width contains ours (+0x19c bit 0x40), otherwise class 3.
     Bike& s = self.bike; const Bike& o = other.bike;
     if (s.i32(0x2f4) != 0) return;
+    const int32_t old_steer_rate = s.i32(0xf0);   // 0x00404f93 tail compares against this
     const int32_t elasticity = s.i32(0x180);
     s.i32(0x188) = div256(int64_t(s.i32(0x188)) * elasticity);
     s.i32(0x184) = div256(int64_t(s.i32(0x184)) * elasticity);
@@ -954,8 +955,9 @@ void Race::contact(Rider& self, Rider& other) {
     // Glancing (class-3) hits run the lateral branch below.
     const int32_t magnitude = (std::abs(s.i32(0x184)) + std::abs(s.i32(0x188)) +
                                std::abs(s.i32(0x18c))) >> 10;
+    bool down = false;   // 0x004052c0 local_21: the kick is skipped when the rider went down
     if (contained) {
-        const bool down = knock_off(self, magnitude, magnitude, 2);
+        down = knock_off(self, magnitude, magnitude, 2);
         if (down) {
             s.i32(0xec) += s.i32(0x184);
         } else if (s.i32(0xec) - o.i32(0x108) < 0x1771) {
@@ -976,8 +978,20 @@ void Race::contact(Rider& self, Rider& other) {
     // Nudge apart sideways (0x00404f4d).
     const int32_t push = div_pow2(s.i32(0x174) + o.i32(0x174), 4) * s.i32(0x18);
     s.i32(0x28) += o.i32(0x28) < s.i32(0x28) ? push : -push;
+    // Steering kick (0x00404f93): a moved steer rate kicks +0x288 by
+    // +0x2d8*(new-old)*2>>8 (sar-rounded), clamped to +-+0x29c. Skipped when
+    // the rider went down (0x004052c0 local_21 true).
+    if (!down && old_steer_rate != s.i32(0xf0)) {
+        // Original-width 32-bit wraparound product (cf. knock_off reason 5).
+        const uint32_t raw = uint32_t(s.i32(0x2d8)) * uint32_t(s.i32(0xf0) - old_steer_rate) * 2u;
+        const int32_t prod = raw <= uint32_t(INT32_MAX) ? int32_t(raw) : int32_t(int64_t(raw) - 0x100000000LL);
+        const int32_t next = s.i32(0x288) + ((prod + ((prod >> 31) & 0xff)) >> 8);
+        const int32_t lim = s.i32(0x29c);
+        s.i32(0x288) = (next > lim || (-lim != -next && next <= -lim)) ? (next > lim ? lim : -lim) : next;
+    }
+    // Tail (0x00404feb): impulses and flags clear.
+    s.i32(0x184) = 0; s.i32(0x188) = 0; s.i32(0x18c) = 0; s.u8(0x19c) = 0;
 }
-
 void Race::move(Rider& r, bool player) {
     // 0x004395e0 (single player, no network ghost branch).
     Bike& b = r.bike;

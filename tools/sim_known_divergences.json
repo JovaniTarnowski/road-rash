@@ -4,5 +4,11 @@
     "divergence": "first divergence at frame 207 (tick 208): rider.0.position original 13746 native 13778",
     "reason": "Driver-axis replay (--driver=demo), single green anchor, native countdown (59 ticks, player dt 2 at tick 1). Ring RNG, AI replan/overtake/transitions, the 0x004368f0 list walk and 0x00436a40 separation reproduce the original through tick 207. Tick 208: first contact with a frozen bike; this capture has no node laterals, so frozen bikes keep native grid laterals (the original places them at grid + position - 0x2b00, untraced). The human-era capture with a node dump reaches tick 208 on rider.0.steer instead. Diagnostic only.",
     "output_sha256": "f03e56e981936a5323496c90cb057033aefbc6cb7cadf38f5dd1834700bbab79"
+  },
+  "sim-napa-solo-human.tsv": {
+    "trace_sha256": "960282cee293173d8ea62db4b49d1ffef83e23cba906e22f545676b112b317a3",
+    "divergence": "first divergence at frame 207 (tick 208): rider.0.steer original 2392 native 2437",
+    "reason": "Driver-axis replay (--driver=demo), single green anchor, native countdown (player dt 2 at tick 1). Matches every compared field and the brain window through tick 207. Tick 208: first contact (slots 0 vs 2). The 0x004049c0 tail (0x00404f93 steer kick + 0x00404feb impulse clear) is now ported in Race::contact, closing the gap from 1888 (native 504) to 45. Residual: the AI steer exit 0x288 (player is demo/AI-driven) differs by ~46 units; the identical contact kick preserves it. Frozen-opponent volatile words (0x108/0x10c) are stale pool memory in the original and absent from every golden (node rows carry only think/position/kind), so the harness cannot seed them. Needs a current-era SIM capture with frozen bike-word coverage; SIM captures are environmentally blocked (see docs/agent-handoffs/sim-fault-20261014.md). Diagnostic only.",
+    "output_sha256": "67bd8ff6389dd44bb73db781ecb8a05c6b0428cf19ca924dffdbcdce0079627d"
   }
 }

@@ -290,6 +290,32 @@ int main() {
         int crashes = (ko.riders()[0].bike.i32(0x2f4) != 0) + (ko.riders()[1].bike.i32(0x2f4) != 0);
         check(crashes <= 1, "at most one crash starts from double contact");
     }
+    // Steering kick tail of bike contact (0x004049c0 LAB_00404f93): a glancing
+    // (class-3) hit that moves the steer rate kicks +0x288 by
+    // +0x2d8*(new_f0-old_f0)*2>>8 clamped to +-+0x29c; an unchanged rate kicks nothing.
+    {
+        rr::Opponent slow3{test_spec(), 90, 0, 0, 0, 1};
+        rr::Race kick(straight(4000), straight(4000), t, spec, 90, {slow3});
+        auto& me = kick.riders()[0];
+        auto& you = kick.riders()[1];
+        me.bike.i32(0x1c) = you.bike.i32(0x1c);
+        me.bike.i32(0x28) = you.bike.i32(0x28) + 0x1000;   // alongside, not contained
+        me.bike.i32(0xec) = 3000; you.bike.i32(0xec) = 5526;  // separate() turns the gap into hit ~2526
+        me.bike.i32(0x2d8) = 196;
+        me.bike.i32(0x288) = 528;
+        me.bike.i32(0x29c) = 11776;
+        const int32_t rate = me.bike.i32(0x2ac) * me.bike.i32(0x18);
+        const int32_t next = 528 - rate;   // steer() decays toward the zero target
+        kick.step(0);
+        const int32_t f0_steer = (next >> 8) * 120;
+        const int32_t d_f0 = me.bike.i32(0xf0) - f0_steer;
+        check(d_f0 == 943, "glancing contact moves the steer rate by hit/2");
+        const int32_t prod = 196 * d_f0 * 2;
+        const int32_t want = next + ((prod + ((prod >> 31) & 0xff)) >> 8);
+        check(me.bike.i32(0x288) == want, "glancing contact kicks steer by the rate change");
+        check(me.bike.i32(0x184) == 0 && me.bike.i32(0x188) == 0 && me.bike.i32(0x18c) == 0,
+              "contact clears the spent impulses");
+    }
     // Roadside hazards via the in-road BORR actor path (0x00454240/0x00438930
     // -> 0x004049c0 class 1 -> knock_off reason 1): a rider crossing an
     // in-road span takes stamina damage, a lethal hit crashes reason 1, and
