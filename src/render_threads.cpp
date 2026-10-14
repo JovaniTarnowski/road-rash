@@ -3,9 +3,11 @@
 #include <algorithm>
 #include <condition_variable>
 #include <cstring>
+#include <exception>
 #include <mutex>
 #include <stdexcept>
 #include <thread>
+#include <utility>
 #include <vector>
 namespace rr {
 namespace {
@@ -34,14 +36,20 @@ struct RenderThreads::Impl {
             std::function<void()> work;
             {
                 std::unique_lock<std::mutex> lock(mutex);
-                wake.wait(lock, [&] { return stop || generation != seen; });
-                if (stop) return;
-                seen = generation;
+                if (queue.empty()) {
+                    wake.wait(lock, [&] { return stop || generation != seen; });
+                    if (stop) return;
+                    seen = generation;
+                } else if (stop) {
+                    return;
+                }
                 if (!queue.empty()) { work = std::move(queue.back()); queue.pop_back(); }
             }
             if (work) {
-                work();
+                std::exception_ptr error;
+                try { work(); } catch (...) { error = std::current_exception(); }
                 std::lock_guard<std::mutex> lock(mutex);
+                if (error && !first_error) first_error = error;
                 if (--pending == 0) done.notify_all();
             }
         }
@@ -53,6 +61,7 @@ struct RenderThreads::Impl {
     bool stop;
     uint64_t generation;
     size_t pending;
+    std::exception_ptr first_error;
 };
 RenderThreads::RenderThreads(int threads) : threads_(threads < 1 ? 1 : threads) {
     if (threads_ > 1) impl_ = new Impl(threads_);
@@ -80,6 +89,11 @@ void RenderThreads::run(int bands, int height, const std::function<void(int,int,
     impl.wake.notify_all();
     std::unique_lock<std::mutex> lock(impl.mutex);
     impl.done.wait(lock, [&] { return impl.pending == 0; });
+    if (impl.first_error) {
+        std::exception_ptr error = std::exchange(impl.first_error, nullptr);
+        lock.unlock();
+        std::rethrow_exception(error);
+    }
 }
 // Band entry: the existing node loop with RasterClip rows [top, bottom].
 // Every band renders the whole node list in order, clipped to its rows, so
