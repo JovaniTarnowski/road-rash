@@ -205,4 +205,21 @@ RgbImage Hud::compose(const HudState& state,const PhysicsTables& physics,DashMod
     }
     return image;
 }
+uint8_t DashLut::index(uint32_t c, const Palette& pal) {
+    const auto it = memo_.find(c);
+    if (it != memo_.end()) return it->second;
+    uint8_t best = 0;
+    int best_d = INT_MAX;
+    for (int i = 1; i < 256; ++i) {
+        const uint8_t* rgb = &pal.rgbx[size_t(4 * i)];
+        const int dr = int(rgb[0]) - int((c >> 16) & 0xff);
+        const int dg = int(rgb[1]) - int((c >> 8) & 0xff);
+        const int db = int(rgb[2]) - int(c & 0xff);
+        const int d = dr * dr + dg * dg + db * db;
+        if (d < best_d) { best_d = d; best = uint8_t(i); }
+    }
+    memo_.emplace(c, best);
+    return best;
+}
+
 }

@@ -69,6 +69,12 @@ struct CourseCanvas {
     int worker_count = 0;
     FramebufferRgb rgb;  // plan 21 Task 4: full-colour frame (resized with frame)
     PostChain post_chain;  // plan 21 Task 7: per-race post history
+    // Review 2026-10-13 item 2: cached RGB555 -> palette-index LUT for the
+    // dashboard map (replaces the per-pixel 255-entry search). Reset when
+    // the palette generation changes.
+    DashLut dash_lut;
+    uint32_t dash_lut_gen = 0;
+    uint8_t dash_index(uint32_t c, const Palette& pal) { return dash_lut.index(c, pal); }
     void draw(SDL_Renderer* renderer,const Game& game,const std::vector<RoadSlice>& slices,int s,int threads) {
         const int32_t wide = game.logical_width();
         resize(s,wide);
@@ -79,29 +85,28 @@ struct CourseCanvas {
         // Plan 19 Task 8: the dashboard composes at the race scale (Task 5).
         // The quick-race boot path has no HUD (dashboard is a career-mode
         // surface); without one the scene stands alone as in Task 4 shots.
-        if (game.assets.hud) {
+        // Review 2026-10-13 item 2: compose once per frame; the indexed
+        // branch maps through the cached LUT, the RGB branch uses it directly.
+        const bool need_dash = game.assets.hud != nullptr;
+        const RgbImage dash = need_dash ? game.assets.hud->compose(game.assets.hud->state(game.race(), game.player_name, game.rider_names),
+                                                game.assets.physics, rr::DashMode::full, s)
+                                        : RgbImage(0, 0, 0);
+        if (need_dash) {
             // Plan 19 Task 8: the dashboard composes at the race scale. Its
             // RgbImage pixels are palette-mapped into the indexed frame.
-            const auto dash = game.assets.hud->compose(game.assets.hud->state(game.race(), game.player_name, game.rider_names),
-                                                game.assets.physics, rr::DashMode::full, s);
             // Centred 4:3 dashboard (plan 21 Task 8): offset by the side
             // margin so it sits in the middle of the wide frame.
             const int xoff = margin * 2 * s;
+            const uint32_t gen = palette_generation(game.palette);
+            if (gen != dash_lut_gen) {
+                dash_lut.reset();
+                dash_lut_gen = gen;
+            }
             for (int y = 0; y < dash.height && y < frame.height(); ++y)
                 for (int x = 0; x < dash.width && x + xoff < frame.width(); ++x) {
                     const uint32_t c = dash.at(x, y);
                     if (c == 0x01000000) continue;
-                    uint8_t best = 0;
-                    int best_d = INT_MAX;
-                    for (int i = 1; i < 256; ++i) {
-                        const uint8_t* rgb = &game.palette.rgbx[size_t(4 * i)];
-                        const int dr = int(rgb[0]) - int((c >> 16) & 0xff);
-                        const int dg = int(rgb[1]) - int((c >> 8) & 0xff);
-                        const int db = int(rgb[2]) - int(c & 0xff);
-                        const int d = dr * dr + dg * dg + db * db;
-                        if (d < best_d) { best_d = d; best = uint8_t(i); }
-                    }
-                    frame.row(y)[x + xoff] = best;
+                    frame.row(y)[x + xoff] = dash_index(c, game.palette);
                 }
             // Side panels: stretched + darkened edge columns (generated at
             // runtime from the user's own dash art, no shipped assets).
@@ -115,14 +120,8 @@ struct CourseCanvas {
                         if (c == 0x01000000) continue;
                         // Darken by halving each channel via the palette.
                         const int r = int((c >> 16) & 0xff) / 2, gg = int((c >> 8) & 0xff) / 2, bb = int(c & 0xff) / 2;
-                        uint8_t best = 0;
-                        int best_d = INT_MAX;
-                        for (int i = 1; i < 256; ++i) {
-                            const uint8_t* rgb = &game.palette.rgbx[size_t(4 * i)];
-                            const int dr = int(rgb[0]) - r, dg = int(rgb[1]) - gg, db = int(rgb[2]) - bb;
-                            const int d = dr * dr + dg * dg + db * db;
-                            if (d < best_d) { best_d = d; best = uint8_t(i); }
-                        }
+                        const uint32_t dark = (uint32_t(r) << 16) | (uint32_t(gg) << 8) | uint32_t(bb);
+                        const uint8_t best = dash_index(dark, game.palette);
                         if (x < side_w / 2) frame.row(y)[x] = best;
                         else frame.row(y)[xoff + dash.width + (x - side_w / 2)] = best;
                     }
@@ -184,10 +183,9 @@ struct CourseCanvas {
                                  game.post_teleported);
                 game.post_teleported = false;
             }
-            // Dashboard composited directly (no palette round-trip).
-            if (game.assets.hud) {
-                const auto dash = game.assets.hud->compose(game.assets.hud->state(game.race(), game.player_name, game.rider_names),
-                                                    game.assets.physics, rr::DashMode::full, s);
+            // Dashboard composited directly (no palette round-trip; the
+            // once-per-frame image from above).
+            if (need_dash) {
                 const int xoff = margin * 2 * s;
                 for (int y = 0; y < dash.height && y < scale_h; ++y)
                     for (int x = 0; x < dash.width && x + xoff < scale_w; ++x) {

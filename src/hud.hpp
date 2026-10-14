@@ -1,5 +1,7 @@
 #pragma once
 #include "assets.hpp"
+#include <unordered_map>
+#include <vector>
 #include "framebuffer.hpp"
 #include "race.hpp"
 #include "text.hpp"
@@ -27,6 +29,19 @@ enum class DashMode : int { full = 0, mini = 1, off = 2 };
 // from the imported executable/disc; text and pen rasterization use native code.
 // Native 3x3 Bresenham needles document, but do not replicate, the original
 // GDI pen (CreatePen(PS_SOLID, HiRes?3:2, 0x81172), MoveToEx/LineTo in 0x00446c30).
+// Review 2026-10-13 item 2: exact memo for the per-frame dashboard map.
+// Same nearest-distance metric as the old inline search, memoized per exact
+// color (a cell table would quantize: two colors in one RGB555 cell can map
+// to different indices). Entries persist across frames; the caller resets on
+// palette change. Cleared maps keep capacity: no per-frame allocation.
+class DashLut {
+public:
+    uint8_t index(uint32_t c, const Palette& pal);
+    void reset() { memo_.clear(); }
+    size_t size() const { return memo_.size(); }
+private:
+    std::unordered_map<uint32_t, uint8_t> memo_;
+};
 class Hud {
 public:
     Hud(const Assets&,const std::vector<uint8_t>& exe,int bike,bool metric);

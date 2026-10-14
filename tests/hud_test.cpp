@@ -1,7 +1,42 @@
 #include "hud.hpp"
 #include <iostream>
+static uint8_t brute_index(uint32_t c, const rr::Palette& pal) {
+    uint8_t best = 0;
+    int best_d = INT_MAX;
+    for (int i = 1; i < 256; ++i) {
+        const uint8_t* rgb = &pal.rgbx[size_t(4 * i)];
+        const int dr = int(rgb[0]) - int((c >> 16) & 0xff);
+        const int dg = int(rgb[1]) - int((c >> 8) & 0xff);
+        const int db = int(rgb[2]) - int(c & 0xff);
+        const int d = dr * dr + dg * dg + db * db;
+        if (d < best_d) { best_d = d; best = uint8_t(i); }
+    }
+    return best;
+}
 int main(){
     try {
+        // Review 2026-10-13 item 2: DashLut matches the brute-force search.
+        {
+            rr::Palette pal;
+            for (int i = 0; i < 256; ++i) { pal.rgbx[4 * i] = uint8_t(i); pal.rgbx[4 * i + 1] = uint8_t(255 - i); pal.rgbx[4 * i + 2] = uint8_t((i * 5) & 255); pal.rgbx[4 * i + 3] = 0; }
+            rr::DashLut lut;
+            for (int i = 0; i < 256; ++i) {
+                const uint8_t* c = &pal.rgbx[4 * i];
+                const uint32_t px = (uint32_t(c[0]) << 16) | (uint32_t(c[1]) << 8) | uint32_t(c[2]);
+                if (lut.index(px, pal) != brute_index(px, pal)) throw std::runtime_error("DashLut palette entry");
+                const uint32_t dark = (uint32_t(c[0] / 2) << 16) | (uint32_t(c[1] / 2) << 8) | uint32_t(c[2] / 2);
+                if (lut.index(dark, pal) != brute_index(dark, pal)) throw std::runtime_error("DashLut darkened entry");
+            }
+            for (uint32_t k = 0; k < 32768; k += 97) {
+                const uint32_t px = (uint32_t(((k >> 10) & 31) * 8 + 4) << 16) |
+                                    (uint32_t(((k >> 5) & 31) * 8 + 4) << 8) | uint32_t((k & 31) * 8 + 4);
+                if (lut.index(px, pal) != brute_index(px, pal)) throw std::runtime_error("DashLut cell sweep");
+            }
+            pal.rgbx[4] = 200;   // palette change without reset may serve stale entries
+            lut.reset();
+            const uint32_t px = (uint32_t(200) << 16);
+            if (lut.index(px, pal) != brute_index(px, pal)) throw std::runtime_error("DashLut after reset");
+        }
         // F10 MiniDash cycle (0x004431d0): 0->1->2->0.
         if(rr::Hud::cycle_mini_dash(0)!=1 || rr::Hud::cycle_mini_dash(1)!=2 || rr::Hud::cycle_mini_dash(2)!=0)throw std::runtime_error("MiniDash cycle");
         rr::Assets assets(RR_SOURCE_DIR "/../cdrom/ROADRASH");
