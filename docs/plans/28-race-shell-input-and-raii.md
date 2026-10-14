@@ -182,7 +182,7 @@ public:
 }
 ```
   `Game`, `RaceOptions`, `RaceEnd` and `DisplayDriver` move from `game_main.cpp`'s anonymous namespace into `src/game_types.hpp` (namespace `rr`), unchanged.
-- [ ] **Step 1:** Move the loop's locals to members and split the loop body: event polling goes to `event`; everything after the event loop goes to `iterate`. `run_race` becomes:
+- [x] **Step 1:** Move the loop's locals to members and split the loop body: event polling goes to `event`; everything after the event loop goes to `iterate`. `run_race` becomes:
 ```cpp
 RaceEnd run_race(Game& g, SDL_Renderer* r, const RaceOptions& opt, DisplayDriver& d) {
     rr::RaceScreen screen(g, r, opt, d);
@@ -194,5 +194,5 @@ RaceEnd run_race(Game& g, SDL_Renderer* r, const RaceOptions& opt, DisplayDriver
     return screen.result();
 }
 ```
-- [ ] **Step 2:** Verify the baseline hashes, `ctest`, `tools/ci.sh` (Android assemble), and a manual race plus pause/resume/restart. Commit: `game: race loop as RaceScreen (plan 23 Task 3 prework)`.
-- [ ] **Step 3:** The orchestrator adds a note to plan 23 Task 3: "RaceScreen exists (plan 28 Task 4); derive it from `AppScreen`."
+- [x] **Step 2:** Verify the baseline hashes, `ctest`, `tools/ci.sh` (Android assemble), and a manual race plus pause/resume/restart. Commit: `game: race loop as RaceScreen (plan 23 Task 3 prework)`.
+- [x] **Step 3:** The orchestrator adds a note to plan 23 Task 3: "RaceScreen exists (plan 28 Task 4); derive it from `AppScreen`."

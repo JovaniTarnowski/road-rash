@@ -1,0 +1,222 @@
+// Plan 28 Task 4: race sprite cache + course canvas (moved from game_main.cpp).
+#pragma once
+#include <SDL3/SDL.h>
+#include <cstdint>
+#include <memory>
+#include <vector>
+#include "actor_nodes.hpp"
+#include "display.hpp"
+#include "fog.hpp"
+#include "framebuffer.hpp"
+#include "framebuffer_rgb.hpp"
+#include "game_types.hpp"
+#include "lifecycle.hpp"
+#include "post_chain.hpp"
+#include "render_threads.hpp"
+#include "road_draw.hpp"
+#include "sdl_handles.hpp"
+#include "upscale_cache.hpp"
+#include "raster_rgb.hpp"
+#include <filesystem>
+#include <string>
+#include "view_state.hpp"
+
+namespace rr {
+std::string pref_directory();  // game_main.cpp; plan 20 Task 3 cache root
+struct SpriteCache {
+    std::vector<TexturePtr> textures;
+    void clear() { textures.clear(); }
+    ~SpriteCache() { clear(); }
+    SDL_Texture* get(SDL_Renderer* r, const Game& g, int frame, int rider) {
+        if (textures.empty()) textures.resize(g.bobs.size() * g.remaps.tables.size());
+        TexturePtr& t = textures.at(size_t(rider) * g.bobs.size() + size_t(frame));
+        if (t) return t.get();
+        const Image8 img = remap(g.bobs.at(size_t(frame)), g.remaps, rider);
+        if (!img.width || !img.height) return nullptr;
+        std::vector<uint8_t> rgba(size_t(img.width) * img.height * 4);
+        for (size_t i = 0; i < img.pixels.size(); ++i) {
+            const uint8_t* c = &g.palette.rgbx[4 * img.pixels[i]];
+            rgba[4*i] = c[0]; rgba[4*i+1] = c[1]; rgba[4*i+2] = c[2]; rgba[4*i+3] = img.pixels[i] ? 255 : 0;  // index 0 transparent
+        }
+        SurfacePtr s(SDL_CreateSurfaceFrom(img.width, img.height, SDL_PIXELFORMAT_RGBA32, rgba.data(), img.width * 4));
+        t.reset(s ? SDL_CreateTextureFromSurface(r, s.get()) : nullptr);
+        if (t) SDL_SetTextureScaleMode(t.get(), crisp_scale);
+        return t.get();
+    }
+};
+
+struct CourseCanvas {
+    Framebuffer frame{640,480};
+    std::vector<uint8_t> rgba=std::vector<uint8_t>(640*480*4);
+    int scale_w=640,scale_h=480;   // plan 19 Task 4: 640s x 480s surface
+    int wide_w=320;                // plan 21 Task 8: logical width of the surface
+    TexturePtr texture;
+    bool texture_is_rgb = false;  // plan 21 Task 4: RGB path needs ARGB8888 upload
+    SDL_ScaleMode scale = crisp_scale;   // plan 18 Task 3: from DisplayDriver (filter setting)
+    ~CourseCanvas(){clear();}
+    void clear(){texture.reset();}
+    void resize(int s,int logical_width=320) {
+        if (s < 1 || s > 4) throw std::runtime_error("Render scale out of range 1..4");
+        if (logical_width * 2 * s == scale_w && 480 * s == scale_h) return;
+        wide_w = logical_width;
+        scale_w = logical_width * 2 * s; scale_h = 480 * s;
+        frame = Framebuffer(scale_w, scale_h);
+        rgba.assign(size_t(scale_w) * size_t(scale_h) * 4, 0);
+        clear();
+    }
+
+    std::unique_ptr<RenderThreads> workers;
+    int worker_count = 0;
+    FramebufferRgb rgb;  // plan 21 Task 4: full-colour frame (resized with frame)
+    PostChain post_chain;  // plan 21 Task 7: per-race post history
+    void draw(SDL_Renderer* renderer,const Game& game,const std::vector<RoadSlice>& slices,int s,int threads) {
+        const int32_t wide = game.logical_width();
+        resize(s,wide);
+        // Hor+ (plan 21 Task 8): builders centre at wide/2; the 4:3 picture
+        // is the centre crop. Shift node coords by the side margin so the
+        // 4:3-tuned projection lands centred on the wide surface.
+        const int32_t margin = (wide - 320) / 2;
+        // Plan 19 Task 8: the dashboard composes at the race scale (Task 5).
+        // The quick-race boot path has no HUD (dashboard is a career-mode
+        // surface); without one the scene stands alone as in Task 4 shots.
+        if (game.assets.hud) {
+            // Plan 19 Task 8: the dashboard composes at the race scale. Its
+            // RgbImage pixels are palette-mapped into the indexed frame.
+            const auto dash = game.assets.hud->compose(game.assets.hud->state(game.race(), game.player_name, game.rider_names),
+                                                game.assets.physics, rr::DashMode::full, s);
+            // Centred 4:3 dashboard (plan 21 Task 8): offset by the side
+            // margin so it sits in the middle of the wide frame.
+            const int xoff = margin * 2 * s;
+            for (int y = 0; y < dash.height && y < frame.height(); ++y)
+                for (int x = 0; x < dash.width && x + xoff < frame.width(); ++x) {
+                    const uint32_t c = dash.at(x, y);
+                    if (c == 0x01000000) continue;
+                    uint8_t best = 0;
+                    int best_d = INT_MAX;
+                    for (int i = 1; i < 256; ++i) {
+                        const uint8_t* rgb = &game.palette.rgbx[size_t(4 * i)];
+                        const int dr = int(rgb[0]) - int((c >> 16) & 0xff);
+                        const int dg = int(rgb[1]) - int((c >> 8) & 0xff);
+                        const int db = int(rgb[2]) - int(c & 0xff);
+                        const int d = dr * dr + dg * dg + db * db;
+                        if (d < best_d) { best_d = d; best = uint8_t(i); }
+                    }
+                    frame.row(y)[x + xoff] = best;
+                }
+            // Side panels: stretched + darkened edge columns (generated at
+            // runtime from the user's own dash art, no shipped assets).
+            if (margin > 0) {
+                const int side_w = margin * 2 * s;
+                for (int y = 0; y < dash.height && y < frame.height(); ++y) {
+                    const uint32_t lc = dash.at(0, y), rc = dash.at(dash.width - 1, y);
+                    if (lc == 0x01000000 && rc == 0x01000000) continue;
+                    for (int x = 0; x < side_w; ++x) {
+                        const uint32_t c = x < side_w / 2 ? lc : rc;
+                        if (c == 0x01000000) continue;
+                        // Darken by halving each channel via the palette.
+                        const int r = int((c >> 16) & 0xff) / 2, gg = int((c >> 8) & 0xff) / 2, bb = int(c & 0xff) / 2;
+                        uint8_t best = 0;
+                        int best_d = INT_MAX;
+                        for (int i = 1; i < 256; ++i) {
+                            const uint8_t* rgb = &game.palette.rgbx[size_t(4 * i)];
+                            const int dr = int(rgb[0]) - r, dg = int(rgb[1]) - gg, db = int(rgb[2]) - bb;
+                            const int d = dr * dr + dg * dg + db * db;
+                            if (d < best_d) { best_d = d; best = uint8_t(i); }
+                        }
+                        if (x < side_w / 2) frame.row(y)[x] = best;
+                        else frame.row(y)[xoff + dash.width + (x - side_w / 2)] = best;
+                    }
+                }
+            }
+        }
+        if (!workers || worker_count != threads) { workers = std::make_unique<RenderThreads>(threads); worker_count = threads; }
+        // Plan 21 Task 4: the game uses the RGB path when full_colour is on
+        // or filter != nearest; otherwise the indexed path (bit-identical).
+        const bool use_rgb = game.enhancements.full_colour ||
+                             game.enhancements.filter != rr::TextureFilter::nearest ||
+                             game.enhancements.fog > 0 || game.enhancements.grade != Grade::none;
+        // Plan 20 Task 3: lazy attach/detach on detail flips (load_course runs
+        // before the settings sync, so attach here where the setting is live).
+        if (game.texture_detail && !game.upscaled_attached && game.scene()) {
+            UpscaleCache cache((std::filesystem::path(pref_directory()) / "upscaled").string());
+            game.assets.scene->attach_upscaled(cache);
+            game.upscaled_attached = true;
+        } else if (!game.texture_detail && game.upscaled_attached && game.scene()) {
+            game.assets.scene->clear_upscaled();
+            game.upscaled_attached = false;
+        }
+        auto nodes=game.assets.scene->draw_nodes(game.race().route(),slices,game.race().camera(),game.depth,[&](const rr::RoadSlice& near,const rr::RoadSlice& far,int road,int32_t ceiling,bool back){return game.rider_nodes(near,far,road,ceiling,back);},wide);
+        if (margin) for (auto& n:nodes) for (auto& v:n.view_points) v.x+=margin*65536;
+        if (use_rgb) {
+            if (rgb.width() != scale_w || rgb.height() != scale_h) rgb.resize(scale_w, scale_h);
+            rgb.clear(0);
+            // Horizon into RGB: convert the indexed horizon rows via palette.
+            {
+                Framebuffer hz(scale_w, scale_h);
+                game.assets.scene->draw_horizon(hz,game.race().horizon_scroll(),wide);
+                for (int y = 0; y < scale_h; ++y)
+                    for (int x = 0; x < scale_w; ++x) {
+                        const uint8_t* c = &game.palette.rgbx[4 * hz.row(y)[x]];
+                        rgb.row(y)[x] = (255u << 24) | (uint32_t(c[0]) << 16) | (uint32_t(c[1]) << 8) | uint32_t(c[2]);
+                    }
+            }
+            // Plan 21 Task 5: fog colour from the horizon's own bottom rows
+            // (user's art, computed at runtime); sky/horizon exempt from fog.
+            const uint32_t fog_rgb = fog_colour(rgb.row(0), scale_w, scale_h);
+            render_nodes_rgb_fog(rgb,nodes,view_mode_wide(s,wide),16,game.palette,game.enhancements,*workers,fog_rgb);
+            // Grade post-pass (identity when grade == none).
+            if (game.enhancements.grade != Grade::none) {
+                const auto lut = grade_lut(game.enhancements.grade);
+                for (int y = 0; y < scale_h; ++y)
+                    for (int x = 0; x < scale_w; ++x) {
+                        const uint32_t p = rgb.row(y)[x];
+                        if (!(p >> 24)) continue;
+                        rgb.row(y)[x] = (p & 0xff000000u) | grade_apply(lut, p & 0xffffffu);
+                    }
+            }
+            // Plan 21 Task 7: CPU post chain (motion blur -> bloom -> vignette).
+            // Speed from the race's speedometer state (presentation read of the
+            // drawn tick, never a sim write); pause/teleport resets history.
+            post_chain.configure(game.enhancements);
+            if (post_chain.any()) {
+                const float speed = float(std::abs(game.race().speed()));
+                post_chain.apply(reinterpret_cast<uint32_t*>(rgb.row(0)), scale_w, scale_h, speed,
+                                 game.post_teleported);
+                game.post_teleported = false;
+            }
+            // Dashboard composited directly (no palette round-trip).
+            if (game.assets.hud) {
+                const auto dash = game.assets.hud->compose(game.assets.hud->state(game.race(), game.player_name, game.rider_names),
+                                                    game.assets.physics, rr::DashMode::full, s);
+                const int xoff = margin * 2 * s;
+                for (int y = 0; y < dash.height && y < scale_h; ++y)
+                    for (int x = 0; x < dash.width && x + xoff < scale_w; ++x) {
+                        const uint32_t c = dash.at(x, y);
+                        if (c == 0x01000000) continue;
+                        rgb.row(y)[x + xoff] = 0xff000000u | (c & 0xffffffu);
+                    }
+            }
+        } else {
+        game.assets.scene->draw_horizon(frame,game.race().horizon_scroll(),wide);
+        // The dashboard stays a centred 4:3 image (plan 21 Task 8); side
+        // panels are drawn from its edge columns below.
+        rr::render_nodes_threaded(frame,nodes,view_mode_wide(s,wide),16,*workers,game.enhancements.perspective);
+        frame.to_rgba(game.palette,rgba.data(),scale_w*4);
+        }
+        if(!texture || texture_is_rgb != use_rgb) {
+            texture.reset(SDL_CreateTexture(renderer,use_rgb?SDL_PIXELFORMAT_ARGB8888:SDL_PIXELFORMAT_RGBA32,SDL_TEXTUREACCESS_STREAMING,scale_w,scale_h));
+            if(!texture)throw std::runtime_error(SDL_GetError());
+            SDL_SetTextureScaleMode(texture.get(),scale);
+            texture_is_rgb = use_rgb;
+        }
+        if(use_rgb) {
+            if(!SDL_UpdateTexture(texture.get(),nullptr,rgb.row(0),scale_w*4))throw std::runtime_error(SDL_GetError());
+        } else if(!SDL_UpdateTexture(texture.get(),nullptr,rgba.data(),scale_w*4))throw std::runtime_error(SDL_GetError());
+        // Hor+ (plan 21 Task 8): logical presentation is wide*2 x 480,
+        // set once per resize below; the texture fills it exactly.
+        const SDL_FRect dst{0,0,float(scale_w),float(scale_h)};
+        SDL_SetRenderLogicalPresentation(renderer,float(scale_w),float(scale_h),SDL_LOGICAL_PRESENTATION_LETTERBOX);
+        if(!SDL_RenderTexture(renderer,texture.get(),nullptr,&dst))throw std::runtime_error(SDL_GetError());
+    }
+};
+}
