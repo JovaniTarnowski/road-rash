@@ -99,7 +99,7 @@ The owner also asked for plans covering pedestrians, oil slicks, police and the 
 | 08 | [Platform, input, packaging](08-platform-input-packaging.md) | Software complete for macOS; Android hardware validation open | Plans 14, 15 |
 | 09 | [Multiplayer](09-multiplayer.md) | Decision-gated, not started | Plan 15 Task 4 (decision only) |
 | **10** | [Simulation oracle and tick verification](10-simulation-oracle.md) | Tasks 1–4 done (`ab8cc79`, `37c4597`, `d3294fa`, `6b2ce6d`). Task 5 in progress: demo-hold replay matches 124 ticks with per-tick RNG re-anchoring (not yet acceptance; see the playtest update) | — |
-| **11a** | [Napa playtest fixes](11a-napa-playtest-fixes.md) | Tasks 1 + 4 done (`1d015d1`; launch scripts, `rr-viewer` rename, stamped bundle rebuilt from `adcf59c`). Task 2 Steps 1–4 done (rpm + distance readout; pixel capture open). Task 3 Steps 1–4 done (`dad61b3`, `c86d566`: native-actors 25/25, pixel clean; mid-jump frame open) | — |
+| **11a** | [Napa playtest fixes](11a-napa-playtest-fixes.md) | Tasks 1 + 4 done. Task 2 Steps 1–5 done (rpm + distance readout; post-dash hook, parked needles match). Task 3 Steps 1–5 done (nodes 25/25 pixel-clean; jump hunt partial, drive-3 mode kept) | — |
 | **11** | [Opening Napa race completion](11-napa-race-completion.md) | Task 1 done (`51cb898`). Task 2 partly done: playback, live rider and car nodes (`fda8b2a`, `586169a`); node comparison done (11a Task 3: 25/25, pixel clean). Task 4 partly done: crash entry/motion/recovery/remount verified offline (`63ad4ad`, `be31cdc`); car contact done (11a Task 1). Task 6 partly done: arrest decisions and cop setup (`397691a`, `be31cdc`); live spawning open (plan 24 Task 2). Tasks 3, 5, 7, 8 open | — |
 | 12 | [All courses and levels](12-all-courses.md) | **Superseded by plan 17** (October 11) | Plan 17 |
 | **13** | [Race music and front-end completion](13-music-and-frontend-completion.md) | New. Task 3 (sound mix, controls) moved to plan 18 Tasks 6–7 | — |
@@ -120,7 +120,7 @@ The owner also asked for plans covering pedestrians, oil slicks, police and the 
 | **28** | [Race shell: input actions, RAII, race screen](28-race-shell-input-and-raii.md) | **Done** (`b50dac8`, `a3c1c68`, `5632e71`, `7ca92ba`); plan 23 Task 3 note open (orchestrator scope) | — |
 | **29** | [Enhanced render path performance](29-enhanced-path-performance.md) | **Done** (Tasks 1–4): benchmark + counter, cached RGBA levels, band-threaded RGB (bit-identical), persistent band scratch | — |
 | **30** | [Test and build infrastructure](30-test-and-build-infrastructure.md) | **Done** (Tasks 1–5): labels/fast targets/guard, Checks, strict clean, ByteReader/ISO parser, build pruner | — |
-| **31** | [Docs and status hygiene](31-docs-and-status-hygiene.md) | In progress (this plan): header/index refresh done; handoff archive + doc checks to follow | — |
+| **31** | [Docs and status hygiene](31-docs-and-status-hygiene.md) | **Done**: header/index refresh, handoff archive, doc checks in agent-tooling | — |
 
 ### Order and dependencies
 
