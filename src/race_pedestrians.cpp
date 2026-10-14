@@ -417,7 +417,7 @@ void Race::contact_pedestrian(Rider& self, Pedestrian& p) {
     s.u8(0x19c) = 0;
     if (s.i32(0xec) > 30000) s.i32(0xec) = 30000;
     if (s.i32(0xec) < -1000) s.i32(0xec) = -1000;
-    s.i32(0xf4) = std::clamp(s.i32(0xf4), -10000, 10000);
+    s.i32(0xf4) = std::clamp(int32_t(s.i32(0xf4)), -10000, 10000);
 }
 
 void Race::contact_rider_pedestrian(Rider& r, Pedestrian& p, bool rider_outer) {

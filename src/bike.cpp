@@ -249,12 +249,15 @@ void apply_controls(Bike& b, const PhysicsTables& t, uint32_t c) {
 }
 
 void shift_gears(Bike& b) {
-    int32_t& gear = b.i32(0x23c);
+    // Was `int32_t& gear`: explicit read/modify/write with identical semantics.
+    int32_t gear = b.i32(0x23c);
     if (gear > 6) gear = 6;
     if (gear < 0) gear = 0;
+    b.i32(0x23c) = gear;
     const int32_t g = gear;
     if (b.i32(0x1d4 + g * 0x10) < b.i32(0xec)) { gear = g + 1 > 6 ? 6 : g + 1; }
     else if (b.i32(0xec) < b.i32(0x1d8 + g * 0x10)) { gear = g - 1 < 0 ? 0 : g - 1; }
+    b.i32(0x23c) = gear;
 }
 
 void integrate_speed(Bike& b, const PhysicsTables& t, int surface) {

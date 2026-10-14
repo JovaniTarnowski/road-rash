@@ -1996,7 +1996,7 @@ void Race::resolve_hit(Rider& r, size_t index) {
     if (r.attack.backhand) { tb.i32(0xec) -= 300; b.i32(0xec) += 300; }   // 0x00409bd0 shove
     auto clamp_steer = [](Bike& k) {
         const int32_t lim = k.i32(0x29c);
-        k.i32(0x288) = std::max(-lim, std::min(lim, k.i32(0x288)));
+        k.i32(0x288) = std::max(-lim, std::min(lim, int32_t(k.i32(0x288))));
     };
     tb.i32(0x288) += r.attack.right ? 3000 : -3000;
     b.i32(0x288) += r.attack.right ? -1000 : 1000;

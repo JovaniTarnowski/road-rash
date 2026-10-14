@@ -1,5 +1,6 @@
 #pragma once
 #include <array>
+#include <cassert>
 #include <cstdint>
 #include <cstring>
 #include <vector>
@@ -27,15 +28,27 @@ struct PhysicsTables {
 };
 PhysicsTables read_physics_tables(const std::vector<uint8_t>& exe);
 
-// Bike object. Stored as the original byte layout so ported code addresses the same
-// offsets as the executable (comments name them); only the fields the riding code uses
-// are meaningful here.
+// Plan 27 Task 1: memcpy-backed lvalue for a 32-bit field in byte storage.
+// Reads/writes keep call-site syntax (`b.i32(0x1c) = v`, `+=`, implicit read);
+// the `uint32_t` compound arithmetic defines the x86 wraparound that signed
+// `int32_t` addition left undefined. No behaviour change for non-overflowing values.
+class I32Field {
+public:
+    explicit I32Field(uint8_t* p) : p_(p) {}
+    operator int32_t() const { int32_t v; std::memcpy(&v, p_, 4); return v; }
+    I32Field& operator=(int32_t v) { std::memcpy(p_, &v, 4); return *this; }
+    I32Field& operator=(const I32Field& o) { return *this = int32_t(o); }
+    I32Field& operator+=(int32_t v) { return *this = int32_t(uint32_t(int32_t(*this)) + uint32_t(v)); }
+    I32Field& operator-=(int32_t v) { return *this = int32_t(uint32_t(int32_t(*this)) - uint32_t(v)); }
+private:
+    uint8_t* p_;
+};
 struct Bike {
     std::array<uint8_t,0x340> m{};
     int32_t accel = 0;        // 0x004c3cec: last acceleration computed by 0x004390c0
     int32_t skid_ticks = 0;   // 0x0046dce0: player skid duration (a global in the original; one player)
-    int32_t& i32(int offset) { return *reinterpret_cast<int32_t*>(m.data() + offset); }
-    int32_t i32(int offset) const { int32_t v; std::memcpy(&v, m.data() + offset, 4); return v; }
+    I32Field i32(int offset) { assert(offset >= 0 && size_t(offset) + 4 <= m.size()); return I32Field(m.data() + offset); }
+    int32_t i32(int offset) const { assert(offset >= 0 && size_t(offset) + 4 <= m.size()); int32_t v; std::memcpy(&v, m.data() + offset, 4); return v; }
     uint8_t& u8(int offset) { return m[size_t(offset)]; }
     uint8_t u8(int offset) const { return m[size_t(offset)]; }
 };
