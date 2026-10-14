@@ -157,8 +157,8 @@ private: /* the fps_* locals of run_race, with TexturePtr */
 void draw_quit_prompt(SDL_Renderer*, const std::string& prompt_cp1252);   // the g.quitting block
 }
 ```
-- [ ] **Step 1:** Move the `fps_*` locals and both FPS blocks into `FpsOverlay`, verbatim except for the RAII handles. Move the quit-prompt block into `draw_quit_prompt`.
-- [ ] **Step 2:** Verify the baseline hashes plus a run with `--show-fps` (the screenshot hash with FPS on is recorded in the baseline too; the FPS digits vary, so compare only that the run exits 0 and the text region is non-empty). Commit: `game: FPS overlay and quit prompt as units`.
+- [x] **Step 1:** Move the `fps_*` locals and both FPS blocks into `FpsOverlay`, verbatim except for the RAII handles. Move the quit-prompt block into `draw_quit_prompt`.
+- [x] **Step 2:** Verify the baseline hashes plus a run with `--show-fps` (the screenshot hash with FPS on is recorded in the baseline too; the FPS digits vary, so compare only that the run exits 0 and the text region is non-empty). Commit: `game: FPS overlay and quit prompt as units`.
 
 ---
 

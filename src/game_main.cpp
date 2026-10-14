@@ -3,6 +3,7 @@
 #include <SDL3/SDL.h>
 #include "race_actions.hpp"
 #include "sdl_handles.hpp"
+#include "race_overlay.hpp"
 #include <SDL3/SDL_main.h>
 #include "assets.hpp"
 #include "bob.hpp"
@@ -1011,12 +1012,8 @@ RaceEnd run_race(Game& g, SDL_Renderer* renderer, const RaceOptions& opt, Displa
     rr::RgbImage pause_img;
     // Plan 18 Task 9: FPS + ticks/sec overlay, refreshed twice a second.
     const bool fps_on = opt.show_fps && opt.assets;
-    std::unique_ptr<rr::TextRenderer> fps_text;
-    rr::TexturePtr fps_tex;
-    rr::RgbImage fps_img;
-    uint64_t fps_next = 0, fps_last = 0;
-    int fps_frames = 0, fps_tick_acc = 0, fps_v = 0, tps_v = 0;
-    std::vector<uint32_t> fps_argb;   // upload buffer: transparent bg, opaque ink
+    std::unique_ptr<rr::FpsOverlay> fps_overlay;
+    if (fps_on) fps_overlay = std::make_unique<rr::FpsOverlay>(*opt.assets);
     bool running = true, decided = false;
     int end_ticks = 0;
     uint64_t last = SDL_GetTicksNS();
@@ -1147,7 +1144,6 @@ RaceEnd run_race(Game& g, SDL_Renderer* renderer, const RaceOptions& opt, Displa
                                                     : rr::RaceOutcome::wrecked;
             } else if (decided && --end_ticks <= 0) running = false;
         }
-        if (fps_on) fps_tick_acc += steps;
         // Plan 21 Task 2: capture the new tick; blend for this frame. With
         // interpolation off, alpha=65536 reproduces the live frame exactly.
         if (steps > 0 && !frozen) {
@@ -1194,62 +1190,11 @@ RaceEnd run_race(Game& g, SDL_Renderer* renderer, const RaceOptions& opt, Displa
             draw_opponents(renderer, g, sprites, slices);
             draw_bike(renderer, g, sprites,slices);
             draw_hud(renderer, g);
-            if (g.quitting) {
-                SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND);
-                SDL_SetRenderDrawColor(renderer, 0, 0, 0, 190);
-                SDL_RenderFillRect(renderer, nullptr);
-                SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_NONE);
-                SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
-                float y = 200;
-                size_t from = 0;
-                while (from <= g.quit_prompt.size()) {
-                    size_t to = g.quit_prompt.find('\n', from);
-                    if (to == std::string::npos) to = g.quit_prompt.size();
-                    const std::string line = rr::cp1252_to_utf8(g.quit_prompt.substr(from, to - from));
-                    SDL_RenderDebugText(renderer, 320 - 4.f * float(line.size()), y, line.c_str());
-                    y += 14;
-                    from = to + 1;
-                }
-            }
+            if (g.quitting) rr::draw_quit_prompt(renderer, g.quit_prompt);
         }
         // Plan 18 Task 9: FPS + simulation ticks/sec, top-right, Futura Bold 24
         // #DEFFF0 with a 2-pixel black shadow like all original text, twice a second.
-        if (fps_on && opt.assets) {
-            ++fps_frames;
-            const uint64_t now_ms = now / 1000000;
-            if (now_ms >= fps_next) {
-                const uint64_t span = now_ms >= fps_last ? now_ms - fps_last : 1;
-                fps_v = int(uint64_t(fps_frames) * 1000 / span);
-                tps_v = int(uint64_t(fps_tick_acc) * 1000 / span);
-                fps_frames = 0; fps_tick_acc = 0; fps_last = now_ms; fps_next = now_ms + 500;
-                if (!fps_text) fps_text = std::make_unique<rr::TextRenderer>(*opt.assets);
-                if (fps_text->has(rr::Face::futura_bold)) {
-                    const std::string s = std::to_string(fps_v) + " FPS " + std::to_string(tps_v) + " TPS";
-                    const int w = fps_text->width(rr::Face::futura_bold, 24, s) + 4;
-                    fps_img = rr::RgbImage(w, 30, 0);
-                    fps_text->draw(fps_img, rr::Face::futura_bold, 24, 2, 2, 0x404040, s);
-                    fps_text->draw(fps_img, rr::Face::futura_bold, 24, 0, 0, 0xdefff0, s);
-                    // Opaque ink over a transparent background (straight-alpha
-                    // ARGB8888) so the sky shows through.
-                    fps_argb.assign(size_t(w) * 30, 0);
-                    for (size_t i = 0; i < fps_argb.size(); ++i)
-                        if (fps_img.pixels[i]) fps_argb[i] = 0xff000000u | fps_img.pixels[i];
-                    if (fps_tex) { float tw = 0, th = 0; SDL_GetTextureSize(fps_tex.get(), &tw, &th); if (int(tw) != w || int(th) != 30) fps_tex.reset(); }
-                    if (!fps_tex) {
-                        fps_tex.reset(SDL_CreateTexture(renderer, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STREAMING, w, 30));
-                        if (fps_tex) SDL_SetTextureBlendMode(fps_tex.get(), SDL_BLENDMODE_BLEND);
-                    }
-                    if (fps_tex) SDL_UpdateTexture(fps_tex.get(), nullptr, fps_argb.data(), w * 4);
-                }
-            }
-            if (fps_tex) {
-                // Logical space is 640 wide in the race; pin to its top-right.
-                float tw = 0, th = 0;
-                SDL_GetTextureSize(fps_tex.get(), &tw, &th);
-                const SDL_FRect dst{640.f - tw - 8.f, 8.f, tw, th};
-                SDL_RenderTexture(renderer, fps_tex.get(), nullptr, &dst);
-            }
-        }
+        if (fps_overlay) fps_overlay->frame(renderer, now, steps);
         if (!opt.screenshot.empty()) {
             rr::SurfacePtr capture(SDL_RenderReadPixels(renderer, nullptr));
             if (!capture || !SDL_SaveBMP(capture.get(), opt.screenshot.c_str())) throw std::runtime_error(SDL_GetError());
