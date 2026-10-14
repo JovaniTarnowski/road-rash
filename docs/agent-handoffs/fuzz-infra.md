@@ -70,9 +70,14 @@ Deviations from the plan text (deliberate, recorded):
       resources 583k, save 500k, settings 153k, terrain 593k execs each.
       rri + unpack found genuine OOMs (see findings). Seed-manifest guard
       passed (37 files, no pollution of the committed tree).
-- [ ] Native gate: default Apple-clang build in `build-agent-fuzz-infra`
-      (running in background as sh_13c3be459002VaoL8IQQFOpNHt) + a few quick
-      parser CTests, then commit iff green.
+- [x] Native gate: default Apple-clang build in `build-agent-fuzz-infra`
+      green (BUILD-EXIT=0, full tree incl. rr-game) + 17/17 parser CTests
+      green (`resource-bounds|byte-reader|wav|cel|family|terrain|animation|
+      avi|iso9660|pe_strings|career|ima_adpcm|bob`; `settings` skipped — another
+      worker has tests/settings_test.cpp in flight).
+- [x] Committed (builds green, explicit paths only):
+      `e595d54` fuzz: libFuzzer build, synthetic seeds and runner (44 files);
+      `8b1f1a2` fuzz: targets for every parser of user data (17 files).
 
 ## Toolchain finding (infra, Homebrew LLVM 22.1.4)
 
