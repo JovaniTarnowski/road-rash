@@ -3,6 +3,7 @@
 // alpha-tests (discard if alpha < 0.5) and un-premultiplies — no dark halos.
 #pragma once
 #include <array>
+#include <cstddef>
 #include <cstdint>
 #include <vector>
 #include "cel.hpp"
@@ -22,6 +23,9 @@ struct RgbaMip {
 // Converted once per (texture, palette generation); remaps apply to the index
 // image before conversion (caller converts the remapped CelTexture).
 const std::vector<RgbaMip>& rgba_mips(const CelTexture&, const Palette&, uint32_t palette_generation);
+uint32_t palette_generation(const Palette&);   // FNV-1a over rgbx; equal palettes -> equal value
+void clear_rgba_mip_cache();                     // only between frames (course load / teardown); invalidates references returned by rgba_mips
+size_t rgba_mip_cache_size();                    // test hook
 // Test hook: convert one mip without caching.
 std::vector<RgbaMip> rgba_mips_for_test(const CelMip&, const Palette&);
 struct RgbVertex {
