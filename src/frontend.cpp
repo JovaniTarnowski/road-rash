@@ -1,3 +1,4 @@
+#include "atomic_file.hpp"
 #include "frontend.hpp"
 #include <SDL3/SDL_scancode.h>
 #include <SDL3/SDL_keyboard.h>
@@ -846,9 +847,7 @@ void Frontend::save_current() {
     try {
         std::filesystem::create_directories(save_dir_);
         const auto bytes = write_save(career_);
-        std::ofstream out(save_file_, std::ios::binary | std::ios::trunc);
-        out.write(reinterpret_cast<const char*>(bytes.data()), std::streamsize(bytes.size()));
-        if (!out) throw std::runtime_error("write failed");
+        if (!write_file_atomic(save_file_, bytes.data(), bytes.size())) throw std::runtime_error("write failed");
         career_.unsaved = false;
         apply_restroom_pattern();
     } catch (const std::exception&) {
