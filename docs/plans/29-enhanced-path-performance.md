@@ -63,6 +63,7 @@ void operator delete(void* p) noexcept;
 > | 2 | 47.1/47.3/34.2/29.0 | 88.8 | 232.7 | 85.9 |
 > | 4 | 118.2/110.2/114.0/93.2 | 168.1 | 291.1 | 161.9 |
 > Checksums identical across thread counts on every path (single-threaded RGB ignores the pool).
+> Task 2 result: `raster_rgb_alloc` 0 allocations, checksum `861b81d25eb5f7db` pinned; `rgb_upscaled_ms` 85.9 -> 84.6 (noise); RGB suites 8/8 green. Deviations: edge buffers hoisted to `thread_local` in `draw_rgb_impl` (the 4 vectors x 500 quads = 2000 allocs dominated); `flat_mip` is `thread_local` with per-node `[0] = argb` store (also fixed a dropped flat colour in the first cut).
 
 ### Task 2: No per-node allocations in the RGB path
 
@@ -72,11 +73,11 @@ void operator delete(void* p) noexcept;
 - Changes the cache key to `(const CelTexture*, uint32_t generation, int level)`: `level = 0` is the base mip chain and `level = k+1` is `upscaled[k]`. Adds the `rgba_mips(const CelTexture&, const Palette&, uint32_t generation, int level)` overload. The existing 3-argument form calls it with `level = 0`.
 - `draw_rgb_impl` takes `const RgbaMip* mips, size_t count` instead of `const std::vector<RgbaMip>&`.
 
-- [ ] **Step 1: Failing test** `tests/raster_rgb_alloc_test.cpp` (define `RR_ALLOC_COUNTER_DEFINE`). Build the Task 1 scene (copy the builder into a shared `tests/bench_scene.hpp` so both binaries use one definition). Render a warm-up frame with `render_nodes_rgb_fog`, then a second frame inside `rr::test::CountAllocs c;` and check `c.count() == 0`. Also checksum both frames and assert the second equals a frame rendered by the pre-change code. Store the expected checksum as a constant obtained by running the test once on the merge base, and record that in the handoff.
-- [ ] **Step 2:** Run it; expect a nonzero allocation count.
-- [ ] **Step 3: Implement.** (a) Upscaled path: replace `rgba_mips_for_test(...)` on the hot path with `rgba_mips(texture, palette, generation, int(up) + 1)`, whose conversion builds the dense `CelMip` exactly as the current lambda does. (b) Flat quads: keep one `RgbaMip flat_mip{1, 1, {0}}` per call outside the loop, set `flat_mip.premultiplied[0] = argb;`, and pass `&flat_mip, 1`. (c) `draw_rgb_impl` takes pointer and count. Leave `rgba_mips_for_test` in place for tests only.
-- [ ] **Step 4:** Run the alloc test (0 allocations, same checksum) plus `ctest -R "raster-rgb|rgba_cache|fog|post-chain|hires-render"`. Benchmark: record `rgb_upscaled_ms` before and after.
-- [ ] **Step 5:** Commit: `render: cache upscaled RGBA levels; no per-node allocation in the RGB path`.
+- [x] **Step 1: Failing test** `tests/raster_rgb_alloc_test.cpp` (define `RR_ALLOC_COUNTER_DEFINE`). Build the Task 1 scene (copy the builder into a shared `tests/bench_scene.hpp` so both binaries use one definition). Render a warm-up frame with `render_nodes_rgb_fog`, then a second frame inside `rr::test::CountAllocs c;` and check `c.count() == 0`. Also checksum both frames and assert the second equals a frame rendered by the pre-change code. Store the expected checksum as a constant obtained by running the test once on the merge base, and record that in the handoff.
+- [x] **Step 2:** Run it; expect a nonzero allocation count.
+- [x] **Step 3: Implement.** (a) Upscaled path: replace `rgba_mips_for_test(...)` on the hot path with `rgba_mips(texture, palette, generation, int(up) + 1)`, whose conversion builds the dense `CelMip` exactly as the current lambda does. (b) Flat quads: keep one `RgbaMip flat_mip{1, 1, {0}}` per call outside the loop, set `flat_mip.premultiplied[0] = argb;`, and pass `&flat_mip, 1`. (c) `draw_rgb_impl` takes pointer and count. Leave `rgba_mips_for_test` in place for tests only.
+- [x] **Step 4:** Run the alloc test (0 allocations, same checksum) plus `ctest -R "raster-rgb|rgba_cache|fog|post-chain|hires-render"`. Benchmark: record `rgb_upscaled_ms` before and after.
+- [x] **Step 5:** Commit: `render: cache upscaled RGBA levels; no per-node allocation in the RGB path`.
 
 ---
 

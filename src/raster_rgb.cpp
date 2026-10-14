@@ -106,7 +106,7 @@ void edge(Edge* rows, const TextureVertex& from, const TextureVertex& to) {
     }
 }
 }  // namespace q16
-void draw_rgb_impl(FramebufferRgb& fb, const std::array<RgbVertex, 4>& verts, const std::vector<RgbaMip>& mips,
+void draw_rgb_impl(FramebufferRgb& fb, const std::array<RgbVertex, 4>& verts, const RgbaMip* mips, size_t count,
                    size_t level0, size_t level1, double level_frac, bool transparent, RasterClip clip, Sampler sample,
                    FogState fog = {}) {
     int first = 0, bottom = verts[0].y;
@@ -115,15 +115,22 @@ void draw_rgb_impl(FramebufferRgb& fb, const std::array<RgbVertex, 4>& verts, co
         bottom = std::max(bottom, verts[i].y);
     }
     if (bottom == verts[first].y) return;
-    std::vector<RgbEdge> left(size_t(fb.height())), right(size_t(fb.height()));
-    std::vector<char> lset(size_t(fb.height()), 0), rset(size_t(fb.height()), 0);
+    // Reused per-thread edge buffers (no per-quad allocation; Task 3 bands
+    // share one thread each, so thread_local is band-safe).
+    thread_local std::vector<RgbEdge> left, right;
+    thread_local std::vector<char> lset, rset;
+    const size_t hh = size_t(fb.height());
+    if (left.size() < hh) { left.resize(hh); right.resize(hh); lset.resize(hh); rset.resize(hh); }
+    std::fill(lset.begin(), lset.begin() + ptrdiff_t(hh), 0);
+    std::fill(rset.begin(), rset.begin() + ptrdiff_t(hh), 0);
     rgb_chain(left, lset, verts, first, bottom, -1, fb.height());
     rgb_chain(right, rset, verts, first, bottom, 1, fb.height());
     const int top = std::max({0, verts[size_t(first)].y, clip.top});
     const int last = std::min({bottom, clip.bottom, fb.height() - 1});
     const int bound = std::min(clip.right, fb.width());
-    const RgbaMip& m0 = mips.at(level0);
-    const RgbaMip& m1 = mips.at(level1);
+    if (level0 >= count || level1 >= count) throw std::runtime_error("RGB mip level out of range");
+    const RgbaMip& m0 = mips[level0];
+    const RgbaMip& m1 = mips[level1];
     for (int y = top; y <= last; ++y) {
         if (!lset[size_t(y)] || !rset[size_t(y)]) continue;
         auto l = left[size_t(y)], r = right[size_t(y)];
@@ -179,10 +186,19 @@ std::vector<RgbaMip> rgba_mips_for_test(const CelMip& mip, const Palette& palett
 }
 
 namespace {
-// Mip cache keyed on (texture pointer, palette generation).
+// Mip cache keyed on (texture pointer, palette generation, level).
+// Level 0 is the base chain; level k+1 is upscaled[k] converted dense
+// (same bytes as the old per-node lambda). Keys never collide (Focus 2).
 std::mutex g_mutex;
-std::map<std::pair<const CelTexture*, uint32_t>, std::vector<RgbaMip>> g_cache;
-std::vector<RgbaMip> convert_mips(const CelTexture& tex, const Palette& palette) {
+std::map<std::tuple<const CelTexture*, uint32_t, int>, std::vector<RgbaMip>> g_cache;
+std::vector<RgbaMip> convert_mips(const CelTexture& tex, const Palette& palette, int level) {
+    if (level > 0) {
+        const auto& um = tex.upscaled.at(size_t(level) - 1);
+        CelMip dense;
+        dense.width = um.width; dense.height = um.height;
+        dense.stride_shift = um.stride_shift; dense.pixels = um.pixels;
+        return rgba_mips_for_test(dense, palette);
+    }
     std::vector<RgbaMip> out;
     for (const auto& m : tex.mips) {
         RgbaMip r;
@@ -218,16 +234,19 @@ size_t rgba_mip_cache_size() {
     return g_cache.size();
 }
 const std::vector<RgbaMip>& rgba_mips(const CelTexture& tex, const Palette& palette, uint32_t generation) {
+    return rgba_mips(tex, palette, generation, 0);
+}
+const std::vector<RgbaMip>& rgba_mips(const CelTexture& tex, const Palette& palette, uint32_t generation, int level) {
     std::lock_guard<std::mutex> lock(g_mutex);
-    const auto key = std::make_pair(&tex, generation);
+    const auto key = std::make_tuple(&tex, generation, level);
     const auto it = g_cache.find(key);
     if (it != g_cache.end()) return it->second;
-    return g_cache.emplace(key, convert_mips(tex, palette)).first->second;
+    return g_cache.emplace(key, convert_mips(tex, palette, level)).first->second;
 }
 
 void draw_rgb_quad_bilinear(FramebufferRgb& fb, const std::array<RgbVertex, 4>& verts,
-                            const std::vector<RgbaMip>& mips, bool transparent, RasterClip clip, FogState fog) {
-    draw_rgb_impl(fb, verts, mips, 0, 0, 0.0, transparent, clip, sample_level, fog);
+                            const RgbaMip* mips, size_t count, bool transparent, RasterClip clip, FogState fog) {
+    draw_rgb_impl(fb, verts, mips, count, 0, 0, 0.0, transparent, clip, sample_level, fog);
 }
 // Nearest-exact path: the SAME Q16 edge/span arithmetic as draw_textured_quad,
 // sinking palette colours instead of indices. Guarantees byte-identity with
@@ -379,15 +398,15 @@ void draw_rgb_quad_nearest_wide(FramebufferRgb& fb, const std::array<TextureVert
 }
 // sampler for draw_rgb_impl nearest over RgbaMips (kept for the test-hook path)
 void draw_rgb_impl_nearest(FramebufferRgb& fb, const std::array<RgbVertex, 4>& verts,
-                           const std::vector<RgbaMip>& mips, size_t level, bool transparent, RasterClip clip) {
-    draw_rgb_impl(fb, verts, mips, level, level, 0.0, transparent, clip, sample_nearest);
+                           const RgbaMip* mips, size_t count, size_t level, bool transparent, RasterClip clip) {
+    draw_rgb_impl(fb, verts, mips, count, level, level, 0.0, transparent, clip, sample_nearest);
 }
 void draw_rgb_quad_trilinear(FramebufferRgb& fb, const std::array<RgbVertex, 4>& verts,
-                             const std::vector<RgbaMip>& mips, bool transparent, RasterClip clip, float lod,
+                             const RgbaMip* mips, size_t count, bool transparent, RasterClip clip, float lod,
                              FogState fog) {
-    const size_t l0 = std::min(mips.size() - 1, size_t(lod));
-    const size_t l1 = std::min(mips.size() - 1, l0 + 1);
-    draw_rgb_impl(fb, verts, mips, l0, l1, std::max(0.0, std::min(1.0, double(lod) - l0)), transparent, clip,
+    const size_t l0 = std::min(count - 1, size_t(lod));
+    const size_t l1 = std::min(count - 1, l0 + 1);
+    draw_rgb_impl(fb, verts, mips, count, l0, l1, std::max(0.0, std::min(1.0, double(lod) - l0)), transparent, clip,
                   sample_level, fog);
 }
 
@@ -399,6 +418,7 @@ static void render_nodes_rgb_impl(FramebufferRgb& fb, const std::vector<DrawNode
     (void)pool;
     const RasterClip clip{0, 0, fb.width(), fb.height() - 1};
     const uint32_t generation = palette_generation(palette);   // per call; content-keyed
+    thread_local RgbaMip flat_mip{1, 1, {0}};   // flat fills reuse one 1x1 mip (no per-call vector)
     for (const auto& node : nodes) {
         if (!node.texture && !node.flat_index) continue;
         std::array<RgbVertex, 4> pts;
@@ -440,13 +460,12 @@ static void render_nodes_rgb_impl(FramebufferRgb& fb, const std::vector<DrawNode
             const uint8_t* c = &palette.rgbx[4 * fi];
             const uint32_t argb = (255u << 24) | (uint32_t(c[0]) << 16) | (uint32_t(c[1]) << 8) | uint32_t(c[2]);
             // Flat fill over the mapped bbox-clipped quad is wrong; reuse the
-            // edge walk with a 1x1 opaque mip.
-            RgbaMip flat;
-            flat.width = 1; flat.height = 1; flat.premultiplied = {argb};
+            // edge walk with a 1x1 opaque mip (one per call, outside the loop).
             std::array<RgbVertex, 4> fp = pts;
             for (auto& v : fp) { v.u = 0; v.v = 0; }
             FogState flat_fog{fog_on && (fp[0].fog_q8 | fp[1].fog_q8 | fp[2].fog_q8 | fp[3].fog_q8), fog_colour};
-            draw_rgb_impl(fb, fp, std::vector<RgbaMip>{flat}, 0, 0, 0.0, false, clip, sample_nearest, flat_fog);
+            flat_mip.premultiplied[0] = argb;
+            draw_rgb_impl(fb, fp, &flat_mip, 1, 0, 0, 0.0, false, clip, sample_nearest, flat_fog);
             continue;
         }
         const auto& texture = *node.texture;
@@ -469,18 +488,13 @@ static void render_nodes_rgb_impl(FramebufferRgb& fb, const std::vector<DrawNode
         const int signed_level = texture_mip_level_signed(uint32_t(maxx - minx + 1), uint32_t(maxy - miny + 1),
                                                            src_w, src_h, texture.mips.size(),
                                                            texture.upscaled.size());
-        std::vector<RgbaMip> up_rgba;
         const std::vector<RgbaMip>* mip_set = &mips;
         size_t level = 0;
         unsigned uv_scale = 1;
         if (signed_level < 0) {
             const size_t up = size_t(-signed_level - 1);
-            const auto& um = texture.upscaled.at(up);
-            up_rgba = rgba_mips_for_test(
-                [&] { CelMip c; c.width = um.width; c.height = um.height; c.stride_shift = um.stride_shift; c.pixels = um.pixels; return c; }(),
-                palette);
-            // rgba_mips_for_test assumes stride == width; upscaled mips are dense.
-            mip_set = &up_rgba;
+            // Cached dense conversion (same bytes as the old per-node lambda).
+            mip_set = &rgba_mips(texture, palette, generation, int(up) + 1);
             level = 0;
             uv_scale = unsigned(1) << (up + 1);
         } else {
@@ -497,14 +511,14 @@ static void render_nodes_rgb_impl(FramebufferRgb& fb, const std::vector<DrawNode
             const double src = double(std::max(src_w, src_h));
             const float lod = float(std::max(0.0, std::log2(src / std::max(1.0, proj))));
             FogState tex_fog{fog_on && (pts[0].fog_q8 | pts[1].fog_q8 | pts[2].fog_q8 | pts[3].fog_q8), fog_colour};
-            draw_rgb_quad_trilinear(fb, pts, *mip_set, transparent, clip, lod, tex_fog);
+            draw_rgb_quad_trilinear(fb, pts, mip_set->data(), mip_set->size(), transparent, clip, lod, tex_fog);
         } else if (enh.filter == TextureFilter::nearest) {
             // Fogged nearest goes through the float path (no exactness claim
             // with fog on); unfogged keeps the Q16-exact walk.
             const bool node_fog = fog_on && (pts[0].fog_q8 | pts[1].fog_q8 | pts[2].fog_q8 | pts[3].fog_q8);
             if (node_fog) {
                 FogState nf{true, fog_colour};
-                draw_rgb_impl(fb, pts, *mip_set, level, level, 0.0, transparent, clip, sample_nearest, nf);
+                draw_rgb_impl(fb, pts, mip_set->data(), mip_set->size(), level, level, 0.0, transparent, clip, sample_nearest, nf);
                 continue;
             }
             // Upscaled active: Q16 walk over the upscaled index pixels.
@@ -550,7 +564,7 @@ static void render_nodes_rgb_impl(FramebufferRgb& fb, const std::vector<DrawNode
             }
         } else {
             FogState bi_fog{fog_on && (pts[0].fog_q8 | pts[1].fog_q8 | pts[2].fog_q8 | pts[3].fog_q8), fog_colour};
-            draw_rgb_quad_bilinear(fb, pts, *mip_set, transparent, clip, bi_fog);
+            draw_rgb_quad_bilinear(fb, pts, mip_set->data(), mip_set->size(), transparent, clip, bi_fog);
         }
     }
 }

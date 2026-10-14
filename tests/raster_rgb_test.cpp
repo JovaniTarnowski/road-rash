@@ -52,7 +52,7 @@ int main(int argc, char** argv) {
         rr::FramebufferRgb fb(128, 128);
         fb.clear(0);
         std::array<rr::RgbVertex, 4> q{{{0, 0, 0, 0}, {128, 0, 16, 0}, {128, 128, 16, 16}, {0, 128, 0, 16}}};
-        rr::draw_rgb_quad_bilinear(fb, q, rr::rgba_mips_for_test(disc, white), false, {0, 0, 128, 127});
+        { auto m = rr::rgba_mips_for_test(disc, white); rr::draw_rgb_quad_bilinear(fb, q, m.data(), m.size(), false, {0, 0, 128, 127}); }
         int dark_inside = 0, colour_outside = 0;
         for (int y = 0; y < 128; ++y)
             for (int x = 0; x < 128; ++x) {
@@ -79,7 +79,7 @@ int main(int argc, char** argv) {
         rr::FramebufferRgb fb(64, 64);
         fb.clear(0);
         std::array<rr::RgbVertex, 4> q{{{0, 0, 0, 0}, {64, 0, 2, 0}, {64, 64, 2, 2}, {0, 64, 0, 2}}};
-        rr::draw_rgb_quad_bilinear(fb, q, rr::rgba_mips_for_test(checker, bw), false, {0, 0, 64, 63});
+        { auto m = rr::rgba_mips_for_test(checker, bw); rr::draw_rgb_quad_bilinear(fb, q, m.data(), m.size(), false, {0, 0, 64, 63}); }
         const uint32_t c = fb.row(32)[32];
         const int r = (c >> 16) & 0xff, g = (c >> 8) & 0xff, b = c & 0xff;
         check(std::abs(r - 128) <= 2 && std::abs(g - 128) <= 2 && std::abs(b - 128) <= 2, "centre is mid-grey");
