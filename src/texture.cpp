@@ -115,9 +115,10 @@ void texture_edge_wide(RasterScratch64& scratch,const TextureVertexWide& from,co
         scratch.rows[size_t(y)]={ax,au,av};
         ax+=sx;au+=su;av+=sv;
     }
-    // Rows this segment never reaches keep the empty sentinel so chain
-    // merges never mistake a zeroed row for a computed edge.
-    for (int64_t y=0;y<first;++y) scratch.rows[size_t(y)]={empty_edge_value(),0,0};
+    // Clip the refill to the scratch: a segment wholly below the surface
+    // (first >= height) leaves every row at the sentinel above, so there is
+    // nothing more to do. Pre-fix this ran to `first` and wrote past the end.
+    for (int64_t y=0;y<std::min(first,height);++y) scratch.rows[size_t(y)]={empty_edge_value(),0,0};
 }
 int texture_mip_level_signed(uint32_t width,uint32_t height,uint32_t source_width,
     uint32_t source_height,size_t original_levels,size_t upscaled_levels) {

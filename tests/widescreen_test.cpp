@@ -56,8 +56,8 @@ int main(int argc, char** argv) {
     }
     // Seam 1: a side actor must survive at the wide width. Geometry comes
     // from a real race frame (route/camera/depths), not synthetic values:
-    // run a 200-tick Napa autopilot race, take rider 1's projection at tick
-    // 200, shift it right until 320 culls it, then require 426 to keep it.
+    // run a 200-tick Napa autopilot race, then sweep a probe laterally from
+    // the road centre until 320 culls it and require 426 to keep it.
     {
         const auto exe = assets.read("ROADRASH.EXE");
         const auto sprites = rr::load_rider_sprites(assets, exe, true);
@@ -66,10 +66,16 @@ int main(int argc, char** argv) {
         const auto tables = rr::read_physics_tables(exe);
         const auto specs = rr::read_bike_specs(assets.read("DATA/BIKESPEC.RSC"));
         const auto route = rr::make_route(course, false);
-        rr::Race race(route, rr::make_route(course, true), tables, specs.at(0), 90);
+        // One opponent so riders()[1] below indexes a real rider (a solo
+        // race holds only the player; reading [1] is heap-buffer-overflow).
+        auto opponents = rr::original_opponents(exe, specs, 0, 1);
+        rr::Race race(route, rr::make_route(course, true), tables, specs.at(0), 90, std::move(opponents));
         for (int t = 0; t < 200; ++t) race.step(rr::control_accelerate);
         const auto slices = rr::project_road(route, race.camera_position(), race.camera(), depths);
         const auto& near = slices.at(4);
+        // Road-relative projection of the opponent keeps the probe geometry
+        // (depth/fraction/ground) live; the absolute lateral itself is swept
+        // below, so which flank holds the side band does not matter.
         const auto& rd = race.riders()[1];
         const auto& sample = route.at(near.sample);
         rr::ActorProjection base;
@@ -96,14 +102,19 @@ int main(int argc, char** argv) {
         tex.mips.push_back(std::move(m));
         const rr::Camera camera = race.camera();
         rr::ActorProjection probe = base;
+        // Absolute lateral sweep: the rider's own lateral (road-relative)
+        // sits far off-screen at this frame, so anchor the probe at the
+        // road centre and scan the negative flank for the first lateral
+        // the 320-wide view culls but the wide view keeps.
+        probe.lateral = 0;
         int shifts = 0;
         for (; shifts < 2000; ++shifts) {
-            probe.lateral = base.lateral + shifts * 256;
+            probe.lateral = -shifts * 256;
             if (!rr::actor_node(frame, &tex, probe, camera, depths, 320).has_value()) break;
         }
         check(shifts < 1500, "cull edge inside the wide view");
-        probe.lateral = base.lateral + shifts * 256;
-check(!rr::actor_node(frame, &tex, probe, camera, depths, 320).has_value(),
+        probe.lateral = -shifts * 256;
+        check(!rr::actor_node(frame, &tex, probe, camera, depths, 320).has_value(),
               "side actor culled at 320 (original behaviour)");
         check(rr::actor_node(frame, &tex, probe, camera, depths, kWide).has_value(),
               "side actor visible at 426");
