@@ -874,3 +874,27 @@ Owned edits: `src/import_job.hpp/.cpp` (new), `src/sha256.hpp/.cpp`
 
 - MMPX 4x generation over all 5 courses' family cells + road materials + rider sheets (Release-equivalent local run): 1,239 textures, ~15 s wall, 223 MB cache (2x + 4x levels). Under the 20 s target.
 - Scale-4 Napa off/on: 29,295 sampled pixels differ (indexed path, nearest); road grain and lane edges visibly cleaner. RGB path also routes through upscaled levels.
+
+## Plans 25–28 verification (October 13, 2026)
+
+- Plan 25: fast suites green per handoff (`first-run-smoke` + `race-soak`
+  2/2 at Task 1); ASan reproductions for the texture/widescreen overflows
+  (Task 7 handoff, exit 134 pre-fix).
+- Plan 26: 5/5 courses `--ticks 3600 --autopilot` exit 0 with 9/9 wiring
+  hooks; `--print-wiring` specced line + exit 77 without disc; oracle
+  diagnostic report byte-identical after harness adoption; full gate green.
+  Follow-up: `race_setup_test` career-bike case green; `race-soak` +
+  `oracle-sim` green with the same known divergence (frame 207,
+  `rider.0.position` 13746 vs 13778, same `trace_sha256`).
+- Plan 27 Task 1: `bike_field OK`; `tools/determinism_check.sh` Debug vs
+  Release `determinism OK (3 hashes)` (NAPA L0 `30df9478a6b143ff`,
+  render/interpolation `636630ba4bcbcd84` both trees).
+- Plan 28 Tasks 1–3: `race_actions OK`, `sdl_handles OK`; baseline BMP
+  hashes identical after every task (menu
+  `9270293e814f2221eeb796878e498eee`, race
+  `2c702c6e1e0772abcb0031a203a6471a`, video
+  `ea8622aafba24ec6485e8220ca574958`); `--show-fps` run exits 0 with
+  non-empty text region; `--first-run-smoke` exit 0; 89/89 gate (Task 1),
+  82 fast + soak/oracle green (Tasks 2–3).
+- Open: plan 28 Task 4 manual race (pause/resume/restart) — headless only
+  so far; plan 26 manual Napa play — headless only (see handoff 26-3).

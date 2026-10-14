@@ -716,3 +716,42 @@ shadowed, transparent background, twice a second). USER_GUIDE has a Settings
 section. `tools/ci.sh` (native + android-debug) and 73/73 ctests pass; the
 macOS bundle is refreshed. Deviations: rebinding stays available while
 racing; sliders apply levels live with no preview click.
+
+### October 13, 2026 — review correctness fixes, one factory, field proxy, race shell (plans 25–28)
+
+Plans 25 (review correctness fixes), 26 (one race construction path), 27
+Task 1 (safe field proxy) and 28 Tasks 1–3 (race shell) landed on main.
+Evidence: handoffs `25-1/2/3/5/6/7`, `26-1/2/3`, review
+`agent-handoffs/review-of-25-28-20261013.md`.
+
+- **Plan 25 (done: Tasks 1–3, 5–7):** restart-after-finish restored plus a
+  shared `reset_clock` that also resets view history; render-worker
+  exceptions propagate (lost-wakeup fix); RGBA mip cache is content-keyed;
+  saves are atomic; dead `Race` state removed; ASan `texture_edge_wide`
+  overflow fix + widescreen test fix with reproductions.
+- **Plan 26 (done):** game, race-soak and oracle replay build races through
+  one factory (`load_race_assets` + `build_race`); construction guard test
+  pins the single path. Intentional game behaviour change: personalities,
+  ride bank, nitro, ring and finish hooks now attached (wiring report).
+  Correction (review finding 3): `wiring().finish == 1` means the finish
+  hook is attached at the route-end placeholder — not the original finish
+  (plan 17 Task 1 still open).
+- **Plan 26 follow-up (review findings 1–2, this turn):** career races keep
+  the shop's purchased bike (`bike_from_table` defaults false; oracle
+  harness and sweeps opt in; `race_setup_test` pins it); a bad `.CAR`
+  degrades to no-traffic (`optional_traffic`) and `restart()` refuses
+  without course data instead of crashing. Soak + oracle-sim identical
+  (known divergence frame 207 unchanged, same `trace_sha256`).
+- **Plan 27 Task 1 (done):** `Bike::i32` is a memcpy-backed proxy (no
+  aliasing UB, x86 wraparound defined); Debug/Release determinism
+  confirmed (`determinism OK (3 hashes)`); `bike_field-test` pins
+  semantics. Tasks 2–3 (named offsets) decision-gated on the owner.
+- **Plan 28 Tasks 1–3 (done):** pure `race_action()` with tests (two
+  intentional changes vs the old loop, kept: no-menu Back toggles pause;
+  paused finger MOTION/UP reach touch — finding 4); RAII SDL handles
+  (`sdl_handles.hpp`, counting-deleter throw test); FPS overlay + quit
+  prompt as units (`race_overlay.cpp`). Baseline BMP hashes
+  (menu/race/video) identical after every task; 89/89 gate at Task 1,
+  82 fast + soak/oracle green at Tasks 2–3. Task 4 (`RaceScreen`) in
+  progress (shelved for the review findings; stash
+  `plan28-task4-wip-shelved-for-review-findings`).
