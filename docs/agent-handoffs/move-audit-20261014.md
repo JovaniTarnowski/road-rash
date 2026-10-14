@@ -106,6 +106,53 @@ route offsets at those samples are -11/+4/… — checkable offline.
   search; decompile read directly (REA not needed — exports suffice).
 - This handoff is the only write.
 
+## 6. GRIDPROBE result (temporary instrumentation, REVERTED)
+
+Env-gated print in `build_race` (all 14 solo opponents, level 0,
+`road_base 1792`), run through `oracle-sim-test`, then fully reverted
+(`git status -- src/` clean). Native `route_a[sample].offset` is **0 at
+every grid sample** (51–123); native lateral = `grid_lat + 1792`:
+
+| slot | pos | grid_lat | native | node lat | delta |
+| --- | --- | --- | --- | --- | --- |
+| 1 | 31488 | 16384 | 18176 | 15360 | -2816 |
+| 2 | 13824 | 16384 | 18176 | 19200 | +1024 |
+| 3 | 14336 | 16384 | 18176 | 83712 | +65536? |
+| 4 | 13312 | 40960 | 42752 | 43264 | +512 |
+| 5 | 25088 | 16384 | 18176 | 69632 | +51456? |
+| 6 | 27648 | 8192 | 9984 | -9984 | -19968 |
+| 7 | 30208 | 36864 | 38656 | 28672 | -9984 |
+| 8 | 22528 | 20480 | 22272 | 24320 | +2048 |
+| 9 | 13056 | 40960 | 42752 | 43008 | +256 |
+| 10 | 13568 | 40960 | 42752 | 43520 | +768 |
+| 11 | 14080 | 40960 | 42752 | 108032 | +65280? |
+| 12 | 14592 | 40960 | 42752 | 44544 | +1792 |
+| 13 | 21248 | 16384 | 18176 | 28672 | +10496 |
+| 14 | 23808 | 40960 | 42752 | 36864 | -5888 |
+
+(Player slot 0: 18176, exact by anchor construction.)
+
+Readings:
+
+- Sane slots (1/2/4/8/9/10/12) are off by -2816..+2816 (±11 world
+  units): the missing term is per-sample, the size of early road
+  curvature. `route.offset` integrates bend from 0; Napa's start must
+  already bend (or the original centre carries a lane term native
+  decodes elsewhere). Either way the fix is gap (b): resolve the true
+  `+0xcc` term — read `0x00439b10` fully (REA spot-check), do not guess.
+- Wild slots (3/5/11, +51–65k; adjacent samples CANNOT differ that
+  much on one road): slot↔node mapping or node-lateral encoding needs
+  verification before trusting those three rows. They never interact
+  (far from the player line), so they block nothing today. Suspects:
+  second-roadway preview laterals (`x_sep`), or a node-kind
+  distinction inside type 4. The 15 nodes match the 15 grid positions
+  1:1, so the positions are right; the lateral frame is the question.
+- Slot 2 (tick-210 bike): native 18176 vs true 19200 (-1024). Combined
+  with the player's exact anchor, the boundary is off by ~1024 at the
+  contact site — consistent with a native-only overlap once the
+  player rides into range. This CONFIRMS gap (b) as the tick-210
+  mechanism; no AI/physics cause needed.
+
 ## Live resources
 
 None.
