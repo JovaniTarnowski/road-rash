@@ -237,6 +237,14 @@ class Tooling(unittest.TestCase):
             sanitizer = identity('Debug', 'test-compiler', cache)
         self.assertNotEqual(normal['configuration_sha256'], sanitizer['configuration_sha256'])
 
+    def test_race_constructed_only_in_race_setup(self):
+        # Plan 26 Task 4: the only production/replay Race construction lives in
+        # src/race_setup.cpp; unit tests with synthetic routes are exempt.
+        import re
+        hits = [p for p in (Path(__file__).resolve().parent.parent / 'src').glob('*.cpp')
+                if p.name != 'race_setup.cpp' and re.search(r'make_unique<\s*(rr::)?Race\s*>|\bRace\s+\w+\s*\(', p.read_text())]
+        self.assertEqual(hits, [])
+
     def test_current_status_does_not_upgrade_fidelity_from_green_gate(self):
         output = render({'areas': [{'area': 'Physics', 'implementation': 'ported', 'verification': 'partial',
                          'remaining': 'human controls', 'evidence': []}], 'gates': {}})

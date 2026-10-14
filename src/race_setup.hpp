@@ -88,5 +88,6 @@ struct RaceInstance {           // race-scoped: rebuilt on restart
 RaceAssets load_race_assets(const Assets&, const std::vector<uint8_t>& exe, const RaceConfig&);
 RaceInstance build_race(const RaceAssets&, const std::vector<uint8_t>& exe, const RaceConfig&);
 struct RaceSetup { RaceAssets assets; RaceInstance instance; };
+// The only production/replay constructor of Race; tests with synthetic routes may build Race directly.
 RaceSetup make_race_setup(const Assets&, const std::vector<uint8_t>& exe, const RaceConfig&);  // load + build
 }
