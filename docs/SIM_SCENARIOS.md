@@ -208,3 +208,24 @@ per-tick `sched.<addr>.next/last/interval/dt` for type-4 nodes and
 `rider.<slot>.bike_c/bike_10/bike_14` for slotted riders. Purpose: prove
 the frozen interval and last-tick cadence (expected interval 4, lasts
 1,5,...,209) before translating the `0x00437e60` cadence natively.
+
+## Genuine human-branch capture (plan 10 Task 5 Step 2a, October 16)
+
+`sched-human-20261016` (course 4, seed 1, solo, SIM, human): 1431 complete
+contiguous ticks, `player.demo_hold == 0` on every tick
+(`control_branch: human` by instrumented evidence, never by name). Input is
+the recorded 1250-word human stream `C:\napa-human.controls` (varied
+accel/brake/steer/attack bits, also saved as
+`analysis/oracle/sim-napa-solo-human.controls`); the tail coasts after
+exhaustion plus the `0xb4` quit window. The course-menu bootstrap leaves the
+attract hold set, so the proxy selects the branch explicitly
+(`RR_ORACLE_HUMAN=1` clears `DAT_004753c8` at race start, seed-hook pattern;
+nothing re-arms it mid-race). Previous "human" goldens (`sim-napa-solo-human*`,
+no demo_hold probe) are demo-branch replays and prove no player control.
+Single-anchor replay with harness-inferred `driver=human` (no CLI override):
+green at tick 2 (1 hold frame), first divergence frame 1 (tick 2)
+`rider.0.ai_target_x` original 18176 vs native 0 -- the native human path
+skips AI target selection. RNG in sync. Next: maintain target state on the
+human path (0x00434660 trace), then the five human physics gates (steer
+authority 0x0040ad30, skid 0x00438c70, move-push 0x004395e0, scheduler +0xc
+copy 0x00438170, wreck attack rule 0x0040a600), all demo-tuned natively.

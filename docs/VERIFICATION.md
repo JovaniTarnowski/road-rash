@@ -1131,3 +1131,21 @@ timer-kill code were not incorporated into the production correction.
 - Next: tick-376 single draw = `0x0044dd90` spawn-timer lane pick against
   the nulled pool (Task 7 timer port). REA/pseudocode reads only; no
   capture mop-up needed (sched900 already carries the evidence).
+
+## October 16, 2026: strict acceptance on the genuine human golden (plan 10)
+
+`verify_sim.py --mode acceptance --driver human --fixture
+sched-human-20261016.tsv` (binary `build-verify-20261015/oracle-sim-test`,
+receipt + `control_branch: human` + `human-controls-single-anchor`
+capability all pass): `acceptance_met: false`, 1 `unexpected-failure`,
+exit 1. Exact first divergence: frame 1 (tick 2) `rider.0.ai_target_x`
+original 18176 native 0 (via `rider.0.brain_194`); RNG in sync
+(1133891140, 1133891140). Green at tick 2 after 1 hold frame (no
+attract hold on the human branch). Harness inference without CLI
+override also yields `driver=human (measured player.demo_hold=0)`.
+Demo diagnostic (`--mode diagnostic --driver demo`, sched900):
+unexpected-failure at tick 376 (no allowlist entry; the spawn-timer
+lane draw is Task 7 scope). Gate `agent_gate.py oracle` on the default
+fixture still fails earlier on the old human golden's missing receipt
+(infra gap predating this slice; the new golden carries its receipt).
+No re-anchoring, no golden edits, no rule changes.

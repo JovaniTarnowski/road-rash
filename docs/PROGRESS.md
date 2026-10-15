@@ -847,3 +847,21 @@ Evidence: handoffs `25-1/2/3/5/6/7`, `26-1/2/3`, review
 - Single-anchor demo replay now diverges at tick 376 (was 210): a single
   `0x0044dd90` spawn-timer lane draw against the nulled pool places no
   car. Timer state/rates/taps are Task 7 work. Old goldens unchanged.
+
+### October 16, 2026: genuine human-branch proof + exact acceptance (plan 10)
+
+- The proxy dumps per-tick `player.demo_hold` and `RR_ORACLE_HUMAN=1`
+  selects the player-control branch at race start (bootstrap stays on
+  attract otherwise). New `sched-human-20261016`: 1431 contiguous ticks,
+  hold 0 throughout, real recorded human inputs. Previous "human" goldens
+  are demo-branch and prove no player control.
+- Harness infers `driver=human` with no override (branch proof by
+  instrument, not name). Position responds to human throttle identically;
+  first divergence is tick 2 `ai_target_x` 18176 vs 0 (native human path
+  skips target selection). RNG in sync. Five more human gates are
+  demo-tuned natively (steer, skid, move-push, sched-copy, wreck).
+- Strict `verify_sim` acceptance on the human golden: `unexpected-failure`
+  at the tick-2 gap (`acceptance_met: false`; infra checks now pass:
+  receipt, `control_branch: human`, capability). Demo solo diagnostic
+  stands at tick 376 (spawn-timer lane draw). Nothing re-anchored, no
+  golden altered, no allowlist expanded.

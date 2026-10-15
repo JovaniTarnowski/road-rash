@@ -1270,3 +1270,35 @@ Task 7 work; the live `0x00437e60` cadence for frozen nodes is done.
 The spare player half (think `0x00434660`, slot rider.1) stays live in solo
 captures with interval 1, mirroring the bike; it drew nothing through
 tick 375 and has no native counterpart (open).
+
+## Player-control branch gates (October 16, 2026, plan 10 Task 5 Step 2a)
+
+`DAT_004753c8` (demo hold) is read by eight exports; six matter in-race
+(all `== 0` selects the human side). Only writer in the exports is
+`0x00421430:30` (`= 0`, standings path, off the race); the `= 1` comes
+from unexplored menu/bootstrap code, which is why the oracle bootstrap
+stays on attract and `RR_ORACLE_HUMAN=1` clears it at race start
+(seed-hook pattern, nothing re-arms it mid-race):
+
+- `0x00434660:25` — player think: control-word branch vs demo-AI branch.
+- `0x0040ad30:8,16` — steer authority: human uses `DAT_004b7e7c`-based
+  authority, demo fixed `-/+0x20`. Native `steer()` has no demo_hold gate.
+- `0x00438c70:67` — traction skid flag for the player bike only when
+  human. Not gated natively.
+- `0x004395e0:115` — move push: human uses `iVar6 * 800` direct, demo the
+  `dt`-scaled form. Native `move()` always uses the scaled form.
+- `0x00438170:78` — scheduler tail copies rider-half `+0xc` to bike `+0xc`
+  only when human. Not modeled natively.
+- `0x0040a600:78` — wreck attack-bit rule needs human + finish latch.
+  Native wreck arms lack the hold gate.
+- `0x0041c1b0:7` — menu string selector (menu-only).
+
+`RR_ORACLE_HUMAN=1` + per-tick `player.demo_hold` dump give instrumented
+branch proof (`control_branch: human` iff all-zero). The spare player
+half (think `0x00434660`, solo `rider.1`) stays live with interval 1 and
+mirrors the bike; call-graph BFS (310 functions) proves its think cannot
+draw with no attacks/contact/crash, and bike think `0x00407a90` needs
+crash states -- both benign for RNG in clean captures. It has no native
+counterpart (halves take neither collide role: `rider_or_ped` needs
+type 4). Evidence: `docs/agent-handoffs/spare-half-trace-20261016.md`,
+`sched-human-20261016` (1431 ticks, hold 0 throughout).

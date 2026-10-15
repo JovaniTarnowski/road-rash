@@ -390,3 +390,15 @@ both `contact` directions push correctly) and solo replay detaches native
 traffic to match the nulled pool. sched900 replay: first divergence tick
 376 (was 210). Next cause isolated to the `0x0044dd90` spawn-timer lane
 draw against the nulled pool -- Task 7 scope (timer state/rates/taps).
+
+### October 16 human-branch proof (Task 5 Step 2a)
+
+`player.demo_hold` is now dumped every tick and `RR_ORACLE_HUMAN=1`
+selects the genuine player-control branch at race start (documented
+seed-hook-pattern instrumentation). `sched-human-20261016` proves
+`demo_hold=0` across 1431 ticks with real human inputs; the harness
+infers `driver=human` with no override. First divergence is tick 2
+(`ai_target_x` 18176 vs 0): the human path must maintain AI target
+state. Five further human gates are demo-tuned natively (steer, skid,
+move-push, sched-copy, wreck rule). Demo solo stands at tick 376
+(spawn-timer lane draw, Task 7).

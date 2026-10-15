@@ -47,6 +47,7 @@ static uint32_t g_sim_frames;
 static int g_quit_after = -1;
 static int32_t g_first_tick = -1;
 static int g_solo;
+static int g_human;
 static int g_police_probe;
 static uint32_t g_frame;
 
@@ -239,6 +240,11 @@ static void dump_sim_tick(void) {
             rr_log(key, (long long)g_randtrace_callers[i]);
         }
     rr_log("controls", (long long)(uint32_t)RD32(0x004b7ed0));
+    /* Player-control branch proof (plan 10 Task 5 Step 2a): DAT_004753c8
+     * sampled every tick. 0 = human (0x00434660 consumes the control word),
+     * 1 = attract-demo AI branch. Read-only; the offline probe elsewhere
+     * already save/restores this byte. */
+    rr_log("player.demo_hold", (long long)RD8(0x004753c8));
     /* Ring cursors for the +0x5100 offset and zone-density timing check
      * (plan 24 Task 1 Step 2/5): front 0x004b6e50, back 0x0049f240,
      * camera 0x004b6e5c. */
@@ -521,6 +527,13 @@ static void __cdecl hook_step(void) {
         if (st) *st = (uint32_t)g_seed;
         g_seed_applied = 1;
     }
+    // Human branch (plan 10 Task 5 Step 2a): the course-menu bootstrap leaves
+    // the attract-demo hold set, so replayed human inputs would be ignored
+    // by 0x00434660. Clearing DAT_004753c8 selects the genuine player-control
+    // branch (think, steer authority, skid, move-push scaling, scheduler
+    // +0xc copy, wreck rule); nothing re-arms it mid-race (only 0x00421430
+    // writes it, off the race path). Same fix-the-value pattern as the seed.
+    if (g_sim && g_race_started && g_human) RD8(0x004753c8) = 0;
     g_step_start_calls = g_rand_calls;
     if (g_sim && g_race_started && g_solo) sim_freeze_others();
     if (g_sim && g_race_started && g_input && g_out) {
@@ -1978,6 +1991,7 @@ static int rr_install_hooks(void) {
     if (GetEnvironmentVariableA("RR_ORACLE_RANDLOG",buf,sizeof buf)) g_randlog_all = atoi(buf)!=0;
     if (GetEnvironmentVariableA("RR_ORACLE_POLICE",buf,sizeof buf)) g_police_probe=atoi(buf)!=0;
     if (GetEnvironmentVariableA("RR_ORACLE_SOLO",buf,sizeof buf)) g_solo = atoi(buf)!=0;
+    if (GetEnvironmentVariableA("RR_ORACLE_HUMAN",buf,sizeof buf)) g_human = atoi(buf)!=0;
     env("RR_ORACLE_RASTER",buf,sizeof buf,"0");g_raster=atoi(buf);
     if (GetEnvironmentVariableA("RR_ORACLE_SHOT_EVERY",buf,sizeof buf) && atoi(buf)>0) g_pixel_every=atoi(buf);
     if(GetEnvironmentVariableA("RR_ORACLE_COURSE",buf,sizeof buf)) {
