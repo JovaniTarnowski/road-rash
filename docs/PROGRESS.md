@@ -941,3 +941,24 @@ with RNG still aligned. Human remains189. Synthetic tests cover detached
 position/speed, slice-dependent passing side, linked-half field identity,
 legacy compatibility and atomic validation. This is partial component and
 demo-trace progress, not complete human or traffic-field acceptance.
+
+### Seeded all-eight-point terrain oracle (October 15 continuation, plan 10)
+
+Added opt-in original component capture `RR_ORACLE_TERRAIN_SEEDED=1` and
+a separate seeded fixture comparator. Captures call the original terrain
+functions using six CRT seeds across forward/backward/roundtrip paths,
+record all8 point windows/coordinates/slopes plus iterator/CRT state,
+and exit cleanly from a frame hook outside the loader lock. Existing
+fixed-random fixtures and default simulation behavior remain unchanged.
+
+New validated one-frame original capture `terrain-seeded-20261015`:
+**960 hidden-state snapshots +18 terminal RNG states match exactly**.
+Existing864 original slice comparisons also pass. This proves the tested
+synthetic component traversals, not the race's terrain interleaving.
+Next: compare actual front/back race-walker hidden state from setup.
+
+A fresh600-tick demo capture reproduces speed gap584 and exposes original
+throttle7352/force26 vs native7330/25; original throttle drops612 per tick
+at582–585. RNG/earlier compared fields remain matched. No one-unit bias
+was added; trace imported spec/ramp inputs next. Original proxy installation
+was restored to its pre-session hash after both captures.

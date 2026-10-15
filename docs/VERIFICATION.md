@@ -1249,3 +1249,32 @@ pass before it was inspected; the successful rerun is the verified result.
   Build source SHA-256:07ca00f9541668cbfe20dd5b87bf64ed040ee8b0793197e22aa9b07062eda9ae.
 - Logs under `analysis/countdown-timers-20261015/half-*`. No new original
   capture, Android/device/package or strict acceptance run in this slice.
+
+## Seeded terrain original component fixture (October 15 continuation)
+
+- Main strict Debug full build: exit0, no diagnostics. Main
+  `./oracle/build.sh`: exit0, no MinGW warnings; installed proxy hash
+  d9c5b49d89308fb5a781b8e49efb413bc50a24d78548b623dbfd9a19b47ed041.
+- `RR_ORACLE_TERRAIN_SEEDED=1 RR_ORACLE_COURSE=4 RR_ORACLE_SIM=0
+  RR_ORACLE_FRAMES=1 ... oracle_capture.py capture terrain-seeded-20261015`:
+  exit0, one complete frame, original EXE hash verified, clean process exit.
+  Trace SHA25634a09c663a18bf614abac23c294703e50081a60a481acc89908163fe96a63b70;
+  immutable capture/receipt under analysis/oracle/terrain-seeded-20261015.captures.
+  The initial attempt without course bootstrap stayed in menus; interrupted
+  only that owned capture, wrapper rejected it, no accepted fixture replaced.
+- `terrain-test analysis/oracle/terrain-seeded-20261015.tsv`: exit0,
+  all960 hidden-state snapshots/18 terminal RNG states exact; existing864
+  original slices and109 course terrain sections also pass. Native worker
+  clangd terrain_test.cpp check exits0, zero errors.
+- Default-mode regression capture `sched600-20261015`:600 contiguous demo
+  ticks, original hash verified, clean exit0, trace SHA256
+  584603378bd5980fd0209291021b52a8e3378a24f33d4cd4e220bd16256fcf45.
+  Replay single anchor exit1 at584 speed6188 vs6187, RNG matched. Original
+  bike240=7352,bike114=26 at584 narrows the native7330/25 hidden-force gap.
+- Restored installed proxy through oracle_install.py: hash
+  1eb5a4c648f4da876aad94b66d2522a7680cb831396225781d068310701c499d.
+  No other process/prefix mapping modified. Existing goldens and allowlist
+  unchanged; new captures remain local and uncommitted.
+- Full main CTest: **97/97 pass**, zero skips/failures,149.74s. Seeded fixture parity
+  is component evidence, not strict simulation acceptance. No Android,
+  device, packaging or sanitizer gate in this slice.

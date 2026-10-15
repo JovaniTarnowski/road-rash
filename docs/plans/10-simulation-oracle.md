@@ -437,3 +437,13 @@ contact. Same sched900 single-anchor replay first differs at584 in speed
 (6188 vs6187), after the original576 half-target matches. Human remains189.
 No golden or allowlist changes. Next: trace the one-unit speed arithmetic
 and finish independent seeded all-eight-point terrain fixtures.
+
+### Seeded terrain component gate (October 15 continuation, Task5)
+
+Expanded original fixtures now compare all8 hidden point windows/slopes,
+iterator position/record and CRT state.960 states plus18 terminal states
+match exactly across6 seeds and forward/reverse/roundtrip paths. The
+original race-walker hidden-state/init interleaving remains unproved;
+next capture pairs front/back walkers from setup through189. No speculative
+hill-step correction was made. Fresh600-tick demo retains the584 speed
+gap and captures original throttle7352/force26 for the ramp investigation.

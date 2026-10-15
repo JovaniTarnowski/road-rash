@@ -35,6 +35,16 @@ struct TerrainSlice {
     std::array<std::array<int32_t,2>,6> points{}; // left/right alternating: x,height
     std::array<int32_t,6> shades{};
 };
+// Read-only iterator snapshot for original-state fixture comparisons. These
+// include the two interpolation points not emitted by TerrainSlice.
+struct TerrainPointState {
+    int32_t start=0,end=0,x=0,height=0,dx=0,dh=0;
+};
+struct TerrainIteratorState {
+    int32_t position=0,last_sample=0;
+    size_t record=0;
+    std::array<TerrainPointState,8> points{};
+};
 // Random source returns a nonnegative value, as the original CRT rand wrapper.
 // Caller owns definition and random-stream lifetime; no per-sample random cache.
 class TerrainIterator {
@@ -42,6 +52,7 @@ public:
     TerrainIterator(const TerrainDefinition& definition,int32_t position_q8,std::function<uint32_t()> random);
     void step(int32_t delta_q8);
     TerrainSlice slice(int32_t left_edge,int32_t right_edge) const;
+    TerrainIteratorState diagnostic_state() const;
 private:
     const TerrainDefinition& definition_;
     std::function<uint32_t()> random_;
@@ -49,8 +60,7 @@ private:
     std::array<size_t,2> wall_record_{};
     std::array<std::array<int32_t,3>,2> wall_values_{};
     size_t hill_record_=0;
-    struct Point { int32_t start=0,end=0,x=0,height=0,dx=0,dh=0; };
-    std::array<Point,8> points_{};
+    std::array<TerrainPointState,8> points_{};
     void hill_slopes(int32_t sample,int32_t delta);
 };
 }

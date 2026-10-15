@@ -1517,3 +1517,20 @@ state must therefore retain its own captured position and speed. Frame0
 No change to attached live half synchronization or type-mask semantics is
 justified by this finding. See
 [576 trace](agent-handoffs/demo576-next-20261015.md).
+
+### Seeded hill hidden-state component evidence
+
+Actual original0x004510c0/0x004516e0 calls match native hidden state across
+960 snapshots with6 CRT seeds, all8 points and forward/reverse/roundtrip
+paths.18 final CRT states also match, covering last-step draws. Tested
+synthetic LIHR data and every start/end/x/height/dx/dh word agree. This
+strengthens component evidence without proving Napa walker initialization
+or shared draw assignment; compare paired race walkers from setup next.
+Separate fixture schema is terrain.seeded.schema1; source remains
+synthetic, captured original output stays local.
+
+Fresh sched600 demo capture exposes original force/throttle at584:
+force26/throttle7352 (native25/7330). Original581–585 throttle is
+9188,8576,7964,7352,6740, with cap9188 and gear2. The one-unit speed
+gap is thus consistent with different drive-ramp inputs; no evidence
+justifies changing integrate_speed's faithful rounding.

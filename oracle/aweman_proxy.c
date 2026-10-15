@@ -49,6 +49,8 @@ static int32_t g_first_tick = -1;
 static int g_solo;
 static int g_human;
 static int g_police_probe;
+static int g_terrain_seeded;
+static void capture_terrain_seeded_and_exit(void);
 static uint32_t g_frame;
 
 /* Solo isolation (plan 10 task 5): freeze every scheduler node except
@@ -1620,6 +1622,74 @@ static void capture_terrain(void) {
     RD32(0x004753b0)=prior_mode;RD32(0x0049bce8)=prior_random;
 }
 
+/* Plan 10: seeded component coverage of all eight hill point windows. Calls
+ * actual 0x004510c0/0x004516e0; no native-model or rand detour substitutes. */
+static int capture_terrain_seeded(void) {
+    static const uint32_t seeds[]={0,1,123,32767,0x12345678u,0xdeadbeefu};
+    static const struct { const char* name; int offset; } fields[]={
+        {"start",0x44},{"end",0x64},{"x",0x84},{"height",0x88},{"dx",0xc4},{"dh",0xc8}
+    };
+    uint32_t* state=sim_rand_state();
+    if (!state) return 0;
+    const uint32_t prior_state=*state;
+    const int prior_mode=RD32(0x004753b0),prior_random=RD32(0x0049bce8);
+    unsigned char b[248]={0};
+    char key[128];
+    /* Byte-for-byte fixture(2) from tests/terrain_test.cpp. */
+    memcpy(b,"LIHR",4);terrain_word(b,4,sizeof b);terrain_word(b,8,3);
+    for(int j=0;j<3;++j) {
+        const int p=20+76*j;
+        terrain_word(b,p,j*20);terrain_word(b,p+4,(j+1)*20);
+        b[p+8]=10+j;b[p+9]=20+j;
+        for(int point=0;point<8;++point) {
+            const unsigned char params[8]={(unsigned char)(10+point*12),(unsigned char)(20+point*12),3,(unsigned char)(-10+point),(unsigned char)(12+point),4,1,5};
+            memcpy(b+p+12+8*point,params,8);
+        }
+    }
+    RD32(0x004753b0)=0; /* 0x00441750: CRT stream rather than fixed mode 3. */
+    rr_log("terrain.seeded.schema",1);
+    for(int seed=0;seed<6;++seed) for(int path=0;path<3;++path) {
+        int iterator[80]={0};
+        *state=seeds[seed];
+        ((void (__fastcall*)(int*,void*,int))0x004510c0)(iterator,b,path==1?48*256:0);
+        const int steps=path==2?64:48;
+        for(int tick=0;tick<steps;++tick) {
+            snprintf(key,sizeof key,"terrain.seeded.%d.%d.%d.rng",seed,path,tick);rr_log(key,(long long)*state);
+            snprintf(key,sizeof key,"terrain.seeded.%d.%d.%d.position",seed,path,tick);rr_log(key,iterator[0xc/4]);
+            snprintf(key,sizeof key,"terrain.seeded.%d.%d.%d.last_sample",seed,path,tick);rr_log(key,iterator[0x10/4]);
+            snprintf(key,sizeof key,"terrain.seeded.%d.%d.%d.record",seed,path,tick);rr_log(key,iterator[0x14/4]);
+            for(int point=0;point<8;++point) for(unsigned f=0;f<sizeof fields/sizeof fields[0];++f) {
+                const int stride=f<2?4:8;
+                snprintf(key,sizeof key,"terrain.seeded.%d.%d.%d.point.%d.%s",seed,path,tick,point,fields[f].name);
+                rr_log(key,iterator[(fields[f].offset+point*stride)/4]);
+            }
+            const int delta=path==1 || (path==2 && tick>=32)?-256:256;
+            ((void (__fastcall*)(int*,int))0x004516e0)(iterator,delta);
+        }
+        snprintf(key,sizeof key,"terrain.seeded.%d.%d.final_rng",seed,path);rr_log(key,(long long)*state);
+    }
+    *state=prior_state;
+    RD32(0x004753b0)=prior_mode;RD32(0x0049bce8)=prior_random;
+    return 1;
+}
+
+/* Run from a normal frame hook, after DllMain has returned. ExitProcess is
+ * intentionally outside the loader lock; this mode never runs a race. */
+static void capture_terrain_seeded_and_exit(void) {
+    if (!g_out) ExitProcess(1);
+    fputs("frame\t0\n",g_out);
+    if (!capture_terrain_seeded()) {
+        fputs("# seeded terrain CRT state unavailable\n",g_out);
+        fclose(g_out);g_out=NULL;
+        ExitProcess(1);
+    }
+    fputs("end\n",g_out);
+    const int failed=ferror(g_out) || fflush(g_out)!=0;
+    const int close_failed=fclose(g_out)!=0;
+    g_out=NULL;
+    ExitProcess(failed || close_failed?1:0);
+}
+
 static void capture_hill_projection(void) {
     const int old_x=RD32(0x004bc7d8),old_height=RD32(0x004bc7dc),old_width=RD32(0x0046667c);
     const int scales[6]={32768,65535,65536,98304,163840,0x7fffffff};
@@ -1961,6 +2031,7 @@ static void dump_frame(uint32_t site) {
 
 #define FRAME_HOOK(n, site) \
     static void __cdecl hook_frame_##n(void) { \
+        if (g_terrain_seeded) capture_terrain_seeded_and_exit(); \
         reset_actor_records(); \
         orig_frame(); \
         if (g_out && !g_sim) dump_frame(site); \
@@ -1991,6 +2062,7 @@ static int rr_install_hooks(void) {
     if (GetEnvironmentVariableA("RR_ORACLE_RANDTRACE",buf,sizeof buf)) g_randtrace_tick = atoi(buf);
     if (GetEnvironmentVariableA("RR_ORACLE_RANDLOG",buf,sizeof buf)) g_randlog_all = atoi(buf)!=0;
     if (GetEnvironmentVariableA("RR_ORACLE_POLICE",buf,sizeof buf)) g_police_probe=atoi(buf)!=0;
+    if (GetEnvironmentVariableA("RR_ORACLE_TERRAIN_SEEDED",buf,sizeof buf)) g_terrain_seeded=atoi(buf)!=0;
     if (GetEnvironmentVariableA("RR_ORACLE_SOLO",buf,sizeof buf)) g_solo = atoi(buf)!=0;
     if (GetEnvironmentVariableA("RR_ORACLE_HUMAN",buf,sizeof buf)) g_human = atoi(buf)!=0;
     env("RR_ORACLE_RASTER",buf,sizeof buf,"0");g_raster=atoi(buf);

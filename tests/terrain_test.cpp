@@ -31,7 +31,7 @@ static Bytes fixture(int kind) {
     if(kind!=2) for(int i=0;i<64;++i) {b[selectors+2*i]=uint8_t(i);b[selectors+2*i+1]=uint8_t(63-i);}
     return b;
 }
-int main() {
+int main(int argc,char** argv) {
     int failures=0;
     auto check=[&](bool b,const char* msg) {if(!b){++failures;std::cerr<<msg<<'\n';}};
     for(int kind=0;kind<3;++kind) {
@@ -86,6 +86,62 @@ int main() {
             std::cout<<"864 original terrain slices compared\n";
         }catch(const std::exception& e){check(false,e.what());}
     }
+    // Separate seeded state fixture: preserve raster-fixtures.tsv's existing
+    // fixed-random contract. An explicit path is required to exist; the default
+    // remains optional so asset-free parser tests can still run.
+    const std::string seeded_path=argc>1?argv[1]:rr::golden::oracle_dir()+"/terrain-seeded-20261015.tsv";
+    try {
+        rr::golden::File seeded;
+        const bool available=std::filesystem::exists(seeded_path);
+        if(!available && argc>1)throw std::runtime_error("Missing requested seeded terrain oracle: "+seeded_path);
+        if(available) {
+            seeded=rr::golden::load(seeded_path);
+            if(seeded.exe!="73d7f9744b5b1a9482b3909950cdf3fe34119fe13d023b031e9c6739a60f18a2" || seeded.frames.size()!=1)
+                throw std::runtime_error("Wrong seeded terrain oracle");
+            const auto schema=seeded.frames.front().find("terrain.seeded.schema");
+            if(schema==seeded.frames.front().end() || schema->second!=1)
+                throw std::runtime_error("Missing or unsupported seeded terrain schema");
+        }
+        const uint32_t seeds[]={0u,1u,123u,32767u,0x12345678u,0xdeadbeefu};
+        const auto definition=rr::read_terrain(fixture(2),64);
+        for(int seed_index=0;seed_index<6;++seed_index)for(int path=0;path<3;++path) {
+            uint32_t rng=seeds[seed_index];
+            rr::TerrainIterator iterator(definition,path==1?48*256:0,[&] {
+                rng=rng*214013u+2531011u;return(rng>>16)&32767u;
+            });
+            const std::string base="terrain.seeded."+std::to_string(seed_index)+"."+std::to_string(path)+".";
+            auto compare=[&](const std::string& key,int64_t value) {
+                if(!available)return;
+                const auto& fields=seeded.frames.front();
+                const auto found=fields.find(base+key);
+                if(found==fields.end())throw std::runtime_error("Missing seeded terrain oracle key: "+base+key);
+                if(found->second!=value) {
+                    if(failures<12)std::cerr<<base+key<<" native="<<value<<" original="<<found->second<<'\n';
+                    ++failures;
+                }
+            };
+            const int snapshots=path==2?64:48;
+            for(int tick=0;tick<snapshots;++tick) {
+                const auto state=iterator.diagnostic_state();
+                const std::string at=std::to_string(tick)+".";
+                compare(at+"rng",rng);
+                compare(at+"position",state.position);
+                compare(at+"last_sample",state.last_sample);
+                compare(at+"record",int64_t(state.record));
+                for(size_t i=0;i<state.points.size();++i) {
+                    const std::string point=at+"point."+std::to_string(i)+".";
+                    const auto& p=state.points[i];
+                    compare(point+"start",p.start);compare(point+"end",p.end);
+                    compare(point+"x",p.x);compare(point+"height",p.height);
+                    compare(point+"dx",p.dx);compare(point+"dh",p.dh);
+                }
+                iterator.step(path==1 || (path==2 && tick>=32)?-256:256);
+            }
+            compare("final_rng",rng);
+        }
+        if(available)std::cout<<"960 seeded original terrain states and18 terminal RNG states compared\n";
+        else std::cout<<"UNVERIFIED: seeded terrain oracle missing: "<<seeded_path<<" (native traversals only)\n";
+    }catch(const std::exception& e){check(false,e.what());}
     const auto dir=std::filesystem::path(RR_SOURCE_DIR)/"../cdrom/ROADRASH/DATA/COURSES";
     if(std::filesystem::exists(dir)) {
         size_t sections=0;

@@ -138,6 +138,9 @@ void TerrainIterator::step(int32_t delta) {
     }
     last_sample_=sample;
 }
+TerrainIteratorState TerrainIterator::diagnostic_state() const {
+    return {position_,last_sample_,hill_record_,points_};
+}
 TerrainSlice TerrainIterator::slice(int32_t left,int32_t right) const {
     TerrainSlice s;
     if(definition_.kind==TerrainDefinition::Kind::none) return s;
