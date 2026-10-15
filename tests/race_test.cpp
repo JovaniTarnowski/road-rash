@@ -460,7 +460,10 @@ int main() {
         check(spans.size() == 2 && spans[0].sample == 100, "in-road hazard spans kept with sample base");
         check(spans[0].lo_q8 < spans[0].hi_q8, "hazard span ordered");
     }
-    // weapon, never duplicate or destroy it.
+    // Steal conservation: parked riders overlap, so both need healthy
+    // +0x2f0 (else the tick-0 contact crashes them before any swing) and
+    // matching swing timers (else the victim resolves first and zeroes the
+    // player's timer, and no steal is ever attempted).
     {
         int failures2 = 0;
         for (int seed = 0; seed < 1000; ++seed) {
@@ -468,7 +471,8 @@ int main() {
             rr::Race w(straight(4000), straight(4000), t, spec, 90, {armed});
             w.set_rng_state(uint32_t(seed));
             w.riders()[0].weapon = 0; w.riders()[0].attack.weapon = 0;
-            w.riders()[1].weapon = 1; w.riders()[1].attack.weapon = 1; w.riders()[1].attack.timer = 5;
+            w.riders()[1].weapon = 1; w.riders()[1].attack.weapon = 1; w.riders()[1].attack.timer = 1;
+            w.riders()[0].bike.i32(0x2f0) = 1000; w.riders()[1].bike.i32(0x2f0) = 10000;
             w.riders()[1].steal_until = 0;
             // park alongside in reach, swing and force the frame gate
             w.riders()[1].bike.i32(0x28) = w.riders()[0].bike.i32(0x28) + 1000;
