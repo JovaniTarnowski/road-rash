@@ -1,5 +1,5 @@
 {
-  "reviewed_on": "2026-10-12",
+  "reviewed_on": "2026-10-16",
   "timezone": "America/Los_Angeles",
   "areas": [
     {
@@ -16,9 +16,9 @@
     },
     {
       "area": "Simulation parity",
-      "implementation": "Tick replay and first-divergence diagnostics",
-      "verification": "Known demo mismatch; exact signature in diagnostic receipts; single RNG anchor",
-      "remaining": "Actual human-control capture/replay and full parity",
+      "implementation": "Tick replay, frozen scheduler cadence, human-branch selection probe",
+      "verification": "Demo solo diagnostic to tick 376; human golden tick-2 target gap; strict acceptance unmet with exact receipts",
+      "remaining": "Human target state plus five physics gates, traffic-timer draws, and full parity",
       "evidence": [
         "SIM_SCENARIOS.md",
         "plans/10-simulation-oracle.md"
@@ -28,9 +28,9 @@
     },
     {
       "area": "Napa race",
-      "implementation": "Native scene/actors/traffic with remaining systems",
-      "verification": "Component comparisons are partial evidence",
-      "remaining": "Car contact, actor nodes and full-race acceptance",
+      "implementation": "Native scene/actors/traffic with remaining systems; police helpers exist but no live cops",
+      "verification": "Component comparisons are partial evidence; human physics gates demo-tuned",
+      "remaining": "Car contact, actor nodes, human-gate ports, live police, and full-race acceptance",
       "evidence": [
         "NAPA_IMPLEMENTATION.md",
         "plans/11a-napa-playtest-fixes.md",

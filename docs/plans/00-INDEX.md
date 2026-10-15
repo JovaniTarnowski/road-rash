@@ -121,6 +121,7 @@ The owner also asked for plans covering pedestrians, oil slicks, police and the 
 | **29** | [Enhanced render path performance](29-enhanced-path-performance.md) | **Done** (Tasks 1–4): benchmark + counter, cached RGBA levels, band-threaded RGB (bit-identical), persistent band scratch | — |
 | **30** | [Test and build infrastructure](30-test-and-build-infrastructure.md) | **Done** (Tasks 1–5): labels/fast targets/guard, Checks, strict clean, ByteReader/ISO parser, build pruner | — |
 | **31** | [Docs and status hygiene](31-docs-and-status-hygiene.md) | **Done**: header/index refresh, handoff archive, doc checks in agent-tooling | — |
+| **32** | [Completion review follow-through](32-completion-review-next-steps.md) | New (October 14 review, [report](../agent-review/REVIEW-2026-10-14-COMPLETION.md)): R1 restart latch, R2/R3 interpolation, R4 pause texture, R5 side panels | Slice C is the active SIM work (this plan); A/B after it; D–G sequenced after parity/device evidence |
 
 ### Order and dependencies
 
