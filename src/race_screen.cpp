@@ -64,6 +64,15 @@ void RaceScreen::reset_clock(uint64_t now_ns) {
 
 void RaceScreen::event(const SDL_Event& e) {
     if (e.type == SDL_EVENT_QUIT) { running_ = false; result_.quit_app = true; return; }
+    // Renderer resets must be handled before pause-menu routing so cached
+    // textures and pause frames are rebuilt from the new device.
+    if (e.type == SDL_EVENT_RENDER_DEVICE_RESET || e.type == SDL_EVENT_RENDER_TARGETS_RESET) {
+        sprites_.clear();
+        canvas_.clear();
+        pause_tex_.reset();
+        pause_scale_w_ = 0;
+        pause_img_ = RgbImage();
+    }
     if (!lifecycle_event(e.type)) lifecycle_.state.handle(e);
     if (g_.mixer && !g_.mixer->handle(e)) SDL_Log("Audio reopen failed: %s", SDL_GetError());
     const RaceActionContext act_ctx = ctx_now();
@@ -90,7 +99,6 @@ void RaceScreen::event(const SDL_Event& e) {
         e.type == SDL_EVENT_FINGER_UP || e.type == SDL_EVENT_FINGER_CANCELED) {
         if (act == RaceAction::none) touch_.handle(e);
     }
-    if (e.type == SDL_EVENT_RENDER_DEVICE_RESET || e.type == SDL_EVENT_RENDER_TARGETS_RESET) {sprites_.clear();canvas_.clear();}
     if (e.type == SDL_EVENT_RENDER_DEVICE_LOST) throw std::runtime_error("Render device lost");
     if (lifecycle_.state.take_clock_reset()) {
         reset_clock(SDL_GetTicksNS());
@@ -98,9 +106,17 @@ void RaceScreen::event(const SDL_Event& e) {
 }
 
 bool RaceScreen::iterate(uint64_t now_ns) {
-    (void)now_ns;
+    const uint64_t now = now_ns ? now_ns : SDL_GetTicksNS();
     if (!running_) return false;
-    if (restart_) g_.restart();   // Enter / pad South / tap after a quick-race finish (README)
+    if (restart_) {
+        g_.restart();   // Enter / pad South / tap after a quick-race finish (README)
+        restart_ = false;
+        decided_ = false;
+        end_ticks_ = 0;
+        last_ = now;
+        clock_.reset();
+        touch_.clear();
+    }
     // Plan 18 Task 8: a lifecycle freeze (background return, focus loss,
     // pad removal) opens the pause menu instead of the old PAUSED text.
     if (opt_.menu && !opt_.menu->pause_open() && lifecycle_.state.paused() && !lifecycle_.state.background()) {
@@ -150,7 +166,6 @@ bool RaceScreen::iterate(uint64_t now_ns) {
     uint32_t controls = opt_.auto_drive ? autopilot(g_.race(), g_.traffic()) : controls_from(in, zone);
     if (!opt_.auto_drive && opt_.custom_keys) controls |= bound_control_bits(opt_.key_codes, true, keys);
 
-    const uint64_t now = SDL_GetTicksNS();
     if (lifecycle_.state.take_clock_reset()) { reset_clock(now); }
     // Plan 18 Task 8: the race loop stops stepping the simulation while
     // pause_open(); the mixer pauses race sounds but the interface levels
@@ -162,7 +177,13 @@ bool RaceScreen::iterate(uint64_t now_ns) {
     const int steps = clock_.advance(now - last_, frozen);
     last_ = now;
     for (int step = 0; step < steps && !frozen; ++step) {
+        if (g_.view_ready) g_.view_prev = g_.view_cur;   // adjacent tick snapshot
         g_.tick(controls);
+        // Capture every simulation tick (even during catch-up), keeping both
+        // endpoints adjacent; first tick after a reset initializes both.
+        capture_view(g_.view_cur, g_.race(), g_.traffic());
+        if (!g_.view_ready) g_.view_prev = g_.view_cur;
+        g_.view_ready = true;
         if (!g_.career) continue;
         if (!decided_ && (g_.race().finished() || g_.race().wrecked())) {
             decided_ = true;
@@ -172,13 +193,6 @@ bool RaceScreen::iterate(uint64_t now_ns) {
             result_.outcome = g_.race().finished() ? (result_.place < 3 ? RaceOutcome::won : RaceOutcome::lost)
                                                 : RaceOutcome::wrecked;
         } else if (decided_ && --end_ticks_ <= 0) running_ = false;
-    }
-    // Plan 21 Task 2: capture the new tick; blend for this frame. With
-    // interpolation off, alpha=65536 reproduces the live frame exactly.
-    if (steps > 0 && !frozen) {
-        g_.view_prev = std::move(g_.view_cur);
-        capture_view(g_.view_cur, g_.race(), g_.traffic());
-        g_.view_ready = true;
     }
     if (g_.view_ready) {
         const uint32_t alpha = g_.enhancements.interpolate ? clock_.alpha_q16() : 65536;
@@ -202,7 +216,8 @@ bool RaceScreen::iterate(uint64_t now_ns) {
             if (!pause_tex_) throw std::runtime_error(SDL_GetError());
             apply_texture_scale(pause_tex_.get(), display_.config);
         }
-        SDL_UpdateTexture(pause_tex_.get(), nullptr, pause_img_.pixels.data(), pause_img_.width * 4);
+        if (!SDL_UpdateTexture(pause_tex_.get(), nullptr, pause_img_.pixels.data(), pause_img_.width * 4))
+            throw std::runtime_error(SDL_GetError());
         SDL_SetRenderDrawColor(renderer_, 0, 0, 0, 255);
         SDL_RenderClear(renderer_);
         SDL_RenderTexture(renderer_, pause_tex_.get(), nullptr, nullptr);

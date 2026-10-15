@@ -10,6 +10,9 @@ int main() {
     rr::blend_view(out, a, b, 0);       check(out.camera_position_q8 == 1000 && out.actors[0].position_q8 == 5000, "alpha 0 is a");
     rr::blend_view(out, a, b, 65536);   check(out.camera_position_q8 == 1256 && out.actors[0].position_q8 == 5100, "alpha 1 is b");
     rr::blend_view(out, a, b, 32768);   check(out.camera_position_q8 == 1128 && out.actors[0].lateral_q8 == 128, "halfway");
+    // reverse motion halves along the short path, not the long way around
+    a.camera_position_q8 = 1256; b.camera_position_q8 = 1000;
+    rr::blend_view(out, a, b, 32768);   check(out.camera_position_q8 == 1128, "reverse halfway");
     a.camera_position_q8 = 0xffffff80u; b.camera_position_q8 = 0x80;
     rr::blend_view(out, a, b, 32768);   check(out.camera_position_q8 == 0, "wraps forward through zero");
     b.actors[0].route = 1;              // split commit

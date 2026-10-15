@@ -5,10 +5,24 @@ namespace rr {
 namespace {
 // Q16 blend of int32 fields; Q8 positions wrap-aware on uint32.
 int32_t blend_i32(int32_t a, int32_t b, uint32_t alpha_q16) {
-    return int32_t(int64_t(a) + (int64_t(b - a) * alpha_q16 >> 16));
+    return int32_t(int64_t(a) + ((int64_t(b) - int64_t(a)) * alpha_q16 >> 16));
 }
+// Shortest signed modular blend for wrapped quarter/factor (position-like uint32).
 uint32_t blend_u32_wrap(uint32_t a, uint32_t b, uint32_t alpha_q16) {
-    return a + uint32_t(uint64_t(b - a) * alpha_q16 >> 16);
+    const int32_t d = int32_t(b - a);  // widen to signed; wraps to [-2^31,2^31)
+    return uint32_t(int64_t(a) + (int64_t(d) * alpha_q16 >> 16));
+}
+// Wrapped blend for heading (period 0x1000000, as in wrap_angle).
+int32_t blend_heading(int32_t a, int32_t b, uint32_t alpha_q16) {
+    constexpr int32_t period = 0x1000000;
+    int64_t d = int64_t(b) - int64_t(a);
+    d %= period;
+    if (d > period / 2) d -= period;
+    else if (d < -period / 2) d += period;
+    int32_t r = int32_t(int64_t(a) + (d * alpha_q16 >> 16));
+    if (r > period / 2) r -= period;
+    else if (r < -period / 2) r += period;
+    return r;
 }
 }  // namespace
 
@@ -93,7 +107,7 @@ void blend_view(ViewState& out, const ViewState& a, const ViewState& b, uint32_t
         m.position_q8 = blend_u32_wrap(pa->position_q8, pb.position_q8, alpha_q16);
         m.lateral_q8 = blend_i32(pa->lateral_q8, pb.lateral_q8, alpha_q16);
         m.height_q8 = blend_i32(pa->height_q8, pb.height_q8, alpha_q16);
-        m.heading = blend_i32(pa->heading, pb.heading, alpha_q16);
+        m.heading = blend_heading(pa->heading, pb.heading, alpha_q16);
         m.roll = blend_i32(pa->roll, pb.roll, alpha_q16);
         out.actors.push_back(m);
     }
