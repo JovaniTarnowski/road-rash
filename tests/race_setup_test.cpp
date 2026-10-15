@@ -70,6 +70,22 @@ int main() {
               std::none_of(again.traffic->cars().begin(), again.traffic->cars().end(),
                            [](const auto& car) { return car.active; }), c + ": no cars carried over");
     }
+    // DZHR roadside wiring (plan 16 Task 2): the factory attaches solid
+    // spans from the scene's placed billboards on both roads, deterministically
+    // (course-load seed is fixed, so rebuilds agree exactly).
+    {
+        rr::RaceConfig config;
+        config.course = "NAPA";
+        config.level = 1;
+        config.career = false;
+        config.opponents = 0;
+        rr::RaceSetup first = rr::make_race_setup(assets, exe, config);
+        rr::RaceSetup second = rr::make_race_setup(assets, exe, config);
+        const size_t n0 = first.instance.race->roadside_solids(0) + first.instance.race->roadside_solids(1);
+        const size_t n1 = second.instance.race->roadside_solids(0) + second.instance.race->roadside_solids(1);
+        check(n0 > 0, "NAPA wires DZHR solids");
+        check(n0 == n1, "DZHR wiring is deterministic");
+    }
     // Review finding 1 (2026-10-13): career races must use the purchased bike,
     // not the level table default. career=true with an explicit bike keeps it.
     {

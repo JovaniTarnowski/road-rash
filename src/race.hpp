@@ -297,6 +297,12 @@ public:
     using DzhrTable = std::vector<std::vector<DzhrSolid>>;
     void set_roadside(DzhrTable road0, DzhrTable road1) {
         dzhr_[0] = std::move(road0); dzhr_[1] = std::move(road1); }
+    // Wiring query for the factory disc tests: total solid spans on a road.
+    size_t roadside_solids(int road) const {
+        size_t n = 0;
+        for (const auto& spans : dzhr_[road < 0 || road > 1 ? 0 : size_t(road)]) n += spans.size();
+        return n;
+    }
     bool finished() const { return riders_[0].finished; }
     bool crashed() const { return bike().i32(0x2f4) != 0; }
     int32_t ticks() const { return ticks_; }
