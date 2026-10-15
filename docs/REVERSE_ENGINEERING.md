@@ -1429,3 +1429,17 @@ source (`DAT_004b7ef4-004b7f08` vs camera advance), or density/zone timing
 -- Task 7 core, with the full branch/init account in
 `traffic-timer-trace-20261016.md`. The tick-376 lane pick itself is
 uncontested. No golden edits.
+
+## Tick-189 fixture gap: constant-rand terrain coverage (October 16, plan 10)
+
+The 864-slice oracle comparison uses three FIXED random values, so hill
+point windows/slopes collapse to bound cases. Real captures draw varied
+values, exercising clamp/skip/advance interactions the fixtures cannot
+reach (early return on zero length, window-skip strictness, record-start
+boundaries under varied lengths). Per-tick counts match through tick 188,
+ruling out masked drift; per-site tags were polluted by non-race streams
+(scene iterators share the call sites) and reverted. Decisive next
+experiments, in order: (1) randomized differential terrain-step harness
+through the isolated oracle function hooks (same 3x3x2x48 shape, varied
+draws); (2) walker-state oracle keys (positions, hill/wall record indices)
+to hand-simulate the tick-189 crossing. No stepper code touched.
