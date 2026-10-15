@@ -1,5 +1,17 @@
 # Verification log (all sessions September 28, 2026)
 
+## Post-merge full gate (October 14, 2026, integrator)
+
+- Tree: `c2ab4d9` + worktree (contact-guard code, gemini parser fixes,
+  codex MiniDash hud work, codex-goal doc edits; SIM-owner oracle
+  diagnostics untouched and unbuilt).
+- `cmake --build build-integrator --parallel`: exit 0, no warnings.
+- `ctest --test-dir build-integrator --output-on-failure`: **95/95 pass**
+  (incl. new `car_contact`), zero skips/failures. This discharges the
+  shared-tree full gate requested by `codex-contact-guard-20261014.md`;
+  isolated-gate receipts for Android/ASan remain worker-run evidence in
+  that handoff.
+
 ## Previous-copy sync (October 14, 2026, plan 10 Task 6 fix order #1a)
 
 - `cmake --build build-integrator --target race-test oracle-sim-test`:
