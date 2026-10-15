@@ -296,11 +296,11 @@ int surface_class(const SliceEdges& e, int32_t x_q8) {
     if (e.right < x) {
         if (e.right_shoulder <= x) return 3;
         if (e.type == 0) return 1;
-        return x <= e.right + 0x30 ? 2 : 0;
+        return x <= e.right + 0x30 ? 0 : 2;
     }
     if (x <= e.left_shoulder) return 3;
     if (e.type == 0) return 1;
-    return e.left - 0x30 <= x ? 2 : 0;
+    return e.left - 0x30 <= x ? 0 : 2;
 }
 
 int32_t approx_atan2(int32_t a, int32_t b) {

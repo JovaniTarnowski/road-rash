@@ -55,6 +55,18 @@ int main() {
     check(rr::surface_class(e, 800 << 8) == 3, "beyond shoulder");
     check(rr::surface_class(e, -800 * 256) == 3, "beyond left shoulder");
 
+    // 0x0043a0c0 margin rule on non-type-0 terrain: class 0 within
+    // edge+0x30 (non-strict), class 2 beyond (both sides).
+    rr::SliceEdges r{-500, 500, -700, 700, 0, 1};
+    check(rr::surface_class(r, 0) == 0, "non-type-0 on road");
+    check(rr::surface_class(r, 600 << 8) == 2, "non-type-0 shoulder");
+    check(rr::surface_class(r, (500 + 0x2f) << 8) == 0, "right margin inner");
+    check(rr::surface_class(r, (500 + 0x30) << 8) == 0, "right margin edge");
+    check(rr::surface_class(r, (500 + 0x31) << 8) == 2, "right margin outer");
+    check(rr::surface_class(r, (-500 - 0x2f) * 256) == 0, "left margin inner");
+    check(rr::surface_class(r, (-500 - 0x30) * 256) == 0, "left margin edge");
+    check(rr::surface_class(r, (-500 - 0x31) * 256) == 2, "left margin outer");
+
     // 0x0044f5a0 angle approximation: 0x20 per 45 degrees, 256 per turn.
     check(rr::approx_atan2(100, 0) == 0 && rr::approx_atan2(100, 100) == 0x20 && rr::approx_atan2(0, 100) == 0x40, "atan quadrants");
     check(rr::approx_atan2(-100, 0) == 0x80, "atan backwards");
