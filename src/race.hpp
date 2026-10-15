@@ -238,6 +238,8 @@ public:
     // 0x0044dd90 with the per-step camera advance). The random-call
     // interleaving against the original's scheduler is not verified.
     void set_traffic(TrafficSystem* t) { traffic_ = t; attach_terrain_type(); }
+    // Nulled-pool solo: keep timer/density draws, never place (Task 5/7).
+    void set_spawn_enabled(bool v);
     // Pedestrians (plan 24 Task 4, src/race_pedestrians.cpp): spawned as the
     // ring builds their slice, thought/moved on the scheduler cadence of
     // 0x00437e60, and hit by riders and cars through the 0x004368f0 pass.

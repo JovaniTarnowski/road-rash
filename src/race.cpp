@@ -236,6 +236,9 @@ RaceWiring Race::wiring() const {
     return w;
 }
 
+void Race::set_spawn_enabled(bool v) {
+    if (traffic_) traffic_->set_spawn_enabled(v);
+}
 void Race::set_demo_hold(bool v, int base_speed, int lane, int32_t bias,
                        int weapon, RiderStats stats) {
     demo_hold_ = v;

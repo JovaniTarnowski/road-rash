@@ -448,7 +448,7 @@ void TrafficSystem::think_intersections(int32_t back_q8,int32_t front_q8,uint32_
                     else {kind=c.variant==2?3:1;range=c.lanes;}
                     if(range>0) {   // a zero range divides by zero in the original
                         lane=int8_t(lane+int32_t(random()%uint32_t(range)));
-                        place_crossing(c,si,kind,lane,route,random);
+                        if(spawn_enabled_)place_crossing(c,si,kind,lane,route,random);
                     }
                 }
             } while(c.durations[s.phase]<s.accum);
@@ -515,7 +515,10 @@ void TrafficSystem::step(const std::vector<RouteSample>& route,int32_t camera_q8
     if(timers_.oncoming<0) {
         const int32_t spawn=front_q8-0x100;
         const int count=traffic_lane_count(sample_at(spawn).path.left_q8);
-        if(count>0)place(2,int8_t(-1-int32_t(random()%uint32_t(count))),sample_at(spawn),spawn,random);
+        if(count>0) {
+            const int8_t lane=int8_t(-1-int32_t(random()%uint32_t(count)));
+            if(spawn_enabled_)place(2,lane,sample_at(spawn),spawn,random);
+        }
         timers_.oncoming+=timers_.oncoming_reload;
     }
     // Behind timer 0x004b7e94: decays only while the rider moves.
@@ -524,7 +527,10 @@ void TrafficSystem::step(const std::vector<RouteSample>& route,int32_t camera_q8
     if(timers_.behind<0) {
         const int32_t spawn=front_q8-0x100;
         const int count=traffic_lane_count(sample_at(spawn).path.right_q8);    // sub-slice +0x2c
-        if(count>0)place(0,int8_t(random()%uint32_t(count)),sample_at(spawn),spawn,random);
+        if(count>0) {
+            const int8_t lane=int8_t(random()%uint32_t(count));
+            if(spawn_enabled_)place(0,lane,sample_at(spawn),spawn,random);
+        }
         timers_.behind+=timers_.other_reload;
     } else if(timers_.other_reload*2<timers_.behind)timers_.behind=timers_.other_reload*2;
     // Ahead timer 0x004b7e80: grows while the rider is slow; spawns one sample
@@ -534,7 +540,10 @@ void TrafficSystem::step(const std::vector<RouteSample>& route,int32_t camera_q8
     if(0<timers_.ahead) {
         const int32_t spawn=back_q8+0x100;
         const int count=traffic_lane_count(sample_at(spawn).path.right_q8);
-        if(count>0)place(0,int8_t(random()%uint32_t(count)),sample_at(spawn),spawn,random);
+        if(count>0) {
+            const int8_t lane=int8_t(random()%uint32_t(count));
+            if(spawn_enabled_)place(0,lane,sample_at(spawn),spawn,random);
+        }
         timers_.ahead-=timers_.other_reload;
     } else {
         const int32_t cap=-timers_.other_reload*2;

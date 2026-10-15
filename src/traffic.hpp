@@ -118,6 +118,13 @@ public:
     static constexpr size_t pool_size = 16;   // 0x00438b70(0x210, 0x10): 16 objects
     static constexpr size_t controller_pool = 10;   // 0x00468ee4: 10 x 0x114
     static constexpr size_t signal_pool = 40;       // 0x00468ee0: 40 x 0x108
+    // Nulled-pool solo equivalent: the oracle zeroes the car pool count, so
+    // 0x0044df60 returns on entry AFTER 0x0044dd90/0x0041f040 drew the lane
+    // pick -- one stream draw per gated expiry, zero cars. Disabled spawns
+    // reproduce exactly that (draw, no placement, no serial bump); live game
+    // and field replays keep the default enabled. Car motion/horn never run
+    // with an empty pool either way.
+    void set_spawn_enabled(bool v) { spawn_enabled_ = v; }
     TrafficSystem(const VehicleLibrary&, std::vector<uint8_t> exe);
     void configure(int density) { traffic_configure(timers_, density); }
     // One simulation tick on the player's route. camera/front are the ring
@@ -190,6 +197,7 @@ private:
     std::vector<TrafficCar> cars_{pool_size};
     std::vector<SoundEventRecord> events_;
     uint32_t serial_ = 0;                       // DAT_004b7e98
+    bool spawn_enabled_ = true;                 // false: nulled-pool solo (draw, never place)
     bool filled_ = false;                       // initial ring fill replayed
     int32_t built_end_ = 0;                     // ring front sample (exclusive) already built
     int32_t zone_events_ = 0;

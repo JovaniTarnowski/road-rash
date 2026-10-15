@@ -406,10 +406,14 @@ int main(int argc, char** argv) {
     rr::RaceSetup setup = rr::make_race_setup(assets, exe, config);
     rr::Race& race = *setup.instance.race;
     // Solo isolation (plan 10 Task 5): the oracle nulls the traffic pool, so
-    // 0x0044df60 never places cars. The native equivalent is no traffic
-    // system at all: any native spawn consumes draws the original never
-    // makes (measured on sched900: first native spawn at tick 319, 6 draws,
-    // no golden counterpart). Field scenarios keep traffic.
+    // 0x0044df60 never places cars. Detaching keeps the replay exact while
+    // the spawn-timer schedule is unresolved (Task 7): attached timers fire
+    // natively at tick 319 (behind, density-40 schedule, tap count 1) where
+    // the original stays silent, and the extra lane draw regresses 376 to
+    // 319. The spawn_enabled gate below stays for the Task-7 port (draw
+    // before place, verified against 0x0044dd90/0x0044df60), when timer
+    // inits/taps/density match and the tick-376 lane pick replays.
+    // Field scenarios keep traffic attached.
     if (solo) race.set_traffic(nullptr);
     // The factory's last RNG draw is the ring setup's end (0x004552e0);
     // the countdown then consumes ring.post_draws (11) before green.

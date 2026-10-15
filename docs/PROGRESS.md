@@ -887,3 +887,11 @@ Evidence: handoffs `25-1/2/3/5/6/7`, `26-1/2/3`, review
   goldens byte-identical.
 - Tick 189: 24-vs-27 terrain-jitter draws at a ring slice build (same
   slice both sides) -- terrain iterator integration is the next slice.
+
+### October 16, 2026: spawn gating landed, timer schedule deferred (plan 10)
+
+- Nulled-pool spawn gating (draw lane pick, skip placement) is implemented
+  and order-verified, but attaching it moves demo 376 -> 319: the native
+  behind-timer schedule fires where the original is silent. Harness keeps
+  traffic detached (best replay); the gate waits for Task-7 timer inputs.
+  All goldens and focused suites at baseline.

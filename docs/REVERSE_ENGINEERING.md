@@ -1408,3 +1408,24 @@ re-entry). Prime suspects left: a walker section-enter re-running
 terrain init, or walker positions having drifted silently earlier
 (positions/indices are never dumped). Next: per-site draw counters plus
 walker-state oracle keys. Probes reverted; tree clean.
+
+## Spawn gating with nulled pool; timer-schedule fork at tick 319 (October 16, plan 10)
+
+`TrafficSystem` gained `spawn_enabled` (default on): with spawns off, each
+gated timer expiry still draws the lane pick but skips placement, serial
+bump and motion -- exactly the oracle-nulled-pool behavior (`0x0044dd90`
+draws, `0x0044df60` returns first-statement; same shape verified for the
+`0x0041f040` crossing lane pick). Draw-before-place order and the
+pool-exhausted path are unchanged for live game and field replays.
+
+Attached (spawn-disabled) solo replay regressed demo 376 -> 319, so the
+harness keeps traffic detached for now: the native behind-timer fires at
+tick 319 on its self-consistent density-40 schedule (tap sample 138,
+lane count 1) while the original stays silent there. Behind evolution
+(init 0, first fire ~tick 2 on reload 3515, density later 40 without a
+behind reset) checks out arithmetically, so the fork is in timer inputs:
+tap-lane words (`+0x30/+0x2c` vs `PathSample` lane Q8), the distance-delta
+source (`DAT_004b7ef4-004b7f08` vs camera advance), or density/zone timing
+-- Task 7 core, with the full branch/init account in
+`traffic-timer-trace-20261016.md`. The tick-376 lane pick itself is
+uncontested. No golden edits.
