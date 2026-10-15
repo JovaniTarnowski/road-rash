@@ -1182,3 +1182,33 @@ the geometric predicate. Converted to a class-3 glance test with live-value
 expectations (f0 shove, ec cut, tail kick, impulse clear); class-1 transfer
 remains covered end-to-end by the demo tick-208 replay. Full native gate
 re-run in background (`/tmp/fullgate2.log`) for the commit record.
+
+## Countdown traffic timers (October 15 continuation, plan 10 Task 7)
+
+- Owned Debug tree: `build-agent-countdown-timers-20261015`. Configure:
+  `cmake -S . -B build-agent-countdown-timers-20261015
+  -DCMAKE_BUILD_TYPE=Debug -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
+  -DRR_STRICT_WARNINGS=ON`: exit 0.
+- `cmake --build build-agent-countdown-timers-20261015 --parallel 6`:
+  exit 0, no warning/error diagnostics. Initial compile caught a private
+  RNG accessor in the harness; fixed before this successful build.
+- Demo `oracle-sim-test --driver=demo
+  analysis/oracle/sched900-20261015.tsv`: exit 1, first mismatch tick 575
+  (was 376), brain target resolver -1 vs13. Original pointer is nonnull:
+  subsequent review identifies current-position identity lookup as defective.
+- Human `oracle-sim-test analysis/oracle/sched-human-20261016.tsv`:
+  exit 1, unchanged first divergence tick 189, RNG 409811144 vs1232322109.
+  Both replays use a single anchor; goldens/diagnostic allowlist unchanged.
+- LSP client channel unavailable. Owned compile database healthy, clangd
+  fallback parses `src/traffic.cpp` but exits3 on19 ExtractFunction tweak
+  failures (break/continue extraction); this is not a clean LSP gate.
+- Independent pinned REA 6.4.0 checks `0x0044b3b0` and `0x004515a0` exit0;
+  original EXE SHA-256 verified. No Wine/oracle capture was run.
+- Logs: `analysis/countdown-timers-20261015/`; independent research logs
+  and limits are linked from the session handoffs. Android, sanitizers,
+  hardware, packaging and strict simulation acceptance were not rerun.
+- `ctest --test-dir build-agent-countdown-timers-20261015
+  --output-on-failure -j 4`: **97/97 passed**, zero skips/failures,
+  215.31 seconds, including traffic's three new regressions, race soak,
+  and unchanged oracle diagnostic signature. CTest success is not full
+  simulation acceptance.

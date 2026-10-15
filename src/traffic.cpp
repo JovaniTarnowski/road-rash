@@ -491,9 +491,8 @@ void TrafficSystem::place_crossing(const IntersectionController& c,int signal,in
     }
 }
 
-void TrafficSystem::step(const std::vector<RouteSample>& route,int32_t camera_q8,int32_t front_q8,
-                        int32_t distance_moved,int32_t player_q8,int32_t player_lateral,const std::function<uint32_t()>& random,
-                        uint32_t tick) {
+void TrafficSystem::build_slices(const std::vector<RouteSample>& route, int32_t front_q8,
+                                 int32_t distance_moved, uint32_t tick) {
     const int32_t back_q8=front_q8-0x8000;    // ring span 0x8000 (0x004552e0)
     // Ring slices built this step (0x00454120 runs before 0x0044dd90).
     const int32_t front_sample=front_q8>>8;
@@ -504,6 +503,32 @@ void TrafficSystem::step(const std::vector<RouteSample>& route,int32_t camera_q8
     }
     for(;built_end_<front_sample;++built_end_)build_slice(route,built_end_,back_q8,front_q8,tick);
     if(front_sample<built_end_)built_end_=front_sample;   // backward: rebuilt later
+}
+
+void TrafficSystem::countdown_step(const std::vector<RouteSample>& route, int32_t front_q8,
+                                    const std::function<uint32_t()>& random, uint32_t tick) {
+    // 0x004552e0 applies the initial ring's zones before the first tick.
+    // Reuse the lazy fill without advancing any cursor during the hold.
+    build_slices(route,front_q8,0,tick);
+    step_timers(route,front_q8,front_q8-0x8000,0,random);
+}
+
+void TrafficSystem::step(const std::vector<RouteSample>& route,int32_t camera_q8,int32_t front_q8,
+                        int32_t distance_moved,int32_t player_q8,int32_t player_lateral,const std::function<uint32_t()>& random,
+                        uint32_t tick) {
+    const int32_t back_q8=front_q8-0x8000;
+    build_slices(route,front_q8,distance_moved,tick);
+    step_timers(route,front_q8,back_q8,distance_moved,random);
+    // 0x0041f040 intersection think runs in the 0x00438170 scheduler pass,
+    // after the 0x0044dd90 spawns and before the 0x0044e710 car moves.
+    think_intersections(back_q8,front_q8,tick,route,random);
+    for(auto& car:cars_)if(car.active)move(car,route,camera_q8,front_q8,back_q8,player_q8,player_lateral,random);
+}
+// 0x0044dd90 spawn timers, extracted so the countdown hold can bank them
+// with distance 0 (the original steps them every hold tick). Order, gates,
+// draws and resets identical to the in-step path above.
+void TrafficSystem::step_timers(const std::vector<RouteSample>& route,int32_t front_q8,int32_t back_q8,
+                                int32_t distance_moved,const std::function<uint32_t()>& random) {
     const auto sample_at=[&](int32_t q8)->const RouteSample& {
         const size_t index=size_t(std::clamp(q8,int32_t(0),int32_t((route.size()-1)*256))>>8);
         return route.at(index);
@@ -549,10 +574,6 @@ void TrafficSystem::step(const std::vector<RouteSample>& route,int32_t camera_q8
         const int32_t cap=-timers_.other_reload*2;
         if(cap-timers_.ahead!=0 && timers_.ahead<=cap)timers_.ahead=cap;
     }
-    // 0x0041f040 intersection think runs in the 0x00438170 scheduler pass,
-    // after the 0x0044dd90 spawns and before the 0x0044e710 car moves.
-    think_intersections(back_q8,front_q8,tick,route,random);
-    for(auto& car:cars_)if(car.active)move(car,route,camera_q8,front_q8,back_q8,player_q8,player_lateral,random);
 }
 
 void TrafficSystem::append_snapshot(std::vector<FieldValue>& out) const {

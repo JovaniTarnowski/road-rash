@@ -1463,3 +1463,36 @@ Two follow-up traces closed the tap-word and delta-source questions:
   native decays it unconditionally. Needs capture proof (countdown/green
   alignment); native formula otherwise unchanged.
 Evidence: `timer-tap-trace-20261016.md`, `timer-delta-trace-20261016.md`.
+
+### Countdown timer integration (October 15 continuation, plan 10 Task 7)
+
+`0x0044b3b0` calls `0x0044dd90` on every simulation tick, including
+stationary hold ticks. It passes the full camera delta after ring builds;
+no residual carry is involved. Initial `0x0044db80` sets ahead=-3515,
+behind=0; the ring's density-40 event resets both reloads and oncoming
+to 23437 while preserving ahead/behind current values. At rate 2500,
+59 zero-distance ticks therefore leave oncoming=22906, behind=531,
+ahead=-2984. No lane expiry occurs during that hold.
+
+Native countdown now reproduces this history. Because hydrated frame 0
+is post-tick-1, replay banks that tick without rerunning hydrated brain
+state. Solo replay retains lane draws while suppressing car placement.
+The existing demo trace now agrees through tick 574; first divergence
+is target identity resolution at 575: original pointer 20976340 remains
+nonnull, but the harness searches by initial position against moving native
+riders. A stable address-to-rider mapping is the next correction. This is
+measured replay progress,
+not full traffic parity. Human still diverges at terrain step tick 189.
+
+Independent reference-hash check and pinned REA 6.4.0 `0x0044b3b0`
+spot-check agree with the address-keyed export. See
+[independent review](agent-handoffs/timer-independent-20261015.md) and
+[countdown driver trace](agent-handoffs/countdown-driver-trace-20261016.md).
+
+Terrain follow-up: matching per-tick draw totals through 188 constrains
+stream position at tick boundaries, but does not exclude earlier
+within-tick draw assignment differences affecting hidden point windows.
+Current terrain fixtures compare only six of eight points and no CRT
+state. Expand isolated seeded fixture state before guessing a hill-step
+change; exact eight-point and race-walker offsets are in
+[terrain probe handoff](agent-handoffs/terrain-next-20261015.md).

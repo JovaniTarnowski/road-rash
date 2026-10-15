@@ -895,3 +895,20 @@ Evidence: handoffs `25-1/2/3/5/6/7`, `26-1/2/3`, review
   behind-timer schedule fires where the original is silent. Harness keeps
   traffic detached (best replay); the gate waits for Task-7 timer inputs.
   All goldens and focused suites at baseline.
+
+### Countdown traffic-timer continuation (October 15 session, plan 10 Task 7)
+
+- Integrated the unfinished `traffic.*` timer extraction after review.
+  `Race::countdown_step` now banks zero-distance traffic timers, applying
+  initial ring zone events first without car/controller movement. Replay
+  banks the hydrated first tick explicitly and keeps solo traffic attached
+  with placement disabled, preserving the original lane-pick draws.
+- Single-anchor `sched900-20261015` demo replay moves first divergence
+  **376 -> 575** (brain target resolver reports -1/native 13; the
+  original pointer is nonnull, so identity mapping needs correction).
+  Human `sched-human-20261016` remains at tick 189 (terrain RNG).
+  Old diagnostic goldens and allowlist are unchanged. This advances Task 7;
+  traffic-field and full human acceptance remain open.
+- Synthetic regressions cover 59 stationary hold ticks, density-event order,
+  initial-fill reuse, and disabled-pool expiry draws. See
+  [session handoff](agent-handoffs/countdown-timers-20261015.md).

@@ -7,6 +7,7 @@
 #include "frozen_state.hpp"
 #include "race.hpp"
 #include "race_setup.hpp"
+#include "traffic.hpp"
 #include <cstdio>
 #include <filesystem>
 #include <functional>
@@ -405,16 +406,9 @@ int main(int argc, char** argv) {
     }
     rr::RaceSetup setup = rr::make_race_setup(assets, exe, config);
     rr::Race& race = *setup.instance.race;
-    // Solo isolation (plan 10 Task 5): the oracle nulls the traffic pool, so
-    // 0x0044df60 never places cars. Detaching keeps the replay exact while
-    // the spawn-timer schedule is unresolved (Task 7): attached timers fire
-    // natively at tick 319 (behind, density-40 schedule, tap count 1) where
-    // the original stays silent, and the extra lane draw regresses 376 to
-    // 319. The spawn_enabled gate below stays for the Task-7 port (draw
-    // before place, verified against 0x0044dd90/0x0044df60), when timer
-    // inits/taps/density match and the tick-376 lane pick replays.
-    // Field scenarios keep traffic attached.
-    if (solo) race.set_traffic(nullptr);
+    // Solo captures null the car pool, but 0x0044dd90 still draws a lane
+    // at gated timer expiries. Keep the timers attached and skip placement.
+    if (solo && setup.instance.traffic) setup.instance.traffic->set_spawn_enabled(false);
     // The factory's last RNG draw is the ring setup's end (0x004552e0);
     // the countdown then consumes ring.post_draws (11) before green.
     const std::optional<uint32_t> ring_end_state = race.rng_state();
@@ -641,6 +635,16 @@ int main(int argc, char** argv) {
         br.target_rider = golden_rider(h, "rider.0.brain_168");
         br.nbr_ahead = golden_rider(h, "rider.0.brain_16c");
         br.nbr_behind = golden_rider(h, "rider.0.brain_170");
+    }
+    // Brain/scheduler hydration skips the post-tick-1 frame. Traffic timers
+    // start from setup, so bank that frame explicitly without rerunning
+    // the hydrated think/scheduler. Human solo also skips its hold frames.
+    if (solo && setup.instance.traffic) {
+        const size_t timer_frames = demo ? (brain_window ? 1 : 0) : green;
+        for (size_t i = 0; i < timer_frames; ++i)
+            setup.instance.traffic->countdown_step(race.route_for(race.riders()[0].route),
+                int32_t(race.camera_position()) + 0x5100,
+                []() -> uint32_t { throw std::runtime_error("hydrated hold frame consumed RNG"); }, uint32_t(tick0 + int64_t(i)));
     }
     if (demo && solo) {
         // Frame 0 is post tick 1: seeded captures resume at tick 2, others

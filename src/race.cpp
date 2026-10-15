@@ -2214,6 +2214,12 @@ void Race::countdown_step() {
         if (r.finished || r.bike.i32(0x2f4) != 0) continue;
         if (r.ai || (demo_hold_ && i == 0)) ai_think(r);
     }
+    // 0x0044b3b0 calls 0x0044dd90 even while the camera is stationary:
+    // at rate 2500 each hold tick banks +9 behind/rear and -9 oncoming.
+    if (traffic_ && !riders_.empty())
+        traffic_->countdown_step(route_of(riders_[0]), int32_t(camera_position()) + 0x5100,
+                                 [this] { return random(); }, uint32_t(ticks_));
+
 }
 
 void Race::collide_riders() {

@@ -138,6 +138,75 @@ static void test_zone_events() {
         throw std::runtime_error("density after rate change");
 }
 
+static void test_countdown_timers() {
+    rr::VehicleLibrary library(synthetic_container(0));
+    rr::TrafficSystem system(library,synthetic_exe());
+    system.configure(6);
+    std::vector<rr::RouteSample> route(400,lane_sample(0x200,0x300));
+    for(auto& s:route)s.path.left=s.path.right=750;
+    rr::Race race(route,route,rr::PhysicsTables::synthetic(),rr::BikeSpec{},90);
+    race.set_traffic(&system);
+    const uint32_t position=race.position(),camera=race.camera_position(),seed=race.rng_state();
+    const int32_t lateral=race.bike().i32(0x28),speed=race.bike().i32(0xec);
+    for(int i=0;i<59;++i)race.countdown_step();
+    const auto& t=system.timers();
+    if(t.oncoming!=3515-531 || t.behind!=531 || t.ahead!=-3515+531)
+        throw std::runtime_error("countdown banks 59 zero-distance timer ticks");
+    if(race.rng_state()!=seed || race.position()!=position || race.camera_position()!=camera ||
+       race.bike().i32(0x28)!=lateral || race.bike().i32(0xec)!=speed)
+        throw std::runtime_error("countdown changed player motion, camera or RNG");
+    for(const auto& car:system.cars())if(car.active)
+        throw std::runtime_error("short countdown spawned a car");
+}
+
+static void test_countdown_initial_fill() {
+    rr::VehicleLibrary library(synthetic_container(0));
+    rr::TrafficSystem system(library,synthetic_exe());
+    system.configure(6);
+    std::vector<rr::RouteSample> route(400,lane_sample(0,0));
+    route[20].path.zone_end=true;
+    route[20].path.event_parameters[1]=40;
+    // The first ring is [2,130); both this zone and its changed density
+    // must be visible before the first hold tick's spawn timers execute.
+    constexpr int32_t camera=0x3100,front=camera+0x5100;
+    uint32_t draws=0;
+    auto random=[&]()->uint32_t{++draws;return 0;};
+    system.countdown_step(route,front,random,1);
+    if(system.zone_events()!=1 || system.timers().density!=40 ||
+       system.timers().oncoming_reload!=23437 || system.timers().other_reload!=23437 ||
+       system.timers().behind!=9 || system.timers().ahead!=-3515+9 ||
+       system.timers().oncoming!=23437-9)
+        throw std::runtime_error("countdown initial density event/reload order");
+    for(uint32_t tick=2;tick<=59;++tick)system.countdown_step(route,front,random,tick);
+    if(system.zone_events()!=1 || system.timers().oncoming!=23437-531)
+        throw std::runtime_error("countdown repeated initial fill");
+    system.step(route,camera+0x100,front,0,camera,0,random,60);
+    if(system.zone_events()!=1 || system.timers().oncoming!=23437-540 || draws!=0)
+        throw std::runtime_error("racing step replayed countdown ring fill");
+}
+
+static void test_countdown_disabled_spawn_expiry() {
+    rr::VehicleLibrary library(synthetic_container(0));
+    rr::TrafficSystem system(library,synthetic_exe());
+    system.configure(6);
+    system.set_spawn_enabled(false);
+    const std::vector<rr::RouteSample> route(400,lane_sample(0x200,0x300));
+    uint32_t draws=0;
+    auto random=[&]()->uint32_t{++draws;return 0;};
+    // 390 ticks leave oncoming/ahead at +/-5. Tick 391 expires both;
+    // the nulled pool still consumes one lane draw for each attempted car.
+    for(uint32_t tick=1;tick<=390;++tick)system.countdown_step(route,0x8200,random,tick);
+    if(draws!=0 || system.timers().oncoming!=5 || system.timers().ahead!=-5)
+        throw std::runtime_error("countdown expired before timer threshold");
+    system.countdown_step(route,0x8200,random,391);
+    if(draws!=2 || system.timers().oncoming!=3511 || system.timers().ahead!=-3511)
+        throw std::runtime_error("countdown nulled-pool lane RNG/reload");
+    for(uint32_t tick=392;tick<=400;++tick)system.countdown_step(route,0x8200,random,tick);
+    if(draws!=2)throw std::runtime_error("countdown repeated expiry draws");
+    for(const auto& car:system.cars())if(car.active || car.serial!=0)
+        throw std::runtime_error("countdown disabled pool placed a car");
+}
+
 static void test_spawn_and_move() {
     rr::VehicleLibrary library(synthetic_container(0));
     std::vector<uint8_t> exe=synthetic_exe();
@@ -593,6 +662,9 @@ int main() {
         test_configure();
         test_lane_count();
         test_library_choose();
+        test_countdown_timers();
+        test_countdown_initial_fill();
+        test_countdown_disabled_spawn_expiry();
         test_spawn_and_move();
         test_zone_events();
         test_intersections();

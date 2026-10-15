@@ -402,3 +402,21 @@ infers `driver=human` with no override. First divergence is tick 2
 state. Five further human gates are demo-tuned natively (steer, skid,
 move-push, sched-copy, wreck rule). Demo solo stands at tick 376
 (spawn-timer lane draw, Task 7).
+
+### Countdown timer integration (October 15 continuation, Task 7 Step 2)
+
+The zero-distance hold history is now integrated: initial traffic ring
+zones precede hold timers, hydrated frame 0 banks one timer tick, and solo
+replay retains lane-pick draws against disabled placement. Demo sched900
+now matches through tick 574 (was 375); first gap at 575 is brain target
+`+0x168` identity resolution (reported original rider -1, native 13; the
+original pointer is nonnull and the resolver uses current positions).
+Human remains at tick 189 terrain
+RNG. Legacy diagnostic signatures/allowlist and goldens are unchanged.
+No Step 2/exit acceptance checkbox is closed: traffic-field replay and
+full human parity remain required.
+
+Next: resolve the tick-575 target identity/selection difference and expand
+seeded terrain fixtures to all eight points, windows/slopes and CRT state.
+See `agent-handoffs/countdown-timers-20261015.md` and
+`agent-handoffs/terrain-next-20261015.md`.

@@ -150,6 +150,10 @@ public:
     void step(const std::vector<RouteSample>& route, int32_t camera_q8, int32_t front_q8,
               int32_t distance_moved, int32_t player_q8, int32_t player_lateral, const std::function<uint32_t()>& random,
               uint32_t tick);
+    // Hold tick: initialize ring zone events, then run 0x0044dd90 with
+    // zero camera delta. Do not move cars or think intersection controllers.
+    void countdown_step(const std::vector<RouteSample>& route, int32_t front_q8,
+                        const std::function<uint32_t()>& random, uint32_t tick);
     const std::vector<TrafficCar>& cars() const { return cars_; }
     // 0x004368f0 car pass: the contact response writes the car's share of
     // the separation (lateral push; the original also runs 0x00436a40 on the
@@ -183,6 +187,10 @@ public:
     // car_fields) for every pool slot, active or not.
     void append_snapshot(std::vector<FieldValue>& out) const;
 private:
+    void build_slices(const std::vector<RouteSample>& route, int32_t front_q8,
+                      int32_t distance_moved, uint32_t tick);
+    void step_timers(const std::vector<RouteSample>& route, int32_t front_q8, int32_t back_q8,
+                     int32_t distance_moved, const std::function<uint32_t()>& random);
     bool place(uint8_t kind, int8_t lane, const RouteSample& at, int32_t spawn_q8, const std::function<uint32_t()>& random);
     void move(TrafficCar&, const std::vector<RouteSample>& route, int32_t camera_q8, int32_t front_q8, int32_t back_q8,
               int32_t player_q8, int32_t player_lateral, const std::function<uint32_t()>& random);
