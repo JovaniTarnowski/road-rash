@@ -45,3 +45,18 @@ unrelated untracked files are preserved.
 ## Live processes / resources
 
 File claims above. Record capture/Ghidra processes here.
+
+## Follow-up identity correction
+
+Committed/pushed timer slice as306081c after97/97 native tests. SSH push
+stalled; HTTPS push using the existing gh credential helper succeeded,
+without changing remote configuration.
+
+Added tests/frozen_state.hpp::rider_node_identities and focused tests
+(worker timer_tests), used once after replay hydration. Current demo
+first mismatch576 brain+194 -16384 vs29952, RNG matched; human189 unchanged.
+Strict full rebuild clean; focused frozen_state/oracle-sim/agent-tooling
+3/3 pass. Worker clangd check of frozen_state_test.cpp exits0.
+No runtime/source simulation behavior was changed by identity correction.
+Remaining target/latch positional diagnostics require original current
+position evidence when target actors move; do not blanket skip comparisons.

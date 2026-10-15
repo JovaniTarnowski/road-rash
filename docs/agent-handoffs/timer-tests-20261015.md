@@ -36,3 +36,31 @@ Checks:
 
 No capture, Wine, Ghidra, or shared resource process held. No production source
 or shared status documentation edited.
+
+## Stable rider-node identity follow-up
+
+Parent transferred ownership of `tests/frozen_state.hpp` and
+`tests/frozen_state_test.cpp` for the target-pointer normalization fix.
+Added `rr::golden::rider_node_identities(header,riders)`: capture once after
+initial hydration, mapping complete numeric `nodeaddr.N` triples by initial
+bike +0x1c for types4/8. Complete unrelated/unmatched nodes map-1; absent and
+incomplete addresses remain absent. Duplicate captured addresses and ambiguous
+matched native rider positions throw. The helper returns a value-owned map so
+later movement and reuse of the initial position retain the original identity.
+
+Focused tests cover linked bike/half identity, unrelated/unmatched nodes,
+unknown/incomplete/nonnumeric entries, movement/position reuse, duplicate native
+positions, and duplicate addresses. The parent owns replay integration.
+
+Validation:
+
+- `cmake --build build-agent-timer-tests-20261015 --target frozen_state-test --parallel 4` passed (log `/tmp/rr-frozen-state-build-20261015.log`).
+- `ctest --test-dir build-agent-timer-tests-20261015 -R '^frozen_state$' --output-on-failure` passed,1/1.
+- clangd fallback `tools/agent_lsp.py` against the owned compilation database
+  checked `tests/frozen_state_test.cpp` with exit0/zero errors (log
+  `/tmp/rr-frozen-state-lsp-20261015.json`).
+- Initial test run exposed the legacy hydration parser's acceptance of a
+  nonnumeric node suffix; moved that synthetic malformed entry after hydration
+  so this helper's parsing coverage stays independent of legacy hydration.
+- No replay source, CMake, shared status documentation, or production source
+  changed. No commit made. No live resource process held.

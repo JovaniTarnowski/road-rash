@@ -1212,3 +1212,19 @@ re-run in background (`/tmp/fullgate2.log`) for the commit record.
   215.31 seconds, including traffic's three new regressions, race soak,
   and unchanged oracle diagnostic signature. CTest success is not full
   simulation acceptance.
+
+## Stable replay identity (October 15 continuation, plan 10)
+
+- `cmake --build build-agent-countdown-timers-20261015 --parallel 6`:
+  exit0, strict Debug build clean. Only test/harness code changed after
+  the prior97/97 native gate.
+- `ctest --test-dir build-agent-countdown-timers-20261015
+  --output-on-failure -R 'frozen_state|oracle-sim|agent-tooling'`:3/3 pass.
+  Added identity regressions cover moving targets, position reuse,
+  unrelated actor types, absent/incomplete nodes and ambiguous identities.
+- Demo single-anchor sched900 first divergence576: brain+194 original
+  -16384/native29952 (RNG matched). Human unchanged189 RNG divergence.
+- Worker private frozen_state build/test pass; clangd check of that test
+  exits0, zero errors. No actual client LSP channel is exposed.
+- Logs retained in `analysis/countdown-timers-20261015/identity-*`.
+  No new capture or full simulation acceptance claim.

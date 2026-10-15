@@ -912,3 +912,18 @@ Evidence: handoffs `25-1/2/3/5/6/7`, `26-1/2/3`, review
 - Synthetic regressions cover 59 stationary hold ticks, density-event order,
   initial-fill reuse, and disabled-pool expiry draws. See
   [session handoff](agent-handoffs/countdown-timers-20261015.md).
+
+### Stable replay actor identities (October 15 continuation, plan 10)
+
+The target pointer mismatch at demo tick 575 was a harness bug: original
+node address 20976340 still identified native rider13, which had moved
+away from its starting position. Replay now freezes address-to-rider
+identity after initial hydration. Types4/8 resolve to rider owners;
+unrelated actor types cannot alias a rider merely by sharing position.
+Duplicate addresses and ambiguous rider matches fail explicitly.
+
+The same single-anchor demo trace now reaches tick576: original target
+lateral `brain+0x194`=-16384, native29952, with RNG still matched. Human
+remains at189. New synthetic tests reproduce both movement and reuse of
+the initial position by a different rider. No simulation behavior,
+golden or known-divergence expectation changed in this correction.

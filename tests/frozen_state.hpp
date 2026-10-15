@@ -8,6 +8,32 @@
 #include <string>
 
 namespace rr::golden {
+// Capture original node identity once, after initial rider hydration. Later
+// target-pointer comparisons must retain this map as riders move along the road.
+// Known non-rider/unmatched nodes map to -1; absent addresses remain absent.
+inline std::map<int64_t,int> rider_node_identities(const std::map<std::string,int64_t>& header,
+                                                  const std::vector<rr::Rider>& riders) {
+    std::map<int64_t,int> identities;
+    for (const auto& [key,address] : header) {
+        if (key.rfind("nodeaddr.",0)!=0 || key.size()==9 ||
+            key.find_first_not_of("0123456789",9)!=std::string::npos) continue;
+        const auto position=header.find(key+".position"),type=header.find(key+".type");
+        if (position==header.end() || type==header.end()) continue;
+        int identity=-1;
+        if (type->second==4 || type->second==8) {
+            for (size_t i=0;i<riders.size();++i) {
+                if (riders[i].bike.i32(0x1c)!=position->second) continue;
+                if (identity!=-1)
+                    throw std::runtime_error("ambiguous native rider position "+std::to_string(position->second));
+                identity=int(i);
+            }
+        }
+        if (!identities.emplace(address,identity).second)
+            throw std::runtime_error("duplicate captured rider node address "+std::to_string(address));
+    }
+    return identities;
+}
+
 // Diagnostic frame-0 hydration only. The caller supplies the solo gate.
 // A declaration makes missing/ambiguous state fatal; older demo captures
 // retain their lateral-only fallback. Validate the complete input before

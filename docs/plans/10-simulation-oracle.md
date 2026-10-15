@@ -420,3 +420,12 @@ Next: resolve the tick-575 target identity/selection difference and expand
 seeded terrain fixtures to all eight points, windows/slopes and CRT state.
 See `agent-handoffs/countdown-timers-20261015.md` and
 `agent-handoffs/terrain-next-20261015.md`.
+
+### Stable replay pointer identity (October 15 continuation)
+
+Tick575 was a resolver defect, not an original NULL target: map original
+node addresses to initial hydrated native identities once, retaining that
+map when positions change. Implemented with movement/alias regressions.
+Demo sched900 now first differs at576 in target lateral brain+194
+(-16384 vs29952), RNG matched. Human stays189. Next AI work belongs to
+Task6 target selection; traffic-field acceptance remains open.

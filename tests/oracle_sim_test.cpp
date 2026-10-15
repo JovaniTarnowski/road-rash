@@ -506,16 +506,14 @@ int main(int argc, char** argv) {
         if (p == h.end() || t == h.end()) continue;
         node_at[kv.second] = {p->second, t->second};
     }
-    auto rider_at = [&](int64_t position) -> int {
-        for (size_t k = 0; k < race.riders().size(); ++k)
-            if (race.riders()[k].bike.i32(0x1c) == position) return int(k);
-        return -1;
-    };
+    // Original pointers identify nodes for the whole replay. Populate this
+    // once after frame-0 hydration; positions may change under contact.
+    std::map<int64_t, int> rider_by_address;
     auto golden_rider = [&](const std::map<std::string, int64_t>& f, const char* key) -> int {
         auto it = f.find(key);
         if (it == f.end() || it->second == 0) return -1;
-        auto n = node_at.find(it->second);
-        return n == node_at.end() ? -2 : rider_at(n->second.first);
+        auto n = rider_by_address.find(it->second);
+        return n == rider_by_address.end() ? -2 : n->second;
     };
     auto gpos = [&](const std::map<std::string, int64_t>& f, const char* key) -> int64_t {
         auto it = f.find(key);
@@ -592,6 +590,7 @@ int main(int argc, char** argv) {
             return 1;
         }
     }
+    rider_by_address = rr::golden::rider_node_identities(h, race.riders());
     // Spawn-frozen player scheduler (frame 0 is post tick 1): hydrate the
     // slotted rider.0.bike_c/10/14/18 keys when the capture dumps them, so
     // the launch ramp consumes the previous run's dt (tick-2 dt 2) while

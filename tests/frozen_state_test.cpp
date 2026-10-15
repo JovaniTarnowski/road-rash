@@ -27,6 +27,37 @@ std::vector<rr::Rider> riders() {
 int main() {
     int failures=0;
     auto check=[&](bool yes,const char* what) { if(!yes) {++failures;std::cerr<<"FAIL "<<what<<'\n';} };
+    // Stable target-pointer identity comes from the initial node dump. Tick
+    // 575 can target a moving rider whose current position no longer matches it.
+    auto identity_riders=riders();
+    auto identity_header=capture();
+    rr::golden::apply_frozen_state(identity_header,identity_riders,false);
+    identity_header["nodeaddr.2"]=300; identity_header["nodeaddr.2.type"]=0x20;
+    identity_header["nodeaddr.2.position"]=500;
+    identity_header["nodeaddr.3"]=400; identity_header["nodeaddr.3.type"]=4;
+    identity_header["nodeaddr.3.position"]=900;  // captured but unmatched
+    identity_header["nodeaddr.4"]=500; identity_header["nodeaddr.4.position"]=500; // incomplete
+    identity_header["nodeaddr.invalid"]=600; identity_header["nodeaddr.invalid.type"]=4;
+    identity_header["nodeaddr.invalid.position"]=500;
+    const auto identities=rr::golden::rider_node_identities(identity_header,identity_riders);
+    check(identities.at(100)==1 && identities.at(200)==1,"bike and linked half identify the same rider");
+    check(identities.at(300)==-1,"unrelated node at rider position has no rider identity");
+    check(identities.at(400)==-1,"unmatched rider node has no native identity");
+    check(!identities.contains(999) && !identities.contains(500) && !identities.contains(600),
+          "unknown, incomplete and nonnumeric node addresses stay absent");
+    identity_riders[1].bike.i32(0x1c)=57500;
+    identity_riders[0].bike.i32(0x1c)=500; // another rider now occupies the initial position
+    check(identities.at(100)==1 && identities.at(200)==1,"initial pointer identity survives movement and position reuse");
+    auto reject_identity=[&](const Header& header,const std::vector<rr::Rider>& native,const char* what) {
+        bool threw=false;
+        try {(void)rr::golden::rider_node_identities(header,native);}
+        catch(const std::runtime_error&) {threw=true;}
+        check(threw,what);
+    };
+    auto duplicate_riders=riders(); duplicate_riders[0].bike.i32(0x1c)=500;
+    reject_identity(capture(),duplicate_riders,"ambiguous matching native rider positions rejected");
+    auto duplicate_addresses=capture(); duplicate_addresses["nodeaddr.1"]=100;
+    reject_identity(duplicate_addresses,riders(),"duplicate captured addresses rejected");
     for (bool demo : {false,true}) {
         auto r=riders(); rr::golden::apply_frozen_state(capture(),r,demo);
         check(r[1].bike.i32(0x28)==-123 && r[1].bike.i32(0x3c)==-999,"measured current differs from previous for human and demo");
