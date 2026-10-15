@@ -286,7 +286,7 @@ int main(int argc, char** argv) {
     }
     // 0x00434660 player-think evidence: entry address + invocation counter
     // when the probe recorded them (player.think / player.think_count).
-    // Measured in current captures: rider.0.think == 4225680 (0x00407990,
+    // Measured in current captures: rider.0.think == 4225680 (0x00407a90,
     // the AI-think callee) because the solo golden runs the demo/AI side;
     // the player-think entry 0x00434660 (= 4408928) shows as rider.1.think
     // (the frozen opponent keeps the player-think dispatch word). New
