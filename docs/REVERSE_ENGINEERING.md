@@ -1379,3 +1379,17 @@ oracle keys (new slice); do not touch hill/wall stepping until then.
 Native `hill_slopes`/early-return structure matches 0x00451380 on
 inspection (length/x-slope/height-slope per point, whole-function abort
 on zero length); init matches 0x00450fc0 (16 draws).
+
+## Tick-189 walker state at the crossing (October 16, plan 10)
+
+Pre-step walker dump at the tick-189 back-crossing (temporary probe,
+reverted): back node 20 pos 1536 (sample 6) hillrec 0 (next record start
+24); front node 20 pos 34304 (sample 134) hillrec 7 (next start 150).
+Neither hill record advances (24 > 7, 150 > 135), BORR gates closed,
+DZHR recount 0 eligible -- yet 27 native draws happen during this tick
+against the original's 24. Open hypotheses, in test order: (a) a walker
+section-enter re-running terrain init (16 hill draws) during its step
+(enter resets borr/dzhr/terrain; lengths unchecked); (b) wall jitter on a
+walker whose section differs from assumed; (c) a second draw site in the
+step path. Needs per-site draw counters plus section-boundary data, then
+the matching oracle walker keys. No hill/wall/stepping code touched.
