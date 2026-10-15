@@ -827,13 +827,14 @@ void Race::contact_car(Rider& self, TrafficCar& car) {
     const int32_t shit = std::abs(s.i32(0x184));   // scaled hit: the lateral branch below
     // Silent hits run the same geometric routing: the original recomputes
     // iVar9 from geometry after the sound gate (LAB_00404c2d).
+    bool down = false; // 0x004049c0 local_21, returned by 0x004052c0
     if (!contained) {
         // Class 3: glance off the car's side, with the 0x004052c0 decision.
         // 0x004049c0: other lateral < self lateral shoves +f0 (away from the
         // car), else -f0; speed loses |184|/4 either way. The car caller has
         // +0xc4 & 0xc == 0, so the assembly keeps stamina local_20 and bike
         // damage iVar10 both at the full magnitude.
-        const bool down = knock_off(self, magnitude, magnitude, 3);
+        down = knock_off(self, magnitude, magnitude, 3);
         if (down) {
             s.i32(0xf4) += div_pow2(shit, 8);
         } else if (car.lateral < s.i32(0x28)) {
@@ -845,7 +846,7 @@ void Race::contact_car(Rider& self, TrafficCar& car) {
             s.i32(0xf0) -= shit / 2;
             s.i32(0xec) = std::max(0, s.i32(0xec) - div_pow2(shit, 2));
         }
-    } else if (const bool down = knock_off(self, magnitude, magnitude, 2); down) {
+    } else if ((down = knock_off(self, magnitude, magnitude, 2))) {
         // Class 2 and the rider went down in the decision: the impulse still
         // transfers to speed (0x004049c0).
         s.i32(0xec) += s.i32(0x184);
@@ -854,12 +855,10 @@ void Race::contact_car(Rider& self, TrafficCar& car) {
         s.i32(0xec) += s.i32(0x184);
     } else {
         // Class 2, big speed gap: knocked off with reason 2 (animation 29),
-        // then the nudge and tail below (no kick: the steer rate is untouched).
-        // The 0x2f4 check sorts the stand-in (already crashed: return) from
-        // the crash library (ride the nudge and tail out first).
+        // then the nudge and tail below. local_21 remains false here, as
+        // in the original: it records the earlier knock-off decision.
         crash_car(self);
     }
-    if (s.i32(0x2f4) != 0) return;
     // Scenery-marking block (0x004049c0 iVar9 == 0 path): when local_18[3]
     // (speed at entry) exceeds 1000 and the rider's sample differs from the
     // car's +0x1ec sample, mark +0x298 by the car's +0x124 sub-kind, record
@@ -872,13 +871,13 @@ void Race::contact_car(Rider& self, TrafficCar& car) {
     // Tail (0x00404feb): impulses and flags clear; speed/velocity clamps.
     s.i32(0x184) = 0; s.i32(0x188) = 0; s.i32(0x18c) = 0; s.u8(0x19c) = 0;
     if (s.i32(0xec) > 30000) s.i32(0xec) = 30000;
-    if (s.i32(0xec) < -1000) s.i32(0xec) = 0;
+    if (s.i32(0xec) < -1000) s.i32(0xec) = -1000;
     if (s.i32(0xf4) > 0x600) s.i32(0xf4) = 0x600;
     if (s.i32(0xf4) < -10000) s.i32(0xf4) = -10000;
     // Steering kick from the steer-rate change (0x00404f93 tail). The
-    // local_21 down-guard is the 0x2f4 early return above: every down path
-    // (knock_off true, crash_car) returns before reaching this kick.
-    if (old_steer_rate != s.i32(0xf0)) {
+    // local_21 suppresses only this kick; a newly crashed rider still
+    // receives the separation nudge and impulse/flag clear above.
+    if (!down && old_steer_rate != s.i32(0xf0)) {
         const int32_t kick =
             div256(int64_t(s.i32(0x2d8)) * (s.i32(0xf0) - old_steer_rate) * 2);
         const int32_t lim = s.i32(0x29c);

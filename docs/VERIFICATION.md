@@ -15,6 +15,10 @@
   (Note: the default `--binary build/oracle-sim-test` is stale; pass the
   owned build dir explicitly.)
 - `ctest --test-dir build-integrator --output-on-failure`: **94/94 pass**.
+- `tools/determinism_check.sh build-integrator build-release` (after
+  rebuilding `race_soak-test` in `build-release` at this source):
+  `determinism OK (3 hashes)` — contact/prev-copy integer paths agree
+  across optimization levels.
 - Open: 0x28 placement anchor (fix order #1b); SIM-capture 2-tick fault.
 
 ## Tick-208 contact classes (October 14, 2026, plan 10 Task 5)
@@ -981,3 +985,41 @@ Owned edits: `src/import_job.hpp/.cpp` (new), `src/sha256.hpp/.cpp`
   edges (CITY tick ~469+, MEDLY tick ~911+).
 - OPEN: an original mid-air frame on a drive line (for the shadow-while-
   airborne node comparison); the tooling is ready when a line is found.
+
+## October 14, 2026: car knock-off tail and integration gate
+
+- Synthetic `car_contact` regression fails before the fix with
+  `knock-off must clear contact impulses and flags`; after the fix it
+  covers class-2/class-3 crash state/reason, separation, impulse clearing
+  and the -1000 reverse floor. Worker focused race/car_contact/crash/traffic
+  CTests pass 4/4. Current car crash vectors leave `+0xf0` unchanged, so
+  those cases do not independently distinguish the steering-kick guard;
+  its `local_21` condition follows original assembly.
+- `npx --yes rea-agents@6.4.0 function` on `0x004049c0` and `0x004468e0`
+  exits 0 with Node 24.13.0, Ghidra 12.1.4 and JDK 21. Output is retained
+  under `analysis/codex-contact-20261014/`. Original EXE hash matches the
+  inventory. No Wine capture or shared Ghidra import was run.
+- Android debug first failed on the existing unconditional local
+  `dash_bench-test` target (`RR_SOURCE_DIR` undefined). CMake now excludes
+  that optional desktop target by default; the scratch source is untouched.
+  Final debug and release gates pass and inspect the asset-free APKs:
+  `analysis/agent-gates/codex-goal-20261014-android-debug-final/receipt.json`
+  and `analysis/agent-gates/codex-goal-20261014-android-release/receipt.json`.
+  Release uses local debug signing. Hardware validation was not run.
+- Focused ASan/UBSan gate passes 5/5 (car_contact, hud, race, crash, traffic),
+  zero skips/failures:
+  `analysis/agent-gates/codex-goal-20261014-asan-final/receipt.json`. The
+  first sanitizer run also passed its five tests but its receipt was
+  invalidated by the CMake change; only the final receipt is a stable gate.
+- The first full native run was stopped after the CMake repair invalidated
+  its source snapshot; its receipt records the termination. Final native
+  build and all-suite result: NATIVE_FINAL_PENDING.
+- Refreshed private compilation database has no missing sources or newer
+  CMake inputs. clangd LSP initialize/documentSymbol returns 15 HUD symbols
+  (`analysis/codex-contact-20261014/lsp-hud-symbols.json`). clangd source
+  checks pass for edited HUD files and `race.cpp` with `--tweaks=`; default
+  race checks hit clangd ExtractFunction self-test errors, not compiler
+  diagnostics. Shared compile database/symlink and client settings unchanged.
+- Plan 10 strict player-control/full-simulation acceptance, fresh crash-car
+  captures and device validation remain open. No original golden, expected
+  divergence, or asset file was changed.
