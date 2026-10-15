@@ -1443,3 +1443,23 @@ experiments, in order: (1) randomized differential terrain-step harness
 through the isolated oracle function hooks (same 3x3x2x48 shape, varied
 draws); (2) walker-state oracle keys (positions, hill/wall record indices)
 to hand-simulate the tick-189 crossing. No stepper code touched.
+
+## Tick-319 timer fork refined: tap gates agree, camera update conditional (October 16, plan 10 Task 7)
+
+Two follow-up traces closed the tap-word and delta-source questions:
+- Tap words: `+0x2c/+0x30` come from NALR via `0x004528f0`, equal to native
+  `left_q8/right_q8 >> 8` sample-for-sample on forward single roadways
+  (five-course census: no negative accumulators; smoothing is
+  count-invariant). At the tick-319 tap (sample 138) and tick-376 tap
+  (sample 142) both sides see count 1: the 319 silence is timer-state
+  (behind never went < 0), not a lane gate.
+- Delta source: `DAT_004b7ef4` is the view camera (writers: init + camera
+  update only), `DAT_004b7f08` its per-tick watermark; timers take the
+  full-tick delta with no residual carryover (corrects the earlier note).
+  Native `camera - previous_` already equals it exactly.
+- Prime suspect for the fork: the original camera update is conditional
+  (skipped unless the player scheduler object's last-run tick == current
+  tick), banking +9/tick into the behind timer on skipped ticks while
+  native decays it unconditionally. Needs capture proof (countdown/green
+  alignment); native formula otherwise unchanged.
+Evidence: `timer-tap-trace-20261016.md`, `timer-delta-trace-20261016.md`.
