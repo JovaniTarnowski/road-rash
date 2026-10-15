@@ -478,6 +478,95 @@ int main() {
         }
         check(failures2 == 0, "weapons conserved across steal attempts");
     }
+    // Steal occurrence + victim-immunity strictness (0x004096f0: victim
+    // +0x1cc < tick is strict, then exactly one (rand&3)==3 draw). Mirrors
+    // the conservation setup; counts attacker-armed outcomes across seeds
+    // so the gate is non-vacuous, then pins the immunity suppression.
+    // NOTE: parked riders overlap, so both need healthy +0x2f0: with the
+    // default zero condition the tick-0 contact knock-off crashes them
+    // before any swing resolves (found via probe; the pre-existing
+    // conservation block above only passes vacuously for this reason).
+    // the conservation setup; counts attacker-armed outcomes across seeds
+    // so the gate is non-vacuous, then pins the immunity suppression.
+    // NOTE: parked riders overlap, so both need healthy +0x2f0: with the
+    // default zero condition the tick-0 contact knock-off crashes them
+    // before any swing resolves (found via probe; the pre-existing
+    // conservation block above only passes vacuously for this reason).
+    {
+        int successes = 0, conserved = 0;
+        for (int seed = 0; seed < 1000; ++seed) {
+            rr::Opponent armed{test_spec(), 90, 0, 0, 0, 1};
+            rr::Race w(straight(4000), straight(4000), t, spec, 90, {armed});
+            w.set_rng_state(uint32_t(seed));
+            w.riders()[0].weapon = 0; w.riders()[0].attack.weapon = 0;
+            w.riders()[1].weapon = 1; w.riders()[1].attack.weapon = 1; w.riders()[1].attack.timer = 1;
+            w.riders()[0].bike.i32(0x2f0) = 1000; w.riders()[1].bike.i32(0x2f0) = 10000;
+            w.riders()[1].steal_until = 0;
+            w.riders()[1].bike.i32(0x28) = w.riders()[0].bike.i32(0x28) + 1000;
+            w.riders()[0].attack.timer = 1; w.riders()[0].attack.right = true;
+            for (int i = 0; i < 18 && w.riders()[0].attack.timer; ++i) w.step(i == 0 ? 0 : 0);
+            successes += (w.riders()[0].weapon != 0);
+            conserved += ((w.riders()[0].weapon != 0) + (w.riders()[1].weapon != 0)) == 1;
+        }
+        check(successes > 0, "steals succeed on some seeds (non-vacuous gate)");
+        check(conserved == 1000, "weapons conserved on every steal race");
+    }
+    // Victim steal-immunity suppresses every attempt: with victim +0x1cc far
+    // in the future no seed transfers the weapon.
+    {
+        int successes = 0;
+        for (int seed = 0; seed < 200; ++seed) {
+            rr::Opponent armed{test_spec(), 90, 0, 0, 0, 1};
+            rr::Race w(straight(4000), straight(4000), t, spec, 90, {armed});
+            w.set_rng_state(uint32_t(seed));
+            w.riders()[0].weapon = 0; w.riders()[0].attack.weapon = 0;
+            w.riders()[1].weapon = 1; w.riders()[1].attack.weapon = 1; w.riders()[1].attack.timer = 1;
+            w.riders()[0].bike.i32(0x2f0) = 1000; w.riders()[1].bike.i32(0x2f0) = 10000;
+            w.riders()[1].steal_until = 1 << 30;
+            w.riders()[1].bike.i32(0x28) = w.riders()[0].bike.i32(0x28) + 1000;
+            w.riders()[0].attack.timer = 1; w.riders()[0].attack.right = true;
+            for (int i = 0; i < 18 && w.riders()[0].attack.timer; ++i) w.step(i == 0 ? 0 : 0);
+            successes += (w.riders()[0].weapon != 0);
+        }
+        check(successes == 0, "victim immunity blocks all steals");
+    }
+    // Hit deadline strictness (0x004096f0: damage skipped while
+    // tick <= victim +0x1d0): far-future immunity absorbs every punch.
+    {
+        rr::Opponent target{test_spec(), 90, 0, 0, 0, 1};
+        rr::Race calm(straight(4000), straight(4000), t, spec, 90, {target});
+        calm.riders()[1].hit_until = 1 << 30;
+        const int32_t full = calm.riders()[1].stamina.current;
+        for (int i = 0; i < 18; ++i) calm.step(i == 0 ? rr::control_punch : 0);
+        check(calm.riders()[1].stamina.current == full, "hit immunity absorbs punches");
+    }
+    // Crash/remount preserves carried weapons (0x00403d60 audit: no
+    // +0x1c8/+0x1cc/+0x1d0/+0x1d4 stores in any crash path; remount
+    // restores stamina without touching weapons).
+    {
+        rr::Race hz(straight(4000), straight(4000), t, spec, 90);
+        auto& me = hz.riders()[0];
+        me.weapon = 2; me.attack.weapon = 2;
+        const size_t s = me.sample;
+        const int32_t centre = me.bike.i32(0x28);
+        std::vector<std::vector<rr::RoadHazard>> h0(4000), h1(4000);
+        h0[s].push_back({uint32_t(s), centre - 1000, centre + 1000});
+        hz.set_hazards(std::move(h0), std::move(h1));
+        me.bike.i32(0x1c) = int32_t(s) * 256 + 0x80; me.bike.i32(0x30) = me.bike.i32(0x1c);
+        me.bike.i32(0x2f0) = 1000;
+        me.stamina.current = 5; me.stamina.max = 5;
+        me.bike.i32(0x184) = 0x4000; me.bike.i32(0x188) = 0x4000; me.bike.i32(0x18c) = 0;
+        hz.step(0);
+        check(me.bike.i32(0x2f4) != 0 && me.bike.i32(0x2f8) == 1, "armed rider crashes reason 1");
+        check(me.weapon == 2, "crash keeps carried weapon");
+        // Clearing the span stops the per-tick re-trigger (which would reset
+        // crash_timer forever); the slide then stops and remounts.
+        hz.set_hazards(std::vector<std::vector<rr::RoadHazard>>(4000),
+                       std::vector<std::vector<rr::RoadHazard>>(4000));
+        for (int i = 0; i < 600 && me.bike.i32(0x2f4) != 0; ++i) hz.step(0);
+        check(me.bike.i32(0x2f4) == 0, "armed rider remounts");
+        check(me.weapon == 2, "remount keeps carried weapon");
+    }
     // Nitro: held nitro+accelerate depletes a charge and boosts, release
     // stops boost, recharge refills, retrigger works.
     {
