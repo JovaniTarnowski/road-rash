@@ -1058,3 +1058,42 @@ Owned edits: `src/import_job.hpp/.cpp` (new), `src/sha256.hpp/.cpp`
 - REA helper spot-check and clangd source/LSP evidence are recorded above
   and in `agent-handoffs/codex-mini-speed-20261014.md`. Original dashboard
   pixel acceptance remains open; no new captures or goldens were produced.
+
+## October 14, 2026: repaired SIM oracle and frozen-state hydration
+
+Work performed in isolated `.codex-sim-20261014/native-port` at02d7e8d.
+Existing OMP diagnostics/DLL/logs were backed up; experimental PAGE_GUARD and
+timer-kill code were not incorporated into the production correction.
+
+- Windows proxy cross-build (`oracle/build.sh`, MinGW -O2 -Wall) exits0,
+  no warnings. REA6.4.0 confirms original billboard ABI. Actual wrapper
+  regression compiles with -Wall -Wextra -Werror and passes4099 calls per
+  wrapper, argument/snapshot/cap/reset/disabled-output checks. Removing
+  forwarding, cap or reset in isolated mutations makes the regression fail.
+- Wrapper and frozen-state synthetic tests pass ASan/UBSan. Frozen helper
+  red test initially had17 failures; final test covers negative/zero values,
+  distinct previous/current laterals, linked halves, malformed/duplicate data,
+  atomic failure, human/demo gating and unchanged moving-player state.
+- Focused CTest oracle-patch/oracle-actor-record/frozen_state/sim_fields4/4.
+  Native configure/build pass. Full integration result:97/97 pass, zero skips/failures (216.54s),
+  plus viewer smoke and five-course sweep. Receipt:
+  analysis/agent-gates/codex-sim-forensics-native/receipt.json. The old demo
+  replay remains exactly its known tick222 lateral divergence; diagnostic
+  success is not full parity.
+- `codex-sim-buffer250` exits0, contiguous70-tick trace/end, rejected because
+  presented-frame limit was incorrectly used as SIM tick count. No accepted
+  capture was overwritten. After fixing the limit, `codex-sim-frozen900`
+  validates900 ticks1..900 (24.21s, exit0). Its control branch is unverified
+  and replay requires explicit --driver=demo. `codex-sim-mask300` validates
+  300ticks1..300 (18.11s, exit0), measured demo branch; forensic-only extra
+  fields are retained separately in analysis/sim-forensics/mask-probe.
+- New900-tick replay still reports tick210 rng849046096 vs2140064586.
+  No known-divergence manifest was broadened. Follow-up measures frozen
+  candidate dt4 and3840-unit contact nudges; native dt1 is the next gap.
+- clangd parses the actual wrapper C test with zero errors. Frozen helper
+  test clangd22 passes; full replay parsing hits known ExtractFunction
+  tweak self-test errors, no C++ syntax errors; independent syntax check
+  passes. No claim of interactive editor LSP integration.
+- Android/device/package gates not run for these oracle/test-only changes.
+  True human-control capture, full single-anchor parity and actor pixel
+  acceptance remain open.

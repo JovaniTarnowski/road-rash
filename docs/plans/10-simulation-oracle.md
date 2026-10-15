@@ -357,3 +357,16 @@ kick with `local_21`, and floors reverse contact speed at -1000. Synthetic
 This does not complete either task: the current solo traces still have the
 recorded grid/contact divergences and fresh SIM captures remain prerequisite
 for frozen-pool initialization evidence.
+
+### October14 capture prerequisite recovered
+
+Fresh SIM capture is no longer blocked by the old two-tick/frame-regression
+fault: a missing original billboard forward and unbounded actor-record
+accumulation were fixed, with actual-hook regression and successful bounded
+900/300-tick captures. SIM frame limits count dumped ticks. Declared frozen
+setup fields now replay once with strict identity/completeness checks.
+
+Task5/6 acceptance remains open. The new capture still diverges at210, but
+now proves frozen scheduler dt4 versus native1. Next: record +0c/+10/+14/+18
+and translate `0x00437e60` metadata cadence even with NULL callbacks, then
+rerun the same trace before progressing beyond the first divergence.

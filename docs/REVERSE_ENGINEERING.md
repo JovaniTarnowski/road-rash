@@ -1163,3 +1163,52 @@ Evidence: `004468e0.c`, `00446c30.c:177-188`, disassembly
 checked above). This supports the numeric state/composition correction; it
 does not establish original font/layout, needle-pen or opponent-list pixel
 equality.
+
+## SIM capture corruption and frozen scheduler evidence (October 14, 2026)
+
+The failed SIM captures were caused by oracle instrumentation. The billboard
+wrapper replacing four `0x0044ba40` calls neither forwarded the original call
+nor checked its 512-record buffer. SIM mode skips `dump_frame`, where the
+actor counts had been reset, so records accumulated across presents. In the
+previous installed DLL, `g_bb=0x62f2e080`, stride 80, `g_pixels=0x62f519b4`
+and `g_frame=0x62f519b8`: record 1821 writes its `occ_owner`/`occ_row` at
+exactly the two corrupted globals. This explains the observed frame59→6
+and pixels0→8347995 corruption; timer/environment hypotheses are superseded.
+
+The wrappers now live in `oracle/actor_record_hooks.h`, forward every call
+even when output is disabled or full, and cap records at512. Every frame
+resets actor counters before original presentation. REA6.4.0 plus original
+disassembly confirm `0x0044ba40` fastcall ECX/EDX plus five stack arguments
+and `ret0x14`. Snapshot inputs precede the forward; emitted-node count follows
+it. Captures made with the missing-forwarding proxy need fresh actor-node
+evidence before they can establish actor rendering equality.
+
+A first repaired run exited cleanly but requested250 presented frames held
+only70 SIM ticks. The SIM limit now counts completed tick dumps, independent
+of presented-frame count; non-SIM keeps its original presented-frame limit.
+An independently validated900-tick run exits0 with all ticks1..900 and end
+marker. A300-tick forensic follow-up also completes and measures demo_hold=1.
+Neither capture is full simulation acceptance.
+
+Header-only bike fields now capture actual previous copies, velocities, flags
+and crash state for type4 nodes independently of think callback, plus lane,
+bias and next-record centre/width/eight bends. Existing v1 numeric parsing is
+retained. Replay hydrates declared frozen state once, validates pointer-linked
+type8 halves and rejects missing/ambiguous state before changing any rider.
+Old markerless demo captures retain their previous fallback; no RNG reanchor
+or moving-player state overwrite is added.
+
+New forensic capture disproves stale frozen velocity as the tick210 cause:
+slot2 has zero108/10c/110, dimensions7680/64/8960, elasticity192, mass256 and
+slice(+2c)+36 mask7. Instead its original dt(+18) is4 at contact: lateral
+19200→15360→11520 at ticks208/209. Native dt1 nudges only960 each contact,
+leaving a spurious tick210 overlap. `0x00437e60` updates dt and last-tick
+BEFORE checking null think/move; null move still schedules next=tick+interval
+at `0x00438108`. Freezing callbacks does not freeze scheduler metadata.
+Next work must capture/hydrate +0c/+10/+14/+18 once and model that cadence;
+initial dt5 alone and hardcoded4 are both insufficient. Runtime metadata
+records last ticks1,5,...205,209. This is the next native translation gap.
+
+Evidence: retained private worktree analysis/sim-forensics and validated
+`codex-sim-frozen900` / `codex-sim-mask300` receipts, worker handoffs and
+synthetic actual-wrapper mutation tests. Commercial traces stay local.

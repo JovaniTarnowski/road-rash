@@ -50,6 +50,23 @@ Detailed evidence is in [REVERSE_ENGINEERING.md](REVERSE_ENGINEERING.md) and tes
 
 ## Timeline
 
+### October 14, 2026: Plan10 SIM captures restored; frozen-state replay
+
+- Fixed oracle billboard forwarding and a 512-record overflow that overwrote
+  frame/pixel globals in SIM mode; reset buffers per present. SIM capture
+  faults were instrumentation corruption, not established Wine timer faults.
+- SIM frame bounds now count dumped ticks. Validated900-tick and300-tick
+  forensic captures finish cleanly. Measured frozen fields hydrate once in
+  solo replay with strict complete-state/identity validation; legacy captures
+  keep their old fallback. No golden/expected-divergence rule changed.
+- Replay still diverges at tick210, but the new evidence resolves its cause:
+  original frozen scheduler dt4 nudges opponents3840, native dt1 only960.
+  Original scheduler metadata advances despite NULL callbacks. Next planned
+  work is exact scheduler-state capture/cadence, rather than guessed grid or
+  velocity changes. Full player-control/parity and scene acceptance remain open.
+
+
+
 ### October 14, 2026: MiniDash numeric speed (plan 11 Task 7 / plan 18)
 
 - MiniDash now displays speed from bike `+0xec`, replacing travelled

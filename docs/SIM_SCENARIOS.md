@@ -118,7 +118,7 @@ the probe and require `--driver`.
 
 Player-think entry/counter (`0x00434660`): the harness reports
 `player.think`/`player.think_count` when the probe records them. Measured
-in current captures: `rider.0.think == 4225680` (`0x00407990`, the AI-think
+in current captures: `rider.0.think == 4225680` (`0x00407a90`, the AI-think
 callee) on the demo/AI side, while the player-think entry `0x00434660`
 (= 4408928) shows as `rider.1.think` (the frozen opponent keeps the
 player-think dispatch word). New captures MUST record
@@ -183,3 +183,19 @@ proof, not the control-driven branch.
 - `napa-field-l1`, `napa-field-l5`: seven opponents, levels 1 and 5.
 - `napa-fight`, `napa-contact`: combat and contact scenarios.
 - `napa-traffic-solo`, `napa-traffic-field`: traffic scenarios.
+
+## October14 forensic SIM recovery (not acceptance)
+
+New isolated `codex-sim-frozen900` (course4, seed1, drive2, solo, SIM,
+RR_ORACLE_FRAMES=900) has900 complete contiguous ticks. The repaired proxy
+counts SIM dumps for the limit. Header probe.frozen_words=1 declares the
+previous-copy/velocity/flag/crash field set, matched through type4 bike and
+its type8 half pointer. Old v1 goldens continue to load. This trace lacks
+full required player-think/count evidence; explicit --driver=demo is a
+diagnostic override only. First mismatch remains tick210.
+
+`codex-sim-mask300` adds temporary per-tick frozen bike metadata/road-mask
+fields and measured player.demo_hold=1; it is likewise forensic-only. It
+shows the candidate takes3840-unit nudges at208/209 with dt4, while native
+dt1 leaves an extra contact at210. Capture and translate scheduler metadata
+next. Neither file replaces the old accepted fixtures or relaxes parity.

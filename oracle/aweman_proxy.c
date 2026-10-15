@@ -44,9 +44,11 @@ static FILE* g_record;
 static FILE* g_input;
 static int g_input_exhausted_tick = -1;
 static uint32_t g_sim_frames;
+static int g_quit_after = -1;
 static int32_t g_first_tick = -1;
 static int g_solo;
 static int g_police_probe;
+static uint32_t g_frame;
 
 /* Solo isolation (plan 10 task 5): freeze every scheduler node except
  * the player bike and the player rider-half. 0x00437e60 skips NULL
@@ -259,6 +261,7 @@ static void dump_sim_tick(void) {
             rr_log("probe.S", (long long)S);
             rr_log("probe.end", (long long)end);
             rr_log("probe.player", (long long)player);
+            rr_log("probe.frozen_words", 1);
         }
         int addr_index = 0;
         for (int guard = 0; node && node != end && guard < 512; ++guard) {
@@ -278,6 +281,37 @@ static void dump_sim_tick(void) {
                 rr_log(key, sim_field_value(node, 0x28, 4, 1));
                 snprintf(key, sizeof key, "nodeaddr.%d.half", addr_index);
                 rr_log(key, sim_field_value(node, 0x2fc, 4, 0));
+                /* Plan 10 initialization evidence, including parked bikes whose
+                 * think callback is zero. Previous copies and velocity words
+                 * can retain different values from the current placement. */
+                if (sim_field_value(node, 0xc4, 4, 0) == 4) {
+                    static const uint32_t words[] = {0x30,0x34,0x38,0x3c,0x40,0x108,0x10c,0x110,0x2f4};
+                    const int available = readable(node, 0x2f8);
+                    snprintf(key,sizeof key,"nodeaddr.%d.frozen.available",addr_index);rr_log(key,available);
+                    if (available) {
+                        for (unsigned w=0;w<sizeof words/sizeof words[0];++w) {
+                            snprintf(key,sizeof key,"nodeaddr.%d.bike_%x",addr_index,words[w]);
+                            rr_log(key,sim_field_value(node,words[w],4,1));
+                        }
+                        snprintf(key,sizeof key,"nodeaddr.%d.bike_c0",addr_index);
+                        rr_log(key,sim_field_value(node,0xc0,1,0));
+                    }
+                    const uintptr_t slice=(uint32_t)sim_field_value(node,0x2c,4,0);
+                    uintptr_t next=(slice && readable(slice+0x10,4)) ? (uint32_t)RD32(slice+0x10) : 0;
+                    snprintf(key,sizeof key,"nodeaddr.%d.grid.next",addr_index);rr_log(key,(long long)next);
+                    const int grid_ok=next && readable(next,0xd0);
+                    snprintf(key,sizeof key,"nodeaddr.%d.grid.available",addr_index);rr_log(key,grid_ok);
+                    if (grid_ok) {
+                        snprintf(key,sizeof key,"nodeaddr.%d.grid.next_2c",addr_index);rr_log(key,RD32(next+0x2c));
+                        snprintf(key,sizeof key,"nodeaddr.%d.grid.next_cc",addr_index);rr_log(key,RD32(next+0xcc));
+                    }
+                    unsigned bends=0;
+                    for (;bends<8 && next && readable(next,0xb8);++bends) {
+                        snprintf(key,sizeof key,"nodeaddr.%d.grid.bend.%u",addr_index,bends);rr_log(key,RD32(next+0xb4));
+                        next=(uint32_t)RD32(next+0x10);
+                    }
+                    snprintf(key,sizeof key,"nodeaddr.%d.grid.bends",addr_index);rr_log(key,bends);
+                }
                 snprintf(key, sizeof key, "nodeaddr.%d.net", addr_index);
                 rr_log(key, sim_field_value(node, 0x324, 4, 1));
                 {   /* Slice road-half byte (+0x36): the 0x00449ce0 scan requires
@@ -323,6 +357,12 @@ static void dump_sim_tick(void) {
                         }
                         snprintf(key, sizeof key, "nodeaddr.%d.p.165", addr_index);
                         rr_log(key, sim_field_value(brain, 0x165, 1, 0));
+                        if (sim_field_value(node,0xc4,4,0)==4 && readable(brain,0x19c)) {
+                            snprintf(key,sizeof key,"nodeaddr.%d.p.18c",addr_index);rr_log(key,(signed char)RD8(brain+0x18c));
+                            for (unsigned off=0x190;off<=0x198;off+=4) {
+                                snprintf(key,sizeof key,"nodeaddr.%d.p.%x",addr_index,off);rr_log(key,RD32(brain+off));
+                            }
+                        }
                     }
                 }
                 ++addr_index;
@@ -421,7 +461,8 @@ static void dump_sim_tick(void) {
     ++g_sim_frames;
     if (g_randlog_all) dump_randlog();
     fflush(g_out);
-    if (g_input_exhausted_tick >= 0 && tick >= g_input_exhausted_tick + 0xb4) {
+    if ((g_quit_after > 0 && g_sim_frames >= (uint32_t)g_quit_after) ||
+        (g_input_exhausted_tick >= 0 && tick >= g_input_exhausted_tick + 0xb4)) {
         fputs("end\n", g_out); fclose(g_out); g_out = NULL;
         ExitProcess(0);
     }
@@ -504,8 +545,6 @@ void rr_log(const char* key, long long value) { if (g_out) fprintf(g_out, "%s\t%
 
 typedef void (__cdecl *rr_frame_fn)(void);
 static rr_frame_fn const orig_frame = (rr_frame_fn)0x004439f0;
-static uint32_t g_frame;
-static int g_quit_after = -1;
 static int g_pixels, g_pixel_every=30, g_pixel_written;
 static int g_pixel_width, g_pixel_height, g_pixel_pitch;
 static char g_output[MAX_PATH];
@@ -1323,71 +1362,7 @@ static void __fastcall hook_project(uint32_t a,int* b,int c,int* d,int e) {
 // two 0x0043af60 view-selection calls and two 0x0044ba40 billboard calls in
 // 0x00446250 at their call sites. Buffered during 0x004439f0 and flushed in
 // dump_frame (records belong to the frame being dumped).
-static struct { uint32_t bike, ctx, desc[5], a8, b0, b4, bc, view; int32_t f1c, f28, f44, f50; } g_sel[512];
-static uint32_t g_nsel;
-static struct { int32_t size, lateral, ground, pre_lat; uint32_t pos; int32_t clip, nbefore, nafter;
-                 uint32_t occ_owner, occ_row; int32_t ctx4, ctx5, ctx6; uint32_t emu, emuw[6]; } g_bb[512];
-static uint32_t g_nbb;
-static void __fastcall hook_select(uint32_t bike, int ctx) {
-    uint32_t desc = 0, d0 = 0, d1 = 0, d2 = 0, d3 = 0, d4 = 0;
-    int32_t f1c = 0, f28 = 0, f44 = 0, f50 = 0;
-    if (readable(bike + 0x98, 4)) {
-        desc = (uint32_t)*(uint32_t*)(bike + 0x98);
-        if (readable(desc, 20)) {
-            d0 = *(uint32_t*)(desc); d1 = *(uint32_t*)(desc + 4); d2 = *(uint32_t*)(desc + 8);
-            d3 = *(uint32_t*)(desc + 12); d4 = *(uint32_t*)(desc + 16);
-        }
-    }
-    // Actor lateral/position fields at dispatch time (the billboard hook
-    // only sees derived inputs, not the object).
-    if (readable(bike + 0x54, 4)) {
-        f1c = *(int32_t*)(bike + 0x1c); f28 = *(int32_t*)(bike + 0x28);
-        f44 = *(int32_t*)(bike + 0x44); f50 = *(int32_t*)(bike + 0x50);
-    }
-    ((void (__fastcall*)(uint32_t, int))0x0043af60)(bike, ctx);
-    if (!g_out || g_nsel >= 512) return;
-    if (!readable(bike + 0xe0, 4)) return;
-    g_sel[g_nsel].bike = bike; g_sel[g_nsel].ctx = (uint32_t)ctx;
-    g_sel[g_nsel].desc[0] = d0; g_sel[g_nsel].desc[1] = d1; g_sel[g_nsel].desc[2] = d2;
-    g_sel[g_nsel].desc[3] = d3; g_sel[g_nsel].desc[4] = d4;
-    g_sel[g_nsel].a8 = (uint32_t)*(uint32_t*)(bike + 0xa8);
-    g_sel[g_nsel].b0 = (uint32_t)*(uint32_t*)(bike + 0xb0);
-    g_sel[g_nsel].b4 = (uint32_t)*(uint32_t*)(bike + 0xb4);
-    g_sel[g_nsel].bc = (uint32_t)*(uint32_t*)(bike + 0xbc);
-    g_sel[g_nsel].view = (uint32_t)*(uint32_t*)(bike + 0xd0);
-    g_sel[g_nsel].f1c = f1c; g_sel[g_nsel].f28 = f28;
-    g_sel[g_nsel].f44 = f44; g_sel[g_nsel].f50 = f50;
-    ++g_nsel;
-}
-static void __fastcall hook_billboard(int* p1, unsigned* p2, int size, int lateral, int ground, unsigned pos, char clip) {
-    const uint32_t base = (uint32_t)RD32(0x0049e66c), end = (uint32_t)RD32(0x0049e660);
-    const int32_t nbefore = end >= base ? (int32_t)((end - base) / 0xa8) : -1;
-    const int32_t pre_lat = lateral;   // params may not survive the forwarded call; snapshot first
-    // Node emu (param_2) words before the call: [0]=+a8 resource, [2]=+b0,
-    // [3]=+b4, [4]=+b8, [5]=+bc roll. Settles the emu-vs-address question.
-    uint32_t emu = (uint32_t)(uintptr_t)p2, emuw[6] = {0, 0, 0, 0, 0, 0};
-    if (readable(emu, 24)) for (int w = 0; w < 6; ++w) emuw[w] = p2[w];
-    const uint32_t e2 = (uint32_t)RD32(0x0049e660);
-    g_bb[g_nbb].size = size; g_bb[g_nbb].lateral = lateral; g_bb[g_nbb].ground = ground;
-    g_bb[g_nbb].pre_lat = pre_lat;
-    g_bb[g_nbb].pos = pos; g_bb[g_nbb].clip = clip; g_bb[g_nbb].nbefore = nbefore;
-    g_bb[g_nbb].nafter = e2 >= base ? (int32_t)((e2 - base) / 0xa8) : -1;
-    g_bb[g_nbb].emu = emu;
-    for (int w = 0; w < 6; ++w) g_bb[g_nbb].emuw[w] = emuw[w];
-    // Slice context (param_1): [2] occlusion owner, [4]/[5] road origin,
-    // [6] depth word. The occlusion row lives at [2]+0x10.
-    g_bb[g_nbb].occ_owner = 0; g_bb[g_nbb].occ_row = 0;
-    g_bb[g_nbb].ctx4 = 0; g_bb[g_nbb].ctx5 = 0; g_bb[g_nbb].ctx6 = 0;
-    if (readable((uintptr_t)&p1[2], 4)) {
-        const uint32_t owner = *(uint32_t*)&p1[2];
-        g_bb[g_nbb].occ_owner = owner;
-        if (readable(owner + 0x10, 4)) g_bb[g_nbb].occ_row = *(uint32_t*)(uintptr_t)(owner + 0x10);
-    }
-    if (readable((uintptr_t)&p1[4], 12)) {
-        g_bb[g_nbb].ctx4 = p1[4]; g_bb[g_nbb].ctx5 = p1[5]; g_bb[g_nbb].ctx6 = p1[6];
-    }
-    ++g_nbb;
-}
+#include "actor_record_hooks.h"
 static void flush_actor_records(void) {
     char key[96];
     rr_log("actor.sel.count", g_nsel);
@@ -1953,10 +1928,11 @@ static void dump_frame(uint32_t site) {
 
 #define FRAME_HOOK(n, site) \
     static void __cdecl hook_frame_##n(void) { \
+        reset_actor_records(); \
         orig_frame(); \
         if (g_out && !g_sim) dump_frame(site); \
         ++g_frame; \
-        if (g_quit_after > 0 && g_frame >= (uint32_t)g_quit_after) { \
+        if (!g_sim && g_quit_after > 0 && g_frame >= (uint32_t)g_quit_after) { \
             if (g_out) { fputs("end\n", g_out); fclose(g_out); g_out = NULL; } \
             ExitProcess(0); \
         } \

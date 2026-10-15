@@ -4,6 +4,7 @@
 #include "course.hpp"
 #include "exe_tables.hpp"
 #include "golden.hpp"
+#include "frozen_state.hpp"
 #include "race.hpp"
 #include "race_setup.hpp"
 #include <cstdio>
@@ -493,16 +494,13 @@ int main(int argc, char** argv) {
     // through the frame-0 node dump to a (position, type) pair; native riders
     // are matched by bike position.
     std::map<int64_t, std::pair<int64_t, int64_t>> node_at;   // address -> (position, type)
-    std::map<int64_t, int64_t> half_lat_at, bike_lat_at;      // position -> lateral
     for (const auto& kv : h) {
         if (kv.first.rfind("nodeaddr.", 0) != 0) continue;
         const std::string n = kv.first.substr(9);
         if (n.find('.') != std::string::npos) continue;
-        auto p = h.find("nodeaddr." + n + ".position"), t = h.find("nodeaddr." + n + ".type"), l = h.find("nodeaddr." + n + ".lateral");
+        auto p = h.find("nodeaddr." + n + ".position"), t = h.find("nodeaddr." + n + ".type");
         if (p == h.end() || t == h.end()) continue;
         node_at[kv.second] = {p->second, t->second};
-        if (l != h.end() && t->second == 8) half_lat_at[p->second] = l->second;
-        if (l != h.end() && t->second == 4) bike_lat_at[p->second] = l->second;
     }
     auto rider_at = [&](int64_t position) -> int {
         for (size_t k = 0; k < race.riders().size(); ++k)
@@ -581,20 +579,16 @@ int main(int argc, char** argv) {
     // Older captures without node laterals or a brain window keep the native
     // grid placement and the ctor brain, and run the countdown from tick 1.
     const bool brain_window = h.find("rider.0.brain_160") != h.end();
-    if (demo && solo) {
-        if (!bike_lat_at.empty()) for (auto& r : race.riders()) {
-            if (!r.frozen) continue;
-            const int64_t pos = r.bike.i32(0x1c);
-            auto bl = bike_lat_at.find(pos), hl = half_lat_at.find(pos);
-            if (bl == bike_lat_at.end() || hl == half_lat_at.end()) {
-                std::cout << "frozen rider at " << pos << " missing from the node dump\n";
-                return 1;
-            }
-            r.bike.i32(0x28) = int32_t(bl->second);
-            for (int k = 0; k < 5; ++k) r.bike.i32(0x30 + 4 * k) = r.bike.i32(0x1c + 4 * k);   // previous-position copies
-            r.half_detached = true;
-            r.half_lateral = int32_t(hl->second);
+    // Declared frozen words hydrate human and demo solo captures once.
+    // Older captures retain their existing demo-only lateral fallback.
+    if (solo) {
+        try { rr::golden::apply_frozen_state(h, race.riders(), demo); }
+        catch (const std::runtime_error& error) {
+            std::cout << error.what() << '\n';
+            return 1;
         }
+    }
+    if (demo && solo) {
         auto& br = race.riders()[0].brain;
         auto w = [&](const char* k) { return int32_t(gval(h, std::string("rider.0.brain_") + k)); };
         if (brain_window) {
