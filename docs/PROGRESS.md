@@ -877,3 +877,13 @@ Evidence: handoffs `25-1/2/3/5/6/7`, `26-1/2/3`, review
 - Tick 149: full-throttle left-wall scrape (speed 3351 -> 2739, no crash)
   vs native 843 -- the `0x0043a610` wall port (plan 11 Task 4). Demo at
   tick 376; all legacy goldens byte-identical. No regressions.
+
+### October 16, 2026: contact class routing fixed, human to tick 189 (plan 10)
+
+- Bike-bike contact now routes on separate()'s `+0x19c & 0x40` width flag
+  per `0x004049c0` (the geometric `contained` predicate was a port
+  invention; the car path already used the flag). Human replay advances
+  tick 149 -> 189 with identical contact sounds/push; demo and legacy
+  goldens byte-identical.
+- Tick 189: 24-vs-27 terrain-jitter draws at a ring slice build (same
+  slice both sides) -- terrain iterator integration is the next slice.

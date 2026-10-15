@@ -969,8 +969,7 @@ void Race::contact(Rider& self, Rider& other) {
             sound(SoundEvent((random() & 1) + 1), s);
         }
     }
-    const bool contained = (o.i32(0x28) - o.i32(0x174) < s.i32(0x28) - s.i32(0x174) / 2) &&
-                           (s.i32(0x28) + s.i32(0x174) / 2 < o.i32(0x28) + o.i32(0x174));
+    const bool contained = (s.u8(0x19c) & 0x40) != 0;
     const int32_t full = std::abs(raw184) + std::abs(raw188) + std::abs(raw18c);
     const int32_t magnitude = full >> 10;
     const int32_t swing = (magnitude + ((full >> 31) & 15)) >> 4;

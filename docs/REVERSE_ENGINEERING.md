@@ -1324,3 +1324,41 @@ over-brakes to 843. Porting `0x0043a610` (292 lines) with its sub-slice
 plumbing (`+0x37/+0x38/+0x3a/+0x3b/+0x3c/+0x14c...+0x160`) is plan 11
 Task 4 / plan 16 Task 1 scope; the offroad trace (`offroad-trace-20261015`)
 holds the branch map. Demo solo stands at tick 376 (spawn-timer lane draw).
+
+## Contact class routing follows separate()'s 0x40 flag (October 16, plan 10)
+
+`0x004049c0` LAB_00404c2d routes bike-bike class by separate()'s width
+flag, not lateral containment: other `+0x17c < 0x2000` -> class 0; else
+self `+0x19c & 0x40 == 0` -> class 3 (glance); else other short-ish
+(`+0x17c < 0x2800`) and unflagged (`+0xc4 & 0x10 == 0`) -> class 1, else
+class 2. The port had invented a geometric `contained` predicate, routing
+the tick-149 human contact to class 1 (`ec += 184`) instead of class 3
+(`ec -= shit/4`, `f0` kick). Fixed to the flag; tick-149 consequences now
+match exactly (speed 2739, steer -1911). Bike-bike others always carry
+`+0x17c 0x2300`/`+0xc4 & 0x10 == 0`, so only classes 1/3 occur there.
+Tick-149 forensics: same contact, same sounds, same push on both sides;
+impulse -3370 from `(0 - 3370) * 2 * mass/mass`.
+
+Tick 189 is a terrain-jitter count gap at a ring back-crossing
+(Napa sample ~134, section 0): original 24 draws, native 27, all inside
+`TrackRing` stepping (BORR walks + DZHR jitter + terrain iterator share
+one stream). Same slice built both sides (front_/back_ track exactly);
+BORR is stateless and DZHR consumption matched through tick 188, leaving
+the terrain iterator's per-step jitter draw count as the prime suspect
+(live cache/random integration was already open). Next slice.
+
+## Tick-189 terrain-jitter gap, 0x3c staleness note (October 16, plan 10)
+
+Same slice built both sides at a ring back-crossing (Napa sample ~134),
+yet 24 vs 27 draws, all inside `TrackRing` stepping (BORR walks, DZHR
+jitter and the terrain iterator share one stream). BORR is stateless and
+DZHR consumption matched through tick 188, implicating the terrain
+iterator's per-step jitter draw count (section-0 hills) -- the known-open
+live cache/random integration. No golden edits.
+
+Separately: native bike `+0x3c` is never written (stays build 0; frozen
+riders hydrate lane-like constants 8192-40960 from capture). separate()'s
+lateral gate reads it, so any future overlap with a stale player 0x3c takes
+a different gate than the original. Untriggered so far (tick-149 contact
+ran with matching geometry); maintenance semantics still open -- do not
+paper over with the lateral value until traced.

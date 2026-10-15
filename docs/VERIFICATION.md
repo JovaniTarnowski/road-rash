@@ -1162,3 +1162,23 @@ binary): demo sched900 tick 376, old human tick 210, old solo tick 222,
 frozen900 tick 210 -- all byte-identical to baseline. Focused
 (oracle/patch/record/sim, frozen, sim_fields, bike, car_contact,
 agent-tooling, race, race-actions, wiring) all pass; full build clean.
+
+## October 16, 2026: contact routing fix, human to tick 189 (plan 10)
+
+One-line fix (`contact()` bike-bike routes on `+0x19c & 0x40`): human
+`sched-human-20261016` (inferred human, no override) now diverges at
+frame 188 (tick 189) `rng original 409811144 native 1232322109` --
+a 24-vs-27 terrain-jitter count gap at a ring back-crossing slice build
+(same slice both sides; BORR stateless, DZHR consumption matched;
+terrain iterator is the suspect). Demo sched900 still tick 376; legacy
+goldens byte-identical. No golden edits, no rule changes.
+
+## October 16, 2026: class-routing fix verified, test converted (plan 10)
+
+`race_test` class-1 synthetic initially failed after the routing fix: its
+same-spot setup never earns the 0x40 flag (move() re-syncs prev-copies, so
+one live step cannot stage stale ones), proving the old expectation encoded
+the geometric predicate. Converted to a class-3 glance test with live-value
+expectations (f0 shove, ec cut, tail kick, impulse clear); class-1 transfer
+remains covered end-to-end by the demo tick-208 replay. Full native gate
+re-run in background (`/tmp/fullgate2.log`) for the commit record.

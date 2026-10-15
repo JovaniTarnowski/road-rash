@@ -370,17 +370,22 @@ int main() {
         check(me.bike.i32(0x288) == want, "glancing contact adds the knock tail kick");
         check(me.bike.i32(0x2f0) == 1000, "class-3 knock deals no condition damage at this magnitude");
     }
-    // Class-1 contained contact (0x004049c0 line 83): the decision takes
-    // stamina param 0, so stamina is untouched and only the small-gap speed
-    // transfer runs; condition keeps swing>>3 = 0 (reason 2 would scale74).
+    // Class-3 glance contact (0x004049c0 LAB_00404c2d): the class comes from
+    // separate()'s +0x19c bit 0x40 width flag. Same-spot slow touches set no
+    // flag (proven end-to-end: human tick-149 carries 19c=0 into class 3),
+    // so the glance branch runs; you ride clearly left so the o.28 < s.28
+    // arm (steer shove +shit/2, speed cut shit/4, knock tail kick) is
+    // deterministic. Class-1 transfer moved with the flag (demo tick-208
+    // replay). Expect no crash and no damage at this magnitude.
     {
         rr::Opponent slow5{test_spec(), 90, 0, 0, 0, 1};
         rr::Race c1(straight(4000), straight(4000), t, spec, 90, {slow5});
         auto& me = c1.riders()[0];
         auto& you = c1.riders()[1];
         me.bike.i32(0x1c) = you.bike.i32(0x1c);
-        me.bike.i32(0x28) = you.bike.i32(0x28);   // same spot: contained
-        me.bike.i32(0xec) = 6200; you.bike.i32(0xec) = 5000;
+        me.bike.i32(0x28) = you.bike.i32(0x28);   // same spot, no width flag
+        you.bike.i32(0x28) -= 0x2000;   // you clearly left: glance takes the
+        me.bike.i32(0xec) = 6200; you.bike.i32(0xec) = 5000;   // o.28 < s.28 arm
         me.bike.i32(0x2f0) = 1000;
         you.bike.i32(0x2f0) = 10000;
         const int32_t st0 = me.stamina.current;
@@ -389,12 +394,20 @@ int main() {
         const int32_t s184 = ((you.bike.i32(0x108) - me.bike.i32(0x108)) * m2 * 2) / m;
         const int64_t elas = me.bike.i32(0x180);
         const int32_t scaled184 = int32_t((int64_t(s184) * elas) / 256);
-        check(scaled184 != 0, "class-1 setup makes contact");
-        check(me.bike.i32(0x2f4) == 0, "class-1 small gap does not crash");
-        check(me.bike.i32(0xec) == me.bike.i32(0x108) + scaled184,
-              "class-1 small gap transfers the scaled impulse to speed");
-        check(me.bike.i32(0x2f0) == 1000, "class-1 knock deals no condition damage at magnitude 1");
-        check(me.stamina.current >= st0, "class-1 knock deals no stamina damage");
+        const int32_t shit = scaled184 >= 0 ? scaled184 : -scaled184;
+        check(shit != 0, "class-3 setup makes contact");
+        check(me.bike.i32(0x2f4) == 0, "glancing contact does not crash");
+        check(me.bike.i32(0xec) == std::max(0, me.bike.i32(0x108) - shit / 4),
+              "glancing contact cuts speed by the scaled hit/4");
+        check(me.bike.i32(0xf0) == shit / 2, "glancing contact shoves the steer rate");
+        const int64_t rp = int64_t(me.bike.i32(0x2d8)) * (me.bike.i32(0xf0) - 0) * 2;
+        const int32_t kick = int32_t((rp + ((rp >> 31) & 0xff)) >> 8);
+        const int32_t lim = me.bike.i32(0x29c);
+        const int32_t want_kick = kick > lim ? lim : kick < -lim ? -lim : kick;
+        check(me.bike.i32(0x288) == want_kick, "glancing contact adds the knock tail kick");
+        check(me.bike.i32(0x2f0) == 1000, "class-3 knock deals no condition damage at this magnitude");
+        check(me.stamina.current >= st0, "class-3 knock deals no stamina damage");
+        check(me.bike.i32(0x184) == 0 && me.bike.i32(0x188) == 0, "contact tail clears impulses");
     }
     // Roadside hazards via the in-road BORR actor path (0x00454240/0x00438930
     // -> 0x004049c0 class 1 -> knock_off reason 1): a rider crossing an

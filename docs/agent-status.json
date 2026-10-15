@@ -17,8 +17,8 @@
     {
       "area": "Simulation parity",
       "implementation": "Tick replay, frozen scheduler cadence, human-branch selection probe",
-      "verification": "Demo solo diagnostic to tick 376; human launch parity to tick 149 (wall scrape); strict acceptance unmet with exact receipts",
-      "remaining": "Human target state plus five physics gates, traffic-timer draws, and full parity",
+      "verification": "Demo solo diagnostic to tick 376; human to tick 189 (terrain jitter); strict acceptance unmet with exact receipts",
+      "remaining": "Terrain jitter draws, traffic-timer draws, five human physics gates, and full parity",
       "evidence": [
         "SIM_SCENARIOS.md",
         "plans/10-simulation-oracle.md"
