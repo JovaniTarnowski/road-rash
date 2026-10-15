@@ -1362,3 +1362,20 @@ lateral gate reads it, so any future overlap with a stale player 0x3c takes
 a different gate than the original. Untriggered so far (tick-149 contact
 ran with matching geometry); maintenance semantics still open -- do not
 paper over with the lateral value until traced.
+
+## Tick-189 terrain-step draw gap, precisely bounded (October 16, plan 10)
+
+Same slice built both sides at a ring back-crossing (Napa front 34552,
+sample 134, section-0 hills), yet 24 vs 27 draws, all inside `TrackRing`
+stepping. Eliminated: BORR (stateless; recount 0 both), DZHR (recount 0
+eligible both; consumption matched through tick 188), slice identity
+(front_/back_ track exactly), boundary timing (single crossing both).
+Remaining: the two walkers' hill `hill_slopes` (8 points x up to 3 draws,
+early return on zero length) and wall jitter compositions differ -- i.e.,
+walker-side record-advance timing or point-window state drifted silently
+earlier (walker positions/record indices are never dumped, heights stayed
+flat-insensitive). Needs per-walker draw attribution plus walker-state
+oracle keys (new slice); do not touch hill/wall stepping until then.
+Native `hill_slopes`/early-return structure matches 0x00451380 on
+inspection (length/x-slope/height-slope per point, whole-function abort
+on zero length); init matches 0x00450fc0 (16 draws).
