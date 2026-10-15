@@ -13,6 +13,9 @@ struct HudState {
     // DAT_004b8a34: signed route gap to the target (Q8 samples, +0x1f8
     // units); > 0 the target is behind, <= 0 ahead. Drawn only with a target.
     int32_t target_gap=0;
+    // MiniDash numeric speed (0x004468e0), independent of travelled distance.
+    // Appended to preserve existing aggregate initializer field positions.
+    int speed=0;
 };
 // 0x00438550, run every frame from 0x00438450: the opponent the dashboard
 // names. d = player.+0x1f8 - opponent.+0x1f8 over every opponent slot (no
@@ -57,6 +60,7 @@ public:
     // selected in low resolution (0x004457f0 choice 1/2); MiniDash picks the stride.
     void set_low_mode(bool low);
     static int meter_level(int current,int base);
+    static int numeric_speed(int32_t velocity,bool metric);
     static int cycle_mini_dash(int mode);   // 0->1->2->0, as the F10 pump does
 private:
     bool metric_;

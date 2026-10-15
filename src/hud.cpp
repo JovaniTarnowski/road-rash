@@ -49,6 +49,15 @@ int Hud::cycle_mini_dash(int mode) {
     return (mode+1)%3;
 }
 void Hud::set_low_mode(bool low) { low_=low; }
+int Hud::numeric_speed(int32_t velocity,bool metric) {
+    // 0x00446950..0x004469a4: mask before signed shifts, truncate the
+    // metric sum toward zero, then clamp reverse speed. These sums fit i32.
+    const int32_t speed=metric
+        ? (((velocity & ~0xf00) >> 8) + ((velocity & ~0x78) >> 3) +
+           ((velocity & ~0x1e0) >> 5))/10
+        : (velocity >> 12) + (velocity >> 7) + (velocity >> 9);
+    return std::max(0,int(speed));
+}
 int Hud::meter_level(int current,int base) {
     // 0x00446b00 / 0x00446b40. The original byte value is 0..31.
     if(current<=0)return 0;
@@ -91,6 +100,7 @@ void Hud::draw_gap_arrow(RgbImage& out,int left,int top,bool up,uint32_t color,i
 HudState Hud::state(const Race& race,const std::string& player,const std::vector<std::string>& rider_names) const {
     HudState s;s.player=player;s.place=race.place(0);
     const auto& b=race.bike();const uint32_t velocity=uint32_t(b.i32(0xec));
+    s.speed=numeric_speed(b.i32(0xec),metric_);
     const uint32_t sum=uint32_t(int32_t(velocity&0xfffff001u)>>1)+(velocity&0xffffff80u)*16+(velocity&0xfffffe00u)*4;
     int32_t signed_sum;std::memcpy(&signed_sum,&sum,4);
     s.speed_angle=signed_sum/200-1024;if(s.speed_angle<0)s.speed_angle+=4096;
@@ -158,7 +168,7 @@ RgbImage Hud::compose(const HudState& state,const PhysicsTables& physics,DashMod
             text_.draw_box(&image,Face::badloc,32*scale,shadow,0,value,uint32_t(layout[offset]));
             text_.draw_box(&image,Face::badloc,32*scale,rect,color,value,uint32_t(layout[offset]));
         };
-        char speed[32];std::snprintf(speed,sizeof speed,"%d",state.distance);
+        char speed[32];std::snprintf(speed,sizeof speed,"%d",state.speed);
         label(speed,21,0xffffff);
         return image;
     }

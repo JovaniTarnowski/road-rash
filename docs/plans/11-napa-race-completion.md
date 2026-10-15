@@ -227,3 +227,12 @@ The current stand-in clamps at the shoulder, crashes above speed 4000 and remoun
 
 - Every NAPA_IMPLEMENTATION.md checkbox is ticked with evidence. Android hardware items may stay explicitly "pending device" (plan 14).
 - `napa-acceptance` passes. PROGRESS.md "Assumptions" no longer lists any Napa stand-in, or lists it with the reason it remains.
+
+### October 14 MiniDash continuation (Task 7 Step 2, partial)
+
+Corrected the existing mini readout to use `0x004468e0` numeric speed from
+bike `+0xec`, with imperial/metric integer conversion and reverse clamp.
+Boundary/state/composition regressions pass in the integrated 95-test native
+gate; Android variants and focused sanitizers pass too. Step 2 remains open
+for full original mini/indicator pixel acceptance; this does not complete
+the dashboard needle-pen/opponent-list work owned by plan 16 Task 6.

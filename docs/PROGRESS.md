@@ -50,6 +50,19 @@ Detailed evidence is in [REVERSE_ENGINEERING.md](REVERSE_ENGINEERING.md) and tes
 
 ## Timeline
 
+### October 14, 2026: MiniDash numeric speed (plan 11 Task 7 / plan 18)
+
+- MiniDash now displays speed from bike `+0xec`, replacing travelled
+  distance. Imperial and metric use the original `0x004468e0` signed
+  shifts/masks and reverse clamp. The full dashboard keeps its distance
+  readout. `HudState::speed` is appended to preserve aggregate positions.
+- Conversion thresholds, reverse/int32 bounds, state wiring and composition
+  are covered; the old composition fails the regression. REA independently
+  corroborates the helper. Integrated native 95/95, focused ASan/UBSan 5/5
+  and Android debug/release assembly pass before this commit.
+- Original MiniDash/list pixel acceptance and the needle pen remain open.
+
+
 ### October 14, 2026: car knock-off cleanup (plan 10 / 11a)
 
 - `Race::contact_car` now follows `0x00404f4d`/`0x00404feb` after a

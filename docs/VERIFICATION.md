@@ -1043,3 +1043,18 @@ Owned edits: `src/import_job.hpp/.cpp` (new), `src/sha256.hpp/.cpp`
 - Plan 10 strict player-control/full-simulation acceptance, fresh crash-car
   captures and device validation remain open. No original golden, expected
   divergence, or asset file was changed.
+
+## October 14, 2026: MiniDash numeric speed correction
+
+- Behavioral red: old mini composition fails `Mini speed readout changes
+  with distance`. Fixed focused HUD CTest passes. Fixed expected conversion
+  fixtures include 127/128, 4095/4096, 8192, 12345, reverse and signed int32
+  limits in both units; these execute before disc checks. Disc-backed state
+  and composition tests verify speed dependence, distance independence, and
+  unchanged full-dashboard pixels across three artwork families.
+- Integrated build/gates above already contain this exact HUD correction:
+  isolated native 95/95, zero skips; ASan/UBSan 5/5; Android debug and release
+  assembly plus asset inspection pass. No source edits followed those gates.
+- REA helper spot-check and clangd source/LSP evidence are recorded above
+  and in `agent-handoffs/codex-mini-speed-20261014.md`. Original dashboard
+  pixel acceptance remains open; no new captures or goldens were produced.

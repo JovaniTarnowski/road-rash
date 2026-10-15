@@ -39,6 +39,17 @@ int main(){
         }
         // F10 MiniDash cycle (0x004431d0): 0->1->2->0.
         if(rr::Hud::cycle_mini_dash(0)!=1 || rr::Hud::cycle_mini_dash(1)!=2 || rr::Hud::cycle_mini_dash(2)!=0)throw std::runtime_error("MiniDash cycle");
+        // 0x0044693a..0x004469a4: numeric speed uses separate integer
+        // conversions from the full dial, with negative results clamped to 0.
+        struct SpeedCase { int32_t velocity; int mph,kmh; };
+        for(const auto c:{SpeedCase{0,0,0},{127,0,0},{128,1,1},
+                          {4095,38,60},{4096,41,65},{8192,82,131},
+                          {12345,123,196},{-1,0,0},{-128,0,0},{-8192,0,0},
+                          {INT32_MAX,21495805,34393288},{INT32_MIN,0,0}}) {
+            if(rr::Hud::numeric_speed(c.velocity,false)!=c.mph ||
+               rr::Hud::numeric_speed(c.velocity,true)!=c.kmh)
+                throw std::runtime_error("Mini dashboard numeric speed conversion");
+        }
         rr::Assets assets(RR_SOURCE_DIR "/../cdrom/ROADRASH");
         if(!assets.exists("ROADRASH.EXE")){std::cout<<"Meter levels pass; imported HUD corpus absent\n";return 0;}
         const auto exe=assets.read("ROADRASH.EXE");const auto physics=rr::read_physics_tables(exe);
@@ -79,6 +90,16 @@ int main(){
         race.riders()[0].bike.i32(0x1c)=(50+33*12)*256;
         if(rr::Hud(assets,exe,0,false).state(race,"Player",names).distance!=12)throw std::runtime_error("Distance readout ignores route position");
         race.riders()[0].bike.i32(0x1c)=grid;
+        const auto parked_velocity=race.riders()[0].bike.i32(0xec);
+        race.riders()[0].bike.i32(0xec)=8192;
+        if(rr::Hud(assets,exe,0,false).state(race,"Player",names).speed!=82 ||
+           rr::Hud(assets,exe,0,true).state(race,"Player",names).speed!=131)
+            throw std::runtime_error("Mini speed state ignores bike velocity or units");
+        race.riders()[0].bike.i32(0xec)=-8192;
+        if(rr::Hud(assets,exe,0,false).state(race,"Player",names).speed!=0 ||
+           rr::Hud(assets,exe,0,true).state(race,"Player",names).speed!=0)
+            throw std::runtime_error("Mini speed state does not clamp reverse");
+        race.riders()[0].bike.i32(0xec)=parked_velocity;
         size_t variants=0;
         for(bool metric:{false,true})for(int bike:{0,5,10}) {
             rr::Hud hud(assets,exe,bike,metric);auto state=hud.state(race,"Player",names);
@@ -102,6 +123,14 @@ int main(){
             const auto mini=hud.compose(state,physics,rr::DashMode::mini);
             if(mini.width!=640 || mini.height!=480)throw std::runtime_error("Mini dashboard bounds");
             if(mini.at(250,449)==0x721108)throw std::runtime_error("Mini mode still draws needles");
+            auto moved=state;moved.distance=state.distance+79;
+            if(hud.compose(moved,physics,rr::DashMode::mini).pixels!=mini.pixels)
+                throw std::runtime_error("Mini speed readout changes with distance");
+            moved=state;moved.speed=88;
+            if(hud.compose(moved,physics,rr::DashMode::mini).pixels==mini.pixels)
+                throw std::runtime_error("Mini speed readout ignores speed");
+            if(hud.compose(moved,physics,rr::DashMode::full).pixels!=full.pixels)
+                throw std::runtime_error("Numeric speed changes full dashboard");
             // MiniDash 2: 0x00446c30 draws nothing (fully transparent frame).
             const auto off=hud.compose(state,physics,rr::DashMode::off);
             for(int y=0;y<480;y+=7)for(int x=0;x<640;x+=11)if(off.at(x,y)!=0x01000000)throw std::runtime_error("Off mode is not empty");

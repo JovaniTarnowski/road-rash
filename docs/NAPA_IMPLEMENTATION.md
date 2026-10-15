@@ -143,3 +143,9 @@ now receive the original contact tail nudge, impulse clearing and -1000
 reverse speed floor. Synthetic class-2/class-3 tests and an independent REA
 spot-check support the correction; `napa-crash-car` single-anchor original
 acceptance remains open. See `agent-handoffs/codex-contact-guard-20261014.md`.
+
+October 14 MiniDash continuation: the numeric readout now follows bike speed
+with original imperial/metric integer conversion and reverse clamp, rather
+than travelled distance. Synthetic conversion boundaries and disc-backed
+composition tests pass. Full original dashboard pixel acceptance (including
+needle pen/opponent list) remains open.

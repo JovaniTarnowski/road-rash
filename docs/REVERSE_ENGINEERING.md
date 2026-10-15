@@ -1146,3 +1146,20 @@ contained and glancing car knock-offs, tail clearing, separation and reverse
 speed floor. This is translation/boundary evidence, not live original parity.
 The earlier `sim-fault-2.md` claim that an early return implements only the
 steering-kick guard is superseded; it also dropped required cleanup.
+
+## MiniDash numeric speed (October 14, 2026)
+
+When MiniDash is enabled, `0x004468e0` writes numeric speed to
+`DAT_0049e10c`, which `0x00446c30` prints at the mini speed rectangle.
+Imperial: `(v >> 12) + (v >> 7) + (v >> 9)` for signed bike `+0xec`.
+Metric: mask `v` with `0xfffff0ff`, `0xffffff87`, `0xfffffe1f`, arithmetic
+shift by 8, 3, 5 respectively, add and divide by 10 with truncation toward
+zero. Clamp negative output to zero. The full-dial branch still computes
+an angle separately; travelled distance is not the MiniDash numeric value.
+
+Evidence: `004468e0.c`, `00446c30.c:177-188`, disassembly
+`0x0044693a..0x004469a4`, and independent REA 6.4.0 function export at
+`analysis/codex-contact-20261014/rea-004468e0.md` (exit 0, same inventory EXE
+checked above). This supports the numeric state/composition correction; it
+does not establish original font/layout, needle-pen or opponent-list pixel
+equality.
