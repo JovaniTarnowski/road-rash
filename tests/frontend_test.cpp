@@ -420,6 +420,50 @@ int main(int argc, char** argv) {
         if (m.caption == rr::ns::render_resolution) res_disabled = !m.enabled && (m.flags & rr::item_flag::light);
     check(res_disabled, "low resolution disables the row with explanation");
     settings.high_resolution = true;
+    // Plan 21 Task 10: Wide menus (blurred side fill behind Widescreen; Original style keeps black bars).
+    {
+        settings.widescreen = rr::Widescreen::off;
+        RgbImage base43;
+        fe.draw(base43);
+        check(base43.width == 640 && base43.height == 480, "widescreen off menu stays 640x480");
+        settings.widescreen = rr::Widescreen::mode16x9;
+        settings.enhancements = rr::Enhancements{};
+        RgbImage orig_wide;
+        fe.draw(orig_wide);
+        check(orig_wide.width == 640 && orig_wide.height == 480, "Original visual style keeps 4:3 menu (black pillarbox bars)");
+        settings.enhancements.bloom = true;
+        RgbImage wide;
+        fe.draw(wide);
+        check(wide.width == 852 && wide.height == 480, "16:9 enhanced menu renders 852x480");
+        if (wide.width == 852 && base43.width == 640) {
+            bool centre_exact = true;
+            size_t left_lit = 0, right_lit = 0;
+            for (int y = 0; y < 480; ++y) {
+                for (int x = 0; x < 640; ++x)
+                    if (wide.at(106 + x, y) != base43.at(x, y)) centre_exact = false;
+                for (int x = 0; x < 106; ++x) left_lit += wide.at(x, y) != 0;
+                for (int x = 746; x < 852; ++x) right_lit += wide.at(x, y) != 0;
+            }
+            check(centre_exact, "wide menu 640x480 centre equals 4:3 menu pixel-for-pixel");
+            check(left_lit > 1000 && right_lit > 1000, "wide menu side bars filled from blurred darkened background");
+        }
+        // Input at (bar + menu-x) hits the menu rect; input in the side bar does not.
+        const auto& row3 = fe.items()[3];
+        MenuInput bar_move;
+        bar_move.pointer_moved = true;
+        bar_move.pointer_x = 10;
+        bar_move.pointer_y = row3.y + 4;
+        press(bar_move);
+        check(fe.focus() != 3, "pointer in side bar does not focus menu row");
+        MenuInput menu_move;
+        menu_move.pointer_moved = true;
+        menu_move.pointer_x = 106 + row3.x + 4;
+        menu_move.pointer_y = row3.y + 4;
+        press(menu_move);
+        check(fe.focus() == 3, "pointer at (bar + menu-x) focuses menu row");
+        settings.widescreen = rr::Widescreen::off;
+        settings.enhancements = rr::Enhancements{};
+    }
     // Native Sound screen (plan 18 Task 6): restroom sound row -> sliders, Left/End, Mute, Back.
     {
         // The slider bit is never set on an original EXE item or popup row

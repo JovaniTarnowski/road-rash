@@ -320,9 +320,9 @@ int main() {
 - Original layout, hit-testing rects (in 640x480 coordinates) and the pixel-comparison baseline stay as they are; only the bar fill + input offset are new.
 - Stretching the art to 16:9 is explicitly out (distorts); the dashboard-style edge extension is out for menus (worse on photographic art).
 
-- [ ] **Step 1:** Failing test: wide presentation renders the 640x480 menu centred with non-black side bars derived from the background; input at (bar + menu-x) hits the menu rect.
-- [ ] **Step 2:** Implement: side-fill composition on screen change + presentation/input offset.
-- [ ] **Step 3:** Gate + USER_GUIDE. Commit: `menus: blurred side fill behind Widescreen`.
+- [x] **Step 1:** Failing test: wide presentation renders the 640x480 menu centred with non-black side bars derived from the background; input at (bar + menu-x) hits the menu rect.
+- [x] **Step 2:** Implement: side-fill composition on screen change + presentation/input offset.
+- [x] **Step 3:** Gate + USER_GUIDE. Commit: `menus: blurred side fill behind Widescreen`.
 
 ### Task 9: Presets, Enhancements screen and measured defaults
 

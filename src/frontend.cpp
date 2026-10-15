@@ -9,6 +9,7 @@
 #include "native_screens.hpp"
 #include "native_strings.hpp"
 #include "rri.hpp"
+#include "view.hpp"
 #include <algorithm>
 #include <cctype>
 #include <iterator>
@@ -288,6 +289,7 @@ void Frontend::set_background(const std::string& name) {
     dark_ = background_;
     for (auto& p : dark_.pixels) p = darken555(p);
     background_name_ = name;
+    wide_bg_dirty_ = true;
 }
 
 // 0x0041d970 (+0x0041d7d0): picture for a screen.
@@ -931,9 +933,57 @@ void Frontend::open_pause(const RgbImage& race_frame) {
     dark_ = race_frame;
     for (auto& p : dark_.pixels) p = darken555(p);
     dark_screen_ = true;
+    wide_bg_dirty_ = true;
 }
 
 bool Frontend::pause_open() const { return pause_open_; }
+
+int Frontend::menu_width(int display_w, int display_h) const {
+    if (settings_.widescreen == Widescreen::off || !settings_.enhancements.any()) return 640;
+    const int dw = display_w > 0 ? display_w : display_w_;
+    const int dh = display_h > 0 ? display_h : display_h_;
+    return logical_width_for(settings_.widescreen, dw, dh) * 2;
+}
+
+void Frontend::ensure_wide_bg(int wide_w) const {
+    if (!wide_bg_dirty_ && wide_bg_.width == wide_w && wide_bg_.height == 480) return;
+    RgbImage src(wide_w, 480, 0), tmp(wide_w, 480, 0);
+    for (int y = 0; y < 480; ++y) {
+        const int sy = std::min(std::max(0, background_.height - 1), y);
+        for (int x = 0; x < wide_w; ++x) {
+            const int sx = background_.width > 0 ? (x * background_.width) / wide_w : 0;
+            const uint32_t p = background_.contains(sx, sy) ? darken555(background_.at(sx, sy)) : 0;
+            src.at(x, y) = p;
+        }
+    }
+    constexpr int radius = 8;
+    for (int pass = 0; pass < 2; ++pass) {
+        for (int y = 0; y < 480; ++y) {
+            for (int x = 0; x < wide_w; ++x) {
+                uint32_t r = 0, g = 0, b = 0, n = 0;
+                const int x0 = std::max(0, x - radius), x1 = std::min(wide_w - 1, x + radius);
+                for (int xx = x0; xx <= x1; ++xx) {
+                    const uint32_t p = src.at(xx, y);
+                    r += (p >> 16) & 0xff; g += (p >> 8) & 0xff; b += p & 0xff; ++n;
+                }
+                tmp.at(x, y) = ((r / n) << 16) | ((g / n) << 8) | (b / n);
+            }
+        }
+        for (int y = 0; y < 480; ++y) {
+            const int y0 = std::max(0, y - radius), y1 = std::min(479, y + radius);
+            for (int x = 0; x < wide_w; ++x) {
+                uint32_t r = 0, g = 0, b = 0, n = 0;
+                for (int yy = y0; yy <= y1; ++yy) {
+                    const uint32_t p = tmp.at(x, yy);
+                    r += (p >> 16) & 0xff; g += (p >> 8) & 0xff; b += p & 0xff; ++n;
+                }
+                src.at(x, y) = ((r / n) << 16) | ((g / n) << 8) | (b / n);
+            }
+        }
+    }
+    wide_bg_ = std::move(src);
+    wide_bg_dirty_ = false;
+}
 
 // Item handlers by original address (0x00423200 calls +0x2c, else enters +4).
 int Frontend::run_handler(size_t index) {
@@ -1241,7 +1291,15 @@ void Frontend::credit_tick() {
     }
 }
 
-void Frontend::update(const MenuInput& in, uint64_t now_ms) {
+void Frontend::update(const MenuInput& raw_in, uint64_t now_ms) {
+    MenuInput in = raw_in;
+    if (const int bar = side_offset(); bar > 0 && (in.pointer_moved || in.pointer_click)) {
+        in.pointer_x -= bar;
+        if (in.pointer_x < 0 || in.pointer_x >= 640) {
+            in.pointer_moved = false;
+            in.pointer_click = false;
+        }
+    }
     now_ = now_ms;
     if (credit_set_ >= 0) {
         for (const char c : in.text) {
@@ -1361,8 +1419,29 @@ void Frontend::draw(RgbImage& out, int scale) const {
     // neighbour here (plan 20 swaps in upscaled art); text rasterises at
     // height x scale with shadow offset 2 x scale. scale = 1 is today's path.
     if (scale < 1 || scale > 4) throw std::runtime_error("Frontend scale out of range 1..4");
-    if (scale == 1) { draw_scale1(out); return; }
-    draw_scaled(out, scale);
+    const int wide_w = menu_width();
+    if (wide_w <= 640) {
+        if (scale == 1) draw_scale1(out);
+        else draw_scaled(out, scale);
+        return;
+    }
+    // Plan 21 Task 10: wide presentation renders the 640x480 menu centred with
+    // blurred, darkened, stretched side bars computed once per background change.
+    RgbImage center;
+    if (scale == 1) draw_scale1(center);
+    else draw_scaled(center, scale);
+    ensure_wide_bg(wide_w);
+    const int bar = (wide_w - 640) / 2;
+    out = RgbImage(wide_w * scale, 480 * scale, 0);
+    for (int y = 0; y < 480 * scale; ++y) {
+        const int bg_y = y / scale;
+        for (int x = 0; x < bar * scale; ++x)
+            out.at(x, y) = wide_bg_.at(x / scale, bg_y);
+        for (int x = 0; x < 640 * scale; ++x)
+            out.at(bar * scale + x, y) = center.at(x, y);
+        for (int x = (bar + 640) * scale; x < wide_w * scale; ++x)
+            out.at(x, y) = wide_bg_.at(x / scale, bg_y);
+    }
 }
 
 void Frontend::draw_scale1(RgbImage& out) const {

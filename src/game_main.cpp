@@ -492,15 +492,21 @@ int run_game(const rr::Assets& assets, SDL_Window* window, SDL_Renderer* rendere
         mixer.pause(lifecycle.state.paused() || audio_lifecycle.state.paused());
         if (lifecycle.state.background()) { SDL_Delay(20); continue; }
         display.apply(480);
-        if (menu_scale != display.render_scale) {
-            menu_scale = display.render_scale;
+        int dw = 0, dh = 0;
+        SDL_GetWindowSize(window, &dw, &dh);
+        fe.set_display_size(dw, dh);
+        const int menu_lw = fe.menu_width(dw, dh);
+        if (menu_lw != 640)
+            SDL_SetRenderLogicalPresentation(renderer, menu_lw, 480, display.config.presentation);
+        fe.draw(frame, display.render_scale);
+        if (!texture || menu_scale != frame.width) {
+            menu_scale = frame.width;
             texture.reset(SDL_CreateTexture(renderer, SDL_PIXELFORMAT_XRGB8888, SDL_TEXTUREACCESS_STREAMING,
-                                        640 * menu_scale, 480 * menu_scale));
+                                        frame.width, frame.height));
             if (!texture) throw std::runtime_error(SDL_GetError());
             rr::apply_texture_scale(texture.get(), display.config);
         }
-        fe.draw(frame, menu_scale);
-        SDL_UpdateTexture(texture.get(), nullptr, frame.pixels.data(), 640 * menu_scale * 4);
+        SDL_UpdateTexture(texture.get(), nullptr, frame.pixels.data(), frame.width * 4);
         SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
         SDL_RenderClear(renderer);
         SDL_RenderTexture(renderer, texture.get(), nullptr, nullptr);

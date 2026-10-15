@@ -188,16 +188,21 @@ bool RaceScreen::iterate(uint64_t now_ns) {
     if (menu_pause && opt_.menu) {
         // Plan 18 Task 8: the pause menu draws over the captured frame.
         // Plan 19 Task 8: pause menu draws at the effective scale too.
+        int dw = 0, dh = 0;
+        if (display_.window) SDL_GetWindowSize(display_.window, &dw, &dh);
+        opt_.menu->set_display_size(dw, dh);
+        const int pause_lw = opt_.menu->menu_width(dw, dh);
+        SDL_SetRenderLogicalPresentation(renderer_, pause_lw, 480, display_.config.presentation);
         const int pause_scale = display_.render_scale;
         opt_.menu->draw(pause_img_, pause_scale);
-        if (!pause_tex_ || pause_scale_w_ != pause_scale) {
-            pause_scale_w_ = pause_scale;
+        if (!pause_tex_ || pause_scale_w_ != pause_img_.width) {
+            pause_scale_w_ = pause_img_.width;
             pause_tex_.reset(SDL_CreateTexture(renderer_, SDL_PIXELFORMAT_XRGB8888, SDL_TEXTUREACCESS_STREAMING,
-                                          640 * pause_scale, 480 * pause_scale));
+                                          pause_img_.width, pause_img_.height));
             if (!pause_tex_) throw std::runtime_error(SDL_GetError());
             apply_texture_scale(pause_tex_.get(), display_.config);
         }
-        SDL_UpdateTexture(pause_tex_.get(), nullptr, pause_img_.pixels.data(), 640 * pause_scale * 4);
+        SDL_UpdateTexture(pause_tex_.get(), nullptr, pause_img_.pixels.data(), pause_img_.width * 4);
         SDL_SetRenderDrawColor(renderer_, 0, 0, 0, 255);
         SDL_RenderClear(renderer_);
         SDL_RenderTexture(renderer_, pause_tex_.get(), nullptr, nullptr);

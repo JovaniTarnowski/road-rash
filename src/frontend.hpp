@@ -121,6 +121,9 @@ public:
     // from it. Emits resume_race / quit_race (race ends with the Task 1 outcome).
     void open_pause(const RgbImage& race_frame);
     bool pause_open() const;
+    int menu_width(int display_w = 0, int display_h = 0) const;
+    int side_offset(int display_w = 0, int display_h = 0) const { return (menu_width(display_w, display_h) - 640) / 2; }
+    void set_display_size(int w, int h) { display_w_ = w; display_h_ = h; }
 
 private:
     struct Dialog { std::string text; std::vector<std::pair<int, int>> buttons; int focus = 0; int kind = 0; };
@@ -186,6 +189,10 @@ private:
     int rest_picture_ = 1;                 // 0x00485ce8
     RgbImage background_, dark_;
     std::string background_name_;
+    int display_w_ = 0, display_h_ = 0;
+    mutable RgbImage wide_bg_;
+    mutable bool wide_bg_dirty_ = true;
+    void ensure_wide_bg(int wide_w) const;
     int title_slot_ = 0; uint32_t title_format_ = 0;
     int desc_slot_ = 0; uint32_t desc_format_ = 0, desc_flags_ = 0;
     std::string price_text_;

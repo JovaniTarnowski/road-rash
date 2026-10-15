@@ -115,7 +115,9 @@ one tick (16.7 ms) of extra input-to-photon delay.
 Widescreen (Display screen): Off keeps the original 4:3 view; 16:10,
 16:9 and Match display widen it (Hor+: same height, more road at the
 sides, centre unchanged). The dashboard stays centred with darkened side
-panels; menus and videos stay 4:3. 4:3 is the original-exact mode.
+panels; in Enhanced/Custom visual style, menus stay centred at 640x480 with
+blurred, darkened side bars derived from the current background (Original
+visual style and videos keep black pillarbox bars). 4:3 is the original-exact mode.
 
 Visual Style (Display screen): Original is the exact 1996 renderer; Enhanced
 applies the measured preset (interpolation, perspective-correct textures,
