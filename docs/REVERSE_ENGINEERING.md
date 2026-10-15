@@ -1126,3 +1126,23 @@ matches `analysis/inventory.json`. No legacy Android executable was used.
 - Per the plan's own trust rule ("maximum error must be zero"), the table MUST NOT be extended with invented values.
 
 **Conclusion (stop-and-report per Step 3):** 48/64 slices are infeasible without fabricating projection data. Task 6 cannot proceed as specified. Options: (a) drop it (recommended — fog's far-fade already softens the 33-slice pop-in); (b) revisit only with an oracle-measured extension (out of scope).
+
+## Car knock-off tail continuation (October 14, 2026)
+
+`0x004049c0` keeps `local_21` from `0x004052c0`, then routes class-2/3
+knock-offs through `0x00404f4d` (lateral separation), `0x00404f93` (skip
+steering kick when `local_21` is true), and `0x00404feb` (impulse/flag clear
+and clamps). A newly set `+0x2f4` does not return early. `0x00405042` stores
+-1000 when `+0xec` is below -1000. The native car handler previously
+returned before cleanup and incorrectly floored negative speed at zero.
+
+Evidence: address-keyed export `analysis/decompiled/004049c0.c`, original
+disassembly, and `npx --yes rea-agents@6.4.0 function
+../cdrom/ROADRASH/ROADRASH.EXE 0x004049c0 --format md` (exit 0), retained at
+`analysis/codex-contact-20261014/rea-004049c0.md`. The reference SHA-256 is
+`73d7f9744b5b1a9482b3909950cdf3fe34119fe13d023b031e9c6739a60f18a2`, matching
+`analysis/inventory.json`. Synthetic public `Race::step` regressions cover
+contained and glancing car knock-offs, tail clearing, separation and reverse
+speed floor. This is translation/boundary evidence, not live original parity.
+The earlier `sim-fault-2.md` claim that an early return implements only the
+steering-kick guard is superseded; it also dropped required cleanup.

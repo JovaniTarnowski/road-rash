@@ -50,6 +50,24 @@ Detailed evidence is in [REVERSE_ENGINEERING.md](REVERSE_ENGINEERING.md) and tes
 
 ## Timeline
 
+### October 14, 2026: car knock-off cleanup (plan 10 / 11a)
+
+- `Race::contact_car` now follows `0x00404f4d`/`0x00404feb` after a
+  knock-off: separate the actors, clear contact impulses/flags, and clamp
+  speed to the original -1000 floor. `local_21` suppresses the steering
+  kick only. The previous `+0x2f4` return skipped that cleanup.
+- Synthetic class-2/class-3 regressions fail before the change and pass
+  afterward. REA 6.4.0 corroborates the original assembly. This supersedes
+  the implicit-guard explanation in `agent-handoffs/sim-fault-2.md`:
+  `begin_crash` sets `+0x2f4=1`, but the original still runs the tail.
+- CMake now registers the synthetic `car_contact` test and makes the local
+  dashboard benchmark opt-in (`RR_BENCH_DASH`) on desktop. Its previous
+  unconditional target broke Android and required an untracked source in
+  clean checkouts. The existing local benchmark source remains untouched.
+- Full original car-contact capture acceptance and the tick-210 grid
+  mismatch remain open; no golden or known-divergence signature changed.
+
+
 ### October 14, 2026: previous-copy sync (plan 10 Task 6 fix order #1a)
 
 - `place_rider` now copies the five placed words `0x1c..0x2c` to the

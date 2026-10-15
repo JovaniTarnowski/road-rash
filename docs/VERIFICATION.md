@@ -1013,7 +1013,15 @@ Owned edits: `src/import_job.hpp/.cpp` (new), `src/sha256.hpp/.cpp`
   invalidated by the CMake change; only the final receipt is a stable gate.
 - The first full native run was stopped after the CMake repair invalidated
   its source snapshot; its receipt records the termination. Final native
-  build and all-suite result: NATIVE_FINAL_PENDING.
+  build and all-suite result: **95/95 pass, zero skips**, 209.41 s, plus
+  viewer smoke and five-course sweep. Stable isolated checkout baseline
+  `314c9a0` contains only the six intended source/test/CMake changes; its
+  relevant files are byte-identical to the shared tree. Receipt copied to
+  `analysis/agent-gates/codex-goal-20261014-isolated-native/receipt.json`.
+  The shared-tree rerun was also stopped once another client's parser edits
+  invalidated that source snapshot. These terminated runs are not passes.
+  The oracle diagnostic preserves the known demo tick-222 lateral mismatch;
+  it is not simulation acceptance.
 - Refreshed private compilation database has no missing sources or newer
   CMake inputs. clangd LSP initialize/documentSymbol returns 15 HUD symbols
   (`analysis/codex-contact-20261014/lsp-hud-symbols.json`). clangd source

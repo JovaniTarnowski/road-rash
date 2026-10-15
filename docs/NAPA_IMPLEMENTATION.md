@@ -137,3 +137,9 @@ comparison remain open. All 2,509 sampled branch windows render; process-specifi
 out-of-resource raster reads are guarded with zero rather than unsafe host reads.
 A bounded autopilot run finishes Napa first at 9:49, while full race-system
 acceptance remains incomplete.
+
+October 14 car-contact continuation (plan 10/11a): newly knocked-off riders
+now receive the original contact tail nudge, impulse clearing and -1000
+reverse speed floor. Synthetic class-2/class-3 tests and an independent REA
+spot-check support the correction; `napa-crash-car` single-anchor original
+acceptance remains open. See `agent-handoffs/codex-contact-guard-20261014.md`.

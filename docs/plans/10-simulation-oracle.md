@@ -347,3 +347,13 @@ To isolate the player, opponents and traffic must be off in these captures. Trac
 - Every scenario in `docs/SIM_SCENARIOS.md` passes `oracle-sim` with zero differing fields on every tick.
 - PROGRESS.md marks bike physics, AI racing, contact, combat and traffic as "oracle-verified (scenarios …)".
 - The full regression gate passes.
+
+### October 14 car-contact continuation
+
+Task 5/6 translation correction: `contact_car` now continues through the
+original separation/cleanup tail after a knock-off, guards only its steering
+kick with `local_21`, and floors reverse contact speed at -1000. Synthetic
+`car_contact` covers both contact classes; REA corroborates `0x004049c0`.
+This does not complete either task: the current solo traces still have the
+recorded grid/contact divergences and fresh SIM captures remain prerequisite
+for frozen-pool initialization evidence.
