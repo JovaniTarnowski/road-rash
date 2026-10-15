@@ -2,10 +2,27 @@
 #include "bike.hpp"
 #include "career.hpp"
 #include "exe_tables.hpp"
+#include "scenery.hpp"
 #include <stdexcept>
 
 namespace rr {
 namespace {
+// DZHR solid-object tables (plan 16 Task 2): one span list per route
+// sample, from the scene's placed billboards through the pure per-sample
+// helper. Centre is the route-frame road centre in Q8 (route offset plus
+// the replay anchor), the same frame rider laterals use. Consumes no
+// randomness: placement already ran once at course load, so the shared
+// race stream is untouched and table builds are deterministic.
+std::vector<std::vector<DzhrSolid>> dzhr_table(const std::vector<RouteSample>& route,
+                                               const CourseScene& scene, int32_t road_base_q8) {
+    std::vector<std::vector<DzhrSolid>> table(route.size());
+    for (size_t i = 0; i < route.size(); ++i) {
+        const RouteSample& s = route[i];
+        table[i] = dzhr_solids_for_sample(route[i].offset * 256 + road_base_q8,
+                                          scene.objects(s.section, s.local));
+    }
+    return table;
+}
 // 0x00463c78 rider-table row (0x40 bytes): weight +0xc, weapon base +0x18,
 // fight stats +0x30..+0x3c. Returns the halved weight (rider value).
 int32_t rider_value_for(const std::vector<uint8_t>& exe, int rider) {
@@ -160,6 +177,11 @@ RaceInstance build_race(const RaceAssets& assets, const std::vector<uint8_t>& ex
         race->set_terrain_source([scene](const RouteSample& sample) -> const TerrainSlice& {
             return scene->terrain(sample.section, sample.local);
         });
+        // 5b. DZHR roadside solidity (plan 16 Task 2): solid billboards
+        // collide through the class-1 hazard path; BORR spans stay test-only
+        // until AI avoidance lands (the autopilot cannot dodge in-road spans).
+        race->set_roadside(dzhr_table(race->route_for(0), *scene, config.road_base_q8),
+                           dzhr_table(race->route_for(1), *scene, config.road_base_q8));
     }
     // 6. Traffic from the course's own vehicle container.
     if (assets.vehicles) {

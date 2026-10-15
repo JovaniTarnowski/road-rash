@@ -1,4 +1,5 @@
 #include "race.hpp"
+#include "scenery.hpp"
 #include "track_ring.hpp"
 #include "pedestrians.hpp"
 #include "terrain_ground.hpp"
@@ -631,6 +632,22 @@ std::vector<RoadHazard> road_hazard_spans(const CourseSection& section, uint32_t
     }
     return result;
 }
+std::vector<DzhrSolid> dzhr_solids_for_sample(int32_t centre_q8,
+                                              const std::vector<SceneryObject>& objects) {
+    // 0x004520d0 packing, inherited from the identical place_dzhr filters:
+    // non-actor records (bit 31 clear, i.e. static_family billboards) with
+    // (word0>>8)&0x3f != 0x3f enabled, at most 2 per slice. Laterals are
+    // world units relative to the route-frame road centre (the same frame
+    // the rider lateral in Race::place_rider uses: route offset + road
+    // base). All nibble types are kept; the tick rule branches on them.
+    std::vector<DzhrSolid> result;
+    for (const auto& o : objects) {
+        if (!o.static_family) continue;   // BORR roadside_objects: draw-only
+        const int32_t x = centre_q8 + o.lateral * 256;
+        result.push_back({x - 0x800, x + 0x800, uint8_t(o.type & 0xf)});
+    }
+    return result;
+}
 // In-road BORR hazard pass (plan 16 Task 2). 0x00454240 instantiates only
 // BORR slots strictly inside the road edges (0x00438930, pool DAT_00476ce8,
 // template 0x00476cb8 class 1); 0x004373f0 sweeps the rider box
@@ -643,15 +660,25 @@ std::vector<RoadHazard> road_hazard_spans(const CourseSection& section, uint32_t
 // big-gap crash entry reason 1). No RNG, no allocation in the tick path.
 void Race::collide_hazards(Rider& r) {
     if (r.finished || r.bike.i32(0x2f4) != 0) return;   // 0x004049c0 rejects
-    const auto& table = hazards_[r.route];
-    if (table.empty() || r.sample >= table.size()) return;
-    const auto& spans = table[r.sample];
-    if (spans.empty()) return;
     Bike& s = r.bike;
-    for (const auto& h : spans) {
+    const auto& table = hazards_[r.route];
+    if (!table.empty() && r.sample < table.size()) for (const auto& h : table[r.sample]) {
         const int32_t half = s.i32(0x174);
         if (s.i32(0x28) + half <= h.lo_q8 || h.hi_q8 <= s.i32(0x28) - half) continue;
         contact_hazard(r, h.lo_q8, h.hi_q8);
+        if (s.i32(0x2f4) != 0) return;   // knocked off: stop scanning
+    }
+    // DZHR solid billboards (0x00437750, same sweep point): low-nibble types
+    // 0/1/2 build the static type-1 actor and take the class-1 crash path
+    // above; types 3+ take the 0x004049c0 == 2 marking branch, which only
+    // records on the (unported, nonexistent natively) static actor and never
+    // crashes the rider, so they are skipped.
+    const auto& dtable = dzhr_[r.route];
+    if (r.sample < dtable.size()) for (const auto& o : dtable[r.sample]) {
+        if ((o.type & 0xf) >= 3) continue;
+        const int32_t half = s.i32(0x174);
+        if (s.i32(0x28) + half <= o.lo_q8 || o.hi_q8 <= s.i32(0x28) - half) continue;
+        contact_hazard(r, o.lo_q8, o.hi_q8);
         if (s.i32(0x2f4) != 0) return;   // knocked off: stop scanning
     }
 }

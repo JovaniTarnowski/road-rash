@@ -1,6 +1,7 @@
 #include "race.hpp"
 #include "assets.hpp"
 #include "race_setup.hpp"
+#include "scenery.hpp"
 #include <filesystem>
 #include <iostream>
 
@@ -566,6 +567,56 @@ int main() {
         for (int i = 0; i < 600 && me.bike.i32(0x2f4) != 0; ++i) hz.step(0);
         check(me.bike.i32(0x2f4) == 0, "armed rider remounts");
         check(me.weapon == 2, "remount keeps carried weapon");
+    }
+    // DZHR solid packing (0x004520d0 via place_dzhr): static-family
+    // billboards become absolute Q8 spans keeping the low-nibble type;
+    // BORR roadside objects (static_family false) are draw-only and skipped.
+    {
+        std::vector<rr::SceneryObject> placed;
+        rr::SceneryObject post{}; post.lateral = 100; post.type = 1; post.static_family = true;
+        rr::SceneryObject sign{}; sign.lateral = -300; sign.type = 3; sign.static_family = true;
+        rr::SceneryObject tree{}; tree.lateral = 50; tree.type = 0; tree.static_family = false;
+        placed.push_back(post); placed.push_back(sign); placed.push_back(tree);
+        const auto spans = rr::dzhr_solids_for_sample(1000 * 256, placed);
+        check(spans.size() == 2, "DZHR packing keeps billboards, skips BORR");
+        check(spans[0].type == 1 && spans[1].type == 3, "DZHR packing keeps the low-nibble type");
+        check(spans[0].lo_q8 == (1000 + 100) * 256 - 0x800, "DZHR span centred on the placed lateral");
+        check(spans[0].hi_q8 - spans[0].lo_q8 == 0x1000, "DZHR span is the size-8 extent");
+        check(spans[1].lo_q8 == (1000 - 300) * 256 - 0x800, "DZHR lateral is route-frame relative");
+    }
+    // DZHR solid tick rule (0x00437750): low-nibble types 0/1/2 take the
+    // class-1 crash path (reason 1); types 3+ are the marking-only branch
+    // (0x004049c0 == 2): no crash and no state change.
+    for (const uint8_t type : {uint8_t(0), uint8_t(1), uint8_t(2)}) {
+        rr::Race dz(straight(4000), straight(4000), t, spec, 90);
+        auto& me = dz.riders()[0];
+        const size_t s = me.sample;
+        const int32_t centre = me.bike.i32(0x28);
+        rr::Race::DzhrTable d0(4000), d1(4000);
+        d0[s].push_back({centre - 1000, centre + 1000, type});
+        dz.set_roadside(std::move(d0), std::move(d1));
+        me.bike.i32(0x1c) = int32_t(s) * 256 + 0x80; me.bike.i32(0x30) = me.bike.i32(0x1c);
+        me.bike.i32(0x2f0) = 1000;
+        me.stamina.current = 5; me.stamina.max = 5;
+        me.bike.i32(0x184) = 0x4000; me.bike.i32(0x188) = 0x4000; me.bike.i32(0x18c) = 0;
+        dz.step(0);
+        check(me.bike.i32(0x2f4) != 0 && me.bike.i32(0x2f8) == 1, "DZHR solid type crashes reason 1");
+    }
+    {
+        rr::Race dz(straight(4000), straight(4000), t, spec, 90);
+        auto& me = dz.riders()[0];
+        const size_t s = me.sample;
+        const int32_t centre = me.bike.i32(0x28);
+        rr::Race::DzhrTable d0(4000), d1(4000);
+        d0[s].push_back({centre - 1000, centre + 1000, 3});
+        dz.set_roadside(std::move(d0), std::move(d1));
+        me.bike.i32(0x1c) = int32_t(s) * 256 + 0x80; me.bike.i32(0x30) = me.bike.i32(0x1c);
+        me.bike.i32(0x2f0) = 1000;
+        const int32_t st0 = me.stamina.current, lat0 = me.bike.i32(0x28);
+        me.bike.i32(0x184) = 0x4000; me.bike.i32(0x188) = 0x4000; me.bike.i32(0x18c) = 0;
+        dz.step(0);
+        check(me.bike.i32(0x2f4) == 0, "DZHR marking type never crashes");
+        check(me.stamina.current == st0 && me.bike.i32(0x28) == lat0, "DZHR marking type changes nothing");
     }
     // Nitro: held nitro+accelerate depletes a charge and boosts, release
     // stops boost, recharge refills, retrigger works.

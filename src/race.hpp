@@ -47,6 +47,21 @@ struct RoadHazard { uint32_t sample = 0; int32_t lo_q8 = 0, hi_q8 = 0; };
 // for shared-stream parity.
 std::vector<RoadHazard> road_hazard_spans(const CourseSection&, uint32_t sample_base,
                                           std::function<uint32_t()> random);
+struct SceneryObject;   // scenery.hpp (forward: race.hpp must not include it)
+// DZHR solid roadside object (plan 16 Task 2 / plan 24): one placed non-actor
+// billboard (0x004520d0 packs word0 bit31 clear with (word0>>8)&0x3f != 0x3f,
+// at most 2 per slice; the same records place_dzhr turns into static-family
+// scenery). Lateral span in Q8 absolute in the route frame; the half extent
+// is the placed size-8 units (approximation: per-type template widths are
+// not yet traced). type is the record low nibble (word0 & 0xf): 0/1/2 take
+// the class-1 crash path, 3+ is the marking-only branch (no crash).
+struct DzhrSolid { int32_t lo_q8 = 0, hi_q8 = 0; uint8_t type = 0; };
+// Pure per-sample helper: absolute Q8 spans for the placed DZHR billboards
+// on one route sample (centre_q8 is the route-frame road centre). BORR
+// roadside_objects (static_family false) are draw-only and skipped. Consumes
+// no randomness: placement already ran once at course load.
+std::vector<DzhrSolid> dzhr_solids_for_sample(int32_t centre_q8,
+                                              const std::vector<SceneryObject>& objects);
 // Weapons (rider +0x1d4): 0 fists, 1 club, 2 chain, 3 kick. Reach in units of 0x1000 Q8
 // (0x00409c10) and damage multipliers (0x00465a00).
 constexpr int32_t weapon_reach[4] = {5, 7, 8, 5};
@@ -276,6 +291,12 @@ public:
     void set_hazards(std::vector<std::vector<RoadHazard>> road0,
                      std::vector<std::vector<RoadHazard>> road1) {
         hazards_[0] = std::move(road0); hazards_[1] = std::move(road1); }
+    // DZHR solid table (plan 16 Task 2): one span list per route sample per
+    // road; empty by default. Wired by the race factory from the scene's
+    // placed objects; tests fill it directly.
+    using DzhrTable = std::vector<std::vector<DzhrSolid>>;
+    void set_roadside(DzhrTable road0, DzhrTable road1) {
+        dzhr_[0] = std::move(road0); dzhr_[1] = std::move(road1); }
     bool finished() const { return riders_[0].finished; }
     bool crashed() const { return bike().i32(0x2f4) != 0; }
     int32_t ticks() const { return ticks_; }
@@ -419,6 +440,7 @@ private:
     std::vector<RouteSample> routes_[2];
     PhysicsTables tables_;
     std::vector<std::vector<RoadHazard>> hazards_[2];   // BORR spans per route sample per road
+    DzhrTable dzhr_[2];   // DZHR solid billboards per route sample per road
     std::vector<Rider> riders_;
     int32_t ticks_ = 0;
     int level_ = 0;
