@@ -285,8 +285,8 @@ Sessions 1–6: September 28, 2026. Later dates are listed per session.
 - **Sprite scale:** opponents scale by depth relative to depth 512, capped at the player's size and baseline. The original sprite scale law and raster are not ported.
 - **AI:** overtaking/avoidance (`0x00408e40`) and fight states 2–5 are not ported. AI riders attack the player when alongside, every 45 ticks (a stand-in rule).
 - **Attack timing:** an attack lasts 18 ticks and connects at tick 7 (a stand-in for animation-driven hit frames).
-- **Weapon grabs** use a simplified trigger: a fist hit on an armed rider succeeds 1 time in 4.
-- **Contact response:** only the bike-against-bike branch of `0x004049c0`; the knock-off decision `0x004052c0` is not applied on contact.
+- **Weapon grabs** follow the traced `0x004096f0` rule (`resolve_hit`: victim immunity expired, victim frame < 2 and mid-attack, attacker fists vs armed non-kick victim, `(rand&3)==3`, atomic transfer, attacker immune 300 ticks, no damage). No weapons drop to the road or carry in career (weapon trace, October 15, 2026). Remaining: animation-gated swish timing and capture confirmation (`napa-weapon-steal`).
+- **Contact response:** the bike-against-bike and bike-against-car branches of `0x004049c0` are ported with the `0x004052c0` knock-off decision applied on contact. Remaining: ped/static branches, wall/crash-sequence stand-ins (plan 11 Task 4, plan 16 Task 1, plan 24).
 - **Shading:** sky, verge, shoulder, road and lane-marking colours and the 4-sample stripe are placeholders. Painter's back-to-front drawing replaces the original's occlusion row (`0x4c10c8`).
 
 ## Not verified
