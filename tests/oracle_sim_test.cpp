@@ -594,19 +594,51 @@ int main(int argc, char** argv) {
             return 1;
         }
     }
-    if (demo && solo) {
+    // Spawn-frozen player scheduler (frame 0 is post tick 1): hydrate the
+    // slotted rider.0.bike_c/10/14/18 keys when the capture dumps them, so
+    // the launch ramp consumes the previous run's dt (tick-2 dt 2) while
+    // contact reads the fresh one. Legacy captures without the keys keep
+    // the build/countdown dt management.
+    if (solo) {
+        auto& p = race.riders()[0];
+        auto skey = [&](const char* k) {
+            auto it = h.find(std::string("rider.0.bike_") + k);
+            return it == h.end() ? nullptr : &it->second;
+        };
+        const int64_t* s_last = skey("10");
+        const int64_t* s_next = skey("c");
+        const int64_t* s_interval = skey("14");
+        const int64_t* s_dt = skey("18");
+        if (s_last && s_next && s_interval && s_dt &&
+            *s_last >= std::numeric_limits<int32_t>::min() && *s_last <= std::numeric_limits<int32_t>::max() &&
+            *s_next >= std::numeric_limits<int32_t>::min() && *s_next <= std::numeric_limits<int32_t>::max() &&
+            *s_interval >= 1 && *s_interval <= std::numeric_limits<int32_t>::max() &&
+            *s_dt >= std::numeric_limits<int32_t>::min() && *s_dt <= std::numeric_limits<int32_t>::max()) {
+            p.sched_last = int32_t(*s_last);
+            p.sched_next = int32_t(*s_next);
+            p.sched_interval = int32_t(*s_interval);
+            p.bike.i32(0x18) = int32_t(*s_dt);
+            p.sched_live = true;
+        }
+    }
+    // Measured spawn-frozen brain snapshot (frame 0 is post tick 1): hydrate
+    // once for any solo capture with a brain window. The human path never
+    // touches these words (0x00405c80 spawn init stays frozen), so the same
+    // snapshot covers demo and human; demo keeps its countdown below.
+    if (solo && brain_window) {
         auto& br = race.riders()[0].brain;
         auto w = [&](const char* k) { return int32_t(gval(h, std::string("rider.0.brain_") + k)); };
-        if (brain_window) {
         br.state = w("160"); br.target_step = w("174"); br.ov_ahead = w("178"); br.ov_behind = w("17c");
         br.replan_ticks = w("188"); br.lane = w("18c"); br.bias = w("190"); br.target_x = w("194");
         br.target_position = w("198"); br.target_speed = w("19c"); br.current2 = w("1a0"); br.current_speed = w("1a4");
+        br.base_speed = w("1bc");
         br.state_flag = uint8_t(w("164"));
         for (int st = 0; st < 10; ++st) { char key[16]; std::snprintf(key, sizeof key, "%x", 0x138 + 4 * st); br.state_ticks[size_t(st)] = w(key); }
         br.target_rider = golden_rider(h, "rider.0.brain_168");
         br.nbr_ahead = golden_rider(h, "rider.0.brain_16c");
         br.nbr_behind = golden_rider(h, "rider.0.brain_170");
-        }
+    }
+    if (demo && solo) {
         // Frame 0 is post tick 1: seeded captures resume at tick 2, others
         // run tick 1 natively too.
         race.set_ticks(int32_t(brain_window ? tick0 : tick0 - 1));

@@ -1804,7 +1804,7 @@ void Race::step_frozen_schedule(Rider& r) {
 }
 void Race::step_rider(Rider& r, uint32_t controls, bool player) {
     Bike& b = r.bike;
-    if (r.frozen) { step_frozen_schedule(r); return; }   // solo oracle: the scheduler runs metadata, never think/move
+    if (r.frozen) return;   // solo oracle: scheduler metadata steps post-loop, never think/move
     if (r.finished) {   // coast to a stop past the line
         drive_mode(b, 0);
         integrate_speed(b, tables_, 0);
@@ -2196,11 +2196,16 @@ void Race::countdown_step() {
     ++ticks_;
     // 0x00438930 stores the player bike's last run as creation tick - 1
     // (template interval 1), so its first scheduled tick sees dt 2
-    // (measured: solo captures, tick 1). Hydrated frozen opponents follow
-    // their captured 0x00437e60 cadence (interval 4, lasts 1,5,...);
-    // legacy captures and live games keep dt 1 there.
+    // (measured: solo captures, tick 1). Hydrated riders (sched_live) step
+    // their captured 0x00437e60 cadence instead: frozen opponents hold
+    // interval 4/lasts 1,5,..., the player interval 1. Legacy captures and
+    // live games keep dt 1 (frozen) and the player 2-then-1 rule.
     countdown_started_ = true;
-    if (!riders_.empty()) riders_[0].bike.i32(0x18) = ticks_ == 1 ? 2 : 1;
+    if (!riders_.empty()) {
+        Rider& p = riders_[0];
+        if (p.sched_live) step_frozen_schedule(p);
+        else p.bike.i32(0x18) = ticks_ == 1 ? 2 : 1;
+    }
     for (size_t i = 0; i < riders_.size(); ++i) {
         Rider& r = riders_[i];
         if (r.frozen) { step_frozen_schedule(r); continue; }
@@ -2265,8 +2270,12 @@ void Race::collide_riders() {
 void Race::step(uint32_t controls) {
     if (riders_[0].finished && std::all_of(riders_.begin(), riders_.end(), [](const Rider& r) { return r.finished; })) return;
     ++ticks_;
-    if (countdown_started_ && !riders_.empty()) riders_[0].bike.i32(0x18) = 1;
+    if (countdown_started_ && !riders_.empty() && !riders_[0].sched_live) riders_[0].bike.i32(0x18) = 1;
     for (size_t i = 0; i < riders_.size(); ++i) step_rider(riders_[i], controls, i == 0);
+    // Scheduler metadata runs after drive/think and before contact: drive
+    // consumes the previous run's dt (tick-2 launch ramps on dt 2), contact
+    // the fresh one. Hydrated riders only; legacy/live keep prior behavior.
+    for (size_t i = 0; i < riders_.size(); ++i) step_frozen_schedule(riders_[i]);
     step_pedestrians();   // same scheduler pass (0x00438170) as the riders
     collide_riders();
     for (size_t i = 0; i < riders_.size(); ++i) collide_traffic(riders_[i]);

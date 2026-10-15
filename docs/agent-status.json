@@ -17,7 +17,7 @@
     {
       "area": "Simulation parity",
       "implementation": "Tick replay, frozen scheduler cadence, human-branch selection probe",
-      "verification": "Demo solo diagnostic to tick 376; human golden tick-2 target gap; strict acceptance unmet with exact receipts",
+      "verification": "Demo solo diagnostic to tick 376; human launch parity to tick 149 (wall scrape); strict acceptance unmet with exact receipts",
       "remaining": "Human target state plus five physics gates, traffic-timer draws, and full parity",
       "evidence": [
         "SIM_SCENARIOS.md",

@@ -865,3 +865,15 @@ Evidence: handoffs `25-1/2/3/5/6/7`, `26-1/2/3`, review
   receipt, `control_branch: human`, capability). Demo solo diagnostic
   stands at tick 376 (spawn-timer lane draw). Nothing re-anchored, no
   golden altered, no allowlist expanded.
+
+### October 16, 2026: human launch matches, first gap is wall scrape (plan 10)
+
+- Frame-0 brain hydration extended to all solo captures (spawn-frozen
+  targets) plus player scheduler hydration and post-drive metadata
+  stepping: human replay now matches through tick 148 (was tick 2).
+  Launch ramp root-caused to tick-2 dt ordering with oracle ramp words as
+  ground truth; native spec words verified equal (table 248; cap/rate
+  micro-deltas truncation-absorbed).
+- Tick 149: full-throttle left-wall scrape (speed 3351 -> 2739, no crash)
+  vs native 843 -- the `0x0043a610` wall port (plan 11 Task 4). Demo at
+  tick 376; all legacy goldens byte-identical. No regressions.

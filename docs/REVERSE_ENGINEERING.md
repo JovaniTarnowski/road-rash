@@ -1302,3 +1302,25 @@ crash states -- both benign for RNG in clean captures. It has no native
 counterpart (halves take neither collide role: `rider_or_ped` needs
 type 4). Evidence: `docs/agent-handoffs/spare-half-trace-20261016.md`,
 `sched-human-20261016` (1431 ticks, hold 0 throughout).
+
+## Human launch ramp and tick-149 wall scrape (October 16, plan 10)
+
+Drive-ramp ground truth (`rider.0.bike_240/114/260`, sched-human capture):
+cap `+0x260` = 9188, ramp `+918`/`tick` (`+0x264`), gear-0 table `+0x1d0` =
+248 (native spec words match: 9160/916/248 -- the 0.3% cap/rate deltas are
+truncation-absorbed through saturation, proven tick by tick, benign).
+Player dt series 2,1,1,... (interval 1): tick-2 drive consumes the previous
+run's dt (ramp `2*918 = 1836`) while contact reads the fresh dt, so native
+steps scheduler metadata after drive but before collide. No tick-2 contact
+occurred (impulses/flags zero), leaving the contact-side order as the
+frozen-consistent choice, not a second measurement.
+
+Tick 149 is the first human-specific physics gap: full-throttle entry into
+the left wall (lateral 16123 -> 15123 -> 13412..., steer-rate pinned
+-1200/-1440, no crash) with scrape speed-bleed 3351 -> 2739 -> 2242 ->
+1839 and a gear 1 -> 0 drop at 151. Native `Race::walls` is the documented
+stand-in (no type dispatch, wall faces, scrape branch, or thresholds) and
+over-brakes to 843. Porting `0x0043a610` (292 lines) with its sub-slice
+plumbing (`+0x37/+0x38/+0x3a/+0x3b/+0x3c/+0x14c...+0x160`) is plan 11
+Task 4 / plan 16 Task 1 scope; the offroad trace (`offroad-trace-20261015`)
+holds the branch map. Demo solo stands at tick 376 (spawn-timer lane draw).

@@ -75,3 +75,17 @@ instructions; shared tree preserved (no resets, explicit-path staging).
   (`sched900-20261015`, `sched-human-20261016` + receipts) are gitignored
   local evidence. Proxy installed in the shared prefix is `3645b00b`
   (demo_hold probe + RR_ORACLE_HUMAN).
+
+## Follow-up (same day): launch parity to tick 149
+
+- Human-target trace consequence implemented (harness-side): frame-0 brain
+  hydration extended to all solo captures + `base_speed` from `brain_1bc`
+  + player scheduler hydration from slotted keys + metadata stepping moved
+  post-drive/pre-collide (drive reads pre-update dt, contact fresh dt --
+  proven by the tick-2 `2*918 = 1836` ramp; no tick-2 contact existed to
+  contest the contact side).
+- Oracle `extra[]` gains `bike_240/114/260/23c` (dump-only ground truth).
+  Native spec words verified equal (table 248; cap 9160 vs 9188 and rate
+  916 vs 918 truncation-absorbed through saturation -- benign, recorded).
+- Results: human tick 2 -> tick 149 (wall scrape, plan 11 Task 4);
+  demo sched900 still 376; all legacy goldens byte-identical.

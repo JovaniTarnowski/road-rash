@@ -1149,3 +1149,16 @@ lane draw is Task 7 scope). Gate `agent_gate.py oracle` on the default
 fixture still fails earlier on the old human golden's missing receipt
 (infra gap predating this slice; the new golden carries its receipt).
 No re-anchoring, no golden edits, no rule changes.
+
+## October 16, 2026: human launch parity to tick 149 (plan 10)
+
+Frame-0 brain hydration for all solo captures + player scheduler hydration
+with post-drive metadata stepping. `sched-human-20261016` (human, inferred,
+no override): first divergence frame 148 (tick 149) `rider.0.speed`
+original 2739 native 843 -- full-throttle left-wall scrape vs the `walls`
+stand-in (plan 11 Task 4 scope). Launch ramp verified word-for-word
+against new `bike_240/114/260` dump keys. Regression matrix (final
+binary): demo sched900 tick 376, old human tick 210, old solo tick 222,
+frozen900 tick 210 -- all byte-identical to baseline. Focused
+(oracle/patch/record/sim, frozen, sim_fields, bike, car_contact,
+agent-tooling, race, race-actions, wiring) all pass; full build clean.

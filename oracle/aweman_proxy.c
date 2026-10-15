@@ -433,9 +433,10 @@ static void dump_sim_tick(void) {
                 rr_log(key, sim_field_value(node, 0x60, 4, 1));
                 /* Steer-rate and limit words (+0x2a0..+0x2b0), tick delta (+0x18),
                  * scheduler metadata (+0x0c next, +0x10 last, +0x14 interval),
-                 * rpm + caches + snap (+0x2dc/+0x44): pins down steer
-                 * ramp-rate and scheduler-cadence divergences. */
-                static const uint32_t extra[] = {0x18, 0x0c, 0x10, 0x14, 0x2a0, 0x2a4, 0x2a8, 0x2ac, 0x29c, 0x2b0, 0x2d0, 0x2d4,
+                 * drive-ramp words (+0x240 throttle kiosk, +0x114 force,
+                 * +0x260 cap, +0x23c gear): pins down launch-force gaps.
+                 * Dumped only; the replay snapshot does not compare them. */
+                static const uint32_t extra[] = {0x18, 0x0c, 0x10, 0x14, 0x240, 0x114, 0x260, 0x23c, 0x2a0, 0x2a4, 0x2a8, 0x2ac, 0x29c, 0x2b0, 0x2d0, 0x2d4,
                                                  0x2dc, 0x2e8, 0x44};   // plan 11a Task 2 Step 5: rpm + caches + snap
                 for (unsigned e = 0; e < sizeof extra / sizeof extra[0]; ++e) {
                     snprintf(key, sizeof key, "rider.%d.bike_%x", slot, extra[e]);
