@@ -927,3 +927,17 @@ lateral `brain+0x194`=-16384, native29952, with RNG still matched. Human
 remains at189. New synthetic tests reproduce both movement and reuse of
 the initial position by a different rider. No simulation behavior,
 golden or known-divergence expectation changed in this correction.
+
+### Independent frozen rider-half state (October 15 continuation, plan 10)
+
+Frozen type8 halves now retain captured position/speed and select their
+own route slice for AI scans, independently of a bike moved by contact.
+Live attached halves keep their existing behavior. Hydration reads the
+linked half speed from the bike node's half108; older schemas without
+that word retain zero and do not gain a new required field.
+
+Demo sched900 advances576 ->584, where speed is6188 original/6187 native
+with RNG still aligned. Human remains189. Synthetic tests cover detached
+position/speed, slice-dependent passing side, linked-half field identity,
+legacy compatibility and atomic validation. This is partial component and
+demo-trace progress, not complete human or traffic-field acceptance.

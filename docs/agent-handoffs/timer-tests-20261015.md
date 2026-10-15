@@ -64,3 +64,48 @@ Validation:
   so this helper's parsing coverage stays independent of legacy hydration.
 - No replay source, CMake, shared status documentation, or production source
   changed. No commit made. No live resource process held.
+
+## Detached frozen half scan state
+
+Parent transferred ownership of `src/race.hpp`, `src/race.cpp`,
+`tests/frozen_state.hpp`, `tests/frozen_state_test.cpp`, and
+`tests/race_test.cpp`. Baseline `c452be2`.
+
+Evidence supplied by parent: demo576 target brain180 points to type8 node
+20988784, captured position21248. Bike contact575 moves the linked bike to21265;
+null frozen half think/move callbacks leave its position/speed independent.
+The linked half velocity is the BIKE node's `.half108`; the half node's own
+`.half108` describes its absent linked half and is a sentinel.
+
+Changes:
+
+- Rider stores detached half position/speed in addition to its lateral.
+- `build_scan_list` overrides all three fields for detached type8 nodes and
+  chooses the route sample from the half's clamped position. Attached live halves
+  keep the existing bike-derived position/speed/sample.
+- Frozen hydration validates/stages the pointer-linked half position and optional
+  bike `.half108` before changing riders. Old `probe.frozen_words=1` dumps predate
+  `.half108`, so absence remains compatible with speed0. Legacy no-marker dumps
+  use the matched initial position and available bike `.half108`, else speed0.
+  Missing old speed evidence is a limitation, not a recovered measurement.
+- Fixtures exercise signed half speed, ignored half-node sentinel, atomic invalid
+  present speed rejection, and compatibility without the speed field.
+- Native AI regressions place a frozen half at sample83 and displaced bike at90.
+  The overtake scan selects the retained half when closing and its bike when the
+  independent half speed prevents closing. Different route offsets establish that
+  the passing point comes from the half's own slice.
+- Existing `half_x` follow behavior remains unchanged: target bike position plus
+  half lateral has no contradictory evidence in this slice. No keyed existing
+  00409ca0 export was found with fd/rg in analysis, and no new RE run was needed
+  to implement the parent-supplied confirmed scan evidence.
+
+Validation:
+
+- Owned `cmake --build build-agent-timer-tests-20261015 --target frozen_state-test race-test --parallel 4` passed.
+- `ctest --test-dir build-agent-timer-tests-20261015 -R '^(frozen_state|race)$' --output-on-failure` passed2/2.
+- clangd fallback parsed/indexed `src/race.cpp` without source diagnostics. Apple
+  clangd feature tests again exit3 on ExtractFunction break/continue errors (38),
+  logged `/tmp/rr-detached-half-lsp-20261015.json`. Compile gate passes.
+- `git diff --check` passed for all five owned files.
+- Parent owns actual replay and full integration gate. No commit, shared-doc
+  change, replay-source edit, or live resource process held by this worker.

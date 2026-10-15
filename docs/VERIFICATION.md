@@ -1228,3 +1228,24 @@ re-run in background (`/tmp/fullgate2.log`) for the commit record.
   exits0, zero errors. No actual client LSP channel is exposed.
 - Logs retained in `analysis/countdown-timers-20261015/identity-*`.
   No new capture or full simulation acceptance claim.
+
+Identity gate correction: the first integrator frozen_state run failed on
+a stale executable built before the worker moved a malformed identity-only
+fixture entry after legacy hydration. The committed source had that fixture
+fix. Rebuilt the complete committed source and reran the same focused gate:
+3/3 pass,2.60s. The earlier failed test log was mistakenly summarized as a
+pass before it was inspected; the successful rerun is the verified result.
+
+## Independent frozen halves (October 15 continuation, plan 10)
+
+- Worker compiled race/frozen_state targets and passed both focused tests.
+  Main strict Debug full build also exit0, no diagnostics.
+- Same sched900 demo single-anchor replay: exit1 at584, speed6188 vs6187;
+  RNG matched through the gap. Human replay unchanged189 RNG mismatch.
+- Worker LSP fallback: exit3 on38 existing ExtractFunction feature-check
+  failures, no source parse diagnostic; not claimed as clean LSP gate.
+- Owned-tree `ctest --test-dir build-agent-countdown-timers-20261015
+  --output-on-failure -j 4`: **97/97 pass**, zero skips/failures,148.94s.
+  Build source SHA-256:07ca00f9541668cbfe20dd5b87bf64ed040ee8b0793197e22aa9b07062eda9ae.
+- Logs under `analysis/countdown-timers-20261015/half-*`. No new original
+  capture, Android/device/package or strict acceptance run in this slice.

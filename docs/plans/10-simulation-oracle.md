@@ -429,3 +429,11 @@ map when positions change. Implemented with movement/alias regressions.
 Demo sched900 now first differs at576 in target lateral brain+194
 (-16384 vs29952), RNG matched. Human stays189. Next AI work belongs to
 Task6 target selection; traffic-field acceptance remains open.
+
+### Frozen type8 scan state (October 15 continuation, Task6)
+
+Hydrated frozen halves now retain their own position/speed/slice under bike
+contact. Same sched900 single-anchor replay first differs at584 in speed
+(6188 vs6187), after the original576 half-target matches. Human remains189.
+No golden or allowlist changes. Next: trace the one-unit speed arithmetic
+and finish independent seeded all-eight-point terrain fixtures.

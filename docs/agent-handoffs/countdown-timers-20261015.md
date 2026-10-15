@@ -60,3 +60,21 @@ Strict full rebuild clean; focused frozen_state/oracle-sim/agent-tooling
 No runtime/source simulation behavior was changed by identity correction.
 Remaining target/latch positional diagnostics require original current
 position evidence when target actors move; do not blanket skip comparisons.
+
+## Independent frozen-half integration
+
+Added half_position/half_speed under half_detached and frame0 hydration
+from linked-half position plus bike-node half108. Older schema missing
+half108 keeps zero fallback. Type8 scans use retained own position/speed
+and corresponding route sample; ai_state_follow unchanged without further
+evidence. Worker provided synthetic scan/atomic hydration regressions.
+Same demo fixture advances576->584 speed6188 vs6187, RNG matched.
+Human unchanged189. Main full strict build passes;97/97 CTests pass,
+zero skips/failures,148.94s. Source fingerprint07ca00f9541668cbfe20dd5b87bf64ed040ee8b0793197e22aa9b07062eda9ae.
+Current status/agent-status matrix updated to these exact partial claims.
+
+Parallel next slice isolated at
+/Users/archit/Dev/rr/.codex-terrain-20261015/native-port, baselinec452be2,
+resource token58e99ddf-7edc-4898-bda2-19e1b0be7b59. Workers own
+oracle seeded fixture and terrain diagnostic accessor/test; no main-source
+changes while this gate ran. Root will integrate only frozen worker source.

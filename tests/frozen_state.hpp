@@ -80,6 +80,7 @@ inline void apply_frozen_state(const std::map<std::string, int64_t>& header,
     struct State {
         rr::Rider* rider;
         int32_t lateral, half_lateral;
+        int32_t half_position = 0, half_speed = 0;
         std::array<int32_t, 9> words{};
         uint8_t flags = 0;
         bool sched = false;
@@ -106,6 +107,11 @@ inline void apply_frozen_state(const std::map<std::string, int64_t>& header,
                 throw std::runtime_error("duplicate linked frozen half");
             state.lateral = word(key + ".lateral");
             state.half_lateral = word(half->second.key + ".lateral");
+            state.half_position = word(half->second.key + ".position");
+            // This word belongs to the bike node's linked half. The half
+            // node's own .half108 is a no-linked-half sentinel, not its speed.
+            if (header.contains(key + ".half108")) state.half_speed = word(key + ".half108");
+            // frozen_words=1 predates half108; older dumps retain zero.
             for (size_t i = 0; i < state.words.size(); ++i)
                 state.words[i] = word(key + ".bike_" + suffixes[i]);
             const int64_t flags = required(key + ".bike_c0");
@@ -144,6 +150,12 @@ inline void apply_frozen_state(const std::map<std::string, int64_t>& header,
             if (bl == old_bike_lat.end() || hl == old_half_lat.end())
                 throw std::runtime_error("frozen rider at " + std::to_string(position) + " missing from the node dump");
             state.lateral = bl->second; state.half_lateral = hl->second;
+            state.half_position = position;
+            const auto bike = bikes.find(position);
+            if (bike != bikes.end() && header.contains(bike->second.key + ".half108"))
+                state.half_speed = word(bike->second.key + ".half108");
+            // Legacy dumps without half108 cannot recover the original speed;
+            // the frozen placement default is zero.
         }
         states.push_back(state);
     }
@@ -165,6 +177,8 @@ inline void apply_frozen_state(const std::map<std::string, int64_t>& header,
         }
         r.half_detached = true;
         r.half_lateral = state.half_lateral;
+        r.half_position = state.half_position;
+        r.half_speed = state.half_speed;
     }
 }
 }

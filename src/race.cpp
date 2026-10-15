@@ -1245,6 +1245,12 @@ void Race::build_scan_list() const {
         scan_.push_back(bike);
         ScanObject half = bike;
         half.lateral = half_x(r);
+        if (r.half_detached) {
+            half.position = r.half_position;
+            half.speed = r.half_speed;
+            const auto& road = route_of(r);
+            half.sample = &road[std::min(size_t(std::max(half.position, 0) >> 8), road.size() - 1)];
+        }
         half.type = 8;
         half.order = bike.order + 1;
         scan_.push_back(half);

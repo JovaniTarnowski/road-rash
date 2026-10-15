@@ -8,6 +8,7 @@ Header capture() {
     Header h{{"probe.frozen_words",1}, {"nodeaddr.0",100},
         {"nodeaddr.0.type",4}, {"nodeaddr.0.position",500},
         {"nodeaddr.0.half",200}, {"nodeaddr.0.lateral",-123},
+        {"nodeaddr.0.half108",-73}, {"nodeaddr.1.half108",-2147483647},
         {"nodeaddr.1",200}, {"nodeaddr.1.type",8},
         {"nodeaddr.1.position",500}, {"nodeaddr.1.lateral",0}};
     for (const char* off : {"30","34","38","3c","40","108","10c","110","c0","2f4"})
@@ -64,6 +65,9 @@ int main() {
         check(r[1].bike.i32(0x108)==std::numeric_limits<int32_t>::min() && r[1].bike.i32(0x10c)==6417 && r[1].bike.i32(0x110)==0,"negative and zero velocities");
         check(r[1].bike.u8(0xc0)==255 && r[1].bike.i32(0x2f4)==0,"flags byte and zero crash");
         check(r[1].half_detached && r[1].half_lateral==0,"linked zero lateral half");
+        check(r[1].half_position==500 && r[1].half_speed==-73,"linked half keeps its position and own signed speed");
+        r[1].bike.i32(0x1c)=517; r[1].bike.i32(0x108)=1000;
+        check(r[1].half_position==500 && r[1].half_speed==-73,"moving bike leaves captured half state unchanged");
         check(r[0].bike.i32(0x28)==777 && !r[0].half_detached,"moving player untouched");
     }
     // A same-position unrelated half must not replace the pointer-linked half.
@@ -80,7 +84,7 @@ int main() {
     auto reject=[&](Header h,const char* what) {
         auto r=riders(); bool threw=false;
         try {rr::golden::apply_frozen_state(h,r,false);} catch(const std::runtime_error&) {threw=true;}
-        check(threw,what); check(r[1].bike.i32(0x28)==888,"invalid declaration does not mutate state");
+        check(threw,what); check(r[1].bike.i32(0x28)==888 && !r[1].half_detached && r[1].half_position==0 && r[1].half_speed==0,"invalid declaration does not mutate state");
     };
     auto h=capture(); h.erase("nodeaddr.0.bike_3c"); reject(h,"missing declared word");
     h=capture(); h["nodeaddr.2"]=300; h["nodeaddr.2.type"]=4; h["nodeaddr.2.position"]=500; reject(h,"duplicate bike position");
@@ -89,6 +93,10 @@ int main() {
     h=capture(); h["nodeaddr.1.type"]=4; reject(h,"wrong linked half type");
     h=capture(); h["nodeaddr.1.position"]=501; reject(h,"wrong linked half position");
     h=capture(); h["nodeaddr.0.bike_c0"]=256; reject(h,"byte overflow");
+    h=capture(); h.erase("nodeaddr.0.half108");
+    auto old_declared=riders(); rr::golden::apply_frozen_state(h,old_declared,false);
+    check(old_declared[1].half_position==500 && old_declared[1].half_speed==0,"old declared capture without half108 keeps zero speed fallback");
+    h=capture(); h["nodeaddr.0.half108"]=int64_t(std::numeric_limits<int32_t>::max())+1; reject(h,"linked half speed overflow");
     h=capture(); h["nodeaddr.0.bike_108"]=int64_t(std::numeric_limits<int32_t>::max())+1; reject(h,"word overflow");
     h=capture(); h["probe.frozen_words"]=2; reject(h,"unsupported declaration");
     h=capture(); h.erase("probe.frozen_words");
@@ -96,6 +104,9 @@ int main() {
     check(r[1].bike.i32(0x28)==888,"legacy human behavior preserved");
     rr::golden::apply_frozen_state(h,r,true);
     check(r[1].bike.i32(0x28)==-123 && r[1].bike.i32(0x3c)==-123 && r[1].bike.i32(0x108)==0,"legacy demo lateral-only fallback");
+    check(r[1].half_position==500 && r[1].half_speed==-73,"legacy half position and available linked speed hydrate");
+    h.erase("nodeaddr.0.half108"); r=riders(); rr::golden::apply_frozen_state(h,r,true);
+    check(r[1].half_position==500 && r[1].half_speed==0,"legacy missing half speed keeps frozen placement default");
     r=riders(); rr::golden::apply_frozen_state({},r,true);
     check(r[1].bike.i32(0x28)==888,"legacy no node dump preserves grid");
     // Scheduler metadata hydrates from sched-era captures; legacy declared

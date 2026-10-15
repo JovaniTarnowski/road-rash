@@ -1496,3 +1496,24 @@ Current terrain fixtures compare only six of eight points and no CRT
 state. Expand isolated seeded fixture state before guessing a hill-step
 change; exact eight-point and race-walker offsets are in
 [terrain probe handoff](agent-handoffs/terrain-next-20261015.md).
+
+### Demo tick576: detached rider-half scan state
+
+The tick575 target-pointer report was fixed by stable initial actor identity.
+At576, golden brain+180 selects pointer20988784, the type8 half linked from
+bike20976340. Its target position22208 minus the recovered overtake
+offset960 directly establishes half position21248; target lateral-16384
+from half lateral16384 matches the recovered avoidance clearance32768.
+The bike had meanwhile moved away from21248 under contact. Native scan
+objects copied that moving bike's position/speed into the half despite
+retaining a separate frozen half lateral.
+
+Solo instrumentation explicitly nulls both think/move callbacks on frozen
+nonplayer bikes and halves (`sim_freeze_others`), and type8 halves are not
+outer participants in native/original bike contact. The recovered half scan
+state must therefore retain its own captured position and speed. Frame0
+`nodeaddr.<bike>.half108` is the linked half's own speed; the half node's
+`.half108` instead describes its absent linked half and is a sentinel.
+No change to attached live half synchronization or type-mask semantics is
+justified by this finding. See
+[576 trace](agent-handoffs/demo576-next-20261015.md).

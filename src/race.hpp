@@ -182,10 +182,10 @@ struct Rider {
     int32_t sched_interval = 1;             // bike +0x14
     bool sched_live = false;
     // Rider half (type 8 scheduler object): rides with the bike, so its
-    // lateral is the bike's unless detached (frozen solo nodes keep the
-    // placement lateral while the bike's differs; measured from the dump).
+    // position, lateral and speed follow the bike unless detached. Frozen
+    // solo halves keep their captured state even when contact moves the bike.
     bool half_detached = false;
-    int32_t half_lateral = 0;
+    int32_t half_lateral = 0, half_position = 0, half_speed = 0;
     AiState brain;
     bool finished = false;
     int32_t finish_tick = -1;

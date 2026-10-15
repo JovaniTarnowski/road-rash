@@ -132,3 +132,129 @@ order, back walker before front walker (`0x00454120`).
   runtime parity claim. Documentation-only worker; integrator owns source
   changes, build gates, shared docs and commits. No commits made.
 - All owned REA/clangd processes finished; no shared resources held.
+
+## Follow-up: safe loader capture preparation (read-only)
+
+The existing historical command `RR_ORACLE_RASTER=2 oracle/run.sh
+raster-fixtures 3` is **not a valid current acceptance recipe**. The loader
+branch in `DllMain` writes the fixture and closes `g_out`, but does not exit
+RoadRash. Today's `tools/oracle_capture.py` rejects a nonzero/timeout exit
+even if the file has `end`. Preserve this distinction when preparing a probe.
+
+Minimal option recommendation: add an independent `RR_ORACLE_TERRAIN=2`
+loader-only component mode, leaving `RR_ORACLE_RASTER=2`, existing fixed-rand
+keys and `capture_terrain()` unchanged. Parse the integer with the other
+options, execute only the new seeded terrain component suite in the loader
+branch, write `frame 0` + suite + `end`, close `g_out`. Use the **existing**
+frame-hook clean-exit mechanism (`RR_ORACLE_FRAMES=1`, `RR_ORACLE_SIM=0`) to
+exit after the first normal menu frame, with a sufficient deadline (600s),
+instead of adding `ExitProcess` inside `DllMain`. This keeps the actual
+measurements at loader time and reuses an existing normal-context exit.
+Reaching that first frame remains a runtime precondition; if it fails the
+wrapper must reject the run. Do not label the new mode verified until tried.
+`Forward2` is a naked ordinal-forwarding jump, not a regular C callback where
+arbitrary capture/exit logic can safely be inserted without ABI work.
+
+Proposed invocation **after** integrator-reviewed implementation/build/install:
+
+```sh
+env -u RR_ORACLE_INPUT -u RR_ORACLE_RECORD -u RR_ORACLE_RANDCOUNT \
+  -u RR_ORACLE_RANDTRACE -u RR_ORACLE_RANDLOG -u RR_ORACLE_COURSE \
+  RR_ORACLE_TERRAIN=2 RR_ORACLE_RASTER=0 RR_ORACLE_SIM=0 \
+  RR_ORACLE_FRAMES=1 RR_ORACLE_DRIVE=0 RR_ORACLE_PIXELS=0 \
+  RR_ORACLE_GROUPS=0 RR_ORACLE_POLICE=0 RR_ORACLE_SOLO=0 \
+  RR_ORACLE_HUMAN=0 \
+  python3 tools/oracle_capture.py capture terrain-seeded-20261015 \
+  --workspace /Users/archit/Dev/rr \
+  --prefix /Users/archit/Dev/rr/prefix \
+  --install /Users/archit/Dev/rr/prefix/drive_c/ElectronicArts/RoadRashOracle \
+  --output /Users/archit/Dev/rr/native-port/analysis/oracle/terrain-seeded-20261015.tsv \
+  --session terrain-seeded-20261015 --timeout 600
+```
+
+No command above has been run. The current DLL does not implement
+`RR_ORACLE_TERRAIN`; setting it now would not produce the proposed suite.
+The wrapper automatically claims prefix/install/output directory, checks
+both EXE hashes, uses unique temporary filenames, rejects proxy changes,
+validates exactly 1 output frame (FRAMES=1), and publishes only after exit0.
+Its receipt's branch will correctly be `unverified` for a component fixture;
+this is unrelated to human simulation branch proof. Validate with
+`tools/oracle_capture.py validate ... --frames 1`, without `--simulation`.
+
+Suggested minimal key schema, all fields integers within the one frame:
+
+```
+terrain_seeded.schema = 1
+terrain_seeded.cases = N
+terrain_seeded.C.kind / seed / reverse / steps
+terrain_seeded.C.init.rng_before / rng_after
+terrain_seeded.C.S.delta / rng_before / rng_after
+terrain_seeded.C.S.position / last_sample / hill_record
+terrain_seeded.C.S.point.I.start / end / x / height / dx / dh
+```
+
+C, S and I are numeric key components; I covers **0..7**, S=0 is post-init,
+S=1..steps is post-step. Define delta=0 at S=0. Keep the old six exported
+geometry/shade fields too, under the new namespace. Add two wall record
+indices/values for wall cases. Record bit-pattern RNG state as unsigned
+0..4294967295, signed motion/state as int32. Do not serialize raw pointers;
+record hill-record index, or pointer offset `(current-(definition+20))/76`
+after checking range/alignment. Native comparison should require every key
+and exact equality, including final RNG state and all hidden points.
+
+State handling: get CRT state before touching mode, fail closed if missing,
+save/restore it and both original random-mode globals around the WHOLE new
+suite; reinitialize each synthetic iterator buffer to zero before each case.
+Compare old fixed-rand suite unchanged in its own existing output. No need
+for RANDCOUNT/RANDTRACE hooks or gameplay seed hooks for seeded fixtures.
+
+### Read-only install/resource snapshot
+
+Taken after the initial review; registry/process state can change afterwards.
+
+- Prefix: `/Users/archit/Dev/rr/prefix`.
+- Install: `prefix/drive_c/ElectronicArts/RoadRashOracle`.
+- `dosdevices/d:` is an existing symlink resolving to
+  `/Users/archit/Dev/rr/cdrom` (correct parent of ROADRASH assets).
+- Installed `ROADRASH.EXE` hash is the reference `73d7f974…a60f18a2`.
+- Installed `AWEMAN32.DLL` and repository `oracle/build/AWEMAN32.DLL` both:
+  `1eb5a4c648f4da876aad94b66d2522a7680cb831396225781d068310701c499d`.
+- Installed `AWEMAN_REAL.DLL`:
+  `ca7f2f65bf6d1550857556a27d65d4f44d7a6ca14c2be89b7c0f9affb6a47022`.
+- Wine executable exists at
+  `/Users/archit/Applications/Wine Staging.app/Contents/Resources/wine/bin/wine`;
+  hash `ce4aa0367d2f4754ebd4eefd52fbcf40e61ebadbf3a608cbf881e91e25fb4537`.
+- `agent_workspace.py list` showed only session
+  `countdown-timers-20261015`, PID53167, token
+  `4abac9d3-901e-481c-963f-88d87b43c800`; claims cover Race/Traffic,
+  oracle_sim_test/traffic_test, shared status/verification/RE and plan10.
+  No prefix/install/oracle-build claim was present at that instant.
+- Process listing showed no Wine, wineserver, RoadRash or oracle_capture
+  processes (excluding this worker's own search command). This is not an
+  ownership guarantee: rerun registry/process checks immediately before
+  future installation/capture. Wrappers serialize participating tools;
+  unmanaged OMP commands still require coordination.
+- `oracle/build.sh` claims only `oracle/build`; integrator should separately
+  claim `oracle/aweman_proxy.c` for edits and coordinate the shared install.
+  `oracle/install.sh` routes through `tools/oracle_install.py` resource claims.
+
+### Can existing static fixtures prove the hidden-point divergence?
+
+No existing `rmt`-named evidence was found in the repository analysis tree or
+/tmp (bounded fd search). `analysis/oracle/raster-fixtures.tsv` has only
+exported terrain type/selectors/geometry/shades, with no windows, derivatives,
+records or RNG-state keys. It cannot establish a hidden-point runtime
+mismatch. No mismatch was manufactured or asserted from that absence.
+
+The present synthetic hill payload further synchronizes every point's
+window: **all 8 use min_length=1/max_length=5**, and the fixed-rand wrapper
+returns the same value at every call. Therefore all points choose the same
+length and share record-end clipping in these cases. X/height bounds differ
+by point but cannot affect length/window regeneration. This explains why
+merely re-reading these static slices cannot expose the distinct hidden
+windows expected from a varied stream. Assembly `4513ee` length draw,
+`451462` zero-length early return, and loop bound `451586/451589` establish
+that hidden points participate in RNG consumption; `0x00451910` exports only
+3 of each side's 4 points. That proves the coverage hole, not a game bug.
+
+No additional npx, build, Wine, source, install or claims mutation occurred.

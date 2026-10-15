@@ -227,6 +227,43 @@ int main() {
         check(std::abs(ai.target_x) == 0x8000, "passing point uses recovered lateral clearance");
     }
 
+    // Frozen solo halves are separate type-8 scan objects: bike contact can
+    // move the bike while its null think/move half stays at its captured point.
+    for (int32_t half_speed : {0,4096}) {
+        auto route=straight(4000);
+        route[90].offset=-1000; // the displaced bike occupies a different slice
+        rr::Race detached(route,route,t,spec,90,{opp});
+        auto& target=detached.riders()[0];
+        target.frozen=true;
+        target.bike.i32(0x1c)=90*256;
+        target.bike.i32(0x28)=0;
+        target.bike.i32(0x108)=0;
+        target.sample=90;
+        target.half_detached=true;
+        target.half_position=83*256;
+        target.half_lateral=0;
+        target.half_speed=half_speed;
+        auto& observer=detached.riders()[1];
+        observer.bike.i32(0x1c)=82*256;
+        observer.bike.i32(0x28)=0;
+        observer.bike.i32(0x108)=4096;
+        observer.sample=82;
+        observer.brain.target_rider=-1;
+        observer.brain.replan_ticks=0;
+        detached.countdown_step(); // runs AI scans without moving either object
+        const auto& ai=observer.brain;
+        if (half_speed==0) {
+            check(ai.overtake_latched==0 && ai.overtake_type==8 && ai.overtake_position==83*256,
+                  "overtake scans frozen half at its retained position");
+            check(ai.target_x==-0x8000,"detached half passing point uses its own route slice");
+        } else {
+            check(ai.overtake_latched==0 && ai.overtake_type==4 && ai.overtake_position==90*256,
+                  "half own speed excludes a nonclosing half from overtake selection");
+        }
+        check(target.half_position==83*256 && target.half_speed==half_speed && target.bike.i32(0x1c)==90*256,
+              "countdown scan preserves independent bike and frozen half state");
+    }
+
     {
         rr::Race demo(straight(4000), straight(4000), t, spec, 90);
         demo.set_demo_hold(true, 95);
