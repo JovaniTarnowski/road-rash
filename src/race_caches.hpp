@@ -110,20 +110,23 @@ struct CourseCanvas {
                 }
             // Side panels: stretched + darkened edge columns (generated at
             // runtime from the user's own dash art, no shipped assets).
+            // Full-width margins on both sides (not half width).
             if (margin > 0) {
-                const int side_w = margin * 2 * s;
+                const int panel_w = margin * 2 * s;
                 for (int y = 0; y < dash.height && y < frame.height(); ++y) {
                     const uint32_t lc = dash.at(0, y), rc = dash.at(dash.width - 1, y);
                     if (lc == 0x01000000 && rc == 0x01000000) continue;
-                    for (int x = 0; x < side_w; ++x) {
-                        const uint32_t c = x < side_w / 2 ? lc : rc;
-                        if (c == 0x01000000) continue;
-                        // Darken by halving each channel via the palette.
-                        const int r = int((c >> 16) & 0xff) / 2, gg = int((c >> 8) & 0xff) / 2, bb = int(c & 0xff) / 2;
-                        const uint32_t dark = (uint32_t(r) << 16) | (uint32_t(gg) << 8) | uint32_t(bb);
-                        const uint8_t best = dash_index(dark, game.palette);
-                        if (x < side_w / 2) frame.row(y)[x] = best;
-                        else frame.row(y)[xoff + dash.width + (x - side_w / 2)] = best;
+                    for (int x = 0; x < panel_w; ++x) {
+                        if (lc != 0x01000000) {
+                            const int r = int((lc >> 16) & 0xff) / 2, gg = int((lc >> 8) & 0xff) / 2, bb = int(lc & 0xff) / 2;
+                            const uint32_t dark = (uint32_t(r) << 16) | (uint32_t(gg) << 8) | uint32_t(bb);
+                            frame.row(y)[x] = dash_index(dark, game.palette);
+                        }
+                        if (rc != 0x01000000) {
+                            const int r = int((rc >> 16) & 0xff) / 2, gg = int((rc >> 8) & 0xff) / 2, bb = int(rc & 0xff) / 2;
+                            const uint32_t dark = (uint32_t(r) << 16) | (uint32_t(gg) << 8) | uint32_t(bb);
+                            frame.row(y)[xoff + dash.width + x] = dash_index(dark, game.palette);
+                        }
                     }
                 }
             }
@@ -187,12 +190,30 @@ struct CourseCanvas {
             // once-per-frame image from above).
             if (need_dash) {
                 const int xoff = margin * 2 * s;
+                const int panel_w = margin * 2 * s;
                 for (int y = 0; y < dash.height && y < scale_h; ++y)
                     for (int x = 0; x < dash.width && x + xoff < scale_w; ++x) {
                         const uint32_t c = dash.at(x, y);
                         if (c == 0x01000000) continue;
                         rgb.row(y)[x + xoff] = 0xff000000u | (c & 0xffffffu);
                     }
+                // Full-width side panels from darkened edge columns.
+                if (margin > 0) {
+                    for (int y = 0; y < dash.height && y < scale_h; ++y) {
+                        const uint32_t lc = dash.at(0, y), rc = dash.at(dash.width - 1, y);
+                        if (lc == 0x01000000 && rc == 0x01000000) continue;
+                        for (int x = 0; x < panel_w; ++x) {
+                            if (lc != 0x01000000) {
+                                const uint8_t r = uint8_t(((lc >> 16) & 0xff) / 2), g = uint8_t(((lc >> 8) & 0xff) / 2), b = uint8_t((lc & 0xff) / 2);
+                                rgb.row(y)[x] = 0xff000000u | (uint32_t(r) << 16) | (uint32_t(g) << 8) | b;
+                            }
+                            if (rc != 0x01000000) {
+                                const uint8_t r = uint8_t(((rc >> 16) & 0xff) / 2), g = uint8_t(((rc >> 8) & 0xff) / 2), b = uint8_t((rc & 0xff) / 2);
+                                rgb.row(y)[xoff + dash.width + x] = 0xff000000u | (uint32_t(r) << 16) | (uint32_t(g) << 8) | b;
+                            }
+                        }
+                    }
+                }
             }
         } else {
         game.assets.scene->draw_horizon(frame,game.race().horizon_scroll(),wide);
