@@ -145,7 +145,7 @@ Task 1 confirms where the original reaches the sound mix and controls handlers a
 
   In `default_settings()`, on Android (`#ifdef __ANDROID__`) set `display_mode = DisplayMode::fullscreen`.
 - [X] **Step 4:** Run the test again. Expected: `0 failures`, PASS.
-- [ ] **Step 5:** Commit: `settings: native display, scaling, vsync and touch fields`.
+- [X] **Step 5:** Commit: `settings: native display, scaling, vsync and touch fields`.
 
 ---
 
@@ -364,7 +364,7 @@ int main(int argc, char** argv) {
   - `frontend.cpp`: the value text of a focused native item is shown in the description box as `"<description>\nCurrent: <value>"`; setters write `Settings`, call `save_settings`, and push a new `FrontendEvent::Kind::apply_display` (add it to the enum) that `game_main.cpp` handles by calling `apply_display`.
   - Background: `background_for` returns the Graphics Options picture (`Postcard/Napa` or `Postcard/QNapa`, see `frontend.cpp` case `0x13`) for the native screens.
 - [X] **Step 4:** Run both tests. Expected: PASS. Then take a menu screenshot: `build/rr-game --assets ../cdrom/ROADRASH --menu-script restroom,graphics,display --menu-frames 60 --screenshot analysis/display-screen.bmp` (add `--menu-script` if it does not exist: a comma list of screen names fed through `MenuInput`). Look at it: fonts, colours, arrow and background must match the neighbouring original screens. Do not commit the screenshot (it contains original art).
-- [ ] **Step 5:** Commit: `frontend: native Display options screen in the original menu style`.
+- [X] **Step 5:** Commit: `frontend: native Display options screen in the original menu style`.
 
 ---
 
