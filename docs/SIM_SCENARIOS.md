@@ -199,3 +199,12 @@ fields and measured player.demo_hold=1; it is likewise forensic-only. It
 shows the candidate takes3840-unit nudges at208/209 with dt4, while native
 dt1 leaves an extra contact at210. Capture and translate scheduler metadata
 next. Neither file replaces the old accepted fixtures or relaxes parity.
+
+## Scheduler-metadata capture (plan 10 Task 6 fix order #1c, not acceptance)
+
+`sched900` recipe (same as frozen900 plus scheduler words): course 4,
+seed 1, drive 2, solo, SIM, `RR_ORACLE_FRAMES=900`. The proxy dumps
+per-tick `sched.<addr>.next/last/interval/dt` for type-4 nodes and
+`rider.<slot>.bike_c/bike_10/bike_14` for slotted riders. Purpose: prove
+the frozen interval and last-tick cadence (expected interval 4, lasts
+1,5,...,209) before translating the `0x00437e60` cadence natively.

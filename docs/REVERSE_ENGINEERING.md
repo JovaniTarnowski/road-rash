@@ -1212,3 +1212,32 @@ records last ticks1,5,...205,209. This is the next native translation gap.
 Evidence: retained private worktree analysis/sim-forensics and validated
 `codex-sim-frozen900` / `codex-sim-mask300` receipts, worker handoffs and
 synthetic actual-wrapper mutation tests. Commercial traces stay local.
+
+## Scheduler metadata capture spec (October 15, 2026, plan 10 Task 6 fix order #1c)
+
+REA 6.4.0 confirms both scheduler functions against the project exports
+(`0x00437e60` body `0x437e60-0x43816d`, 782 bytes; `0x00438170` all 89 lines).
+All four header words are 32-bit signed ints; gates are signed compares
+(`cmpl` + `jle`/`jge`/`jl`); `+0xc4` masks are unsigned byte tests.
+Element scaling verified: byte-explicit offsets in both functions,
+int-indexed `[3]/[4]/[5]/[6]` in `0x00438930` are bytes `0x0c/0x10/0x14/0x18`.
+
+- `+0x0c` next: `0x00437e60:153` writes `+0x14 + tick` (32-bit wrap,
+  `438108-438113`); driver tail `0x00438170:79-80` also rewrites the player
+  bike `DAT_004642d8` word every frame.
+- `+0x10` last: `0x00437e60:11-12` writes `tick` on every scheduled run,
+  including frozen (NULL think/move) nodes; init `0x00438930.c:23`.
+- `+0x14` interval: init from template-image dword +8 (`0x00438930.c:22`,
+  `43897f-438984`); live recompute in the `0x00437e60` tail, skipped when
+  frozen. Actual value comes from the capture, never hardcoded.
+- `+0x18` dt: `0x00437e60:13` writes `tick - old_last` (signed `subl`,
+  `437e69`); init 0.
+
+The oracle now dumps per-tick `sched.<addr>.next/last/interval/dt` for
+type-4 nodes plus `rider.<slot>.bike_c/bike_10/bike_14` for slotted riders.
+Expected solo-freeze cadence (unproven until captured): interval 4 with
+lasts 1,5,...,205,209 on the primary `+0x0c <= tick` gate. The native
+translation waits for that record; no dt value is assumed in `src/race.*`.
+
+Evidence: `docs/agent-handoffs/sched-cadence-20261015.md`,
+`sched-interval-writer-20261015.md`, `sched-metadata-trace-20261015.md`.

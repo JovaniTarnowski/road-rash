@@ -370,3 +370,14 @@ Task5/6 acceptance remains open. The new capture still diverges at210, but
 now proves frozen scheduler dt4 versus native1. Next: record +0c/+10/+14/+18
 and translate `0x00437e60` metadata cadence even with NULL callbacks, then
 rerun the same trace before progressing beyond the first divergence.
+
+### October 15 scheduler-metadata dump (Task 6 fix order #1c)
+
+The oracle dumps per-tick scheduler state without changing any call site:
+`sched.<addr>.next/last/interval/dt` for type-4 nodes (address-keyed like
+the `ring.%x` car slots; the first-frame `nodeaddr` block maps address to
+grid position) plus `+0x0c/+0x10/+0x14` in the slotted-rider `extra[]`
+window (existing `+0x18` kept). REA 6.4.0 corroborates `0x00437e60` and
+`0x00438170`; see the capture spec in `REVERSE_ENGINEERING.md` and the
+`sched900` recipe in `SIM_SCENARIOS.md`. Native translation is intentionally
+deferred until that capture lands: no interval is hardcoded in `src/race.*`.

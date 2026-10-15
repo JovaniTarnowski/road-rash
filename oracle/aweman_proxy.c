@@ -425,9 +425,11 @@ static void dump_sim_tick(void) {
                 rr_log(key, sim_field_value(node, 0x10c, 4, 1));
                 snprintf(key, sizeof key, "rider.%d.yaw60", slot);
                 rr_log(key, sim_field_value(node, 0x60, 4, 1));
-                /* Steer-rate and limit words (+0x2a0..+0x2b0) plus tick delta (+0x18):
-                 * pins down steer ramp-rate divergences. */
-                static const uint32_t extra[] = {0x18, 0x2a0, 0x2a4, 0x2a8, 0x2ac, 0x29c, 0x2b0, 0x2d0, 0x2d4,
+                /* Steer-rate and limit words (+0x2a0..+0x2b0), tick delta (+0x18),
+                 * scheduler metadata (+0x0c next, +0x10 last, +0x14 interval),
+                 * rpm + caches + snap (+0x2dc/+0x44): pins down steer
+                 * ramp-rate and scheduler-cadence divergences. */
+                static const uint32_t extra[] = {0x18, 0x0c, 0x10, 0x14, 0x2a0, 0x2a4, 0x2a8, 0x2ac, 0x29c, 0x2b0, 0x2d0, 0x2d4,
                                                  0x2dc, 0x2e8, 0x44};   // plan 11a Task 2 Step 5: rpm + caches + snap
                 for (unsigned e = 0; e < sizeof extra / sizeof extra[0]; ++e) {
                     snprintf(key, sizeof key, "rider.%d.bike_%x", slot, extra[e]);
@@ -440,6 +442,23 @@ static void dump_sim_tick(void) {
                 rr_log(key, sim_field_value(node, 0x1c, 4, 1));
                 snprintf(key, sizeof key, "node.%d.kind", node_index);
                 rr_log(key, sim_field_value(node, 0x73, 1, 0));
+                /* Scheduler metadata (+0x0c next, +0x10 last, +0x14 interval,
+                 * +0x18 dt): 0x00437e60 rewrites last/next/dt on every
+                 * scheduled run even with NULL think/move, so frozen nodes
+                 * keep evolving while only the interval recompute is skipped.
+                 * Keyed by node address like the ring.%x car slots; the
+                 * first-frame nodeaddr block maps address to grid position. */
+                if (readable(node, 0x1c) && readable(node + 0xc4, 4) &&
+                    sim_field_value(node, 0xc4, 4, 0) == 4) {
+                    snprintf(key, sizeof key, "sched.%x.next", node);
+                    rr_log(key, sim_field_value(node, 0x0c, 4, 1));
+                    snprintf(key, sizeof key, "sched.%x.last", node);
+                    rr_log(key, sim_field_value(node, 0x10, 4, 1));
+                    snprintf(key, sizeof key, "sched.%x.interval", node);
+                    rr_log(key, sim_field_value(node, 0x14, 4, 1));
+                    snprintf(key, sizeof key, "sched.%x.dt", node);
+                    rr_log(key, sim_field_value(node, 0x18, 4, 1));
+                }
                 /* Car pool slots (0x0049e654, 16 x 0x210, template 0x00475698,
                  * type 0x10): dump rr_sim_car_fields as ring.<addr>.<field>
                  * (plan 24 Task 1 Step 5). The native replay matches slots by

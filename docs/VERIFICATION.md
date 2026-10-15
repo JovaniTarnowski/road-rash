@@ -1097,3 +1097,17 @@ timer-kill code were not incorporated into the production correction.
 - Android/device/package gates not run for these oracle/test-only changes.
   True human-control capture, full single-anchor parity and actor pixel
   acceptance remain open.
+
+## October 15, 2026: scheduler-metadata dump (plan 10 Task 6 fix order #1c)
+
+- Oracle MinGW cross-build (`oracle/build.sh`, -O2 -Wall) exits 0 with the
+  `sched.<addr>.next/last/interval/dt` per-tick block and the three added
+  slotted-rider `extra[]` words. No call site changed, so the
+  `oracle-patch` preflight table is untouched.
+- Native Debug configure/build in `build-verify-20261015` exits 0.
+- Focused CTest `oracle-patch|oracle-actor-record|frozen_state|sim_fields|
+  oracle-sim` 5/5 pass. `oracle-sim` still reports the known tick-210
+  divergence on existing goldens; no golden or divergence rule changed.
+- REA 6.4.0 (pinned, env per TOOLING.md) corroborates `0x00437e60` and
+  `0x00438170`; see `docs/agent-handoffs/sched-metadata-trace-20261015.md`.
+  Native `src/race.*` translation deferred until the `sched900` capture.
