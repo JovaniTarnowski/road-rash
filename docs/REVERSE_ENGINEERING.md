@@ -1393,3 +1393,18 @@ section-enter re-running terrain init (16 hill draws) during its step
 walker whose section differs from assumed; (c) a second draw site in the
 step path. Needs per-site draw counters plus section-boundary data, then
 the matching oracle walker keys. No hill/wall/stepping code touched.
+
+## Tick-189 per-tick draw parity (October 16, plan 10)
+
+Per-tick draw counts (native instrumented run vs golden f-chain) match
+exactly on every drawing tick through 188 (80:24, 111:21, 135:27,
+149-151:2s, 160:30) -- no masked cancellation. The tick-189 gap (24 vs
+27) is therefore a single-tick, single-slice event, not drift fallout.
+Walker pre-step state there (back node20/pos1536/hillrec0,
+front node20/pos34304/hillrec7, next starts 24/150) shows no hill record
+advance under the native rules, so the 27 native draws are unattributed
+by every known ring site (BORR/DZHR recount 0, no wall section, no
+re-entry). Prime suspects left: a walker section-enter re-running
+terrain init, or walker positions having drifted silently earlier
+(positions/indices are never dumped). Next: per-site draw counters plus
+walker-state oracle keys. Probes reverted; tree clean.
