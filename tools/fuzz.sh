@@ -50,6 +50,7 @@ if [ "$SEED_FROM_DISC" = 1 ]; then
     seed_find fuzz_bobs '(' -name '*.BOB' -o -path '*/BIKERS/*.DAT' ')'
     seed_find fuzz_avi -name '*.AVI'
     seed_find fuzz_audio '(' -name '*.WAV' -o -name '*.RRA' ')'
+    seed_find fuzz_music '(' -iname '*.mid' -o -iname '*.sbk' ')'
     seed_find fuzz_pe -path '*/TEXT/*.DLL'
     seed_find fuzz_rri -name '*.RRI'
     mkdir -p "$LOCAL/fuzz_exe_tables"

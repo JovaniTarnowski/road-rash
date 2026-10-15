@@ -6,7 +6,9 @@
 // program so tools/fuzz.sh never fuzzes from corrupt seeds. Output is fully
 // deterministic, so re-running never dirties the tree.
 #include <array>
+#include <cmath>
 #include <cstdint>
+#include <cstring>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
@@ -24,6 +26,7 @@
 #include "ima_adpcm.hpp"
 #include "iso9660.hpp"
 #include "pe_strings.hpp"
+#include "race_music.hpp"
 #include "resource.hpp"
 #include "rri.hpp"
 #include "settings.hpp"
@@ -232,6 +235,119 @@ const uint8_t kGrayJpeg[] = {
     245,246,247,248,249,250,255,218,0,8,1,1,0,0,63,0,43,255,217
 };
 
+// tests/music_test.cpp minimal MIDS: one block, one note-on + note-off.
+Bytes music_mids_bytes() {
+    Bytes b;
+    auto put = [&](const void* p, size_t n) {
+        const uint8_t* q = static_cast<const uint8_t*>(p);
+        b.insert(b.end(), q, q + n);
+    };
+    auto u32 = [&](uint32_t v) {
+        uint8_t q[4] = {uint8_t(v), uint8_t(v >> 8), uint8_t(v >> 16), uint8_t(v >> 24)};
+        put(q, 4);
+    };
+    const uint32_t ev_bytes = 24;
+    const uint32_t data_bytes = 4 + 8 + ev_bytes;
+    const uint32_t riff = 4 + 8 + 12 + 8 + data_bytes;
+    put("RIFF", 4);
+    u32(riff);
+    put("MIDS", 4);
+    put("fmt ", 4);
+    u32(12);
+    u32(480);
+    u32(4096);
+    u32(0);
+    put("data", 4);
+    u32(data_bytes);
+    u32(1);
+    u32(0);
+    u32(ev_bytes);
+    u32(0);
+    u32(0);
+    u32(0x00402190u);
+    u32(480);
+    u32(0);
+    u32(0x00002180u);
+    return b;
+}
+
+// tests/music_test.cpp minimal SF1: one melodic preset (program 30,
+// bank 0), one zone, one 16-sample loop.
+Bytes music_sf1_bytes() {
+    Bytes b;
+    auto put = [&](const void* p, size_t n) {
+        const uint8_t* q = static_cast<const uint8_t*>(p);
+        b.insert(b.end(), q, q + n);
+    };
+    auto u32 = [&](uint32_t v) {
+        uint8_t q[4] = {uint8_t(v), uint8_t(v >> 8), uint8_t(v >> 16), uint8_t(v >> 24)};
+        put(q, 4);
+    };
+    Bytes info, sdta, pdta;
+    auto info_chunk = [&](const char* tag, const std::vector<uint8_t>& p) {
+        size_t o = info.size();
+        info.resize(o + 8 + p.size() + (p.size() & 1));
+        memcpy(info.data() + o, tag, 4);
+        info[o + 4] = uint8_t(p.size());
+        info[o + 5] = uint8_t(p.size() >> 8);
+        info[o + 6] = uint8_t(p.size() >> 16);
+        info[o + 7] = uint8_t(p.size() >> 24);
+        memcpy(info.data() + o + 8, p.data(), p.size());
+    };
+    info_chunk("ifil", {1, 0, 0, 0});
+    std::vector<int16_t> sine(16);
+    for (int i = 0; i < 16; ++i) sine[i] = int16_t(lrint(20000.0 * sin(i * 6.2831853 / 16)));
+    Bytes smpl(32);
+    memcpy(smpl.data(), sine.data(), 32);
+    size_t o = sdta.size();
+    sdta.resize(o + 8 + 32);
+    memcpy(sdta.data() + o, "smpl", 4);
+    sdta[o + 4] = 32;
+    memcpy(sdta.data() + o + 8, smpl.data(), 32);
+    auto pdta_chunk = [&](const char* tag, const std::vector<uint8_t>& p) {
+        size_t q = pdta.size();
+        pdta.resize(q + 8 + p.size() + (p.size() & 1));
+        memcpy(pdta.data() + q, tag, 4);
+        pdta[q + 4] = uint8_t(p.size());
+        pdta[q + 5] = uint8_t(p.size() >> 8);
+        pdta[q + 6] = uint8_t(p.size() >> 16);
+        pdta[q + 7] = uint8_t(p.size() >> 24);
+        memcpy(pdta.data() + q + 8, p.data(), p.size());
+    };
+    Bytes phdr(76, 0);
+    memcpy(phdr.data(), "TestPreset", 10);
+    phdr[20] = 30;
+    phdr[38 + 24] = 1;
+    pdta_chunk("phdr", phdr);
+    pdta_chunk("pbag", {0, 0, 0, 0, 1, 0, 0, 0});
+    pdta_chunk("pgen", {41, 0, 0, 0});
+    Bytes inst(44, 0);
+    inst[20] = 0;
+    inst[22 + 20] = 1;
+    pdta_chunk("inst", inst);
+    pdta_chunk("ibag", {0, 0, 0, 0, 3, 0, 0, 0});
+    pdta_chunk("igen", {43, 0, 0, 127, 58, 0, 60, 0, 53, 0, 0, 0});
+    pdta_chunk("shdr", {0, 0, 0, 0, 16, 0, 0, 0, 0, 0, 0, 0, 16, 0, 0, 0});
+    Bytes body;
+    auto list = [&](const char* kind, const Bytes& inner) {
+        size_t q = body.size();
+        body.resize(q + 12 + inner.size());
+        memcpy(body.data() + q, "LIST", 4);
+        uint32_t sz = uint32_t(4 + inner.size());
+        memcpy(body.data() + q + 4, &sz, 4);
+        memcpy(body.data() + q + 8, kind, 4);
+        memcpy(body.data() + q + 12, inner.data(), inner.size());
+    };
+    list("INFO", info);
+    list("sdta", sdta);
+    list("pdta", pdta);
+    put("RIFF", 4);
+    u32(uint32_t(4 + body.size()));
+    put("sfbk", 4);
+    put(body.data(), body.size());
+    return b;
+}
+
 // tests/career_test.cpp synthetic tables.
 rr::CareerTables career_tables() {
     rr::CareerTables t;
@@ -251,7 +367,7 @@ int main(int argc, char** argv) {
     for (const char* target : {"fuzz_settings", "fuzz_resources", "fuzz_unpack", "fuzz_cel", "fuzz_family",
                                "fuzz_course", "fuzz_terrain", "fuzz_cars", "fuzz_animation", "fuzz_bobs",
                                "fuzz_avi", "fuzz_audio", "fuzz_iso", "fuzz_pe", "fuzz_rri", "fuzz_save",
-                               "fuzz_exe_tables"})
+                               "fuzz_exe_tables", "fuzz_music"})
         write_seed(root, target, "empty", empty);
 
     {  // settings: formatted defaults round-trip.
@@ -342,6 +458,14 @@ int main(int argc, char** argv) {
         const Bytes jpg(std::begin(kGrayJpeg), std::end(kGrayJpeg));
         write_seed(root, "fuzz_rri", "seed-1.jpg", jpg);
         check(rr::decode_rri(jpg).width == 1 && rr::decode_rri(jpg).pixels.size() == 1, "rri seed");
+    }
+    {  // music: minimal MIDS song + minimal SF1 bank (tests/music_test.cpp).
+        const Bytes song = music_mids_bytes();
+        write_seed(root, "fuzz_music", "seed-1.mid", song);
+        check(rr::read_mids(song).events.size() == 2, "music mids seed");
+        const Bytes bank = music_sf1_bytes();
+        write_seed(root, "fuzz_music", "seed-1.sbk", bank);
+        check(!rr::read_sf1(bank, true)->zones.empty(), "music sf1 seed");
     }
     {  // save: Big Game start for character 1 written by the game code.
         const rr::CareerTables t = career_tables();
