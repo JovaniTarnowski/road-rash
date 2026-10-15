@@ -1,4 +1,5 @@
 #include "resource.hpp"
+#include "explode.hpp"
 #include <iostream>
 #include <functional>
 
@@ -21,6 +22,20 @@ int main() {
     word(56,0xffffffff); reject(b); word(56,1);
     word(16,0xfffffff0); reject(b); word(16,48);
     b[0]=0; reject(b);
+    auto reject_unpack = [&](const std::vector<uint8_t>& u) {
+        try { (void)rr::unpack_resource(u); ++failures; }
+        catch (const std::runtime_error&) {}
+        catch (...) { ++failures; }
+    };
+    // Plan 22 Task 3 Step 3: uncompressed resource where stored != unpacked must be rejected
+    reject_unpack({100,0,0,0, 4,0,0,0, 0,0,0,0, 0,0,0,0, 1,2,3,4});
+    // Oversized expected unpacked length (> 16 MiB) rejected before allocation
+    reject_unpack({0,0,0,2, 0,0,0,0, 0,0,0,0, 0,0,0,0});
+    try {
+        const uint8_t raw[2] = {0, 4};
+        (void)rr::explode(raw, 2, (1u << 24) + 1);
+        ++failures;
+    } catch (const std::runtime_error&) {}
     std::cout << failures << " failures\n";
     return failures ? 1 : 0;
 }

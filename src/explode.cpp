@@ -1,9 +1,13 @@
 #include "explode.hpp"
+#include "byte_reader.hpp"
+#include <algorithm>
 #include <array>
 #include <stdexcept>
 
 namespace rr {
 namespace {
+constexpr size_t max_unpacked_resource_size = 1u << 24;
+
 // Canonical Huffman code of the PKWARE DCL format, built from run-length code lengths
 // (each byte: low nibble = length, high nibble + 1 = repeat count). Codes are stored inverted.
 struct Huffman {
@@ -59,13 +63,13 @@ constexpr uint8_t length_extra[16] = {0, 0, 0, 0, 0, 0, 0, 0, 1, 2, 3, 4, 5, 6, 
 }
 
 std::vector<uint8_t> explode(const uint8_t* data, size_t size, size_t expected) {
-    if (expected > (1u << 26)) throw std::runtime_error("Unpacked size too large");
+    if (expected > max_unpacked_resource_size) throw std::runtime_error("Unpacked size too large");
     Bits in{data, size};
     const uint32_t coded = in.get(8), dict = in.get(8);
     if (coded > 1) throw std::runtime_error("Invalid literal mode");
     if (dict < 4 || dict > 6) throw std::runtime_error("Invalid dictionary size");
     std::vector<uint8_t> out;
-    out.reserve(expected);
+    out.reserve(std::min<size_t>(expected, 65536));
     for (;;) {
         if (in.get(1)) {
             const int s = in.decode(length_code());
@@ -97,16 +101,17 @@ uint32_t crc32_update(uint32_t crc, const uint8_t* p, size_t n) {
 
 std::vector<uint8_t> unpack_resource(const std::vector<uint8_t>& b) {
     if (b.size() < 16) throw std::runtime_error("Truncated resource header");
-    auto u32 = [&](size_t p) { return uint32_t(b[p]) | uint32_t(b[p + 1]) << 8 | uint32_t(b[p + 2]) << 16 | uint32_t(b[p + 3]) << 24; };
-    const uint32_t unpacked = u32(0), stored = u32(4), crc = u32(8), compressed = u32(12);
-    if (stored > b.size() - 16) throw std::runtime_error("Resource data outside payload");
+    const ByteReader r(b);
+    const uint32_t unpacked = r.le<uint32_t>(0), stored = r.le<uint32_t>(4),
+                   crc = r.le<uint32_t>(8), compressed = r.le<uint32_t>(12);
+    if (unpacked > max_unpacked_resource_size) throw std::runtime_error("Unpacked size too large");
+    const auto payload = r.bytes(16, stored);
     if (!compressed) {
-        if (stored > unpacked) throw std::runtime_error("Stored resource larger than its size");
-        std::vector<uint8_t> out(b.begin() + 16, b.begin() + 16 + stored);
-        out.resize(unpacked);
-        return out;
+        // 0x00415550/0x004157b0: uncompressed payloads copy `stored` bytes directly without reallocating to `unpacked`.
+        if (stored != unpacked) throw std::runtime_error("Stored resource size mismatch");
+        return std::vector<uint8_t>(payload.begin(), payload.end());
     }
-    auto out = explode(b.data() + 16, stored, unpacked);
+    auto out = explode(payload.data(), payload.size(), unpacked);
     if (~crc32_update(0xffffffffu, out.data(), out.size()) != crc) throw std::runtime_error("Resource CRC mismatch");
     return out;
 }
