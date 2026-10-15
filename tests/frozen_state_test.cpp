@@ -67,5 +67,22 @@ int main() {
     check(r[1].bike.i32(0x28)==-123 && r[1].bike.i32(0x3c)==-123 && r[1].bike.i32(0x108)==0,"legacy demo lateral-only fallback");
     r=riders(); rr::golden::apply_frozen_state({},r,true);
     check(r[1].bike.i32(0x28)==888,"legacy no node dump preserves grid");
+    // Scheduler metadata hydrates from sched-era captures; legacy declared
+    // captures keep the build dt 1 with sched_live false.
+    auto s=capture(); s["sched.64.last"]=1; s["sched.64.next"]=5;
+    s["sched.64.interval"]=4; s["sched.64.dt"]=5;
+    r=riders(); rr::golden::apply_frozen_state(s,r,true);
+    check(r[1].sched_live && r[1].sched_last==1 && r[1].sched_next==5 && r[1].sched_interval==4,"sched metadata hydrates");
+    check(r[1].bike.i32(0x18)==5,"post-tick-1 dt lands in bike +0x18");
+    r=riders(); rr::golden::apply_frozen_state(capture(),r,true);
+    check(!r[1].sched_live && r[1].bike.i32(0x18)==riders()[1].bike.i32(0x18),"legacy declared capture keeps build dt");
+    auto partial=s; partial.erase("sched.64.dt");
+    auto pr=riders(); bool sched_threw=false;
+    try {rr::golden::apply_frozen_state(partial,pr,true);} catch(const std::runtime_error&) {sched_threw=true;}
+    check(sched_threw && pr[1].bike.i32(0x28)==888 && !pr[1].sched_live,"partial sched keys fail atomically");
+    auto bad_iv=s; bad_iv["sched.64.interval"]=0;
+    auto br=riders(); bool iv_threw=false;
+    try {rr::golden::apply_frozen_state(bad_iv,br,true);} catch(const std::runtime_error&) {iv_threw=true;}
+    check(iv_threw && !br[1].sched_live,"non-positive interval rejected");
     std::cout<<failures<<" failures\n"; return failures?1:0;
 }

@@ -1111,3 +1111,23 @@ timer-kill code were not incorporated into the production correction.
 - REA 6.4.0 (pinned, env per TOOLING.md) corroborates `0x00437e60` and
   `0x00438170`; see `docs/agent-handoffs/sched-metadata-trace-20261015.md`.
   Native `src/race.*` translation deferred until the `sched900` capture.
+
+## October 15, 2026: frozen cadence translation + solo traffic isolation (plan 10)
+
+- `sched900-20261015.tsv` (900 ticks, complete, exit 0, exe `73d7f974`,
+  proxy `1b8e2357`): single-anchor `--driver=demo` replay reaches frame 375
+  (tick 376), from tick 210 before. Ticks 208/209 now take the original
+  3840-unit dt-4 nudges; RNG in sync throughout.
+- Old goldens byte-identical: `sim-napa-solo-human` tick-210 rng pair,
+  `sim-napa-solo` tick-222 lateral, `codex-sim-frozen900`/`mask300`
+  tick-210 (no sched keys -> legacy path, unchanged).
+- Focused `frozen_state` (new sched hydration/atomicity cases),
+  `sim_fields`, `bike`, `car_contact`, `oracle-sim` pass in
+  `build-verify-20261015`. Full native gate 96/97: the single failure is
+  `agent-tooling` (`test_doc_checks_pass`: `00-INDEX.md: no row for
+  32-completion-review-next-steps.md`), caused by an untracked plan file
+  from another worker that this slice neither created nor touches. Left
+  in place per shared-tree rules; reported, not blessed.
+- Next: tick-376 single draw = `0x0044dd90` spawn-timer lane pick against
+  the nulled pool (Task 7 timer port). REA/pseudocode reads only; no
+  capture mop-up needed (sched900 already carries the evidence).

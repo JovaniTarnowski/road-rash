@@ -1791,9 +1791,20 @@ void Race::ai_state_fight(Rider& r) {
     ai_speed_steer(r);
 }
 
+void Race::step_frozen_schedule(Rider& r) {
+    // 0x00437e60 head + LAB_00438108: last/next/dt evolve on every scheduled
+    // run even with NULL think/move; only the interval recompute is skipped.
+    // Same gate shape as the traffic/pedestrian cadence. Runs only for riders
+    // hydrated from sched.* capture keys; legacy captures and live games keep
+    // sched_live false and the build dt 1. No RNG, no allocation.
+    if (!r.sched_live || r.sched_next > ticks_) return;
+    r.bike.i32(0x18) = ticks_ - r.sched_last;
+    r.sched_last = ticks_;
+    r.sched_next = ticks_ + r.sched_interval;
+}
 void Race::step_rider(Rider& r, uint32_t controls, bool player) {
     Bike& b = r.bike;
-    if (r.frozen) return;   // solo oracle: the scheduler never runs this node
+    if (r.frozen) { step_frozen_schedule(r); return; }   // solo oracle: the scheduler runs metadata, never think/move
     if (r.finished) {   // coast to a stop past the line
         drive_mode(b, 0);
         integrate_speed(b, tables_, 0);
@@ -2185,13 +2196,15 @@ void Race::countdown_step() {
     ++ticks_;
     // 0x00438930 stores the player bike's last run as creation tick - 1
     // (template interval 1), so its first scheduled tick sees dt 2
-    // (measured: solo captures, tick 1). Opponents follow the distance-based
-    // 0x00437e60 cadence, which is not modelled: they keep dt 1.
+    // (measured: solo captures, tick 1). Hydrated frozen opponents follow
+    // their captured 0x00437e60 cadence (interval 4, lasts 1,5,...);
+    // legacy captures and live games keep dt 1 there.
     countdown_started_ = true;
     if (!riders_.empty()) riders_[0].bike.i32(0x18) = ticks_ == 1 ? 2 : 1;
     for (size_t i = 0; i < riders_.size(); ++i) {
         Rider& r = riders_[i];
-        if (r.frozen || r.finished || r.bike.i32(0x2f4) != 0) continue;
+        if (r.frozen) { step_frozen_schedule(r); continue; }
+        if (r.finished || r.bike.i32(0x2f4) != 0) continue;
         if (r.ai || (demo_hold_ && i == 0)) ai_think(r);
     }
 }

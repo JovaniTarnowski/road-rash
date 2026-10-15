@@ -381,3 +381,12 @@ window (existing `+0x18` kept). REA 6.4.0 corroborates `0x00437e60` and
 `0x00438170`; see the capture spec in `REVERSE_ENGINEERING.md` and the
 `sched900` recipe in `SIM_SCENARIOS.md`. Native translation is intentionally
 deferred until that capture lands: no interval is hardcoded in `src/race.*`.
+
+### October 15 translation (Task 6 fix order #1c done for cadence)
+
+Native models the frozen `0x00437e60` cadence (`Rider::sched_*`,
+`sched_live`-gated stepping, capture hydration, dt into bike `+0x18` so
+both `contact` directions push correctly) and solo replay detaches native
+traffic to match the nulled pool. sched900 replay: first divergence tick
+376 (was 210). Next cause isolated to the `0x0044dd90` spawn-timer lane
+draw against the nulled pool -- Task 7 scope (timer state/rates/taps).

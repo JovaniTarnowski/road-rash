@@ -1,5 +1,6 @@
 #pragma once
 #include "race.hpp"
+#include <cstdio>
 #include <limits>
 #include <map>
 #include <set>
@@ -55,6 +56,8 @@ inline void apply_frozen_state(const std::map<std::string, int64_t>& header,
         int32_t lateral, half_lateral;
         std::array<int32_t, 9> words{};
         uint8_t flags = 0;
+        bool sched = false;
+        int32_t sched_last = 0, sched_next = 0, sched_interval = 1, sched_dt = 1;
     };
     std::vector<State> states;
     std::set<int32_t> native_positions;
@@ -82,6 +85,34 @@ inline void apply_frozen_state(const std::map<std::string, int64_t>& header,
             const int64_t flags = required(key + ".bike_c0");
             if (flags < 0 || flags > 255) throw std::runtime_error("frozen state byte out of range: " + key + ".bike_c0");
             state.flags = uint8_t(flags);
+            // Scheduler metadata (0x00437e60): per-tick sched.<addr>.* keys
+            // share frame 0 with the node dump. Present in sched900-era
+            // captures; legacy captures keep the build dt 1 (sched false).
+            auto sched = [&](const char* field) -> const int64_t* {
+                char skey[64];
+                std::snprintf(skey, sizeof skey, "sched.%x.%s",
+                              uint32_t(bike->second.address), field);
+                auto it = header.find(skey);
+                return it == header.end() ? nullptr : &it->second;
+            };
+            const int64_t* s_last = sched("last");
+            const int64_t* s_next = sched("next");
+            const int64_t* s_interval = sched("interval");
+            const int64_t* s_dt = sched("dt");
+            if (s_last || s_next || s_interval || s_dt) {
+                if (!s_last || !s_next || !s_interval || !s_dt)
+                    throw std::runtime_error("frozen state partial sched keys at " + std::to_string(position));
+                for (const int64_t* v : {s_last, s_next, s_interval, s_dt})
+                    if (*v < std::numeric_limits<int32_t>::min() || *v > std::numeric_limits<int32_t>::max())
+                        throw std::runtime_error("frozen state sched out of range at " + std::to_string(position));
+                if (*s_interval < 1)
+                    throw std::runtime_error("frozen state non-positive interval at " + std::to_string(position));
+                state.sched = true;
+                state.sched_last = int32_t(*s_last);
+                state.sched_next = int32_t(*s_next);
+                state.sched_interval = int32_t(*s_interval);
+                state.sched_dt = int32_t(*s_dt);
+            }
         } else {
             const auto bl = old_bike_lat.find(position), hl = old_half_lat.find(position);
             if (bl == old_bike_lat.end() || hl == old_half_lat.end())
@@ -96,6 +127,13 @@ inline void apply_frozen_state(const std::map<std::string, int64_t>& header,
         if (declared) {
             for (size_t i = 0; i < state.words.size(); ++i) r.bike.i32(offsets[i]) = state.words[i];
             r.bike.u8(0xc0) = state.flags;
+            if (state.sched) {
+                r.sched_last = state.sched_last;
+                r.sched_next = state.sched_next;
+                r.sched_interval = state.sched_interval;
+                r.sched_live = true;
+                r.bike.i32(0x18) = state.sched_dt;
+            }
         } else {
             for (int k = 0; k < 5; ++k) r.bike.i32(0x30 + 4*k) = r.bike.i32(0x1c + 4*k);
         }

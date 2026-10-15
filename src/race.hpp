@@ -172,6 +172,15 @@ struct Rider {
     size_t sample = 0, previous_sample = 0; // bike +0x140 / +0x13c
     bool ai = false;
     bool frozen = false;                    // solo oracle: think/move nulled, scanned but never stepped
+    // Frozen scheduler metadata (0x00437e60 head + LAB_00438108): last/next/dt
+    // evolve on every scheduled run even with NULL think/move; only the
+    // interval recompute is skipped. Hydrated once from sched.* capture keys;
+    // sched_live stays false for legacy captures and live games, where the
+    // build dt 1 is kept. Bike +0x18 mirrors the live dt word.
+    int32_t sched_last = 0;                 // bike +0x10
+    int32_t sched_next = 0;                 // bike +0x0c
+    int32_t sched_interval = 1;             // bike +0x14
+    bool sched_live = false;
     // Rider half (type 8 scheduler object): rides with the bike, so its
     // lateral is the bike's unless detached (frozen solo nodes keep the
     // placement lateral while the bike's differs; measured from the dump).
@@ -341,6 +350,7 @@ private:
     void crash(Rider&);
     void step_crash(Rider&,bool player,uint32_t controls);
     void step_rider(Rider&, uint32_t controls, bool player);
+    void step_frozen_schedule(Rider&);       // 0x00437e60 metadata cadence for hydrated frozen riders
     void collide_riders();                  // 0x004368f0 list walk: bikes, pedestrians, hazard gate
     void contact_rider_pedestrian(Rider&, Pedestrian&, bool rider_outer);
     void separate(Rider& outer, uint32_t outer_type, Rider& partner, uint32_t partner_type);   // 0x00436a40

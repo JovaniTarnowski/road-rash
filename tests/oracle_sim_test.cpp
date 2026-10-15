@@ -405,6 +405,12 @@ int main(int argc, char** argv) {
     }
     rr::RaceSetup setup = rr::make_race_setup(assets, exe, config);
     rr::Race& race = *setup.instance.race;
+    // Solo isolation (plan 10 Task 5): the oracle nulls the traffic pool, so
+    // 0x0044df60 never places cars. The native equivalent is no traffic
+    // system at all: any native spawn consumes draws the original never
+    // makes (measured on sched900: first native spawn at tick 319, 6 draws,
+    // no golden counterpart). Field scenarios keep traffic.
+    if (solo) race.set_traffic(nullptr);
     // The factory's last RNG draw is the ring setup's end (0x004552e0);
     // the countdown then consumes ring.post_draws (11) before green.
     const std::optional<uint32_t> ring_end_state = race.rng_state();

@@ -1241,3 +1241,32 @@ translation waits for that record; no dt value is assumed in `src/race.*`.
 
 Evidence: `docs/agent-handoffs/sched-cadence-20261015.md`,
 `sched-interval-writer-20261015.md`, `sched-metadata-trace-20261015.md`.
+
+## Frozen scheduler cadence translated; tick-376 traffic-timer draw (October 15, 2026, plan 10)
+
+`sched900-20261015` (course 4, seed 1, drive 2, solo, SIM, 900 ticks,
+proxy `1b8e2357`) proves the predicted cadence: all 14 frozen type-4 bikes
+hold interval 4 with lasts 1,5,...,205,209 and dt 4 (first window dt 5 from
+the build `+0x10 = tick - interval` init). The live player keeps interval 1.
+Native `Rider` now carries `sched_last/next/interval` plus a `sched_live`
+gate, stepped for frozen riders in `step()`/`countdown_step()` before the
+early return (traffic/pedestrian gate shape); `tests/frozen_state.hpp`
+hydrates them plus bike `+0x18` (dt) from per-tick `sched.<addr>.*` keys.
+Legacy captures without sched keys keep `sched_live` false and dt 1, so
+their signatures are byte-identical. Solo replay detaches native traffic:
+the oracle zeroes the pool count (`RD32(0x0049e654) = 0`), so native
+spawns (first at tick 319, 6 draws, no golden counterpart) are isolation
+breaks, not model gaps. Replay moved 210 -> 319 -> 376 on sched900.
+
+Tick 376 is a single original draw with no visible state change anywhere in
+the dump. Mechanism, read from the exports (no guessing): `0x0044dd90`
+(free-traffic spawn timers, three distance-driven branches) draws one lane
+pick `FUN_00441750() % lanes` whenever a timer expires with lane count > 0,
+then calls `0x0044df60`, whose FIRST statement (`0044df60.c`) returns on the
+nulled pool (`DAT_0049e654 == 0`) before any draw. So the expiry consumes
+exactly one stream draw and places no car. Porting the timer state
+(`DAT_004b7e80/90/94`, rates `88/9c/a4`, tap-point lane words) is plan 10
+Task 7 work; the live `0x00437e60` cadence for frozen nodes is done.
+The spare player half (think `0x00434660`, slot rider.1) stays live in solo
+captures with interval 1, mirroring the bike; it drew nothing through
+tick 375 and has no native counterpart (open).

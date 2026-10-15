@@ -835,3 +835,15 @@ Evidence: handoffs `25-1/2/3/5/6/7`, `26-1/2/3`, review
   82 fast + soak/oracle green at Tasks 2–3. Task 4 (`RaceScreen`) in
   progress (shelved for the review findings; stash
   `plan28-task4-wip-shelved-for-review-findings`).
+
+### October 15, 2026: frozen scheduler cadence translated, replay 210 -> 376 (plan 10)
+
+- New `sched900` SIM capture (900 ticks, new scheduler-word dump) proves
+  frozen interval 4, lasts 1,5,...,209, dt 4. Native `Rider` models it
+  (`sched_*` + `sched_live` gate, hydrated from the capture; legacy
+  captures keep dt 1 with identical signatures). Solo replay detaches
+  native traffic to match the oracle-nulled pool (first native spawn had
+  been a 6-draw isolation break at tick 319).
+- Single-anchor demo replay now diverges at tick 376 (was 210): a single
+  `0x0044dd90` spawn-timer lane draw against the nulled pool places no
+  car. Timer state/rates/taps are Task 7 work. Old goldens unchanged.
