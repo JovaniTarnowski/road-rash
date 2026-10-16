@@ -2,7 +2,9 @@
 #include "resource.hpp"
 #include "terrain.hpp"
 #include <array>
+#include <cstdint>
 #include <map>
+#include <vector>
 
 namespace rr {
 // Per-sample path bytes and road half-widths in world units (250 per lane),
@@ -86,4 +88,23 @@ std::vector<RouteSample> make_route_choices(const Course& course, const std::vec
 // (level 1..5; level is 0-based DAT_004b8a12). -1 when no route sample
 // carries a qualifying event.
 int32_t finish_event_sample(const Course& course, const std::vector<RouteSample>& route, int level);
+// Plan 17 Task 1: original per-course/per-level start and finish. RaceBounds
+// is defined in race_setup.hpp (the race-setup owner's file, which includes
+// this header); forward-declared here so course code and tests can name the
+// bounds without depending on the full race-setup stack. Callers need the
+// complete type (include race_setup.hpp where the value is used).
+struct RaceBounds;
+// CLI course (rr-game --course: NAPA 0, CITY 1, HIWAY 2, CANYN 3, MEDLY 4)
+// to original course number (0x0046df58/0x004160c0: 1 CITY, 2 HIWAY, 3 MEDLY,
+// 4 NAPA, 5 CANYN). Throws std::runtime_error on any other value.
+int original_course_index(int cli_course);
+// Original per-course/per-level start and finish (plan 17 Task 1 Step 1
+// trace): start is the 0x00405600 player-grid position for the level
+// (0x00464218 row: 0x3200 at levels 0..3, 0x3300 at level 4); finish is the
+// level-tagged CESR finish line (0x004525c0/0x00453e60/0x00454240, global
+// DAT_004b6e58) on route A (all-false branch choices, route_hint 0).
+// Throws std::runtime_error if the course/level is out of range, the EXE
+// tables are unreadable, or no level-tagged finish exists on route A.
+RaceBounds race_bounds(const std::vector<uint8_t>& exe, const Course& course,
+                       int original_course, int level);
 }

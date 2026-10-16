@@ -1,4 +1,6 @@
 #include "course.hpp"
+#include "exe_tables.hpp"
+#include "race_setup.hpp"
 #include <algorithm>
 #include <set>
 
@@ -264,6 +266,49 @@ std::vector<RouteSample> make_route_choices(const Course& course, const std::vec
 }
 std::vector<RouteSample> make_route(const Course& course, bool second_branch) {
     return make_route_indexed(course,{},split_nodes(course),second_branch?1:0);
+}
+
+int original_course_index(int cli_course) {
+    // Native CLI order (plan 17 global constraints): NAPA 0, CITY 1,
+    // HIWAY 2, CANYN 3, MEDLY 4. Original order (0x0046df58 string table,
+    // 0x004160c0 course word): 1 CITY, 2 HIWAY, 3 MEDLY, 4 NAPA, 5 CANYN.
+    switch (cli_course) {
+        case 0: return 4;
+        case 1: return 1;
+        case 2: return 2;
+        case 3: return 5;
+        case 4: return 3;
+        default: break;
+    }
+    throw std::runtime_error("CLI course out of range (0..4)");
+}
+
+RaceBounds race_bounds(const std::vector<uint8_t>& exe, const Course& course,
+                       int original_course, int level) {
+    if (original_course < 1 || original_course > 5)
+        throw std::runtime_error("Original course out of range (1..5)");
+    if (level < 0 || level > 4) throw std::runtime_error("Race level out of range (0..4)");
+    // Player start: 0x00405600 builds the player from the start-grid row at
+    // 0x00464218[level] (8 bytes: lateral, position). This EXE holds
+    // (16384, 0x3200) at levels 0..3 and (16384, 0x3300) at level 4
+    // (samples 50/51; the 0x004552e0 ring origin is the constant 0x3200).
+    // read_exe_data throws when the table is missing/unreadable.
+    const uint32_t row = 0x00464218u + 8u * uint32_t(level);
+    const auto position = read_exe_data(exe, row + 4, 4);
+    const uint32_t start = uint32_t(position[0]) | uint32_t(position[1]) << 8 |
+                           uint32_t(position[2]) << 16 | uint32_t(position[3]) << 24;
+    // Finish: first-match level-tagged CESR finish (0x004525c0 scan,
+    // 0x00453e60 section+0x2c, 0x00454240 global DAT_004b6e58 =
+    // section_base + finish*0x100) on route A. Branch bits are enumerated
+    // explicitly (all false) rather than via the shorthand overload.
+    const auto splits = split_nodes(course);
+    const auto route = make_route_choices(course, std::vector<int>(splits.size(), 0));
+    const int32_t finish_sample = finish_event_sample(course, route, level);
+    if (finish_sample < 0) throw std::runtime_error("No level-tagged finish event on route A");
+    const uint32_t finish = uint32_t(finish_sample) << 8;
+    if (!(start < finish) || finish > (uint32_t(route.size() - 1) << 8))
+        throw std::runtime_error("Finish line outside route A");
+    return RaceBounds{start, finish, 0};
 }
 
 int32_t finish_event_sample(const Course& course, const std::vector<RouteSample>& route, int level) {

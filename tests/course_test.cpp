@@ -1,6 +1,8 @@
 #include "assets.hpp"
 #include "course.hpp"
+#include "exe_tables.hpp"
 #include "golden.hpp"
+#include "race_setup.hpp" // complete rr::RaceBounds (defined by the race-setup owner)
 #include <filesystem>
 #include <iostream>
 #include <set>
@@ -68,6 +70,77 @@ int main() {
         }
         if(tag=="CITY")check(lengths==std::set<size_t>{5606},"CITY route length");
         else check(lengths.size()>1||splits.size()==1,"Distinct physical route lengths differ");
+    }
+    // Plan 17 Task 1: CLI-to-original course mapping (plan 17 global
+    // constraints; original order from the 0x0046df58 string table).
+    check(rr::original_course_index(0)==4,"CLI NAPA maps to original 4");
+    check(rr::original_course_index(1)==1,"CLI CITY maps to original 1");
+    check(rr::original_course_index(2)==2,"CLI HIWAY maps to original 2");
+    check(rr::original_course_index(3)==5,"CLI CANYN maps to original 5");
+    check(rr::original_course_index(4)==3,"CLI MEDLY maps to original 3");
+    for(int bad:{-1,5,6}) {
+        bool threw=false;
+        try { (void)rr::original_course_index(bad); } catch(const std::runtime_error&) { threw=true; }
+        check(threw,("CLI course rejects "+std::to_string(bad)).c_str());
+    }
+    if(!assets.exists("ROADRASH.EXE")) std::cout<<"bounds checks skipped, no EXE\n";
+    else {
+        // Per-course/per-level start+finish bounds on route A: every split
+        // takes branch 0, enumerated explicitly per split (not the
+        // all-false/all-true shorthand). Route-A finish samples repeat the
+        // per-route expectations above (CITY row, hiway/medly/napa/canyn
+        // all-false rows); start is the 0x00464218 player-grid row
+        // (0x3200 levels 0..3, 0x3300 level 4).
+        const auto exe=assets.read("ROADRASH.EXE");
+        struct BoundsCourse { const char* name; int original; int route_a_finish[5]; };
+        const std::vector<BoundsCourse> bounds_courses{
+            {"CITY",1,{1821,2840,3865,4510,5419}},
+            {"HIWAY",2,{1810,2650,3295,4205,5566}},
+            {"MEDLY",3,{1818,2719,3642,4963,5532}},
+            {"NAPA",4,{1715,2565,3570,4280,6164}},
+            {"CANYN",5,{1862,2719,3685,4215,5361}},
+        };
+        auto exe_word=[&](uint32_t address) {
+            const auto bytes=rr::read_exe_data(exe,address,4);
+            return uint32_t(bytes[0])|uint32_t(bytes[1])<<8|uint32_t(bytes[2])<<16|uint32_t(bytes[3])<<24;
+        };
+        for(const auto& bounds_course:bounds_courses) {
+            const std::string tag=bounds_course.name;
+            const auto course=rr::read_course(assets.read(std::string("DATA/COURSES/")+tag+".CRS"));
+            const auto splits=rr::split_nodes(course);
+            const auto route_a=rr::make_route_choices(course,std::vector<int>(splits.size(),0));
+            for(int level=0;level<=4;++level) {
+                const rr::RaceBounds bounds=rr::race_bounds(exe,course,bounds_course.original,level);
+                const std::string where=tag+" L"+std::to_string(level+1);
+                const uint32_t want_start=level<4?0x3200u:0x3300u;
+                check(bounds.start_position_q8==want_start,("Bounds start grid "+where).c_str());
+                check(bounds.route_hint==0,("Bounds route hint "+where).c_str());
+                check(bounds.finish_position_q8==(uint32_t(bounds_course.route_a_finish[level])<<8),
+                      ("Bounds finish event line "+where).c_str());
+                check(bounds.start_position_q8<bounds.finish_position_q8,("Bounds start < finish "+where).c_str());
+                check(bounds.finish_position_q8<=(uint32_t(route_a.size()-1)<<8),
+                      ("Bounds finish on route A "+where).c_str());
+                // Menu mileage 0x00468f58[(original-1)*5+level] (tenths) is
+                // display text, not race bounds
+                // (analysis/course-finish-notes.md): reported, not asserted.
+                const uint32_t tenths=exe_word(0x00468f58u+4u*uint32_t((bounds_course.original-1)*5+level));
+                std::cout<<where<<": start "<<bounds.start_position_q8<<" finish "
+                         <<bounds.finish_position_q8<<" ("<<(bounds.finish_position_q8-bounds.start_position_q8)/256
+                         <<" samples) menu "<<tenths<<" tenths\n";
+            }
+            for(int bad_original:{0,6}) {
+                bool threw=false;
+                try { (void)rr::race_bounds(exe,course,bad_original,0); }
+                catch(const std::runtime_error&) { threw=true; }
+                check(threw,("Bounds rejects original "+std::to_string(bad_original)+" on "+tag).c_str());
+            }
+            for(int bad_level:{-1,5}) {
+                bool threw=false;
+                try { (void)rr::race_bounds(exe,course,bounds_course.original,bad_level); }
+                catch(const std::runtime_error&) { threw=true; }
+                check(threw,("Bounds rejects level "+std::to_string(bad_level)+" on "+tag).c_str());
+            }
+        }
     }
     for(const char* name:{"CITY","HIWAY","MEDLY","NAPA","CANYN"}) {
         const auto course=rr::read_course(assets.read(std::string("DATA/COURSES/")+name+".CRS"));
