@@ -339,6 +339,16 @@ int main(int argc, char** argv) {
     config.character = 1;
     config.career = true;
     config.bike_from_table = true;   // default-bike setup stream (finding 1, 2026-10-13)
+    // Original setup row identity is not purely character 1: derive it from
+    // the recorded rider-half table pointer when it lands in 0x00463c78..+0x280
+    // on a 0x40 boundary.
+    {
+        constexpr int64_t row_base = 0x00463c78, row_count = 10, row_stride = 0x40;
+        const int64_t base = (h.find("rider.0.raw_1e0") == h.end()) ? -1 : h.at("rider.0.raw_1e0");
+        if (base >= row_base && base < row_base + row_count * row_stride &&
+            ((base - row_base) % row_stride) == 0)
+            config.player_rider = int((base - row_base) / row_stride);
+    }
     config.solo = solo;
     config.road_base_q8 = road_base;
     // Track ring (plan 10 Task 5): the original builds it inside the setup
@@ -367,7 +377,7 @@ int main(int argc, char** argv) {
     // Runs after the ctor, before the ring (the factory's prepare hook).
     if (demo) {
         config.prepare = [&](rr::Race& rr) {
-            const int rider = rr::character_rider(1);
+            const int rider = config.player_rider >= 0 ? config.player_rider : rr::character_rider(1);
             const RiderRow row = read_rider_row(exe, rider);
             const auto personalities = rr::read_personalities(exe);
             const int64_t dbase = hfind("demo.base_speed");

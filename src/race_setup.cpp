@@ -72,8 +72,14 @@ RaceAssets load_race_assets(const Assets& assets, const std::vector<uint8_t>& ex
     // career races use the explicit bike index (the shop's purchased bike).
     // The level table applies only when bike_from_table is set (oracle
     // harness and course sweeps reproduce the original default-bike setup).
+    // The original setup index is not derivable solely from the front-end
+    // character: row identity lives in the bike/active rider record. Allow the
+    // replay harness to supply it explicitly from recorded 0x00463c78 state.
     int bike_index = config.bike;
-    int rider = character_rider(config.character >= 1 && config.character <= 8 ? config.character : 1);
+    int rider = config.player_rider;
+    if (rider < 0)
+        rider = character_rider(config.character >= 1 && config.character <= 8 ? config.character : 1);
+    if (rider < 0 || rider > 9) throw std::runtime_error("race setup: player rider out of range");
     if (config.career && config.bike_from_table) {
         const CareerTables tables = read_career_tables(exe);
         const size_t slot = size_t(config.level) + size_t(rider) * 5; // 0x004641c8

@@ -1236,6 +1236,22 @@ fix. Rebuilt the complete committed source and reran the same focused gate:
 3/3 pass,2.60s. The earlier failed test log was mistakenly summarized as a
 pass before it was inspected; the successful rerun is the verified result.
 
+## Player rider row identity (October 16 continuation, plan 10)
+
+- Fresh sched600 demo capture showed the one-unit speed gap at tick 584 came
+  from the original using rider table row 0 (`0x00463c78`) rather than native
+  character/rider mapping's row 8: both rows select bike 1 with gear factor
+  232, but row 0 gives throttle cap/ramp 9188/918/612 versus row 8's
+  9160/916/610.
+- `RaceConfig::player_rider` now optionally overrides the derived row
+  (range -1/0..9), validated in `load_race_assets`; normal game mapping is
+  unchanged when unset. Replay derives the index from recorded
+  `rider.0.raw_1e0` when it lies in the 10-row table on a 0x40 boundary.
+- `oracle-sim-test sched600-20261015.tsv --driver=demo`: 600 ticks
+  identical. `sched900-20261015.tsv --driver=demo`: first divergence moves
+  from 584 to tick 735 (brain `+0x194`).
+- Focused `oracle-sim` and `race_setup` CTests pass after the change.
+
 ## Independent frozen halves (October 15 continuation, plan 10)
 
 - Worker compiled race/frozen_state targets and passed both focused tests.

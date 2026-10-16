@@ -41,6 +41,7 @@ struct RaceConfig {
     int bike = 0;                // quick-race bike index; career's purchased bike (shop)
     bool bike_from_table = false;  // true: career level table overrides bike (oracle/sweeps only)
     int character = 0;           // 1..8 front-end character (0x00415fc0); career only
+    int player_rider = -1;       // [0..9] row in 0x00463c78; -1 means character_rider(character)
     bool career = true;
     int opponents = 7;           // 0..7, for quick races and solo tests
     bool high_resolution = true; // Settings::high_resolution (plan 18 Task 4)
