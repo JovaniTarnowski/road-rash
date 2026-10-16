@@ -99,6 +99,43 @@ int main() {
         rr::RaceSetup setup = rr::make_race_setup(assets, exe, config);
         check(setup.assets.bike_index == 7, "career keeps the purchased bike");
     }
+    // Plan 10: the measured original player row changes mass-scaled throttle
+    // ramps even when both rows choose the same bike. Keep the factory's
+    // explicit identity separate from the front-end character mapping.
+    {
+        rr::RaceConfig config;
+        config.character = 1;
+        config.bike_from_table = true;
+        config.opponents = 0;
+        config.track_ring = false;
+        config.player_rider = 0;
+        rr::RaceSetup row0 = rr::make_race_setup(assets, exe, config);
+        config.player_rider = 8;
+        rr::RaceSetup row8 = rr::make_race_setup(assets, exe, config);
+        check(row0.assets.bike_index == row8.assets.bike_index, "row 0/8 select the same bike");
+        check(row0.assets.rider_value == 90 && row8.assets.rider_value == 91,
+              "explicit rider row selects original halved weight");
+        check(row0.instance.race->bike().i32(0x260) == 9188 &&
+              row8.instance.race->bike().i32(0x260) == 9160,
+              "explicit rider row controls mass-scaled throttle cap");
+        check(row0.instance.race->bike().i32(0x264) == 918 &&
+              row0.instance.race->bike().i32(0x268) == 612,
+              "row 0 preserves original throttle ramp rates");
+        config.player_rider = -1;
+        rr::RaceSetup mapped = rr::make_race_setup(assets, exe, config);
+        check(mapped.assets.rider_value == row8.assets.rider_value &&
+              mapped.instance.race->bike().i32(0x260) == row8.instance.race->bike().i32(0x260),
+              "unset player row retains character mapping");
+        for (int invalid : {-2, 10}) {
+            config.player_rider = invalid;
+            bool rejected = false;
+            try { (void)rr::load_race_assets(assets, exe, config); }
+            catch (const std::runtime_error& e) {
+                rejected = std::string(e.what()) == "race setup: player rider out of range";
+            }
+            check(rejected, "reject invalid explicit rider row " + std::to_string(invalid));
+        }
+    }
     if (failures == 0) std::cout << "race_setup OK\n";
     return failures ? 1 : 0;
 }

@@ -77,7 +77,7 @@ RaceAssets load_race_assets(const Assets& assets, const std::vector<uint8_t>& ex
     // replay harness to supply it explicitly from recorded 0x00463c78 state.
     int bike_index = config.bike;
     int rider = config.player_rider;
-    if (rider < 0)
+    if (rider == -1)
         rider = character_rider(config.character >= 1 && config.character <= 8 ? config.character : 1);
     if (rider < 0 || rider > 9) throw std::runtime_error("race setup: player rider out of range");
     if (config.career && config.bike_from_table) {
