@@ -60,3 +60,56 @@ capture. Root integrates after its main detached-half gate. Run terrain-test
 with the genuine seeded file to establish seeded original parity. No commit,
 Wine/Ghidra process, or held shared resource by this worker. Native source edits
 are finished and frozen for root integration.
+
+## Optional live ring walker terrain diagnostics
+
+Next ownership transfer from root: isolated `src/track_ring.hpp`,
+`src/track_ring.cpp`, `tests/oracle_sim_test.cpp` plus this handoff only. Main
+source remains untouched. Private baseline still c452be2; root must integrate
+only this narrow delta to preserve its later detached-half changes.
+
+Added read-only value diagnostics `TrackRing::diagnostic_state()` returning
+`TrackRingState {front,back}` of `TrackWalkerState {position,optional terrain}`.
+Positions are local walker section coordinates, not absolute ring cursors.
+Terrain uses the existing TerrainIteratorState snapshot; no state advancement,
+random draws, pointer exposure, or mutation.
+
+Replay schema agreed with terrain_review:
+
+- Initial frame `ring.terrain.schema=1` enables comparison; unsupported values
+  fail. Absent declaration leaves older captures unchanged.
+- Every compared frame requires `ring.walk.<front|back>.position` and
+  `.terrain.available` (0/1). Native terrain present then requires
+  `.terrain.position,last_sample,record` and all8
+  `.terrain.point.<i>.<start,end,x,height,dx,dh>`.
+- Compare initial state immediately after factory setup against frame0's
+  post-tick1 state, before any countdown replay. Compare each native countdown
+  tick and each normal tick against its matching original frame. Replay modes
+  skipping countdown also check every still-held original frame.
+- First missing field/value mismatch reports exact frame,tick,key and values
+  and returns1, independent of RR_SIM_CONTINUE. No reanchoring or existing-field
+  filtering added. Original-only optional `.active` does not represent native
+  terrain interpolation state and remains diagnostic context.
+
+Validation:
+
+- Private build `--target oracle-sim-test track_ring-test --parallel 4` passed;
+  log `/tmp/rr-ring-terrain-native-build-20261015.log`.
+- Focused track_ring passed. Initial combined CTest oracle-sim failure was the
+  isolated checkout's missing default golden (all-skip rejected by wrapper),
+  recorded `/tmp/rr-ring-terrain-native-test-20261015.log`.
+- Ran existing main legacy fixture/disc via absolute paths with verify_sim.py
+  diagnostic mode. Exit0, exactly1 pinned known divergence at tick222 lateral;
+  zero unexpected failures/skips. Thus absence of the new schema preserves the
+  legacy diagnostic. Report `/tmp/rr-ring-terrain-native-legacy-report-20261015.json`,
+  output `/tmp/rr-ring-terrain-native-legacy-20261015.log`.
+- clangd fallback parsed/indexed oracle_sim_test.cpp without source diagnostics;
+  Apple ExtractFunction feature checks exit3 with19 break/continue tweak errors,
+  log `/tmp/rr-ring-terrain-native-lsp-20261015.json`.
+- `git diff --check` passes for all3 new owned files.
+
+Actual declared live ring trace comparison remains pending root's genuine
+capture/integration; no new original trace or synthetic golden was generated.
+The proxy worker separately completed its isolated original trace producer.
+No commit, main checkout write, Wine/capture/Ghidra process, or resource held.
+All native source edits are now finished and FROZEN for root integration.
