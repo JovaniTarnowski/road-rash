@@ -52,11 +52,17 @@ CourseScene::CourseScene(const Assets& assets,const std::vector<uint8_t>& exe,
         for(const auto& entry:read_resources(global))if(entry.tag=="CEL " && entry.id==0x10)
             water_=read_cel(std::vector<uint8_t>(global.begin()+entry.offset,global.begin()+entry.offset+entry.size));
     }
+    {
+        auto word=[](const std::vector<uint8_t>& b,size_t p){uint32_t v=0;for(int k=0;k<4;++k)v|=uint32_t(b[p+size_t(k)])<<(k*8);return bits(v);};
+        const auto table=read_exe_data(exe,0x00465a54,32);for(size_t i=0;i<8;++i)arch_[i]=word(table,i*4);
+        const auto words=read_exe_data(exe,0x004766f0,257*4);for(size_t i=0;i<257;++i)sine_words_[i]=word(words,i*4);
+        const auto bytes=read_exe_data(exe,0x00476870,128);std::copy(bytes.begin(),bytes.end(),sine_bytes_.begin());
+    }
     const auto joins=read_exe_data(exe,0x004688e0,128);
     for(int i=0;i<16;++i) {auto word=[&](int p){uint32_t v=0;for(int b=0;b<4;++b)v|=uint32_t(joins[p+b])<<(b*8);return bits(v);};joins_[i]={word(i*8),word(i*8+4)};}
     std::set<uint32_t> needed;
     for(const auto& section:course.sections) {
-        terrain_.emplace_back();family_slots_.emplace_back();
+        terrain_.emplace_back();family_slots_.emplace_back();tunnels_.emplace_back();
         // The original terrain helpers consume CRT rand values. This isolated
         // deterministic stream has the same recurrence; full race random-call
         // interleaving is still a separate integration requirement.
@@ -69,6 +75,10 @@ CourseScene::CourseScene(const Assets& assets,const std::vector<uint8_t>& exe,
             auto t=iterator.slice(-path.left-path.shoulder_left,path.right+path.shoulder_right);
             if(t.type==4 && path.marking_flags && !(path.marking_flags&0x40))for(auto& point:t.points)point[1]=0;
             terrain_.back().push_back(t);
+            // 0x00454240: marking flag 0x40 makes the sub-slice type 3, a
+            // tunnel (disc data: mountain sections only). Kept out of
+            // TerrainSlice, which the race also reads for simulation.
+            tunnels_.back().push_back(t.type==1 && (path.marking_flags&0x40));
             // Resolve residency at the projection window's forward cursor.
             const int64_t cursor=std::max<int64_t>(0,int64_t(j)+view_slices+section.family_forward_bias);
             while(event<section.family_events.size() && section.family_events[event].sample<=cursor) {
@@ -111,6 +121,48 @@ CourseScene::CourseScene(const Assets& assets,const std::vector<uint8_t>& exe,
 
 }
 const TerrainSlice& CourseScene::terrain(uint32_t section,uint32_t local) const {return terrain_.at(section).at(local);}
+bool CourseScene::tunnel(uint32_t section,uint32_t local) const {return tunnels_.at(section).at(local);}
+int32_t CourseScene::sine(int32_t angle) const {
+    // 0x0044f770: 512 steps per turn. Below 0x80 it reads bytes at 0x00476870,
+    // which lie inside the word table at 0x004766f0, exactly as original.
+    if(angle<0)return -sine(-angle);
+    const int32_t index=angle&0x1ff;
+    if(index<0x80)return sine_bytes_[size_t(index)];
+    if(index<=0x100)return sine_words_[size_t(index)];
+    return -sine(0x100-(angle&0xff));
+}
+int32_t CourseScene::approximate_angle(int32_t x,int32_t y) {
+    // 0x0044f5a0: octant angle, 256 steps per turn.
+    if(x==0 && y==0)return 0;
+    const int32_t ax=x<0?-x:x,ay=y<0?-y:y;
+    const int octant=(x<0?1:0)|(y<0?2:0)|(ax<ay?4:0);
+    switch(octant) {
+    case 0:return ay*32/ax;
+    case 1:return 0x80-ay*32/ax;
+    case 2:return -(ay*32/ax);
+    case 3:return ay*32/ax-0x80;
+    case 4:return 0x40-ax*32/ay;
+    case 5:return ax*32/ay+0x40;
+    case 6:return ax*32/ay-0x40;
+    default:return -0x40-ax*32/ay;
+    }
+}
+const CelTexture* CourseScene::tunnel_material(uint32_t section,uint32_t local,uint8_t selector,uint32_t lit,uint8_t kind,int32_t width,int32_t height) const {
+    // 0x0040ccf0 / 0x0044ada0: category 3, entry lit (0/1), group kind; the
+    // lit set falls back to the plain one when its group is missing.
+    const uint16_t id=family_slots_.at(section).at(local)[selector>>6];
+    const auto family=families_.find(id);if(family==families_.end())return nullptr;
+    auto group=[&](uint32_t entry)->const CelGroup* {
+        const auto offset=family->second.resolve(3,selector&63,entry);if(!offset)return nullptr;
+        const auto node=family->second.nodes.find(*offset);
+        if(node==family->second.nodes.end() || node->second.tag || kind>=node->second.children.size())return nullptr;
+        const auto it=family->second.groups.find(node->second.children[kind]);
+        return it==family->second.groups.end()?nullptr:&it->second;
+    };
+    const CelGroup* chosen=lit?group(1):nullptr;
+    if(!chosen)chosen=group(0);
+    return chosen?&chosen->select(width,height,logarithms_).texture:nullptr;
+}
 void CourseScene::attach_upscaled(const UpscaleCache& cache) {
     const UpscaleIndex index = cache.content_index({2, 4}, {UpscaleMethod::mmpx, UpscaleMethod::ai});
     auto one = [&](CelTexture& tex) { attach_upscaled_indexed(tex, index); };
@@ -204,7 +256,12 @@ void CourseScene::draw_horizon(Framebuffer& fb,int32_t scroll,int32_t logical_wi
 }
 std::vector<DrawNode> CourseScene::draw_nodes(const std::vector<RouteSample>& route,
     const std::vector<RoadSlice>& slices,const Camera& camera,const DepthTable& depths,ActorEmitter actors,int32_t logical_width) const {
-    struct Road {const PathSample* path;const TerrainSlice* terrain;uint32_t section,local;HillRoad hill[2];BuildingRoad building[2];int32_t ceiling;int32_t wall_height[2];};
+    struct Road {const PathSample* path;const TerrainSlice* terrain;uint32_t section,local;HillRoad hill[2];BuildingRoad building[2];int32_t ceiling;int32_t wall_height[2];
+        // Drawing type: the terrain type, or 3 for a mountain tunnel sample
+        // (0x00454240, marking flag 0x40). Tunnel +0x50..+0x5c, +0xb4..+0xe0,
+        // +0xf4/+0xf8 and 0x0040d420's angle terms.
+        uint8_t kind;uint8_t mountain;std::array<RasterPoint,2> edge;std::array<int32_t,2> curb_height;
+        std::array<RasterPoint,6> arch;RasterPoint tunnel_point;int32_t sine,cosine;};
     std::vector<std::array<Road,2>> roads(slices.size());
     // Plan 19 Task 4: the ceiling stays logical (240 Q16 view rows); only
     // ViewMode::map converts it to surface rows at render time.
@@ -215,15 +272,31 @@ std::vector<DrawNode> CourseScene::draw_nodes(const std::vector<RouteSample>& ro
             auto& road=roads[n][r];const bool own=slice.count==1 || r==slice.own;
             road.section=own?sample.section:sample.other_section;road.local=own?sample.local:sample.other_local;
             road.path=own?&sample.path:&sample.other;road.terrain=&terrain(road.section,road.local);
+            road.kind=tunnel(road.section,road.local)?3:road.terrain->type;
             const auto& s=slice.road[r];const int32_t world_x=s.road_x+camera.x;
+            // 0x00454240 for a tunnel: the side whose height is at least 1 is the
+            // mountain (right wins), its height at least 800; the other side's
+            // wall edge sits a second shoulder width out; shoulders are halved;
+            // empty pair-B heights become 16 (a raised sidewalk).
+            std::array<int32_t,2> wall_edge={s.shoulder_left,s.shoulder_right},outer_edge=wall_edge,heights{};
+            road.mountain=0;road.curb_height={0,0};
+            if(road.kind==1 || road.kind==3)for(int side=0;side<2;++side)heights[size_t(side)]=road.terrain->walls[side][2];
+            if(road.kind==3) {
+                if(heights[1]<1){road.mountain=0;wall_edge[1]=2*s.shoulder_right-s.right;}
+                else {if(heights[0]>0)heights[0]=0;road.mountain=1;wall_edge[0]=2*s.shoulder_left-s.left;}
+                heights[road.mountain]=std::max(heights[road.mountain],800);
+                outer_edge={s.left-road.path->shoulder_left/2,s.right+road.path->shoulder_right/2};
+                road.curb_height=road.path->height_left==0?std::array<int32_t,2>{16,16}:std::array<int32_t,2>{road.path->height_left,road.path->height_right};
+            }
             int32_t max_row=s.screen_y;
             HillProjection hills;
             if(road.terrain->type==4){hills=project_hills(*road.terrain,world_x,s.world_y,camera,slice.scale,logical_width);max_row=hills.maximum_row;}
             for(int side=0;side<2;++side) {
                 auto& h=road.hill[side];h.type=road.terrain->type;h.depth=slice.depth;
-                const int32_t shoulder=side?s.shoulder_right:s.shoulder_left;
-                // 0x00454240 clears the pair B heights of type-1 sides.
-                const int32_t side_height=road.terrain->type==1?0:(side?road.path->height_right:road.path->height_left);
+                const int32_t shoulder=outer_edge[size_t(side)];
+                // 0x00454240 clears the pair B heights of type-1 sides; 0x00444630
+                // keeps +0x64/+0x6c at the road row for types 1-3.
+                const int32_t side_height=road.kind==1 || road.kind==3?0:(side?road.path->height_right:road.path->height_left);
                 const int32_t shoulder_y=wrap(int64_t(camera.height-s.world_y-side_height)*slice.scale+90*65536);
                 h.world[0]={world_x+shoulder,s.world_y};h.projected[0]={wrap(slice.screen_x(r,shoulder)),shoulder_y};
                 if(road.terrain->type==0) {
@@ -243,19 +316,38 @@ std::vector<DrawNode> CourseScene::draw_nodes(const std::vector<RouteSample>& ro
                     h.world[band+1]={world_x+point[0],s.world_y+point[1]};h.projected[band+1]={hills.points[band*2+side][0],hills.points[band*2+side][1]};
                 }
                 road.wall_height[side]=0;
-                if(road.terrain->type==1) {
+                if(road.kind==1 || road.kind==3) {
                     // 0x00454240: wall base/top x are the outer shoulder edge
                     // minus (left) / plus (right) the exported offsets; a height
                     // below 1 becomes -elevation. 0x00444630 projects base at
                     // the road row and top height*scale above it (+0x70/+0x80).
-                    const auto& wall=road.terrain->walls[side];
-                    const int32_t base=side?shoulder+wall[0]:shoulder-wall[0],top=side?shoulder+wall[1]:shoulder-wall[1];
-                    const int32_t height=wall[2]<1?-road.path->elevation:wall[2];
+                    const auto& wall=road.terrain->walls[side];const int32_t edge=wall_edge[size_t(side)];
+                    const int32_t base=side?edge+wall[0]:edge-wall[0],top=side?edge+wall[1]:edge-wall[1];
+                    const int32_t height=heights[size_t(side)]<1?-road.path->elevation:heights[size_t(side)];
                     road.wall_height[side]=height;
                     h.world[1]={world_x+base,s.world_y};h.world[2]=h.world[3]={world_x+top,s.world_y+height};
                     h.projected[1]={wrap(slice.screen_x(r,base)),s.screen_y};
                     h.projected[2]=h.projected[3]={wrap(slice.screen_x(r,top)),wrap(s.screen_y-int64_t(height)*slice.scale)};
                 }
+            }
+            if(road.kind==3) {
+                // 0x00444630 type 3: arch points from the 0x00465a54 table
+                // (heights) at road-width fractions, +0xf4/+0xf8 half a lane
+                // beyond the open side's shoulder at the arch height.
+                auto row=[&](int32_t h){return wrap(s.screen_y-int64_t(h)*slice.scale);};
+                auto across=[&](int32_t fraction){const int32_t v=wrap(int64_t(fraction)*(s.right-s.left));
+                    return wrap(int64_t((v+((v>>31)&0xff))>>8)*slice.scale+slice.screen_x(r,s.left));};
+                const int32_t left_x=road.hill[0].projected[0].x,right_x=road.hill[1].projected[0].x;
+                road.edge={RasterPoint{wrap(slice.screen_x(r,s.left)),row(road.curb_height[0])},RasterPoint{wrap(slice.screen_x(r,s.right)),row(road.curb_height[1])}};
+                road.arch={RasterPoint{left_x,road.edge[0].y},{left_x,row(arch_[0])},{across(arch_[1]),row(arch_[2])},
+                    {across(arch_[3]),row(arch_[4])},{right_x,row(arch_[6])},{right_x,road.edge[1].y}};
+                const int32_t half_lane=wrap(int64_t(250)*slice.scale)/2;
+                road.tunnel_point=road.wall_height[1]>0?RasterPoint{wrap(int64_t(left_x)-half_lane),road.arch[2].y}:RasterPoint{wrap(int64_t(right_x)+half_lane),road.arch[3].y};
+                // 0x0040d420's per-sample portal lean (0x0047ea84/0x0047ea80).
+                const int32_t span=wrap(int64_t(outer_edge[1]-outer_edge[0])*arch_[1]);
+                const int32_t angle=approximate_angle((span+((span>>31)&0xff))>>8,arch_[2]-arch_[0]);
+                const int32_t lean=wrap((int64_t(angle)*-65536+0xc00000)/2-0x400000);
+                road.sine=wrap(int64_t(sine(lean>>14))*256);road.cosine=wrap(int64_t(sine(wrap(0x200000-int64_t(lean))>>14))*256);
             }
             road.ceiling=ceiling;ceiling=std::min(ceiling,max_row);
         }
@@ -285,7 +377,9 @@ std::vector<DrawNode> CourseScene::draw_nodes(const std::vector<RouteSample>& ro
     std::vector<DrawNode> front;
     // 0x0041d260: a hill/building side's shoulder ends at its shoulder edge
     // (+0x60); a mountain side's at its wall base (+0x70, world +0x14c).
-    auto outer=[](const Road& road){return road.terrain->type==0 || road.terrain->type==4 ? 0 : 1;};
+    auto outer=[](const Road& road){return road.kind==0 || road.kind==4 ? 0 : 1;};
+    // 0x00443d70: the camera sample's sub-slice is a tunnel.
+    const bool camera_in_tunnel=!slices.empty() && roads[0][0].kind==3;
     for(size_t n=slices.size();n-->1;) {
         const auto& near=slices[n-1];const auto& far=slices[n];const int count=std::min(near.count,far.count);
         std::vector<DrawNode> pending;pending.swap(front);
@@ -304,7 +398,7 @@ std::vector<DrawNode> CourseScene::draw_nodes(const std::vector<RouteSample>& ro
             panels.marking_flags=path.marking_flags;panels.terrain_type=road.terrain->type;panels.next_terrain_type=old.terrain->type;panels.visible=visible;
             append(road_draw_nodes(road_panels(panels,logical_width),roads_));
             // 0x0043bef0 draws marked ground (0x0043b970) only for types 0 and 4.
-            if((path.marking_flags&32) && road.terrain->type!=1)for(int side=0;side<2;++side) {
+            if((path.marking_flags&32) && road.kind!=1 && road.kind!=3)for(int side=0;side<2;++side) {
                 MarkedGroundInput ground;
                 ground.near_edge={wrap(near.screen_x(r,side?b.right:b.left)),b.screen_y};
                 ground.far_edge={wrap(far.screen_x(r,side?a.right:a.left)),a.screen_y};
@@ -325,22 +419,63 @@ std::vector<DrawNode> CourseScene::draw_nodes(const std::vector<RouteSample>& ro
                 HillPanelInput hills;hills.near=road.hill[side];hills.far=old.hill[side];hills.side=uint8_t(side);hills.occlusion_row=road.ceiling;hills.overlap=true;hills.join_offsets=joins_;hills.logical_width=logical_width;
                 append(hill_draw_nodes(hills,camera,depths,[&](uint8_t band,int32_t w,int32_t h){return material(road.section,road.local,road.terrain->selectors[side],1,band,w,h);}));
             }
-            // 0x0043bef0 types 1-3: shoulder while the pair is visible, then the
-            // mountain side. Type 3 (split) sides are not produced natively yet.
-            if(road.terrain->type==1)for(int side=0;side<2;++side) {
-                if(visible) {
+            // 0x0043bef0 types 1-3: shoulder while the pair is visible (not
+            // between two tunnel samples), then the mountain side; on the
+            // tunnel's mountain side also the arch (0x0040dac0) and, at the
+            // mouth, the portal (0x0040d420).
+            if(road.kind==1 || road.kind==3)for(int side=0;side<2;++side) {
+                const bool tunnel_pair=road.kind==3 && old.kind==3;
+                if(visible && !tunnel_pair) {
                     ShoulderPanelInput shoulder;shoulder.near_depth=near.depth;shoulder.has_lanes=panels.left_lane_count+panels.right_lane_count!=0;shoulder.strip.side=uint8_t(side);shoulder.strip.far_depth=far.depth;shoulder.logical_width=logical_width;
                     shoulder.strip.world={{{a.road_x+camera.x+(side?a.right:a.left),a.world_y},old.hill[side].world[outer(old)],road.hill[side].world[outer(road)],{b.road_x+camera.x+(side?b.right:b.left),b.world_y}}};
                     shoulder.strip.projected={{{wrap(far.screen_x(r,side?a.right:a.left)),old.hill[side].projected[0].y},old.hill[side].projected[outer(old)],road.hill[side].projected[outer(road)],{wrap(near.screen_x(r,side?b.right:b.left)),road.hill[side].projected[0].y}}};
                     append(shoulder_draw_nodes(shoulder,camera,depths,[&](int32_t w,int32_t h){return material(road.section,road.local,path.side_flags[side],5,0,w,h);}));
                 }
-                // A building neighbour's +0x70/+0x80 hold facade fields, not
-                // ground points; that transition is not ported.
-                if(old.terrain->type!=1 && old.terrain->type!=4)continue;
+                if(old.kind!=0 && old.kind!=1 && old.kind!=3 && old.kind!=4)continue;
                 WallPanelInput wall;wall.near=road.hill[side];wall.far=old.hill[side];wall.side=uint8_t(side);wall.height=road.wall_height[side];
+                wall.near.type=road.kind;wall.far.type=old.kind;
+                // A building neighbour: 0x00444630 case 0 leaves its facade
+                // offsets/heights at +0x70/+0x80, and 0x0040dfd0/0x0040d030
+                // read them as that end's base and top.
+                if(old.kind==0) {
+                    const auto& facade=old.building[side];
+                    wall.far.projected[1]={facade.roof_offset,facade.height};
+                    wall.far.projected[2]={facade.forward_roof_offset,facade.forward_height};
+                }
                 wall.near_lane_width=wrap(int64_t(250)*near.scale);wall.far_lane_width=wrap(int64_t(250)*far.scale);wall.logical_width=logical_width;
+                wall.near_tunnel=road.kind==3;wall.far_tunnel=old.kind==3;wall.camera_in_tunnel=camera_in_tunnel;
+                wall.near_tunnel_point=road.tunnel_point;wall.far_tunnel_point=old.tunnel_point;
                 append(wall_draw_nodes(wall,[&](uint8_t frame,int32_t w,int32_t h){return material(road.section,road.local,road.terrain->selectors[side],1,frame,w,h);},
                     water_.texture?&*water_.texture:nullptr));
+                if(road.wall_height[side]<1 || !tunnel_pair || near.depth<=0x3c)continue;
+                // 0x0040dac0: raised sidewalks (0x0040bde0 with category-3
+                // frames 2/3 of the CESR selector +0x39), then the arch.
+                const uint8_t selector=path.event_parameters[0];
+                for(int walk=0;walk<2;++walk) {
+                    BuildingShoulderInput sidewalk;sidewalk.near_depth=near.depth;sidewalk.far_base_y=a.screen_y;sidewalk.near_base_y=b.screen_y;sidewalk.far_world_base_y=a.world_y;sidewalk.near_world_base_y=b.world_y;sidewalk.logical_width=logical_width;
+                    sidewalk.top.side=uint8_t(walk);sidewalk.top.far_depth=far.depth;sidewalk.top.occlusion_row=road.ceiling;
+                    const int32_t fy=old.curb_height[size_t(walk)],ny=road.curb_height[size_t(walk)];
+                    sidewalk.top.projected={{old.edge[size_t(walk)],{old.hill[walk].projected[0].x,old.edge[size_t(walk)].y},{road.hill[walk].projected[0].x,road.edge[size_t(walk)].y},road.edge[size_t(walk)]}};
+                    sidewalk.top.world={{{a.road_x+camera.x+(walk?a.right:a.left),a.world_y+fy},{old.hill[walk].world[0].x,a.world_y+fy},{road.hill[walk].world[0].x,b.world_y+ny},{b.road_x+camera.x+(walk?b.right:b.left),b.world_y+ny}}};
+                    append(building_shoulder_nodes(sidewalk,camera,depths,[&](uint8_t frame,int32_t w,int32_t h){return material(road.section,road.local,selector,3,uint32_t(frame+2),w,h);}));
+                }
+                TunnelArchInput arch;arch.near=road.arch;arch.far=old.arch;arch.near_row=b.screen_y;arch.near_depth=near.depth;arch.far_depth=far.depth;arch.logical_width=logical_width;
+                arch.backdrop=n+1==slices.size();
+                // 0x0040ccf0: every fourth sample uses the lit set (frame 1).
+                const uint32_t lit=((near.sample&3)+1)>>2;
+                append(tunnel_arch_nodes(arch,[&](uint8_t kind,int32_t w,int32_t h){return tunnel_material(road.section,road.local,selector,lit,kind,w,h);}));
+                // 0x0043bef0: the mouth is the pair whose nearer neighbour
+                // (sub-slice +0x18) is not a tunnel sample.
+                const auto& before=route.at(near.sample>0?near.sample-1:near.sample);
+                if(near.sample>0 && tunnel(before.section,before.local))continue;
+                TunnelPortalInput portal;portal.mountain=road.mountain;
+                portal.base={road.hill[0].projected[1],road.hill[1].projected[1]};portal.top={road.hill[0].projected[2],road.hill[1].projected[2]};
+                portal.tunnel_point=road.tunnel_point;portal.arch=road.arch;portal.edge=road.edge;
+                portal.shoulder_x={road.hill[0].projected[0].x,road.hill[1].projected[0].x};portal.row=b.screen_y;portal.depth=near.depth;portal.logical_width=logical_width;
+                portal.sine=road.sine;portal.cosine=road.cosine;portal.fractions={arch_[1],arch_[3]};
+                append(tunnel_portal_nodes(portal,[&](uint8_t part,int32_t w,int32_t h){
+                    if(part==0)return material(road.section,road.local,road.terrain->selectors[road.mountain],1,0,w,h);
+                    return material(road.section,road.local,selector,3,part==1?5u:4u,w,h);}));
             }
             if(!(path.marking_flags&32) && road.terrain->type==0)for(int side=0;side<2;++side) {
                 BuildingShoulderInput shoulder;shoulder.near_depth=near.depth;shoulder.far_base_y=a.screen_y;shoulder.near_base_y=b.screen_y;shoulder.far_world_base_y=a.world_y;shoulder.near_world_base_y=b.world_y;shoulder.logical_width=logical_width;

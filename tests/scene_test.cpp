@@ -75,6 +75,55 @@ int main() {
         check(nodes.size()==2 && same(nodes[1].view_points,left_sea),"left water strip off-screen");
         cliff.far.projected[2]={10*q,150*q};
         check(rr::wall_draw_nodes(cliff,pick,&water).size()==1,"no left water while a foot is on-screen");
+        // Building neighbour: its facade fields at +0x70/+0x80 become the far
+        // base/top (unreachable on the disc's routes, ported as original).
+        wall.near.depth=300;wall.far.type=0;wall.far.projected[1]={-50*q,100*q};wall.far.projected[2]={-60*q,120*q};
+        nodes=rr::wall_draw_nodes(wall,pick,&water);
+        check(!nodes.empty() && eq(nodes[0].view_points[0],pt(-60,120)) && eq(nodes[0].view_points[3],pt(-50,101)),"wall reads a building neighbour's facade fields");
+        // Tunnel sides: the mountain face runs to the +0xf4/+0xf8 points;
+        // the open side adds the face up to them; inside with the camera
+        // also in the tunnel neither is drawn.
+        wall.far.type=1;wall.far.projected={pt(180,100),pt(190,100),pt(195,70),pt(195,70)};
+        wall.near_tunnel=wall.far_tunnel=true;wall.near_tunnel_point=pt(300,40);wall.far_tunnel_point=pt(260,60);
+        nodes=rr::wall_draw_nodes(wall,pick,&water);
+        check(!nodes.empty() && eq(nodes[0].view_points[0],pt(195,70)) && eq(nodes[0].view_points[2],pt(301,41)) && eq(nodes[0].view_points[3],pt(260,61)),"tunnel mountain face ends at the tunnel point");
+        wall.camera_in_tunnel=true;check(rr::wall_draw_nodes(wall,pick,&water).empty(),"no tunnel side while the camera is inside");
+        cliff.side=1;cliff.near.projected={pt(210,120),pt(220,120),pt(350,200),pt(350,200)};cliff.far.projected={pt(225,100),pt(230,100),pt(300,150),pt(300,150)};
+        cliff.near_tunnel=true;cliff.near_tunnel_point=pt(200,60);cliff.far_tunnel_point=pt(210,70);
+        nodes=rr::wall_draw_nodes(cliff,pick,&water);
+        check(nodes.size()==3 && eq(nodes[2].view_points[0],pt(210,70)) && eq(nodes[2].view_points[2],pt(220,120)),"open tunnel side face");
+        check(rr::fixed_multiply(0x40000,0x4000)==0x10000 && rr::fixed_multiply(-0x40000,0x4000)==-0x10000,"0x0044f6b0 fixed multiply");
+        // 0x0040dac0 arch: six panels, carried-over points, forced flips.
+        rr::TunnelArchInput arch;arch.near_depth=300;arch.far_depth=556;arch.near_row=200*q;arch.backdrop=true;
+        arch.near={pt(40,200),pt(40,100),pt(120,40),pt(200,40),pt(280,100),pt(280,200)};
+        arch.far={pt(100,150),pt(100,110),pt(140,80),pt(180,80),pt(220,110),pt(220,150)};
+        std::vector<uint8_t> kinds;
+        auto arch_material=[&](uint8_t kind,int32_t,int32_t){kinds.push_back(kind);return &face;};
+        nodes=rr::tunnel_arch_nodes(arch,arch_material);
+        check(nodes.size()==7 && nodes[0].flat_index && *nodes[0].flat_index==0xfd && same(nodes[0].view_points,{pt(100,80),pt(220,80),pt(220,200),pt(100,200)}),"tunnel backdrop rectangle first");
+        if(nodes.size()==7) {
+            check(same(nodes[1].view_points,{pt(101,151),pt(101,110),pt(40,100),pt(40,201)}) && !nodes[1].flip_u && nodes[1].flip_v,"left tunnel wall panel");
+            check(nodes[3].view_points[1].x==(319*q)>>1 && nodes[3].view_points[2].x==160*q,"roof halves meet at the midpoints");
+            check(same(nodes[6].view_points,{rr::RasterPoint{219*q,151*q},rr::RasterPoint{219*q,109*q},rr::RasterPoint{280*q,99*q},rr::RasterPoint{280*q,201*q}}) && nodes[6].flip_u,"right tunnel wall panel");
+            check(kinds==std::vector<uint8_t>({2,1,0,0,1,2}),"arch materials wall, haunch, roof");
+        }
+        nodes=rr::tunnel_arch_nodes(arch,[&](uint8_t kind,int32_t,int32_t){return kind==2?&face:nullptr;});
+        check(nodes.size()==2,"a missing arch material ends the arch");
+        arch.near_depth=0x3f;check(rr::tunnel_arch_nodes(arch,arch_material).empty(),"no arch within 0x3f");
+        // 0x0040d420 portal: five face quads, five trim quads, two curbs.
+        rr::TunnelPortalInput portal;portal.mountain=0;portal.row=200*q;portal.depth=300;
+        portal.base={pt(20,200),pt(300,200)};portal.top={pt(0,20),pt(320,20)};portal.tunnel_point=pt(300,40);
+        portal.arch={pt(40,210),pt(40,100),pt(120,40),pt(200,40),pt(280,100),pt(280,210)};
+        portal.edge={pt(60,196),pt(260,196)};portal.shoulder_x={40*q,280*q};
+        std::vector<uint8_t> parts;
+        nodes=rr::tunnel_portal_nodes(portal,[&](uint8_t part,int32_t,int32_t){parts.push_back(part);return &face;});
+        check(nodes.size()==12,"portal face, trim and curbs");
+        if(nodes.size()==12) {
+            check(eq(nodes[0].view_points[0],pt(18,200)) && eq(nodes[0].view_points[3],pt(15,200)),"portal face starts two columns left of the wall base");
+            check(nodes[5].view_points[0].x==15*q-0x14000 && eq(nodes[5].view_points[3],rr::RasterPoint{40*q+0x14000,200*q}),"portal trim overlaps 1.25 columns");
+            check(same(nodes[10].view_points,{pt(60,196),pt(40,196),pt(40,200),pt(60,200)}),"portal curb face");
+        }
+        check(parts==std::vector<uint8_t>({0,0,0,0,0,1,2}),"trim and curb materials chosen once");
     }
     const auto path=rr::golden::oracle_dir()+"/raster-fixtures.tsv";
     if(std::filesystem::exists(path)) {

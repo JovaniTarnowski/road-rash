@@ -92,6 +92,29 @@ int main(int argc,char** argv) {
             std::cout<<name<<" mountain views: "<<views_checked<<", "<<bad_views<<" with over 1% clear colour below the horizon, worst "<<worst<<" pixels\n";
             if(!views_checked || bad_views)throw std::runtime_error(std::string(name)+": mountain terrain left the clear colour below the horizon");
         }
+        // Tunnels (mountain samples with marking flag 0x40, 0x00454240 type
+        // 3): 0x0040dac0 arches, 0x0040d420 portals. Before they were ported
+        // the sky showed through. The original CANYN capture
+        // pch-tunnel-20261016 frames 3000-3150 show only arch above the road.
+        // From inside a tunnel with 8 tunnel samples ahead, at most 5% of the
+        // top 160 rows may still equal the bare horizon.
+        for(const char* name:{"MEDLY","CANYN"}) {
+            const auto other=rr::read_course(assets.read(std::string("DATA/COURSES/")+name+".CRS"));
+            const rr::CourseScene other_scene(assets,exe,other,name);
+            rr::Framebuffer sky(640,480),frame(640,480);other_scene.draw_horizon(sky,0);
+            size_t inside=0,open=0,worst=0;
+            for(bool second:{false,true}) {const auto route=rr::make_route(other,second);
+            for(uint32_t p=0;p+9<route.size();++p) {
+                if(!other_scene.tunnel(route[p].section,route[p].local) || !other_scene.tunnel(route[p+8].section,route[p+8].local))continue;
+                const auto slices=rr::project_road(route,p*256+128,{0,150},depths);
+                other_scene.draw_horizon(frame,0);
+                rr::render_nodes(frame,other_scene.draw_nodes(route,slices,{0,150},depths),rr::view_mode(true),16);
+                size_t same=0;for(int y=0;y<160;++y)for(int x=0;x<640;++x)same+=frame.row(y)[x]==sky.row(y)[x];
+                ++inside;worst=std::max(worst,same);if(same*20>size_t(640*160))++open;
+            }}
+            std::cout<<name<<" tunnel views: "<<inside<<", "<<open<<" showing sky, worst "<<worst<<" horizon pixels\n";
+            if(!inside || open)throw std::runtime_error(std::string(name)+": tunnel arch missing");
+        }
         // Hor+ widescreen: road slices and every builder centre on the same
         // logical_width/2. Each node fully inside the 4:3 view must reappear
         // at 426 shifted by exactly 53 columns. Regression: panel inputs kept

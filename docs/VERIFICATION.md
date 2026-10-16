@@ -1415,3 +1415,27 @@ pass before it was inspected; the successful rerun is the verified result.
 - Not covered: type 3 split sides, building→mountain transitions, scene
   display-list comparison against the capture's `-scene*.raw` dumps.
 
+## Tunnels and building-to-mountain walls (October 16, 2026)
+
+- Original: `RR_ORACLE_COURSE=5 RR_ORACLE_DRIVE=2 RR_ORACLE_SEED=1
+  RR_ORACLE_PIXELS=1 RR_ORACLE_SHOT_EVERY=30 RR_ORACLE_FRAMES=3600
+  oracle/run.sh pch-tunnel-20261016 900`: exit 0, 3600 frames, proxy
+  `48f9bdf5…`, accepted. Approach f2910-2970, inside f3000-3150, exit f3180,
+  second tunnel approach f3480-3570.
+- Native course views (CANYN 372/378/382/395/410/411) and `rr-game --course 3
+  --autopilot --ticks 3000` at 16:10 show the portal trim, mountain face,
+  lit arch, railed sidewalks and exit as in those frames. Visual comparison
+  only. From sample 412 on, at the exit, the original's own visibility tests
+  drop the arch panels as the camera nears the last tunnel sample.
+- `scene-test`: synthetic cases for the arch (backdrop, panel points, roof
+  midpoints, forced flips, material order, null material stops, depth gate),
+  portal (12 nodes, face start, 1.25-column trim, curb, materials chosen
+  once), tunnel wall/cliff branches, camera-in-tunnel skip, building facade
+  neighbour and `fixed_multiply`: 0 failures.
+- `course_scene-test`: views from inside a tunnel with 8 tunnel samples
+  ahead, both branches: MEDLY 51, CANYN 242, none with over 5% of the top 160
+  rows equal to the bare horizon (worst 1774 / 1946 pixels). Without the
+  arch every such view shows sky. Mountain clear-colour check unchanged.
+- Gate: full build exit 0, `ctest` 99/99 passed. Simulation untouched:
+  tunnel state is separate from `TerrainSlice`.
+

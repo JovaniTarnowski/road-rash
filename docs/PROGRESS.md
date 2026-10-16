@@ -1042,3 +1042,27 @@ was restored to its pre-session hash after both captures.
   mountain transitions (skipped), node flags 0x20000/0x40000, no pixel
   comparison with the original frames. [Handoff](agent-handoffs/pch-terrain-20261016.md).
 
+### October 16, 2026: tunnels and building-to-mountain transition
+
+- Correction: the "type 3 split sides" listed as remaining above are
+  tunnels. `0x00454240` makes a sub-slice type 3 for marking flag 0x40; on
+  the disc that occurs only on mountain sections (MEDLY s13, CANYN s0/s7/s14,
+  runs of 25-33 samples).
+- Ported: `tunnel_arch_nodes` (`0x0040dac0`: colour-0xfd backdrop on the
+  farthest strip, six panels from the `0x00465a54` table, category-3
+  materials of the CESR selector, lit set every fourth sample),
+  `tunnel_portal_nodes` (`0x0040d420`: mountain face, trim, curb faces, lean
+  from `0x0044f5a0`/`0x0044f770`), tunnel branches of `0x0040dfd0` and
+  `0x0040d030`, raised sidewalks via `building_shoulder_nodes` (`0x0040bde0`
+  with category-3 frames 2/3), and the type-3 transform (mountain side,
+  height >= 800, doubled open-side edge, halved shoulders, 16-unit curbs).
+  Tunnels are a render-only flag in `CourseScene`; `TerrainSlice::type`,
+  which the race reads, is unchanged.
+- Building neighbour of a mountain pair: the wall/cliff builders now read the
+  building's facade offsets/heights as `0x00444630` leaves them at
+  +0x70/+0x80. No route on the disc has that adjacency (0 on all courses,
+  both branches); covered by a synthetic case only.
+- Remaining: sub-slice type 3 in simulation (`0x00439b10`), no pixel or
+  display-list comparison, scenery guard rails at the CANYN portal are a
+  separate scenery question. [Handoff](agent-handoffs/pch-tunnel-20261016.md).
+
