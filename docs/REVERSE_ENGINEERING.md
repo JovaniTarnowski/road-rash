@@ -1595,3 +1595,46 @@ Evidence: project exports `00442dd0.c`, `00442e10.c`, `0044c780.c`,
   rect with small Badloc `DAT_004c1210`, over the half palette.
 - Original countdown pixels (`napa-dash-solo` post-dash d2/d36/d70): white
   index 255, shadow index 0, digit box x 303–331 / 312–321, y 143–220.
+
+## Race palette uploads, runtime evidence (October 16, 2026)
+
+Proxy `RR_ORACLE_PALETTE=1` patches `IDirectDrawPalette::SetEntries` (vtable
++0x18 of `DAT_00475424`) and logs every upload with its return address.
+Upload call sites (disassembly; all pass flags 0, start 0, count 0x100):
+
+| Call | Return | Source | Role |
+| --- | --- | --- | --- |
+| `0x415e69` | `0x415e6c` | `0x482358` | fade-in worker `0x00415d90` |
+| `0x415f49` | `0x415f4c` | `0x482358` | fade-out worker `0x00415e90` |
+| `0x41642a` | `0x41642d` | `0x4b8030` half | race start, no-fade branch (`0x482b68`) |
+| `0x416664` | `0x416667` | `0x482760` | `0x482b68` branch after the race loop (not traced) |
+| `0x442f2c` | `0x442f2f` | `0x4b8490` full | countdown expiry `0x00442e10` |
+| `0x44322d` | `0x443230` | `0x4b8030` half | `0x004431d0` entry when countdown is 0 |
+| `0x44334d` | `0x443350` | `0x4b8490` full | `0x004431d0` exit 2 when countdown is 0 |
+| near `0x41e76e` | not traced | stack copy | `0x0041e710` (front end) |
+
+Capture `napa-palette` (Napa, solo, seed 1, drive 2, attract bootstrap;
+see VERIFICATION) recorded 130 uploads, in order: 63 fade-in (counter
+`0x482350` 63..1, countdown 180, before race frame 2), full at the frame the
+countdown reaches 0 (frame 181), half when the Pause pump opens (frame 221),
+full when it closes on a key (251), half when the Escape quit prompt opens
+(281), then 63 fade-out uploads right after the second Escape (311). Every
+entry equals the formulas above applied to `DATA/PALETTE.RAW` with entry 0
+forced black: fade-in `trunc((c >> 1) × 0.96^(n−1))`, fade-out cumulative
+`trunc(x × 0.96)` from `c >> 1`, so the first fade-out upload is already
+`trunc(half × 0.96)` even when the full palette was live. Uploads 56..63 of
+the fade-out are all black. Upload spacing: 867 ms over 62 intervals for
+both fades (14 ms timer).
+
+Further runtime facts from the same proxy:
+- The `RR_ORACLE_COURSE` bootstrap races in game mode `0x004753b0` = 0
+  (attract). In mode 0 `VK_PAUSE` is ignored and Escape (branch `0x423450`)
+  ends the race at once with the fade-out and no `0x004431d0` prompt; the
+  bootstrap then starts the next race with a new fade-in (probe run).
+- Race frames 0 and 1 (`0x004163fa`, `0x00416406`) render before the first
+  fade-in upload, so two race frames are presented under whatever palette
+  preceded the race. That palette was not logged (no upload between hook
+  installation at course entry and the fade-in). Native presents nothing new
+  before the first upload; not compared.
+- `0x0049e138` (the `palette.N` field) is not the live palette: it stays
+  zero through every upload.

@@ -1354,3 +1354,35 @@ pass before it was inspected; the successful rerun is the verified result.
   (post-dash d2/d36/d70): white overlap "3" 1096/1315, "2" 1167/1322, "1"
   746/750; shadow "1" 162/162. Palette dimming/fades are not covered: the
   capture's palette field is all zeros.
+
+## Race palette uploads vs native (October 16, 2026)
+
+- Proxy: `oracle/build.sh` + `tools/oracle_install.py` (proxy sha256
+  `48f9bdf5…`, new options env-gated; existing captures unchanged).
+- Capture: `RR_ORACLE_PALETTE=1 RR_ORACLE_EXIT_FADEOUT=1 RR_ORACLE_SOLO=1
+  RR_ORACLE_COURSE=4 RR_ORACLE_DRIVE=2 RR_ORACLE_SEED=1
+  RR_ORACLE_KEYS="220:19:1,250:65:0,280:27:1,310:27:1"
+  oracle/run.sh napa-palette 240`: exit 0, 311 frames, ends inside the
+  fade-out's last upload. `tools/oracle_capture.py validate
+  analysis/oracle/napa-palette.tsv`: complete, branch `unverified`
+  (attract bootstrap). Companion `napa-palette-palette.raw` (130 uploads),
+  read with `tools/oracle_palette.py`. Local and git-ignored.
+- Keys are posted as WM_KEYDOWN/WM_KEYUP after the named frame. The third
+  field writes game mode `0x004753b0` = 1 before Pause and the two Escapes
+  (and 0 with the resume key), because the bootstrap's mode 0 ignores Pause
+  and skips the quit prompt. This is a diagnostic override: one stepper
+  call may run in mode 1 before the wndproc dispatches the key; it covers
+  palette presentation only, not simulation.
+- `hud-test` (capture-gated): native `fade_in_lut(n)`, `fade_out_lut(n)`,
+  `half_palette_lut()` and `identity_lut()` applied to native
+  `PALETTE.RAW` vs every upload: **0 of 33,280 entries differ** (130
+  uploads: 63 fade-in, countdown expiry full, pause half, resume full,
+  quit-prompt half, 63 fade-out); upload order and the fade counters match;
+  countdown expiry happens with `0x4753c0` = 0, matching
+  `countdown_banner(0,180).dim == false`; fade spans 867/867 ms
+  (62 × 14 = 868). Full build exit 0; `ctest` 99/99 passed.
+- Not covered: the palette in effect for race frames 0–1 before the fade-in,
+  `0x41642d` (no-fade start branch) and `0x416667` (`0x482760`) uploads, which
+  this bootstrap never reaches; native timing of the fade relative to frames
+  (only the original's wall-clock spacing is checked); human-mode Escape and
+  Pause without the mode override.

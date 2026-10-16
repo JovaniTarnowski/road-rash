@@ -52,6 +52,7 @@ static int g_police_probe;
 static int g_terrain_seeded;
 static int g_terrain_trace;
 static void capture_terrain_seeded_and_exit(void);
+static void palette_hook_install(void);
 static uint32_t g_frame;
 
 /* Solo isolation (plan 10 task 5): freeze every scheduler node except
@@ -117,6 +118,7 @@ static void __fastcall hook_menu_enter(int screen) {
         g_seed_applied = 1;
     }
     g_race_started = 1;
+    palette_hook_install();
 }
 static uint32_t __cdecl hook_controls(void) {
     // Input files are consumed per step in hook_step (one word per tick);
@@ -2002,6 +2004,106 @@ static void capture_road_panels(void) {
     for(int i=0;i<12;++i)RD32(addresses[i])=saved[i];
 }
 
+/* Palette upload log (RR_ORACLE_PALETTE=1). Every original palette upload is
+ * `IDirectDrawPalette::SetEntries` (vtable +0x18) on DAT_00475424 with flags 0,
+ * start 0, count 0x100: half 0x4b8030 (start no-fade 0x416414, pump 0x443217),
+ * full 0x4b8490 (countdown expiry 0x442f16, pump restore 0x443337), fade
+ * buffer 0x482358 (fade-in 0x415e53, fade-out 0x415f33), 0x482760 (0x41664e)
+ * and a stack copy (0x41e767). The slot is patched once the object exists
+ * (fades call from the timeSetEvent thread). Records go to the companion
+ * `<scenario>-palette.raw`: "RRPL" + version 1, then per upload 9 uint32
+ * {seq, frame, ms, return address, source, start, count, countdown 0x4753c0,
+ * fade counter 0x482350} and count PALETTEENTRY bytes (r, g, b, flags). */
+typedef HRESULT (__stdcall* rr_set_entries_fn)(void*, DWORD, DWORD, DWORD, void*);
+static int g_palette;
+static int g_palette_exit_fadeout;
+static FILE* g_palette_out;
+static CRITICAL_SECTION g_palette_lock;
+static rr_set_entries_fn g_set_entries;
+static volatile LONG g_palette_uploads;
+static HRESULT __stdcall hook_set_entries(void* self, DWORD flags, DWORD start, DWORD count, void* entries) {
+    const uint32_t site = (uint32_t)(uintptr_t)__builtin_return_address(0);
+    const HRESULT result = g_set_entries(self, flags, start, count, entries);
+    if (self != (void*)(uintptr_t)(uint32_t)RD32(0x00475424)) return result;
+    const uint32_t fade_counter = (uint32_t)RD32(0x00482350);
+    EnterCriticalSection(&g_palette_lock);
+    const uint32_t seq = (uint32_t)g_palette_uploads;
+    if (g_palette_out) {
+        const uint32_t n = count <= 256 && readable((uintptr_t)entries, count * 4) ? count : 0;
+        const uint32_t record[9] = {seq, g_frame, timeGetTime(), site, (uint32_t)(uintptr_t)entries,
+                                    start, n, (uint32_t)RD32(0x004753c0), fade_counter};
+        fwrite(record, 4, 9, g_palette_out);
+        if (n) fwrite(entries, 4, n, g_palette_out);
+        fflush(g_palette_out);
+    }
+    InterlockedIncrement(&g_palette_uploads);
+    // Fade-out (0x415e90, call at 0x415f49): the counter is decremented before
+    // the upload, so counter 1 is the last upload. The main thread is blocked
+    // on the fade semaphore; end the capture here instead of entering menus.
+    if (g_palette_exit_fadeout && site == 0x00415f4c && fade_counter == 1) {
+        if (g_palette_out) { fclose(g_palette_out); g_palette_out = NULL; }
+        if (g_out) { fputs("end\n", g_out); fclose(g_out); g_out = NULL; }
+        LeaveCriticalSection(&g_palette_lock);
+        ExitProcess(0);
+    }
+    LeaveCriticalSection(&g_palette_lock);
+    return result;
+}
+static void palette_hook_install(void) {
+    if (!g_palette || g_set_entries) return;
+    const uintptr_t object = (uint32_t)RD32(0x00475424);
+    if (!object || !readable(object, 4)) return;
+    void** vtable = *(void***)object;
+    if (!readable((uintptr_t)vtable, 0x1c)) return;
+    DWORD old;
+    if (!VirtualProtect(&vtable[6], sizeof(void*), PAGE_EXECUTE_READWRITE, &old)) return;
+    g_set_entries = (rr_set_entries_fn)vtable[6];
+    vtable[6] = (void*)hook_set_entries;
+    VirtualProtect(&vtable[6], sizeof(void*), old, &old);
+    if (g_out) fprintf(g_out, "# palette SetEntries hooked at frame %u\n", g_frame);
+}
+static void palette_open(void) {
+    char path[MAX_PATH];
+    const char* slash = strrchr(g_output, '\\');
+    const size_t prefix = slash ? (size_t)(slash - g_output) + 1 : 0;
+    if (prefix > sizeof path - 64) return;
+    memcpy(path, g_output, prefix);
+    snprintf(path + prefix, sizeof path - prefix, "%s-palette.raw", g_scenario);
+    InitializeCriticalSection(&g_palette_lock);
+    g_palette_out = fopen(path, "wb");
+    if (g_palette_out) { const uint32_t header[2] = {0x4c505252u /* "RRPL" */, 1}; fwrite(header, 4, 2, g_palette_out); }
+}
+
+/* Scripted keys (RR_ORACLE_KEYS="frame:vk,frame:vk,..."): after race frame
+ * `frame` renders, post WM_KEYDOWN then WM_KEYUP for `vk` to the game's
+ * window. The wndproc acts on WM_KEYUP (0x423345: Escape, VK_PAUSE, ...); the
+ * pump 0x004431d0 renders frames through hook 3, so its keys use the same
+ * frame clock. An optional third field "frame:vk:mode" writes game mode
+ * 0x004753b0 before posting (diagnostic only: the course bootstrap races in
+ * attract mode 0, where VK_PAUSE is ignored and Escape ends the race without
+ * the 0x004431d0 quit prompt). The mode stays until a later key changes it. */
+static struct { uint32_t frame; uint32_t vk; int mode; } g_keys[16];
+static int g_key_count, g_key_next;
+static BOOL CALLBACK find_game_window(HWND window, LPARAM out) {
+    if (!IsWindowVisible(window) || GetWindow(window, GW_OWNER)) return TRUE;
+    *(HWND*)out = window;
+    return FALSE;
+}
+static void post_scripted_keys(void) {
+    while (g_key_next < g_key_count && g_keys[g_key_next].frame == g_frame) {
+        HWND window = NULL;
+        EnumThreadWindows(GetCurrentThreadId(), find_game_window, (LPARAM)&window);
+        const UINT vk = g_keys[g_key_next].vk, scan = MapVirtualKeyA(vk, 0);
+        if (g_keys[g_key_next].mode >= 0) RD32(0x004753b0) = g_keys[g_key_next].mode;
+        if (window) {
+            PostMessageA(window, WM_KEYDOWN, vk, 1 | (scan << 16));
+            PostMessageA(window, WM_KEYUP, vk, 1 | (scan << 16) | 0xc0000000u);
+        }
+        if (g_out) fprintf(g_out, "# key %u mode %d posted at frame %u window %p\n", vk, g_keys[g_key_next].mode, g_frame, (void*)window);
+        ++g_key_next;
+    }
+}
+
 static void dump_frame(uint32_t site) {
     char key[96];
     fprintf(g_out, "frame\t%u\n", g_frame);
@@ -2016,6 +2118,12 @@ static void dump_frame(uint32_t site) {
     rr_log("view.coordinate_mask", (uint32_t)RD32(0x00481ff4));
     if (g_frame==0) {dump_raster();dump_groups();}
     rr_log("view.quality_mask", RD32(0x00475648));
+    if (g_palette) {
+        rr_log("palette.uploads", g_palette_uploads);
+        rr_log("countdown", RD32(0x004753c0));
+        rr_log("race.mode", RD32(0x004753b0));
+        rr_log("pump.active", RD8(0x004753b8));
+    }
     if (g_scene_written) { rr_log("scene.file",g_frame);rr_log("scene.nodes",g_scene_nodes);g_scene_written=0; }
     // Dispatch records buffered during this frame's projection/draw.
     if (!(g_frame % (uint32_t)g_pixel_every)) flush_actor_records();
@@ -2066,8 +2174,10 @@ static void dump_frame(uint32_t site) {
     static void __cdecl hook_frame_##n(void) { \
         if (g_terrain_seeded) capture_terrain_seeded_and_exit(); \
         reset_actor_records(); \
+        palette_hook_install(); \
         orig_frame(); \
         if (g_out && !g_sim) dump_frame(site); \
+        post_scripted_keys(); \
         ++g_frame; \
         if (!g_sim && g_quit_after > 0 && g_frame >= (uint32_t)g_quit_after) { \
             if (g_out) { fputs("end\n", g_out); fclose(g_out); g_out = NULL; } \
@@ -2099,6 +2209,23 @@ static int rr_install_hooks(void) {
     if (GetEnvironmentVariableA("RR_ORACLE_TERRAIN_TRACE",buf,sizeof buf)) g_terrain_trace=atoi(buf)!=0;
     if (GetEnvironmentVariableA("RR_ORACLE_SOLO",buf,sizeof buf)) g_solo = atoi(buf)!=0;
     if (GetEnvironmentVariableA("RR_ORACLE_HUMAN",buf,sizeof buf)) g_human = atoi(buf)!=0;
+    if (GetEnvironmentVariableA("RR_ORACLE_PALETTE",buf,sizeof buf)) g_palette = atoi(buf)!=0;
+    if (GetEnvironmentVariableA("RR_ORACLE_EXIT_FADEOUT",buf,sizeof buf)) g_palette_exit_fadeout = atoi(buf)!=0;
+    if (GetEnvironmentVariableA("RR_ORACLE_KEYS",path,sizeof path)) {
+        // "frame:vk,..." in ascending frame order; malformed lists fail the install.
+        for (char* item = strtok(path, ","); item; item = strtok(NULL, ",")) {
+            unsigned frame, vk;
+            int mode = -1;
+            const int fields = sscanf(item, "%u:%u:%d", &frame, &vk, &mode);
+            if (g_key_count == 16 || fields < 2 || vk == 0 || vk > 0xfe || (fields == 3 && (mode < 0 || mode > 3)) ||
+                (g_key_count && frame < g_keys[g_key_count - 1].frame)) {
+                if (g_out) fputs("# invalid RR_ORACLE_KEYS\n", g_out);
+                return 0;
+            }
+            g_keys[g_key_count].frame = frame; g_keys[g_key_count].vk = vk; g_keys[g_key_count].mode = mode; ++g_key_count;
+        }
+    }
+    if (g_palette) palette_open();
     env("RR_ORACLE_RASTER",buf,sizeof buf,"0");g_raster=atoi(buf);
     if (GetEnvironmentVariableA("RR_ORACLE_SHOT_EVERY",buf,sizeof buf) && atoi(buf)>0) g_pixel_every=atoi(buf);
     if(GetEnvironmentVariableA("RR_ORACLE_COURSE",buf,sizeof buf)) {

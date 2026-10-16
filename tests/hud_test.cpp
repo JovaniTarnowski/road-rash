@@ -105,6 +105,60 @@ int main(){
         }
         rr::Assets assets(RR_SOURCE_DIR "/../cdrom/ROADRASH");
         if(!assets.exists("ROADRASH.EXE")){std::cout<<"Meter levels pass; imported HUD corpus absent\n";return 0;}
+        // Original palette uploads (local, git-ignored oracle capture
+        // napa-palette: RR_ORACLE_PALETTE=1 logs every SetEntries on
+        // DAT_00475424 with its call site; keys Pause/A/Escape/Escape at
+        // frames 220/250/280/310 with a diagnostic game mode 1 override for
+        // the pump frames). Native maps applied to native PALETTE.RAW must
+        // reproduce every uploaded entry: fade-in 63, countdown expiry
+        // full, pause pump half, resume full, quit prompt half, fade-out 63.
+        {
+            std::ifstream in(RR_SOURCE_DIR "/analysis/oracle/napa-palette-palette.raw",std::ios::binary);
+            if(in) {
+                const std::vector<unsigned char> d((std::istreambuf_iterator<char>(in)),std::istreambuf_iterator<char>());
+                auto word=[&](size_t at){
+                    if(at+4>d.size())throw std::runtime_error("Palette log truncated");
+                    return uint32_t(d[at])|uint32_t(d[at+1])<<8|uint32_t(d[at+2])<<16|uint32_t(d[at+3])<<24;
+                };
+                if(word(0)!=0x4c505252u || word(4)!=1)throw std::runtime_error("Palette log header");
+                const auto pal=rr::Palette::from_raw(assets.read("DATA/PALETTE.RAW"));
+                std::vector<std::pair<uint32_t,uint32_t>> sequence;   // {site, mismatched entries}
+                std::vector<uint32_t> fade_in_ms,fade_out_ms;
+                int fade_in=0,fade_out=0;
+                for(size_t at=8;at<d.size();) {
+                    const uint32_t site=word(at+12),count=word(at+24),countdown=word(at+28),counter=word(at+32),ms=word(at+8);
+                    if(word(at)!=sequence.size() || count!=256 || word(at+20)!=0)throw std::runtime_error("Palette log record");
+                    const unsigned char* e=&d[at+36];
+                    if(at+36+1024>d.size())throw std::runtime_error("Palette log entries truncated");
+                    at+=36+1024;
+                    rr::ChannelLut lut;
+                    if(site==0x415e6c){lut=rr::fade_in_lut(++fade_in);fade_in_ms.push_back(ms);
+                        if(counter!=uint32_t(64-fade_in) || countdown!=180)throw std::runtime_error("Fade-in counter or countdown");}
+                    else if(site==0x415f4c){lut=rr::fade_out_lut(++fade_out);fade_out_ms.push_back(ms);
+                        if(counter!=uint32_t(64-fade_out))throw std::runtime_error("Fade-out counter");}
+                    else if(site==0x442f2f){lut=rr::identity_lut();
+                        // 0x00442e10 uploads the full palette on the tick the countdown reaches 0.
+                        if(countdown!=0 || rr::countdown_banner(0,180).dim || !rr::countdown_banner(1,180).dim)throw std::runtime_error("Countdown expiry upload");}
+                    else if(site==0x443230)lut=rr::half_palette_lut();
+                    else if(site==0x443350)lut=rr::identity_lut();
+                    else throw std::runtime_error("Unexpected palette upload site");
+                    uint32_t bad=0;
+                    for(size_t i=0;i<256;++i)for(size_t c=0;c<3;++c)
+                        if(e[4*i+c]!=lut[pal.rgbx[4*i+c]]){++bad;break;}
+                    sequence.emplace_back(site,bad);
+                }
+                const std::vector<uint32_t> expected_order{0x442f2f,0x443230,0x443350,0x443230};
+                if(fade_in!=63 || fade_out!=63 || sequence.size()!=130)throw std::runtime_error("Palette upload counts");
+                for(size_t k=0;k<expected_order.size();++k)if(sequence[63+k].first!=expected_order[k])throw std::runtime_error("Palette upload order");
+                uint32_t mismatched=0;for(const auto& s:sequence)mismatched+=s.second;
+                if(mismatched)throw std::runtime_error("Native palette maps differ from the original uploads");
+                // timeSetEvent(14 ms): 62 intervals; Wine's timer jitters by a few ms.
+                const uint32_t in_span=fade_in_ms.back()-fade_in_ms.front(),out_span=fade_out_ms.back()-fade_out_ms.front();
+                if(std::abs(int(in_span)-62*14)>31 || std::abs(int(out_span)-62*14)>31)throw std::runtime_error("Fade upload period");
+                std::cout<<"palette uploads vs original: "<<sequence.size()<<" uploads, 0/"<<sequence.size()*256
+                         <<" entries differ; fade spans "<<in_span<<"/"<<out_span<<" ms (62 x 14 = 868)\n";
+            }
+        }
         // Countdown digit raster: black at the rect, white at -2,-2, centred
         // across the 640-wide view starting 120 rows down; nothing above it.
         {
