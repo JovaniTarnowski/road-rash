@@ -1,5 +1,6 @@
 #include "view_state.hpp"
 #include <iostream>
+#include <limits>
 
 int main() {
     int failures = 0;
@@ -15,6 +16,28 @@ int main() {
     rr::blend_view(out, a, b, 32768);   check(out.camera_position_q8 == 1128, "reverse halfway");
     a.camera_position_q8 = 0xffffff80u; b.camera_position_q8 = 0x80;
     rr::blend_view(out, a, b, 32768);   check(out.camera_position_q8 == 0, "wraps forward through zero");
+    a.camera_position_q8 = 0x80; b.camera_position_q8 = 0xffffff80u;
+    a.actors[0].position_q8 = a.camera_position_q8; b.actors[0].position_q8 = b.camera_position_q8;
+    rr::blend_view(out, a, b, 32768);
+    check(out.camera_position_q8 == 0 && out.actors[0].position_q8 == 0, "camera and actor wrap backward through zero");
+    a.actors[0].lateral_q8 = std::numeric_limits<int32_t>::min();
+    b.actors[0].lateral_q8 = std::numeric_limits<int32_t>::max();
+    a.actors[0].height_q8 = b.actors[0].lateral_q8;
+    b.actors[0].height_q8 = a.actors[0].lateral_q8;
+    a.actors[0].roll = a.actors[0].lateral_q8; b.actors[0].roll = b.actors[0].lateral_q8;
+    a.actors[0].heading = 0x7ffff0; b.actors[0].heading = -0x7ffff0;
+    rr::blend_view(out, a, b, 32768);
+    check(out.actors[0].lateral_q8 == -1 && out.actors[0].height_q8 == -1 && out.actors[0].roll == -1,
+          "signed extremes widen before subtracting");
+    check(out.actors[0].heading == 0x800000, "heading wraps forward on its own period");
+    std::swap(a.actors[0].heading, b.actors[0].heading);
+    rr::blend_view(out, a, b, 32768);
+    check(out.actors[0].heading == -0x800000, "heading wraps backward on its own period");
+    rr::blend_view(out, a, b, 0);
+    check(out.actors[0].lateral_q8 == a.actors[0].lateral_q8, "signed extreme alpha zero");
+    rr::blend_view(out, a, b, 65536);
+    check(out.actors[0].lateral_q8 == b.actors[0].lateral_q8, "signed extreme alpha one");
+    a.actors[0].position_q8 = 5000; b.actors[0].position_q8 = 5100;
     b.actors[0].route = 1;              // split commit
     rr::blend_view(out, a, b, 32768);   check(out.actors[0].position_q8 == 5100, "route change is not blended");
     b.actors[0].route = 0; b.actors[0].position_q8 = 5000 + (64 << 8);   // crash reset / remount jump

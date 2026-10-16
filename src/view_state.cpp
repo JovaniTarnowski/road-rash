@@ -9,8 +9,9 @@ int32_t blend_i32(int32_t a, int32_t b, uint32_t alpha_q16) {
 }
 // Shortest signed modular blend for wrapped quarter/factor (position-like uint32).
 uint32_t blend_u32_wrap(uint32_t a, uint32_t b, uint32_t alpha_q16) {
-    const int32_t d = int32_t(b - a);  // widen to signed; wraps to [-2^31,2^31)
-    return uint32_t(int64_t(a) + (int64_t(d) * alpha_q16 >> 16));
+    const uint32_t wrapped = b - a;
+    const int64_t d = wrapped <= INT32_MAX ? int64_t(wrapped) : int64_t(wrapped) - (int64_t(1) << 32);
+    return uint32_t(int64_t(a) + (d * alpha_q16 >> 16));
 }
 // Wrapped blend for heading (period 0x1000000, as in wrap_angle).
 int32_t blend_heading(int32_t a, int32_t b, uint32_t alpha_q16) {
@@ -19,10 +20,10 @@ int32_t blend_heading(int32_t a, int32_t b, uint32_t alpha_q16) {
     d %= period;
     if (d > period / 2) d -= period;
     else if (d < -period / 2) d += period;
-    int32_t r = int32_t(int64_t(a) + (d * alpha_q16 >> 16));
+    int64_t r = (int64_t(a) + (d * alpha_q16 >> 16)) % period;
     if (r > period / 2) r -= period;
     else if (r < -period / 2) r += period;
-    return r;
+    return int32_t(r);
 }
 }  // namespace
 

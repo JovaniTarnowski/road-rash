@@ -40,7 +40,6 @@ RaceScreen::RaceScreen(Game& g, SDL_Renderer* r, const RaceOptions& opt, Display
     touch_.set_left_handed(opt_.left_handed);
     pad_ = open_first_gamepad();
     if (opt_.show_fps && opt_.assets) fps_ = std::make_unique<FpsOverlay>(*opt_.assets);
-    last_ = SDL_GetTicksNS();
     display_.frame = 0;
     display_.apply(480);
 }
@@ -72,7 +71,9 @@ void RaceScreen::event(const SDL_Event& e) {
         pause_tex_.reset();
         pause_scale_w_ = 0;
         pause_img_ = RgbImage();
+        if (fps_) fps_ = std::make_unique<FpsOverlay>(*opt_.assets);
     }
+    if (e.type == SDL_EVENT_RENDER_DEVICE_LOST) throw std::runtime_error("Render device lost");
     if (!lifecycle_event(e.type)) lifecycle_.state.handle(e);
     if (g_.mixer && !g_.mixer->handle(e)) SDL_Log("Audio reopen failed: %s", SDL_GetError());
     const RaceActionContext act_ctx = ctx_now();
@@ -99,23 +100,20 @@ void RaceScreen::event(const SDL_Event& e) {
         e.type == SDL_EVENT_FINGER_UP || e.type == SDL_EVENT_FINGER_CANCELED) {
         if (act == RaceAction::none) touch_.handle(e);
     }
-    if (e.type == SDL_EVENT_RENDER_DEVICE_LOST) throw std::runtime_error("Render device lost");
-    if (lifecycle_.state.take_clock_reset()) {
-        reset_clock(SDL_GetTicksNS());
-    }
+    // Consume lifecycle resets in iterate(), using its frame timestamp.
 }
 
 bool RaceScreen::iterate(uint64_t now_ns) {
     const uint64_t now = now_ns ? now_ns : SDL_GetTicksNS();
     if (!running_) return false;
+    if (!last_) reset_clock(now);
     if (restart_) {
         g_.restart();   // Enter / pad South / tap after a quick-race finish (README)
         restart_ = false;
         decided_ = false;
         end_ticks_ = 0;
-        last_ = now;
-        clock_.reset();
-        touch_.clear();
+        result_ = RaceEnd{};
+        reset_clock(now);
     }
     // Plan 18 Task 8: a lifecycle freeze (background return, focus loss,
     // pad removal) opens the pause menu instead of the old PAUSED text.
@@ -123,7 +121,9 @@ bool RaceScreen::iterate(uint64_t now_ns) {
         opt_.menu->open_pause(capture_race_frame(renderer_));
         lifecycle_.state.resume();
     }
-    if (opt_.menu && opt_.menu->pause_open()) {
+    // A menu input may close pause_open() while queuing resume/quit. Drain
+    // those events even after the menu has closed so the clock is reset.
+    if (opt_.menu) {
         FrontendEvent ev;
         while (opt_.menu->poll(ev)) {
             if (ev.kind == FrontendEvent::Kind::resume_race) lifecycle_.state.resume();
@@ -206,7 +206,8 @@ bool RaceScreen::iterate(uint64_t now_ns) {
         if (display_.window) SDL_GetWindowSize(display_.window, &dw, &dh);
         opt_.menu->set_display_size(dw, dh);
         const int pause_lw = opt_.menu->menu_width(dw, dh);
-        SDL_SetRenderLogicalPresentation(renderer_, pause_lw, 480, display_.config.presentation);
+        if (!SDL_SetRenderLogicalPresentation(renderer_, pause_lw, 480, display_.config.presentation))
+            throw std::runtime_error(SDL_GetError());
         const int pause_scale = display_.render_scale;
         opt_.menu->draw(pause_img_, pause_scale);
         if (!pause_tex_ || pause_scale_w_ != pause_img_.width) {
@@ -218,9 +219,9 @@ bool RaceScreen::iterate(uint64_t now_ns) {
         }
         if (!SDL_UpdateTexture(pause_tex_.get(), nullptr, pause_img_.pixels.data(), pause_img_.width * 4))
             throw std::runtime_error(SDL_GetError());
-        SDL_SetRenderDrawColor(renderer_, 0, 0, 0, 255);
-        SDL_RenderClear(renderer_);
-        SDL_RenderTexture(renderer_, pause_tex_.get(), nullptr, nullptr);
+        if (!SDL_SetRenderDrawColor(renderer_, 0, 0, 0, 255) || !SDL_RenderClear(renderer_) ||
+            !SDL_RenderTexture(renderer_, pause_tex_.get(), nullptr, nullptr))
+            throw std::runtime_error(SDL_GetError());
     } else {
         SDL_SetRenderDrawColor(renderer_, 15, 18, 22, 255);
         SDL_RenderClear(renderer_);
@@ -250,7 +251,7 @@ bool RaceScreen::iterate(uint64_t now_ns) {
         running_ = false;
         result_.quit_app = true;
     }
-    SDL_RenderPresent(renderer_);
+    if (!SDL_RenderPresent(renderer_)) throw std::runtime_error(SDL_GetError());
     display_.maybe_toggle();
     return running_;
 }

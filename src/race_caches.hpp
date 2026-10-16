@@ -75,6 +75,17 @@ struct CourseCanvas {
     DashLut dash_lut;
     uint32_t dash_lut_gen = 0;
     uint8_t dash_index(uint32_t c, const Palette& pal) { return dash_lut.index(c, pal); }
+    // Plan 32 E: every horizon pixel is converted, including the zero-filled
+    // lower rows. Storage is retained across frames and rebuilt only on resize.
+    void draw_horizon_rgb(const CourseScene& scene,const Palette& palette,int32_t scroll,int32_t logical_width) {
+        if (rgb.width() != scale_w || rgb.height() != scale_h) rgb.resize(scale_w,scale_h);
+        scene.draw_horizon(frame,scroll,logical_width);
+        for (int y=0;y<scale_h;++y)
+            for (int x=0;x<scale_w;++x) {
+                const uint8_t* c=&palette.rgbx[4*frame.row(y)[x]];
+                rgb.row(y)[x]=0xff000000u | (uint32_t(c[0])<<16) | (uint32_t(c[1])<<8) | uint32_t(c[2]);
+            }
+    }
     void draw(SDL_Renderer* renderer,const Game& game,const std::vector<RoadSlice>& slices,int s,int threads) {
         const int32_t wide = game.logical_width();
         resize(s,wide);
@@ -87,56 +98,16 @@ struct CourseCanvas {
         // surface); without one the scene stands alone as in Task 4 shots.
         // Review 2026-10-13 item 2: compose once per frame; the indexed
         // branch maps through the cached LUT, the RGB branch uses it directly.
-        const bool need_dash = game.assets.hud != nullptr;
-        const RgbImage dash = need_dash ? game.assets.hud->compose(game.assets.hud->state(game.race(), game.player_name, game.rider_names),
-                                                game.assets.physics, rr::DashMode::full, s)
-                                        : RgbImage(0, 0, 0);
-        if (need_dash) {
-            // Plan 19 Task 8: the dashboard composes at the race scale. Its
-            // RgbImage pixels are palette-mapped into the indexed frame.
-            // Centred 4:3 dashboard (plan 21 Task 8): offset by the side
-            // margin so it sits in the middle of the wide frame.
-            const int xoff = margin * 2 * s;
-            const uint32_t gen = palette_generation(game.palette);
-            if (gen != dash_lut_gen) {
-                dash_lut.reset();
-                dash_lut_gen = gen;
-            }
-            for (int y = 0; y < dash.height && y < frame.height(); ++y)
-                for (int x = 0; x < dash.width && x + xoff < frame.width(); ++x) {
-                    const uint32_t c = dash.at(x, y);
-                    if (c == 0x01000000) continue;
-                    frame.row(y)[x + xoff] = dash_index(c, game.palette);
-                }
-            // Side panels: stretched + darkened edge columns (generated at
-            // runtime from the user's own dash art, no shipped assets).
-            // Full-width margins on both sides (not half width).
-            if (margin > 0) {
-                const int panel_w = margin * 2 * s;
-                for (int y = 0; y < dash.height && y < frame.height(); ++y) {
-                    const uint32_t lc = dash.at(0, y), rc = dash.at(dash.width - 1, y);
-                    if (lc == 0x01000000 && rc == 0x01000000) continue;
-                    for (int x = 0; x < panel_w; ++x) {
-                        if (lc != 0x01000000) {
-                            const int r = int((lc >> 16) & 0xff) / 2, gg = int((lc >> 8) & 0xff) / 2, bb = int(lc & 0xff) / 2;
-                            const uint32_t dark = (uint32_t(r) << 16) | (uint32_t(gg) << 8) | uint32_t(bb);
-                            frame.row(y)[x] = dash_index(dark, game.palette);
-                        }
-                        if (rc != 0x01000000) {
-                            const int r = int((rc >> 16) & 0xff) / 2, gg = int((rc >> 8) & 0xff) / 2, bb = int(rc & 0xff) / 2;
-                            const uint32_t dark = (uint32_t(r) << 16) | (uint32_t(gg) << 8) | uint32_t(bb);
-                            frame.row(y)[xoff + dash.width + x] = dash_index(dark, game.palette);
-                        }
-                    }
-                }
-            }
-        }
-        if (!workers || worker_count != threads) { workers = std::make_unique<RenderThreads>(threads); worker_count = threads; }
         // Plan 21 Task 4: the game uses the RGB path when full_colour is on
         // or filter != nearest; otherwise the indexed path (bit-identical).
         const bool use_rgb = game.enhancements.full_colour ||
                              game.enhancements.filter != rr::TextureFilter::nearest ||
                              game.enhancements.fog > 0 || game.enhancements.grade != Grade::none;
+        const bool need_dash = game.assets.hud != nullptr;
+        const RgbImage dash = need_dash ? game.assets.hud->compose(game.assets.hud->state(game.race(), game.player_name, game.rider_names),
+                                                game.assets.physics, rr::DashMode::full, s)
+                                        : RgbImage(0, 0, 0);
+        if (!workers || worker_count != threads) { workers = std::make_unique<RenderThreads>(threads); worker_count = threads; }
         // Plan 20 Task 3: lazy attach/detach on detail flips (load_course runs
         // before the settings sync, so attach here where the setting is live).
         if (game.texture_detail && !game.upscaled_attached && game.scene()) {
@@ -150,18 +121,9 @@ struct CourseCanvas {
         auto nodes=game.assets.scene->draw_nodes(game.race().route(),slices,game.race().camera(),game.depth,[&](const rr::RoadSlice& near,const rr::RoadSlice& far,int road,int32_t ceiling,bool back){return game.rider_nodes(near,far,road,ceiling,back);},wide);
         if (margin) for (auto& n:nodes) for (auto& v:n.view_points) v.x+=margin*65536;
         if (use_rgb) {
-            if (rgb.width() != scale_w || rgb.height() != scale_h) rgb.resize(scale_w, scale_h);
-            rgb.clear(0);
-            // Horizon into RGB: convert the indexed horizon rows via palette.
-            {
-                Framebuffer hz(scale_w, scale_h);
-                game.assets.scene->draw_horizon(hz,game.race().horizon_scroll(),wide);
-                for (int y = 0; y < scale_h; ++y)
-                    for (int x = 0; x < scale_w; ++x) {
-                        const uint8_t* c = &game.palette.rgbx[4 * hz.row(y)[x]];
-                        rgb.row(y)[x] = (255u << 24) | (uint32_t(c[0]) << 16) | (uint32_t(c[1]) << 8) | uint32_t(c[2]);
-                    }
-            }
+            // Reuse the indexed canvas as horizon scratch; the RGB path
+            // never composites a dashboard into that buffer.
+            draw_horizon_rgb(*game.assets.scene,game.palette,game.race().horizon_scroll(),wide);
             // Plan 21 Task 5: fog colour from the horizon's own bottom rows
             // (user's art, computed at runtime); sky/horizon exempt from fog.
             const uint32_t fog_rgb = fog_colour(rgb.row(0), scale_w, scale_h);
@@ -220,6 +182,46 @@ struct CourseCanvas {
         // The dashboard stays a centred 4:3 image (plan 21 Task 8); side
         // panels are drawn from its edge columns below.
         rr::render_nodes_threaded(frame,nodes,view_mode_wide(s,wide),16,*workers,game.enhancements.perspective);
+        if (need_dash) {
+            // Plan 19 Task 8: the dashboard composes at the race scale. Its
+            // RgbImage pixels are palette-mapped into the indexed frame.
+            // Centred 4:3 dashboard (plan 21 Task 8): offset by the side
+            // margin so it sits in the middle of the wide frame.
+            const int xoff = margin * 2 * s;
+            const uint32_t gen = palette_generation(game.palette);
+            if (gen != dash_lut_gen) {
+                dash_lut.reset();
+                dash_lut_gen = gen;
+            }
+            for (int y = 0; y < dash.height && y < frame.height(); ++y)
+                for (int x = 0; x < dash.width && x + xoff < frame.width(); ++x) {
+                    const uint32_t c = dash.at(x, y);
+                    if (c == 0x01000000) continue;
+                    frame.row(y)[x + xoff] = dash_index(c, game.palette);
+                }
+            // Side panels: stretched + darkened edge columns (generated at
+            // runtime from the user's own dash art, no shipped assets).
+            // Full-width margins on both sides (not half width).
+            if (margin > 0) {
+                const int panel_w = margin * 2 * s;
+                for (int y = 0; y < dash.height && y < frame.height(); ++y) {
+                    const uint32_t lc = dash.at(0, y), rc = dash.at(dash.width - 1, y);
+                    if (lc == 0x01000000 && rc == 0x01000000) continue;
+                    for (int x = 0; x < panel_w; ++x) {
+                        if (lc != 0x01000000) {
+                            const int r = int((lc >> 16) & 0xff) / 2, gg = int((lc >> 8) & 0xff) / 2, bb = int(lc & 0xff) / 2;
+                            const uint32_t dark = (uint32_t(r) << 16) | (uint32_t(gg) << 8) | uint32_t(bb);
+                            frame.row(y)[x] = dash_index(dark, game.palette);
+                        }
+                        if (rc != 0x01000000) {
+                            const int r = int((rc >> 16) & 0xff) / 2, gg = int((rc >> 8) & 0xff) / 2, bb = int(rc & 0xff) / 2;
+                            const uint32_t dark = (uint32_t(r) << 16) | (uint32_t(gg) << 8) | uint32_t(bb);
+                            frame.row(y)[xoff + dash.width + x] = dash_index(dark, game.palette);
+                        }
+                    }
+                }
+            }
+        }
         frame.to_rgba(game.palette,rgba.data(),scale_w*4);
         }
         if(!texture || texture_is_rgb != use_rgb) {

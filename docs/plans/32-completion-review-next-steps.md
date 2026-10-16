@@ -18,14 +18,14 @@ registration/status edits. Read current `AGENTS.md` and plan 00 first.
 Files: `src/race_screen.*`, focused new screen integration test; coordinate
 CMake registration with the integrator.
 
-- [ ] Consume restart once. Reset clock/history and any screen result/countdown
+- [x] Consume restart once. Reset clock/history and any screen result/countdown
   bookkeeping required by restart; avoid holding stale state across rebuilds.
-- [ ] Handle renderer resets before pause-menu routing, clear pause texture and
+- [x] Handle renderer resets before pause-menu routing, clear pause texture and
   all affected cached textures, and check upload/render failures.
-- [ ] Add regressions exercising the screen across multiple iterations, not
+- [x] Add regressions exercising the screen across multiple iterations, not
   only the pure `race_action` translator: finish → restart → advance; reset
   while active; reset while pause menu is open; resume without elapsed-time jump.
-- [ ] Run focused screen/session/action tests, native integration gate and
+- [x] Run focused screen/session/action tests, native integration gate and
   a bounded SDL smoke flow. Run ASan/UBSan on the new lifecycle tests.
 
 Acceptance: one restart request produces one rebuilt race, countdown advances,
@@ -37,14 +37,14 @@ separate until actually observed.
 Files: `src/view_state.*`, `src/race_screen.cpp`,
 `tests/view_state_test.cpp`, new screen harness. Serialize with A.
 
-- [ ] Use explicit shortest signed modular deltas for wrapped positions;
+- [x] Use explicit shortest signed modular deltas for wrapped positions;
   widen signed operands before subtracting. Define heading period separately.
-- [ ] Capture adjacent simulation-tick snapshots even during catch-up;
+- [x] Capture adjacent simulation-tick snapshots even during catch-up;
   initialize both after discontinuities. Use the supplied frame timestamp
   consistently so synthetic timing tests can control screen progression.
-- [ ] Cover backward movement and wrap in both directions, alpha endpoints,
+- [x] Cover backward movement and wrap in both directions, alpha endpoints,
   signed extremes, heading wrap, 0/1/2/4-tick frames and post-reset first frames.
-- [ ] Verify Original mode output and simulation hashes remain unchanged;
+- [x] Verify Original mode output and simulation hashes remain unchanged;
   run focused UBSan and frame pacing checks at 30/60/120 rendered FPS.
 
 Acceptance: the reproduced 1256 → 1000 midpoint is 1128, no UBSan arithmetic
@@ -89,11 +89,11 @@ bounds; live police and on-foot behavior cannot be represented by offline tests.
 
 ### E. Measure and improve complete-frame performance (R5; plans 19–21, 29)
 
-- [ ] Repair full-width dashboard side panels in both indexed/RGB paths.
+- [x] Repair full-width dashboard side panels in both indexed/RGB paths.
 - [ ] Benchmark complete scene + actors + dashboard + horizon + upload at
   640×480, 2× and 4×, 4:3/16:9, Original/Enhanced. Record hardware, build,
   warm/cold cache, p50/p95/p99, peak memory and allocations/frame.
-- [ ] Reuse horizon storage; avoid unused indexed dashboard work on RGB;
+- [x] Reuse horizon storage; avoid unused indexed dashboard work on RGB;
   cache static layers only after measuring. Keep output comparisons exact
   where Original mode requires it and compare threaded/single-threaded output.
 - [ ] Move first-enable upscale attachment into cancellable loading with safe
@@ -102,6 +102,21 @@ bounds; live police and on-foot behavior cannot be represented by offline tests.
 Acceptance: no stale/black margin columns, no per-frame horizon allocation,
 no first-enable multi-second blocked event loop, and documented measured
 improvement without changed simulation hashes. Device budgets come from F.
+
+October 15 continuation: the screen harness now covers actual finish/restart,
+pause/resume, injected renderer resets, adjacent catch-up snapshots and
+30/60/120-FPS simulation/pixel invariance. It exposed and fixed a lost menu
+Resume event as well as mixed SDL/supplied timestamp resets. Focused native
+and ASan/UBSan checks passed; full integration evidence is recorded in
+[the integrator handoff](../agent-handoffs/codex-plan32-20261015.md) and
+[screen handoff](../agent-handoffs/codex-screen-20261015.md).
+The canvas restores the indexed dashboard after the horizon/scene, skips
+indexed dashboard mapping in RGB, and retains horizon scratch storage.
+Original no-HUD scene and RGB frame hashes remain exact; indexed HUD output
+intentionally repairs the erased dashboard. Whole-frame benchmark details
+and remaining E scope are in the
+[performance handoff](../agent-handoffs/codex-performance-20261015.md). C/D simulation and
+device acceptance remain open; software reset events do not prove GPU recovery.
 
 ### F. Start device acceptance as soon as the handheld is available (plan 14)
 
