@@ -1439,3 +1439,30 @@ pass before it was inspected; the successful rerun is the verified result.
 - Gate: full build exit 0, `ctest` 99/99 passed. Simulation untouched:
   tunnel state is separate from `TerrainSlice`.
 
+## Native terrain construction vs original frames (October 16, 2026)
+
+- `oracle-scene-test --native-terrain <capture.tsv>` (ctest `oracle-terrain`
+  on `pch-tunnel-20261016`, skips without it): per scene frame, loads the
+  dumped sub-slice terrain values into `CourseScene`, projects the road from
+  `camera.position/x/height`, and matches every original display node whose
+  texture is a road CEL, WATER128 or a family category 1/3/5/6 group by name,
+  Q16 points and flips. Also checks rider ground `+0x24` against
+  `terrain_height` on the same sub-slices.
+- Results: `pch-tunnel-20261016` 64 frames, 3347 terrain nodes match, 0
+  missing (walls 351, arch 277, tunnel curbs 149, shoulders 1220, water 192,
+  guard rails 334, road 669), 2096 rider grounds equal (type 1: 1852, type 3:
+  244 incl. 8 on the sidewalk). `napa-drive` 123/0, `city-scene` 517/0,
+  `city-moving` 1006/0. `medly-jump` 6407 match, 49 missing, 7 grounds differ.
+  The same per-texture MEDLY results come from the pre-session baseline
+  9a77854 (separate worktree build), so these are older building-path gaps.
+- Without injection the walls differ only by jitter: the original's
+  elevation, edges and heights per sample equal native; its wall offsets come
+  from the live race random stream.
+- Not covered: scenery billboards/signs/trees and actors (reported, 255 nodes
+  in the tunnel capture), pre-flush nodes (the dump holds the list tail),
+  type-1 off-road ground (no rider left the road on a mountain side; covered
+  by `terrain_ground-test` synthetic cases).
+- Gate: full build exit 0; ctest 100/100 (new `oracle-terrain` ran, 48 s;
+  `oracle-sim` passed). rr-game `--course 3 --autopilot` 16:10 screenshots at
+  600/2700/2900 ticks show the guard rail along the water.
+

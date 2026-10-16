@@ -15,6 +15,8 @@
 //   palette: traced colour rule (cop 0xde / player row byte / grid slot; shadow 0xdf iff cop)
 //     vs dump node colour (+0x38).
 #include "actor_nodes.hpp"
+#include "course_scene.hpp"
+#include "terrain_ground.hpp"
 #include "course.hpp"
 #include "golden.hpp"
 #include "rider_sprites.hpp"
@@ -26,7 +28,10 @@
 #include <cstdlib>
 #include <cstring>
 #include <iostream>
+#include <functional>
 #include <memory>
+#include <set>
+#include <tuple>
 
 namespace {
 const char* const course_files[5] = {"CITY", "HIWAY", "MEDLY", "NAPA", "CANYN"};   // 0x0046df58
@@ -277,16 +282,129 @@ int native_actors(const std::string& tsv, const rr::Assets& assets) {
     std::cout << frames << " frames, " << nodes << " actor nodes, " << failures << " failures\n";
     return failures ? 1 : 0;
 }
+
+// --native-terrain: native scene construction against the original's dumped
+// display list. Each frame's sub-slice terrain values (drawn by the original
+// from its live random stream, which CourseScene's isolated stream does not
+// reproduce) are loaded into the native scene for the dumped strips. Every
+// original terrain node (road GLOBAL CELs, WATER128, family categories 1, 3,
+// 5 and 6) must then appear natively with identical texture, Q16 points and
+// flips. The dump holds only the post-flush tail, so native nodes without an
+// original counterpart are expected. Scenery and actors are reported only.
+// Riders' ground (+0x24) is checked against 0x00439b10 on the same values.
+int native_terrain(const std::string& tsv, const rr::Assets& assets) {
+    const auto golden = rr::golden::load(tsv);
+    const std::string stem = tsv.substr(0, tsv.size() - 4);
+    const int course = int(golden.frames.at(0).at("course"));
+    const auto exe = assets.read("ROADRASH.EXE");
+    const auto depths = rr::read_depth_table(exe);
+    const auto data = rr::read_course(assets.read(std::string("DATA/COURSES/") + course_files[course] + ".CRS"));
+    rr::CourseScene scene(assets, exe, data, course_files[course]);
+    const auto lib = rr::testlib::load_texture_library(assets, course_files[course]);
+    const std::array<std::vector<rr::RouteSample>, 2> routes = {rr::make_route(data, false), rr::make_route(data, true)};
+    std::set<std::string> terrain = {"PLAIN", "WHITE", "YELLOW", "START160", "START162", "SIDCRSS0", "SIDLANE0", "SIDLANE1", "FINISH", "WATER128"};
+    for (const auto& [id, family] : scene.families()) {
+        std::function<void(uint32_t, int)> walk = [&](uint32_t offset, int depth) {
+            if (const auto g = family.groups.find(offset); g != family.groups.end())
+                for (const auto& cell : g->second.cells) terrain.insert(cell.texture.name);
+            const auto n = family.nodes.find(offset);
+            if (n == family.nodes.end() || n->second.tag || depth > 3) return;
+            for (const auto child : n->second.children) walk(child, depth + 1);
+        };
+        if (const auto root = family.nodes.find(0); root != family.nodes.end())
+            for (const uint32_t category : {1u, 3u, 5u, 6u})
+                if (category < root->second.children.size()) walk(root->second.children[category], 1);
+    }
+    using Key = std::tuple<std::string, std::array<int32_t, 8>, bool, bool>;
+    size_t frames = 0, matched = 0, missing = 0, others = 0, grounds = 0, ground_failures = 0;
+    for (const auto& f : golden.frames) {
+        if (!f.count("scene.file")) continue;
+        const auto dump = rr::scene::load(stem + "-scene" + std::to_string(f.at("scene.file")) + ".raw");
+        const auto& route = routes[f.at("camera.half") ? 1 : 0];
+        // Sub-slice values of a dumped ring entry, as native TerrainSlice
+        // inputs (0x00454240 inverted for the wall offsets).
+        auto load = [&](uint32_t sub, rr::TerrainSlice& t, size_t& sample) {
+            if (!dump.memory.has(sub - 0x30 + 8) || !dump.memory.has(sub + 0x160)) return false;
+            sample = dump.memory.u32(sub - 0x30 + 8) >> 8;
+            if (sample >= route.size()) return false;
+            const auto& rs = route[sample];
+            auto I = [&](uint32_t o) { return dump.memory.i32(sub + o); };
+            const int32_t cc = I(0xcc);
+            const int type = dump.memory.u8(sub + 0x3c);
+            if (cc != rs.offset) return false;
+            t = scene.terrain(rs.section, rs.local);
+            if (type != t.type) throw std::runtime_error("Sub-slice type differs at sample " + std::to_string(sample));
+            if (type == 4) for (int i = 0; i < 6; ++i) { t.points[size_t(i)] = {I(0xf0 + 8 * uint32_t(i)) - cc, I(0xf4 + 8 * uint32_t(i))}; t.shades[size_t(i)] = I(0x120 + 4 * uint32_t(i)); }
+            if (type == 1 || type == 3) {
+                const int32_t l = -rs.path.left, r = rs.path.right;
+                int32_t el = l - rs.path.shoulder_left, er = r + rs.path.shoulder_right;
+                if (type == 3) { if (I(0x160) < 1) er = 2 * er - r; else el = 2 * el - l; }
+                t.walls[0] = {el - (I(0x14c) - cc), el - (I(0x150) - cc), I(0x154) >= 1 ? I(0x154) : 0};
+                t.walls[1] = {(I(0x158) - cc) - er, (I(0x15c) - cc) - er, I(0x160) >= 1 ? I(0x160) : 0};
+            }
+            return true;
+        };
+        const uint32_t base = 0x004c0a5c - 31 * 0x224;
+        for (uint32_t k = 0; k < 33; ++k) {
+            const uint32_t strip = base + k * 0x224;
+            if (!dump.memory.has(strip + 0x14)) continue;
+            const uint32_t record = dump.memory.u32(strip + 0x14);
+            if (!dump.memory.has(record + 0xc)) continue;
+            rr::TerrainSlice t; size_t sample = 0;
+            if (load(dump.memory.u32(record + 0xc), t, sample)) scene.set_terrain(route[sample].section, route[sample].local, t);
+        }
+        const uint32_t position = uint32_t(f.at("camera.position"));
+        const rr::Camera camera{int32_t(f.at("camera.x")) - route[position >> 8].offset, int32_t(f.at("camera.height"))};
+        std::multiset<Key> native;
+        for (const auto& n : scene.draw_nodes(route, rr::project_road(route, position, camera, depths), camera, depths)) {
+            std::array<int32_t, 8> v{};
+            for (size_t k = 0; k < 4; ++k) { v[2 * k] = n.view_points[k].x; v[2 * k + 1] = n.view_points[k].y; }
+            native.insert({n.texture ? n.texture->name : "flat" + std::to_string(n.flat_index ? int(*n.flat_index) : -1), v, n.flip_u, n.flip_v});
+        }
+        size_t frame_missing = 0;
+        for (const auto& s : dump.nodes) {
+            if (s.u32(8) == 0x00466684) continue;   // dynamic rider resource
+            std::string name = s.bytes[0x66] ? "flat" + std::to_string(s.bytes[0x67]) : "";
+            if (name.empty()) { const auto* t = lib.find(s.hash, s.size); name = t ? t->name : "?"; }
+            if (!terrain.count(name) && name != "flat253") { ++others; continue; }
+            std::array<int32_t, 8> v{};
+            for (size_t k = 0; k < 4; ++k) { v[2 * k] = int32_t(s.u32(0x44 + 8 * k)); v[2 * k + 1] = int32_t(s.u32(0x48 + 8 * k)); }
+            const auto it = native.find({name, v, s.bytes[0x64] != 0, s.bytes[0x65] != 0});
+            if (it == native.end()) { ++frame_missing; continue; }
+            native.erase(it); ++matched;
+        }
+        // Riders' ground: 0x0043a190 -> 0x00439b10(+0x140 sub-slice, +0x28, +0x138).
+        for (const auto& r : dump.riders) {
+            if (r.bike.size() < 0x340) continue;
+            const uint32_t sub = uint32_t(r.bike_i32(0x140));
+            rr::TerrainSlice t, tn; size_t sample = 0, next_sample = 0;
+            if (!load(sub, t, sample)) continue;
+            if (!dump.memory.has(sub + 8) || !load(dump.memory.u32(sub + 8), tn, next_sample)) { tn = t; next_sample = sample; }
+            const auto& rs = route[sample];
+            const auto& rn = route[next_sample];
+            const int32_t got = rr::terrain_height(t, rs.path, tn, rn.path, r.bike_i32(0x28) - rs.offset * 256, uint8_t(r.bike_i32(0x138)), rn.offset - rs.offset, rs.offset);
+            ++grounds;
+            if (got != r.bike_i32(0x24)) ++ground_failures;
+        }
+        ++frames; missing += frame_missing;
+        if (frame_missing) std::cout << "frame " << f.at("scene.file") << ": " << frame_missing << " original terrain nodes without a native match\n";
+    }
+    if (!frames) { std::cout << "skip: capture has no scene frames\n"; return rr::golden::skip; }
+    std::cout << frames << " frames: " << matched << " terrain nodes match, " << missing << " missing, " << others
+              << " scenery/actor nodes not compared; " << grounds << " rider grounds, " << ground_failures << " differ\n";
+    return missing || ground_failures ? 1 : 0;
+}
 }   // namespace
 
 int main(int argc, char** argv) {
-    bool actors_mode = false;
+    bool actors_mode = false, terrain_mode = false;
     const std::string dir = rr::golden::oracle_dir();
     std::string tsv = dir + "/city-scene.tsv";
     std::string assets_root = RR_SOURCE_DIR "/../cdrom/ROADRASH";
     for (int i = 1; i < argc; ++i) {
         const std::string a = argv[i];
         if (a == "--native-actors") actors_mode = true;
+        else if (a == "--native-terrain") terrain_mode = true;
         else if (a == "--assets" && i + 1 < argc) assets_root = argv[++i];
         else if (a[0] != '-') tsv = a;
     }
@@ -294,6 +412,7 @@ int main(int argc, char** argv) {
     std::ifstream probe(tsv);
     if (!probe || !assets.exists("DATA/GLOBAL.RSC")) { std::cout << "skip: no scene capture or disc\n"; return rr::golden::skip; }
     if (actors_mode) return native_actors(tsv, assets);
+    if (terrain_mode) return native_terrain(tsv, assets);
     const auto golden = rr::golden::load(tsv);
     const std::string stem = tsv.substr(0, tsv.size() - 4);
     const int course = int(golden.frames.at(0).at("course"));

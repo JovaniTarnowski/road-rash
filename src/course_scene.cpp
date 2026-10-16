@@ -76,9 +76,12 @@ CourseScene::CourseScene(const Assets& assets,const std::vector<uint8_t>& exe,
             if(t.type==4 && path.marking_flags && !(path.marking_flags&0x40))for(auto& point:t.points)point[1]=0;
             terrain_.back().push_back(t);
             // 0x00454240: marking flag 0x40 makes the sub-slice type 3, a
-            // tunnel (disc data: mountain sections only). Kept out of
-            // TerrainSlice, which the race also reads for simulation.
+            // tunnel; drawn as one only on mountain samples (all disc cases),
+            // whose wall values the tunnel geometry needs.
             tunnels_.back().push_back(t.type==1 && (path.marking_flags&0x40));
+            // 0x00454240 makes the sub-slice type 3 for flag 0x40. The race
+            // reads this slice too (0x00439b10 sidewalk heights, surface class).
+            if(path.marking_flags&0x40)terrain_.back().back().type=3;
             // Resolve residency at the projection window's forward cursor.
             const int64_t cursor=std::max<int64_t>(0,int64_t(j)+view_slices+section.family_forward_bias);
             while(event<section.family_events.size() && section.family_events[event].sample<=cursor) {
@@ -122,6 +125,14 @@ CourseScene::CourseScene(const Assets& assets,const std::vector<uint8_t>& exe,
 }
 const TerrainSlice& CourseScene::terrain(uint32_t section,uint32_t local) const {return terrain_.at(section).at(local);}
 bool CourseScene::tunnel(uint32_t section,uint32_t local) const {return tunnels_.at(section).at(local);}
+const CelGroup* CourseScene::rail_group(uint32_t section,uint32_t local,uint8_t selector) const {
+    // 0x0044ac00(selector, 6): category 6 entry, a cel group without frames.
+    const uint16_t id=family_slots_.at(section).at(local)[selector>>6];
+    const auto family=families_.find(id);if(family==families_.end())return nullptr;
+    const auto offset=family->second.resolve(6,selector&63);if(!offset)return nullptr;
+    const auto it=family->second.groups.find(*offset);
+    return it==family->second.groups.end()?nullptr:&it->second;
+}
 int32_t CourseScene::sine(int32_t angle) const {
     // 0x0044f770: 512 steps per turn. Below 0x80 it reads bytes at 0x00476870,
     // which lie inside the word table at 0x004766f0, exactly as original.
@@ -260,7 +271,7 @@ std::vector<DrawNode> CourseScene::draw_nodes(const std::vector<RouteSample>& ro
         // Drawing type: the terrain type, or 3 for a mountain tunnel sample
         // (0x00454240, marking flag 0x40). Tunnel +0x50..+0x5c, +0xb4..+0xe0,
         // +0xf4/+0xf8 and 0x0040d420's angle terms.
-        uint8_t kind;uint8_t mountain;std::array<RasterPoint,2> edge;std::array<int32_t,2> curb_height;
+        uint8_t kind;uint8_t mountain;int32_t offset;std::array<RasterPoint,2> edge;std::array<int32_t,2> curb_height;
         std::array<RasterPoint,6> arch;RasterPoint tunnel_point;int32_t sine,cosine;};
     std::vector<std::array<Road,2>> roads(slices.size());
     // Plan 19 Task 4: the ceiling stays logical (240 Q16 view rows); only
@@ -273,6 +284,7 @@ std::vector<DrawNode> CourseScene::draw_nodes(const std::vector<RouteSample>& ro
             road.section=own?sample.section:sample.other_section;road.local=own?sample.local:sample.other_local;
             road.path=own?&sample.path:&sample.other;road.terrain=&terrain(road.section,road.local);
             road.kind=tunnel(road.section,road.local)?3:road.terrain->type;
+            road.offset=own?sample.offset:sample.other_offset;
             const auto& s=slice.road[r];const int32_t world_x=s.road_x+camera.x;
             // 0x00454240 for a tunnel: the side whose height is at least 1 is the
             // mountain (right wins), its height at least 800; the other side's
@@ -292,7 +304,8 @@ std::vector<DrawNode> CourseScene::draw_nodes(const std::vector<RouteSample>& ro
             HillProjection hills;
             if(road.terrain->type==4){hills=project_hills(*road.terrain,world_x,s.world_y,camera,slice.scale,logical_width);max_row=hills.maximum_row;}
             for(int side=0;side<2;++side) {
-                auto& h=road.hill[side];h.type=road.terrain->type;h.depth=slice.depth;
+                // A tunnel keeps the mountain type for its hill neighbours.
+                auto& h=road.hill[side];h.type=road.kind==3?uint8_t(1):road.terrain->type;h.depth=slice.depth;
                 const int32_t shoulder=outer_edge[size_t(side)];
                 // 0x00454240 clears the pair B heights of type-1 sides; 0x00444630
                 // keeps +0x64/+0x6c at the road row for types 1-3.
@@ -329,6 +342,14 @@ std::vector<DrawNode> CourseScene::draw_nodes(const std::vector<RouteSample>& ro
                     h.projected[1]={wrap(slice.screen_x(r,base)),s.screen_y};
                     h.projected[2]=h.projected[3]={wrap(slice.screen_x(r,top)),wrap(s.screen_y-int64_t(height)*slice.scale)};
                 }
+            }
+            if(road.kind==1 || road.kind==3) {
+                // 0x00444630 types 1-3 occlusion row (param_3[7]): with a right
+                // side below the road, the lower of the two wall tops; else the
+                // road row, or the left top when only the left drops.
+                const int32_t left_top=road.hill[0].projected[2].y,right_top=road.hill[1].projected[2].y;
+                if(road.wall_height[1]<0)max_row=std::max(left_top,right_top);
+                else max_row=road.wall_height[0]>=0?s.screen_y:left_top;
             }
             if(road.kind==3) {
                 // 0x00444630 type 3: arch points from the 0x00465a54 table
@@ -380,6 +401,7 @@ std::vector<DrawNode> CourseScene::draw_nodes(const std::vector<RouteSample>& ro
     auto outer=[](const Road& road){return road.kind==0 || road.kind==4 ? 0 : 1;};
     // 0x00443d70: the camera sample's sub-slice is a tunnel.
     const bool camera_in_tunnel=!slices.empty() && roads[0][0].kind==3;
+    std::vector<DrawNode> rails;
     for(size_t n=slices.size();n-->1;) {
         const auto& near=slices[n-1];const auto& far=slices[n];const int count=std::min(near.count,far.count);
         std::vector<DrawNode> pending;pending.swap(front);
@@ -461,8 +483,12 @@ std::vector<DrawNode> CourseScene::draw_nodes(const std::vector<RouteSample>& ro
                 }
                 TunnelArchInput arch;arch.near=road.arch;arch.far=old.arch;arch.near_row=b.screen_y;arch.near_depth=near.depth;arch.far_depth=far.depth;arch.logical_width=logical_width;
                 arch.backdrop=n+1==slices.size();
-                // 0x0040ccf0: every fourth sample uses the lit set (frame 1).
-                const uint32_t lit=((near.sample&3)+1)>>2;
+                // 0x0040dac0 picks set ((sample&3)+1)>>2, but 0x0040ccf0 copies
+                // the plain entries over set 1 unless its group's word at -8
+                // is 'CLGP'. In every captured tunnel strip (88, capture
+                // pch-tunnel-20261016) set 1 equals set 0, so the plain set
+                // is always drawn.
+                const uint32_t lit=0;
                 append(tunnel_arch_nodes(arch,[&](uint8_t kind,int32_t w,int32_t h){return tunnel_material(road.section,road.local,selector,lit,kind,w,h);}));
                 // 0x0043bef0: the mouth is the pair whose nearer neighbour
                 // (sub-slice +0x18) is not a tunnel sample.
@@ -488,10 +514,39 @@ std::vector<DrawNode> CourseScene::draw_nodes(const std::vector<RouteSample>& ro
                 building.near_depth_q8=near.depth;building.far_depth_q8=far.depth;building.logical_width=logical_width;
                 append(building_draw_nodes(building,[&](bool use_far,int32_t w,int32_t h){const auto& source=use_far?old:road;return material(source.section,source.local,source.terrain->selectors[side],1,std::nullopt,w,h);}));
             }
+            // 0x00443af0 draws a strip's scenery (0x00443b40) after the next
+            // nearer strip's terrain: the previous pair's guard rails go here.
+            if(i==count-1){append(rails);rails.clear();}
+            if(i==count-1 && path.event_type==5) {
+                // 0x00443c00/0x0041c200: CESR event 5 guard rails. Parameter 0
+                // selects the category-6 group, 1 is a signed lateral offset
+                // from the shoulder, 2 bits 0/1 enable the left/right rail.
+                const uint8_t selector=path.event_parameters[0];
+                const auto* group=rail_group(road.section,road.local,selector);
+                const int32_t half=(logical_width>>1)*65536;
+                const std::array<int,2> order=road.hill[0].projected[0].x<half?std::array<int,2>{0,1}:std::array<int,2>{1,0};
+                for(const int side:order) {
+                    if(!group || !(path.event_parameters[2]&(1<<side)))continue;
+                    const int32_t lateral=side?int8_t(path.event_parameters[1]):-int8_t(path.event_parameters[1]);
+                    const int32_t height=((1<<(group->row_shift&31))<<(group->last_row&31))*4;
+                    const int32_t near_x=wrap(int64_t(lateral)*near.scale+road.hill[side].projected[0].x);
+                    const int32_t far_x=wrap(int64_t(lateral)*far.scale+old.hill[side].projected[0].x);
+                    const int32_t near_top=wrap(b.screen_y-int64_t(height)*near.scale),far_top=wrap(a.screen_y-int64_t(height)*far.scale);
+                    const int32_t width=logical_width*65536;
+                    if(!((near_x<=width || far_x<=width) && (near_x>=0 || far_x>=0)))continue;
+                    const int32_t span=near_x>far_x?near_x-far_x:far_x-near_x;
+                    const auto& cell=group->select(span,wrap(int64_t(height)*near.scale),logarithms_);
+                    DrawNode rail{{RasterPoint{near_x,near_top},RasterPoint{far_x,far_top},RasterPoint{far_x,a.screen_y},RasterPoint{near_x,b.screen_y}},&cell.texture,std::nullopt,false,false};
+                    rail.flip_u=rail.view_points[1].x<rail.view_points[0].x || rail.view_points[2].x<rail.view_points[3].x;
+                    rail.flip_v=rail.view_points[3].y<rail.view_points[0].y || rail.view_points[2].y<rail.view_points[1].y;
+                    rail.view_depth={near.depth,far.depth,far.depth,near.depth};
+                    rails.push_back(rail);
+                }
+            }
             if(actors)append(actors(near,far,r,road.ceiling,true));
             if(near.depth>146)for(const auto& object:objects(road.section,road.local)) {
                 const auto* frame=object_frame(road.section,road.local,object);if(!frame || !frame->texture)continue;
-                int32_t ground=terrain_height(*road.terrain,path,*old.terrain,*old.path,object.lateral*256,128,a.road_x-b.road_x);
+                int32_t ground=terrain_height(*road.terrain,path,*old.terrain,*old.path,object.lateral*256,128,a.road_x-b.road_x,road.offset);
                 if(ground>998)ground=0;
                 auto draw=scenery_node(*frame,object,(a.road_x+b.road_x)/2+camera.x,(a.world_y+b.world_y)/2,ground,near.depth,camera,depths,logical_width);
                 if(draw.view_points[0].y<road.ceiling)result.push_back(draw);
@@ -500,6 +555,7 @@ std::vector<DrawNode> CourseScene::draw_nodes(const std::vector<RouteSample>& ro
         }
         append(pending);
     }
+    append(rails);
     append(front);
     return result;
 }

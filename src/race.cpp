@@ -1089,7 +1089,7 @@ void Race::vertical(Rider& r) {
     }
     if(terrain_source_) {
         const auto& route=route_of(r);const auto& current=route[r.sample];const auto& next=route[std::min(r.sample+1,route.size()-1)];
-        ground=terrain_height(terrain_source_(current),current.path,terrain_source_(next),next.path,b.i32(0x28)-current.offset*256,uint8_t(b.i32(0x1c)),next.offset-current.offset);
+        ground=terrain_height(terrain_source_(current),current.path,terrain_source_(next),next.path,b.i32(0x28)-current.offset*256,uint8_t(b.i32(0x1c)),next.offset-current.offset,current.offset);
     }
     b.i32(0x24) = ground;
     const int32_t dt = b.i32(0x18);

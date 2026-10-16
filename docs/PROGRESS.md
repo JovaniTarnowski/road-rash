@@ -1066,3 +1066,32 @@ was restored to its pre-session hash after both captures.
   display-list comparison, scenery guard rails at the CANYN portal are a
   separate scenery question. [Handoff](agent-handoffs/pch-tunnel-20261016.md).
 
+### October 16, 2026: guard rails, tunnel ground, native terrain vs original
+
+- Guard rails: `0x0041c200` from `0x00443c00` for CESR event 5 (selector
+  param 0, signed shoulder offset param 1, left/right bits param 2; height
+  `((1<<+0x1b)<<+0x19)*4` from the category-6 group header, new
+  `CelGroup::row_shift`). Emitted after the next nearer pair's terrain, in
+  `0x00443c00`'s side order.
+- Occlusion: mountain/tunnel strips take `0x00444630`'s maximum row from the
+  wall tops (a cliff's sea-level foot), not the road row.
+- Tunnel roof: the original never draws `0x0040dac0`'s lit set; its
+  `0x0040ccf0` 'CLGP' test at pointer−8 fails because group pointers address
+  the chunk tag itself. All 88 captured tunnel strips hold the plain set.
+- Simulation: sub-slice type 3 is now set for marking flag 0x40, as
+  `0x00454240` does, so the race sees tunnels (`surface_class` wall class,
+  `road_panels`' type-3 path). `terrain_height` ports `0x00439b10` cases 1
+  (wall ramps, the drop to height 0 beyond a cliff, absolute-top limit) and
+  3 (sidewalk heights, 16 when empty). This changes CANYN/HIWAY/MEDLY ground
+  off the road; Napa is unchanged.
+- New `oracle-terrain` ctest: `oracle-scene-test --native-terrain` builds
+  the native scene for each captured frame, with the dump's live-RNG terrain
+  values injected, and requires every original terrain node to match.
+- Remaining: CourseScene's terrain jitter still comes from an isolated
+  random stream (live race RNG integration, plan 10 TrackRing); wall/rail
+  collision `0x0043a610` is still the plan 11 stand-in (it reads the rail
+  height `0x0041c200` stores); billboards, signs and trees differ from the
+  original on every course; MEDLY building curbs/facades with an off-centre
+  camera (36 nodes, 7 grounds in `medly-jump`) differ, unchanged since before
+  this session. [Handoff](agent-handoffs/pch-terrain-parity-20261016.md).
+

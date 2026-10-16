@@ -12,6 +12,7 @@ struct GroupCel {
 struct CelGroup {
     uint8_t flags = 0, last_column = 0, last_row = 0;
     uint8_t nominal_height = 0; // +0x16, building height in units of 16 for mode 0
+    uint8_t row_shift = 0;      // +0x1b; 0x0041c200 rail height ((1<<+0x1b)<<+0x19)*4
     std::vector<GroupCel> cells;
     std::vector<std::array<uint8_t, 2>> thresholds;
     // 0x0044aa10 / 0x0044a8c0. Sizes are Q16; logarithmic lookup is

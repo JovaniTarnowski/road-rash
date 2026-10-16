@@ -30,6 +30,9 @@ public:
     CourseScene(const Assets&,const std::vector<uint8_t>& exe,const Course&,
                 const std::string& course_name,uint32_t terrain_seed=1,int level=0);
     const TerrainSlice& terrain(uint32_t section,uint32_t local) const;
+    // Oracle fixtures: replace one sample's terrain values (e.g. those an
+    // original scene dump holds, drawn from the live race random stream).
+    void set_terrain(uint32_t section,uint32_t local,const TerrainSlice& slice) {terrain_.at(section).at(local)=slice;}
     // Plan 20 Task 3: family textures for generation (read-only walk).
     const std::map<uint32_t, Family>& families() const { return families_; }
     // Plan 20 Task 3: attach cached MMPX levels to every family texture.
@@ -56,6 +59,7 @@ public:
 private:
     const CelTexture* tunnel_material(uint32_t section,uint32_t local,uint8_t selector,uint32_t lit,uint8_t kind,int32_t width,int32_t height) const;
     int32_t sine(int32_t angle) const;
+    const CelGroup* rail_group(uint32_t section,uint32_t local,uint8_t selector) const;
     static int32_t approximate_angle(int32_t x,int32_t y);
     std::vector<std::vector<bool>> tunnels_;
     std::array<int32_t,8> arch_{};               // 0x00465a54 tunnel heights / fractions

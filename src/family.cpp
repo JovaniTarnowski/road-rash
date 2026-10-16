@@ -41,6 +41,7 @@ CelGroup read_cel_group(const std::vector<uint8_t>& bytes, uint32_t offset) {
     group.nominal_height = bytes[offset+22];
     group.last_column = bytes[offset+24];
     group.last_row = bytes[offset+25];
+    group.row_shift = bytes[offset+27];
     const unsigned mode = group.flags & 3;
     if (mode > 1) throw std::runtime_error("Unsupported cel group mode");
     // Validate the CCB body and hotspot pointers used by the original loader.

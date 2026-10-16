@@ -9,9 +9,34 @@ int32_t sub(int32_t a,int32_t b){return bits(uint32_t(a)-uint32_t(b));}
 int32_t mul(int32_t a,int32_t b){return bits(uint32_t(a)*uint32_t(b));}
 int32_t blend(int32_t a,int32_t b,uint8_t fraction){return add(a,mul(sub(b,a),fraction)/256);}
 }
-int32_t terrain_height(const TerrainSlice& t,const PathSample& path,const TerrainSlice& next,const PathSample& np,int32_t lateral,uint8_t fraction,int32_t centre) {
+int32_t terrain_height(const TerrainSlice& t,const PathSample& path,const TerrainSlice& next,const PathSample& np,int32_t lateral,uint8_t fraction,int32_t centre,int32_t offset) {
     const int32_t x=lateral>>8,left=-path.left,right=path.right;
     if(left<=x && x<=right)return 0;
+    if(t.type==1) {
+        // 0x00439b10 case 1 on 0x00454240's wall values: base/top x from the
+        // outer shoulder edges, heights below 1 replaced by -elevation.
+        const int32_t outer_left=left-path.shoulder_left,outer_right=right+path.shoulder_right;
+        auto height=[&](int side){const int32_t h=t.walls[side][2];return h<1?sub(0,path.elevation):h;};
+        const int32_t base_right=add(outer_right,t.walls[1][0]),top_right=add(outer_right,t.walls[1][1]);
+        if(base_right<x) {
+            const int32_t h=height(1);if(!h)return 0;
+            const int32_t span=sub(top_right,base_right);
+            if(mul(h<0?sub(0,h):h,2)<span && sub(x,base_right)<add(top_right,offset))return mul(h,sub(x,base_right))/span;
+            return h;
+        }
+        const int32_t base_left=sub(outer_left,t.walls[0][0]),top_left=sub(outer_left,t.walls[0][1]);
+        if(base_left<=x)return 0;
+        const int32_t h=height(0);if(!h)return 0;
+        const int32_t span=sub(base_left,top_left);
+        if(mul(h<0?sub(0,h):h,2)<span && add(top_left,offset)<sub(base_left,x))
+            return mul(sub(add(left,offset),sub(base_left,x)),h)/span;
+        return h;
+    }
+    if(t.type==3) {
+        // Case 3: tunnel sidewalks, empty pair-B heights become 16 (0x00454240).
+        const bool empty=path.height_left==0;
+        return x<=left?(empty?16:path.height_left):(empty?16:path.height_right);
+    }
     const bool side=x>right;
     const int32_t shoulder=side?right+path.shoulder_right:left-path.shoulder_left;
     const int32_t height=side?path.height_right:path.height_left;
@@ -20,7 +45,6 @@ int32_t terrain_height(const TerrainSlice& t,const PathSample& path,const Terrai
         if((side?x>=shoulder:x<=shoulder) && !(path.marking_flags&24) && t.selectors[side]!=255)return 999;
         return height;
     }
-    if(t.type==3)return height;
     if(t.type!=4)return 0;
     const int32_t next_edge=add(centre,side?np.right:-np.left);
     const int32_t edge=blend(side?right:left,next_edge,fraction);
