@@ -37,15 +37,21 @@ struct RoadSlice {
     uint8_t count;
     uint8_t own;       // roadway the route follows
     RoadSurface road[2];
+    // Q16 view column of the camera axis. Widescreen (plan 21 Task 8): the
+    // same (logical_width&~1)*32768 every scene builder centres on, so the
+    // road surface and the scenery/actors/terrain built on it share one centre.
+    int32_t centre_q16=view_width/2*65536;
     // Q16 screen column of a world offset from a roadway's centre.
     int64_t screen_x(int r, int32_t offset) const {
-        return int64_t(road[r].road_x+offset)*scale+int64_t(view_width/2)*65536;
+        return int64_t(road[r].road_x+offset)*scale+centre_q16;
     }
 };
 
 // Integer port of 0x00443d70 + 0x00444630, including split/merge roadways.
 // position is Q8 samples along route; nearest slice first. Camera x is
 // relative to the centre of the route's own road at the camera sample.
+// logical_width is the Hor+ view width (320 original, up to 426 wide).
 std::vector<RoadSlice> project_road(const std::vector<RouteSample>& route, uint32_t position,
-                                    const Camera& camera, const DepthTable& table);
+                                    const Camera& camera, const DepthTable& table,
+                                    int32_t logical_width=view_width);
 }

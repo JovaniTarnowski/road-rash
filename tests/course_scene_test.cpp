@@ -1,6 +1,8 @@
 #include "course_scene.hpp"
 #include <SDL3/SDL.h>
 #include <filesystem>
+#include <set>
+#include <tuple>
 #include <iostream>
 int main(int argc,char** argv) {
     try {
@@ -63,6 +65,33 @@ int main(int argc,char** argv) {
                 }
             }
             std::cout<<name<<": "<<course_views<<" views built\n";
+        }
+        // Hor+ widescreen: road slices and every builder centre on the same
+        // logical_width/2. Each node fully inside the 4:3 view must reappear
+        // at 426 shifted by exactly 53 columns. Regression: panel inputs kept
+        // their 320 default (sidewalk/hill strips tore) and nodes were shifted
+        // a second time by the canvas margin (scenery stood in the road).
+        for(const char* name:{"CITY","NAPA"}) {
+            const auto other=rr::read_course(assets.read(std::string("DATA/COURSES/")+name+".CRS"));
+            const rr::CourseScene other_scene(assets,exe,other,name);
+            const auto route=rr::make_route(other,false);
+            using Key=std::tuple<const rr::CelTexture*,int,bool,bool,std::array<int32_t,8>>;
+            auto key=[](const rr::DrawNode& n,int32_t dx){std::array<int32_t,8> v{};for(size_t k=0;k<4;++k){v[2*k]=n.view_points[k].x+dx;v[2*k+1]=n.view_points[k].y;}
+                return Key{n.texture,n.flat_index?int(*n.flat_index):-1,n.flip_u,n.flip_v,v};};
+            size_t interior=0,unmatched=0;
+            for(const rr::Camera camera:{rr::Camera{0,150},rr::Camera{-300,170}})for(uint32_t p=0;p+40<route.size();p+=37) {
+                const auto narrow=other_scene.draw_nodes(route,rr::project_road(route,p*256+64,camera,depths),camera,depths,{},320);
+                const auto wide=other_scene.draw_nodes(route,rr::project_road(route,p*256+64,camera,depths,426),camera,depths,{},426);
+                std::multiset<Key> present;for(const auto& n:wide)present.insert(key(n,0));
+                for(const auto& n:narrow) {
+                    bool inside=true;for(const auto& v:n.view_points)inside&=v.x>=8*65536 && v.x<=312*65536;
+                    if(!inside)continue;++interior;
+                    const auto it=present.find(key(n,53*65536));
+                    if(it==present.end())++unmatched;else present.erase(it);
+                }
+            }
+            std::cout<<name<<" widescreen: "<<interior<<" interior nodes, "<<unmatched<<" not at +53\n";
+            if(!interior || unmatched)throw std::runtime_error(std::string(name)+": widescreen nodes not centred with the road");
         }
         std::cout<<samples<<" terrain samples, "<<hill_samples<<" hill samples, "<<missing<<" unresolved hill materials, "<<views<<" views, "<<nodes<<" emitted nodes\n";
         for(const auto& entry:building_flags)std::cout<<"Building flags "<<entry.first<<": "<<entry.second<<" samples\n";

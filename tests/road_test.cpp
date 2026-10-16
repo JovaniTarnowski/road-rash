@@ -1,4 +1,7 @@
 #include "road.hpp"
+#include "scene.hpp"
+#include "scenery.hpp"
+#include <memory>
 #include <iostream>
 
 int main() {
@@ -70,6 +73,38 @@ int main() {
     for (auto& s : sides) { s.path.shoulder_left = 224; s.path.shoulder_right = 112; }
     auto shoulder = rr::project_road(sides, 0, camera, table);
     check(shoulder[3].road[0].shoulder_left==-500-224 && shoulder[3].road[0].shoulder_right==375+112, "shoulder edges");
+    // Hor+ widescreen: the road surface centres on the same column as the
+    // scene builders (hills, billboards, actors), never on the fixed 4:3 160.
+    // Regression: road at 160 + margin shift put all scenery a margin right.
+    {
+        auto bent = route(3,1,100);
+        for (auto& s : bent) { s.path.shoulder_left = 224; s.path.shoulder_right = 112; }
+        const rr::Camera offset{-120,170};
+        const auto narrow = rr::project_road(bent, 0x40, offset, table);
+        const auto wide = rr::project_road(bent, 0x40, offset, table, 426);
+        bool shifted = narrow.size()==wide.size();
+        for (size_t n=0; shifted && n<wide.size(); ++n)
+            shifted &= narrow[n].centre_q16==160*65536 && wide[n].centre_q16==213*65536 &&
+                       wide[n].screen_x(0,-500)==narrow[n].screen_x(0,-500)+53*65536;
+        check(shifted, "wide road centres at logical_width/2");
+        rr::TerrainSlice hills; hills.type = 4;
+        for (int i=0; i<6; ++i) hills.points[i] = {i%2 ? 900 : -900, 0};
+        rr::DepthTable flat_table; flat_table.scale.assign(4352, 32768);  // synthetic constant scale
+        const auto even = rr::project_road(bent, 0, offset, flat_table, 426);
+        const auto& slice = even.at(3);
+        const auto& surface = slice.road[0];
+        const auto hill = rr::project_hills(hills, surface.road_x+offset.x, surface.world_y, offset, slice.scale, 426);
+        check(hill.points[0][0]==slice.screen_x(0,-900) && hill.points[1][0]==slice.screen_x(0,900),
+              "hill points share the road centre");
+        rr::AnimationFrame frame;
+        auto texture = std::make_shared<rr::CelTexture>(); texture->bounds = {0,0,8,8};
+        frame.texture = texture;
+        const rr::SceneryObject object{0,-700,0,4,0,false,false};  // size 4: scale = projection
+        const auto node = rr::scenery_node(frame, object, surface.road_x+offset.x, surface.world_y, 0, slice.depth, offset, flat_table, 426);
+        check(node.view_points[0].x==slice.screen_x(0,-700), "billboard anchor shares the road centre");
+        try { rr::project_road(bent, 0, offset, table, 200); check(false, "reject narrow logical width"); }
+        catch (const std::runtime_error&) {}
+    }
     for (size_t n : {0, 64, 512, 4096}) {
         try { rr::read_depth_table(std::vector<uint8_t>(n)); check(false, "reject non-PE"); }
         catch (const std::runtime_error&) {}

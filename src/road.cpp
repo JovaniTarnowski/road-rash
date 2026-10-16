@@ -41,7 +41,8 @@ DepthTable read_depth_table(const std::vector<uint8_t>& b) {
 }
 
 std::vector<RoadSlice> project_road(const std::vector<RouteSample>& route, uint32_t position,
-                                    const Camera& camera, const DepthTable& table) {
+                                    const Camera& camera, const DepthTable& table, int32_t logical_width) {
+    if (logical_width<view_width || logical_width>4096) throw std::runtime_error("Logical width out of range");
     std::vector<RoadSlice> slices;
     const uint32_t first=position>>8;
     const int32_t frac=int32_t(position&0xff);
@@ -94,7 +95,7 @@ std::vector<RoadSlice> project_road(const std::vector<RouteSample>& route, uint3
         }
         const size_t index=size_t(depth&~1)/2;
         if (index>=table.scale.size()) throw std::runtime_error("Depth outside table");
-        RoadSlice slice{first+n,depth,table.scale[index],uint8_t(sample.dual?2:1),uint8_t(sample.dual?sample.half:0),{}};
+        RoadSlice slice{first+n,depth,table.scale[index],uint8_t(sample.dual?2:1),uint8_t(sample.dual?sample.half:0),{},(logical_width&~1)*32768};
         for (int r=0;r<slice.count;++r) {
             slice.road[r]={road[r].x+sub[r].offset-camera_x,
                 int32_t(int64_t(camera.height-road[r].y)*slice.scale+int64_t(view_horizon)*65536),

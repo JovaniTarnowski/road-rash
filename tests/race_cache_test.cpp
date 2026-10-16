@@ -32,10 +32,10 @@ int main(int argc, char** argv) {
         check(bool(game.assets.scene) && bool(game.assets.hud),"Canvas test needs scene and dashboard");
         for(int tick=0;tick<300;++tick)game.tick(rr::control_accelerate);
         const auto snapshot=game.race().snapshot();
-        const auto slices=rr::project_road(game.race().route(),game.race().camera_position(),game.race().camera(),game.depth);
         size_t row=0;
         for(int scale:{1,2,4})for(bool wide:{false,true})for(bool rgb:{false,true}) {
             game.widescreen=wide?rr::Widescreen::mode16x9:rr::Widescreen::off;
+            const auto slices=rr::project_road(game.race().route(),game.race().camera_position(),game.race().camera(),game.depth,game.logical_width());
             game.enhancements.full_colour=rgb;
             rr::CourseCanvas canvas;
             const auto cold_start=std::chrono::steady_clock::now();
@@ -59,8 +59,11 @@ int main(int argc, char** argv) {
             const uint64_t threaded=rgb?hash_bytes(canvas.rgb.row(0),size_t(canvas.scale_w)*canvas.scale_h*4):hash_bytes(canvas.frame.row(0),size_t(canvas.scale_w)*canvas.scale_h);
             check(checksum==threaded,"Canvas differs between one and four threads");
             std::cout<<"row="<<row++<<" scale="<<scale<<" wide="<<wide<<" rgb="<<rgb<<" hash="<<checksum<<" allocations="<<allocations<<" cold_ms="<<cold_ms<<" p50="<<percentile(50)<<" p95="<<percentile(95)<<" p99="<<percentile(99)<<'\n';
-            // Captured from fdcd4aa before this change; no new golden blessed.
-            static constexpr uint64_t rgb_baseline[]={2800544501961077726ULL,12480883420206857557ULL,8749086642151112002ULL,1477636935681336033ULL,637450489077128212ULL,13490494933351736534ULL};
+            // Index = scale slot*2 + wide. 4:3 entries captured from fdcd4aa
+            // before this change; wide entries (1, 3, 5) re-recorded 2026-10-15
+            // after the Hor+ centring fix (owner-approved): the old values
+            // encoded scenery shifted a margin off the road.
+            static constexpr uint64_t rgb_baseline[]={2800544501961077726ULL,4304228047002938247ULL,8749086642151112002ULL,12848431387687779404ULL,637450489077128212ULL,1873835806207674357ULL};
             if(rgb)check(checksum==rgb_baseline[(row-1)/2],"RGB canvas output changed from pre-optimization baseline");
             // Dashboard overlays the scene; every opaque dashboard sample and
             // the full Hor+ margins must survive composition.
@@ -84,7 +87,8 @@ int main(int argc, char** argv) {
             game.enhancements.full_colour=false;
             canvas.draw(renderer.get(),game,slices,scale,1);
             const uint64_t no_hud=hash_bytes(canvas.frame.row(0),size_t(canvas.scale_w)*canvas.scale_h);
-            static constexpr uint64_t original_scene[]={13444732443979624547ULL,18290316952315886966ULL,6395269177200922959ULL,4509599773851679003ULL,9343361947229583644ULL,2853708629718616441ULL};
+            // Wide entries (1, 3, 5) re-recorded 2026-10-15 after the Hor+ centring fix.
+            static constexpr uint64_t original_scene[]={13444732443979624547ULL,15653804743185687758ULL,6395269177200922959ULL,8935959284729329489ULL,9343361947229583644ULL,11834733791893956520ULL};
             check(no_hud==original_scene[(row-1)/2],"Original scene output changed");
             game.assets.hud=std::move(hud);
             game.enhancements.full_colour=rgb;

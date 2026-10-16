@@ -89,9 +89,11 @@ struct CourseCanvas {
     void draw(SDL_Renderer* renderer,const Game& game,const std::vector<RoadSlice>& slices,int s,int threads) {
         const int32_t wide = game.logical_width();
         resize(s,wide);
-        // Hor+ (plan 21 Task 8): builders centre at wide/2; the 4:3 picture
-        // is the centre crop. Shift node coords by the side margin so the
-        // 4:3-tuned projection lands centred on the wide surface.
+        // Hor+ (plan 21 Task 8): road slices (project_road) and every scene
+        // builder centre at wide/2, so nodes are already in wide coordinates;
+        // the 4:3 picture is the centre crop. The margin only places the 4:3
+        // dashboard. Shifting nodes here as well moved everything but the
+        // road surface right by a margin and broke terrain subdivision seams.
         const int32_t margin = (wide - 320) / 2;
         // Plan 19 Task 8: the dashboard composes at the race scale (Task 5).
         // The quick-race boot path has no HUD (dashboard is a career-mode
@@ -119,7 +121,6 @@ struct CourseCanvas {
             game.upscaled_attached = false;
         }
         auto nodes=game.assets.scene->draw_nodes(game.race().route(),slices,game.race().camera(),game.depth,[&](const rr::RoadSlice& near,const rr::RoadSlice& far,int road,int32_t ceiling,bool back){return game.rider_nodes(near,far,road,ceiling,back);},wide);
-        if (margin) for (auto& n:nodes) for (auto& v:n.view_points) v.x+=margin*65536;
         if (use_rgb) {
             // Reuse the indexed canvas as horizon scratch; the RGB path
             // never composites a dashboard into that buffer.

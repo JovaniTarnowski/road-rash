@@ -210,7 +210,7 @@ std::vector<DrawNode> CourseScene::draw_nodes(const std::vector<RouteSample>& ro
             const auto& s=slice.road[r];const int32_t world_x=s.road_x+camera.x;
             int32_t max_row=s.screen_y;
             HillProjection hills;
-            if(road.terrain->type==4){hills=project_hills(*road.terrain,world_x,s.world_y,camera,slice.scale);max_row=hills.maximum_row;}
+            if(road.terrain->type==4){hills=project_hills(*road.terrain,world_x,s.world_y,camera,slice.scale,logical_width);max_row=hills.maximum_row;}
             for(int side=0;side<2;++side) {
                 auto& h=road.hill[side];h.type=road.terrain->type;h.depth=slice.depth;
                 const int32_t shoulder=side?s.shoulder_right:s.shoulder_left;
@@ -289,23 +289,23 @@ std::vector<DrawNode> CourseScene::draw_nodes(const std::vector<RouteSample>& ro
             if(i==count-1){append(pending);pending.clear();}
             if(!(path.marking_flags&32) && road.terrain->type==4)for(int side=0;side<2;++side) {
                 if(visible) {
-                    ShoulderPanelInput shoulder;shoulder.near_depth=near.depth;shoulder.has_lanes=panels.left_lane_count+panels.right_lane_count!=0;shoulder.strip.side=uint8_t(side);shoulder.strip.far_depth=far.depth;
+                    ShoulderPanelInput shoulder;shoulder.near_depth=near.depth;shoulder.has_lanes=panels.left_lane_count+panels.right_lane_count!=0;shoulder.strip.side=uint8_t(side);shoulder.strip.far_depth=far.depth;shoulder.logical_width=logical_width;
                     shoulder.strip.world={{{a.road_x+camera.x+(side?a.right:a.left),a.world_y},old.hill[side].world[0],road.hill[side].world[0],{b.road_x+camera.x+(side?b.right:b.left),b.world_y}}};
                     shoulder.strip.projected={{{wrap(far.screen_x(r,side?a.right:a.left)),old.hill[side].projected[0].y},old.hill[side].projected[0],road.hill[side].projected[0],{wrap(near.screen_x(r,side?b.right:b.left)),road.hill[side].projected[0].y}}};
                     append(shoulder_draw_nodes(shoulder,camera,depths,[&](int32_t w,int32_t h){return material(road.section,road.local,path.side_flags[side],5,0,w,h);}));
                 }
-                HillPanelInput hills;hills.near=road.hill[side];hills.far=old.hill[side];hills.side=uint8_t(side);hills.occlusion_row=road.ceiling;hills.overlap=true;hills.join_offsets=joins_;
+                HillPanelInput hills;hills.near=road.hill[side];hills.far=old.hill[side];hills.side=uint8_t(side);hills.occlusion_row=road.ceiling;hills.overlap=true;hills.join_offsets=joins_;hills.logical_width=logical_width;
                 append(hill_draw_nodes(hills,camera,depths,[&](uint8_t band,int32_t w,int32_t h){return material(road.section,road.local,road.terrain->selectors[side],1,band,w,h);}));
             }
             if(!(path.marking_flags&32) && road.terrain->type==0)for(int side=0;side<2;++side) {
-                BuildingShoulderInput shoulder;shoulder.near_depth=near.depth;shoulder.far_base_y=a.screen_y;shoulder.near_base_y=b.screen_y;shoulder.far_world_base_y=a.world_y;shoulder.near_world_base_y=b.world_y;
+                BuildingShoulderInput shoulder;shoulder.near_depth=near.depth;shoulder.far_base_y=a.screen_y;shoulder.near_base_y=b.screen_y;shoulder.far_world_base_y=a.world_y;shoulder.near_world_base_y=b.world_y;shoulder.logical_width=logical_width;
                 shoulder.top.side=uint8_t(side);shoulder.top.far_depth=far.depth;shoulder.top.occlusion_row=road.ceiling;
                 const int32_t fy=side?old.path->height_right:old.path->height_left,ny=side?path.height_right:path.height_left;
                 shoulder.top.projected={{{wrap(far.screen_x(r,side?a.right:a.left)),old.hill[side].projected[0].y},old.hill[side].projected[0],road.hill[side].projected[0],{wrap(near.screen_x(r,side?b.right:b.left)),road.hill[side].projected[0].y}}};
                 shoulder.top.world={{{a.road_x+camera.x+(side?a.right:a.left),a.world_y+fy},{old.hill[side].world[0].x,a.world_y+fy},{road.hill[side].world[0].x,b.world_y+ny},{b.road_x+camera.x+(side?b.right:b.left),b.world_y+ny}}};
                 append(building_shoulder_nodes(shoulder,camera,depths,[&](uint8_t frame,int32_t w,int32_t h){return material(road.section,road.local,path.side_flags[side],5,frame,w,h);}));
                 BuildingPanelInput building{road.building[side],old.building[side],uint8_t(side)};
-                building.near_depth_q8=near.depth;building.far_depth_q8=far.depth;
+                building.near_depth_q8=near.depth;building.far_depth_q8=far.depth;building.logical_width=logical_width;
                 append(building_draw_nodes(building,[&](bool use_far,int32_t w,int32_t h){const auto& source=use_far?old:road;return material(source.section,source.local,source.terrain->selectors[side],1,std::nullopt,w,h);}));
             }
             if(actors)append(actors(near,far,r,road.ceiling,true));

@@ -225,7 +225,6 @@ bool RaceScreen::iterate(uint64_t now_ns) {
     } else {
         SDL_SetRenderDrawColor(renderer_, 15, 18, 22, 255);
         SDL_RenderClear(renderer_);
-        const auto slices = project_road(g_.race().route(), g_.blend_camera_position(), g_.blend_camera(), g_.depth);
         int dw = 0, dh = 0;
         if (display_.window) SDL_GetWindowSize(display_.window, &dw, &dh);
         const int race_scale = opt_.menu && opt_.settings ? effective_render_scale(*opt_.settings, dw, dh, kMobileDisplay)
@@ -235,6 +234,10 @@ bool RaceScreen::iterate(uint64_t now_ns) {
             g_.enhancements = opt_.settings->enhancements;
             g_.texture_detail = opt_.settings->texture_detail;
         }
+        // Road slices centre on the same logical width as the scene builders
+        // (synced above), so road, terrain, scenery and actors line up.
+        const auto slices = project_road(g_.race().route(), g_.blend_camera_position(), g_.blend_camera(), g_.depth,
+                                         g_.logical_width());
         if (g_.scene()) canvas_.draw(renderer_, g_, slices, race_scale, display_.render_threads);
         else draw_road(renderer_, slices);
         draw_opponents(renderer_, g_, sprites_, slices);
