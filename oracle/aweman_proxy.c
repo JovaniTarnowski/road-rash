@@ -50,6 +50,7 @@ static int g_solo;
 static int g_human;
 static int g_police_probe;
 static int g_terrain_seeded;
+static int g_terrain_trace;
 static void capture_terrain_seeded_and_exit(void);
 static uint32_t g_frame;
 
@@ -213,6 +214,33 @@ static long long sim_field_value(uintptr_t base, uint32_t offset, uint8_t width,
     return is_signed ? (long long)(int32_t)v : (long long)v;
 }
 
+/* Read-only fixed race walkers, not scene iterators sharing terrain code.
+ * 0x00453030 selects section outer+0x28+active*0x1f4; 0x00452cb0
+ * embeds its terrain iterator at +0xb4. All offsets below are bytes. */
+static void dump_terrain_walker(const char* name,uintptr_t outer) {
+    static const struct { const char* name; int offset; } fields[]={
+        {"start",0x44},{"end",0x64},{"x",0x84},{"height",0x88},{"dx",0xc4},{"dh",0xc8}
+    };
+    char key[128];
+    const int active=readable(outer+4,4)?RD32(outer+4):-1;
+    const uintptr_t section=active>=0 && active<=1?outer+0x28+(uintptr_t)active*0x1f4:0;
+    const uintptr_t terrain=section?section+0xb4:0;
+    const uintptr_t definition=terrain && readable(terrain,0x104)?(uint32_t)RD32(terrain):0;
+    const int available=definition && readable(definition,4);
+    snprintf(key,sizeof key,"ring.walk.%s.active",name);rr_log(key,active);
+    snprintf(key,sizeof key,"ring.walk.%s.position",name);rr_log(key,section && readable(section+8,4)?RD32(section+8):-1);
+    snprintf(key,sizeof key,"ring.walk.%s.terrain.available",name);rr_log(key,available);
+    if (!available) return;
+    snprintf(key,sizeof key,"ring.walk.%s.terrain.position",name);rr_log(key,RD32(terrain+0xc));
+    snprintf(key,sizeof key,"ring.walk.%s.terrain.last_sample",name);rr_log(key,RD32(terrain+0x10));
+    snprintf(key,sizeof key,"ring.walk.%s.terrain.record",name);rr_log(key,RD32(terrain+0x14));
+    for(int point=0;point<8;++point) for(unsigned f=0;f<sizeof fields/sizeof fields[0];++f) {
+        const int stride=f<2?4:8;
+        snprintf(key,sizeof key,"ring.walk.%s.terrain.point.%d.%s",name,point,fields[f].name);
+        rr_log(key,RD32(terrain+fields[f].offset+point*stride));
+    }
+}
+
 /* One golden frame per simulation tick. Riders key by discovery order with
  * the player (node == DAT_004642d8) pinned to rider.0; grid-slot mapping of
  * opponents is open (plan 10 task 6). Cars and other nodes are dumped raw. */
@@ -228,6 +256,7 @@ static void dump_sim_tick(void) {
         rr_log("character", -1);
         rr_log("seed", g_seed);
         rr_log("solo", g_solo);
+        if (g_terrain_trace) rr_log("ring.terrain.schema",1);
         if (g_tick1_caller) rr_log("tick1_caller", (long long)g_tick1_caller);
     } else {
         fprintf(g_out, "frame\t%u\n", g_sim_frames);
@@ -253,6 +282,10 @@ static void dump_sim_tick(void) {
     rr_log("ring.front", (long long)(int32_t)RD32(0x004b6e50));
     rr_log("ring.back", (long long)(int32_t)RD32(0x0049f240));
     rr_log("ring.camera", (long long)(int32_t)RD32(0x004b6e5c));
+    if (g_terrain_trace) {
+        dump_terrain_walker("back",0x0049ea20);
+        dump_terrain_walker("front",0x0049ee30);
+    }
     const uintptr_t player = (uint32_t)RD32(0x004642d8);
     int rider_index = 1, node_index = 0;
     /* Scheduler ring (0x00438170, see disassembly): S = [0x46dcc8],
@@ -2063,6 +2096,7 @@ static int rr_install_hooks(void) {
     if (GetEnvironmentVariableA("RR_ORACLE_RANDLOG",buf,sizeof buf)) g_randlog_all = atoi(buf)!=0;
     if (GetEnvironmentVariableA("RR_ORACLE_POLICE",buf,sizeof buf)) g_police_probe=atoi(buf)!=0;
     if (GetEnvironmentVariableA("RR_ORACLE_TERRAIN_SEEDED",buf,sizeof buf)) g_terrain_seeded=atoi(buf)!=0;
+    if (GetEnvironmentVariableA("RR_ORACLE_TERRAIN_TRACE",buf,sizeof buf)) g_terrain_trace=atoi(buf)!=0;
     if (GetEnvironmentVariableA("RR_ORACLE_SOLO",buf,sizeof buf)) g_solo = atoi(buf)!=0;
     if (GetEnvironmentVariableA("RR_ORACLE_HUMAN",buf,sizeof buf)) g_human = atoi(buf)!=0;
     env("RR_ORACLE_RASTER",buf,sizeof buf,"0");g_raster=atoi(buf);

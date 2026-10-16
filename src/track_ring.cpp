@@ -213,6 +213,16 @@ void TrackRing::advance(int32_t delta, const Random& random, const ActorSink& si
     random_ = nullptr;
 }
 
+TrackRingState TrackRing::diagnostic_state() const {
+    auto state=[](const Walker& walker) {
+        TrackWalkerState out;
+        out.position=walker.position;
+        if(walker.terrain)out.terrain=walker.terrain->diagnostic_state();
+        return out;
+    };
+    return {state(front_walker_),state(back_walker_)};
+}
+
 TerrainSlice TrackRing::front_terrain(int32_t left, int32_t right) const {
     return front_walker_.terrain ? front_walker_.terrain->slice(left, right) : TerrainSlice{};
 }

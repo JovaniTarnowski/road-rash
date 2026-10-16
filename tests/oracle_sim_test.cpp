@@ -259,6 +259,10 @@ int main(int argc, char** argv) {
     if (g.exe != "73d7f9744b5b1a9482b3909950cdf3fe34119fe13d023b031e9c6739a60f18a2") throw std::runtime_error("different executable");
     if (g.frames.empty()) throw std::runtime_error("no frames");
     const auto& h = g.frames.at(0);
+    const auto ring_schema=h.find("ring.terrain.schema");
+    const bool ring_terrain=ring_schema!=h.end();
+    if(ring_terrain && ring_schema->second!=1)
+        throw std::runtime_error("unsupported ring.terrain.schema");
     auto get = [&](const char* k) { auto it = h.find(k); if (it == h.end()) throw std::runtime_error(std::string("header lacks ") + k); return it->second; };
     static const char* original_courses[] = {"CITY", "HIWAY", "MEDLY", "NAPA", "CANYN"};  // 0x0046df58
     const int course_entry = int(get("course"));
@@ -418,6 +422,49 @@ int main(int argc, char** argv) {
     // build, 11,461 calls) is not reproduced: a single anchor at green covers
     // it (known limitation until the setup consumers are ported).
     const int64_t tick0 = get("tick");
+    // Optional original walker-state diagnostics are required in every frame
+    // once declared. Read the initialized walkers before any countdown replay;
+    // comparing value snapshots neither advances them nor consumes randomness.
+    auto compare_ring_terrain=[&](size_t frame) {
+        if(!ring_terrain)return false;
+        std::string difference;
+        auto compare=[&](const std::string& key,int64_t native) {
+            if(!difference.empty())return;
+            const auto found=g.frames.at(frame).find(key);
+            if(found==g.frames.at(frame).end())difference="missing required "+key;
+            else if(found->second!=native)
+                difference=key+" original "+std::to_string(found->second)+" native "+std::to_string(native);
+        };
+        if(!setup.instance.ring)difference="native track ring unavailable";
+        else {
+            const auto state=setup.instance.ring->diagnostic_state();
+            auto walker=[&](const char* name,const rr::TrackWalkerState& walk) {
+                const std::string prefix=std::string("ring.walk.")+name+".";
+                compare(prefix+"position",walk.position);
+                compare(prefix+"terrain.available",walk.terrain.has_value());
+                if(!walk.terrain)return;
+                const auto& terrain=*walk.terrain;
+                compare(prefix+"terrain.position",terrain.position);
+                compare(prefix+"terrain.last_sample",terrain.last_sample);
+                compare(prefix+"terrain.record",int64_t(terrain.record));
+                for(size_t i=0;i<terrain.points.size();++i) {
+                    const auto& point=terrain.points[i];
+                    const std::string key=prefix+"terrain.point."+std::to_string(i)+".";
+                    compare(key+"start",point.start);compare(key+"end",point.end);
+                    compare(key+"x",point.x);compare(key+"height",point.height);
+                    compare(key+"dx",point.dx);compare(key+"dh",point.dh);
+                }
+            };
+            walker("front",state.front);walker("back",state.back);
+        }
+        if(difference.empty())return false;
+        const auto tick=g.frames.at(frame).find("tick");
+        std::cout<<"first divergence at frame "<<frame<<" (tick "
+                 <<(tick==g.frames.at(frame).end()?tick0+int64_t(frame):tick->second)
+                 <<", ring terrain): "<<difference<<'\n';
+        return true;
+    };
+    if(compare_ring_terrain(0))return 1;
     std::function<std::string(const std::map<std::string, int64_t>&)> brain_line;
     // Start-hold: the golden's leading frames run during the original's
     // pre-green countdown (menu-layer, wall-clock); rider state is frozen and
@@ -653,6 +700,7 @@ int main(int argc, char** argv) {
         if (!brain_window) race.countdown_step();
         for (size_t i = 1; i < green; ++i) {
             race.countdown_step();
+            if(compare_ring_terrain(i))return 1;
             if (std::getenv("RR_SIM_TRACE")) std::cout << "countdown tick " << tick0 + int64_t(i) << ": " << brain_line(g.frames[i]) << '\n';
             const std::string d = brain_diff(g.frames[i]);
             if (!d.empty()) {
@@ -665,6 +713,9 @@ int main(int argc, char** argv) {
             std::cout << "sizes slot " << r.slot << " pos " << r.bike.i32(0x1c) << " w " << r.bike.i32(0x174) << " l " << r.bike.i32(0x178) << " h " << r.bike.i32(0x17c) << '\n';
         std::cout << "countdown: " << green - 1 << " native ticks, brain equal\n";
     } else {
+        // These replay modes hold the race outside Race::countdown_step.
+        // The walkers remain still, but each declared hold frame is required.
+        for(size_t i=1;i<green;++i)if(compare_ring_terrain(i))return 1;
         race.set_ticks(int32_t(tick0 + int64_t(green) - 1));
     }
     std::vector<std::pair<int64_t, uint64_t>> rng_history;  // (golden, native)
@@ -677,6 +728,7 @@ int main(int argc, char** argv) {
         // Demo goldens ignore control words (AI branch never reads them);
         // human goldens consume them through apply_controls (0x00434660).
         race.step(demo ? 0 : uint32_t(fc->second));
+        if(compare_ring_terrain(i))return 1;
         auto snap = race.snapshot();
         // Frozen opponents never move and the solo dump names only the
         // player's bike and half (rider.0/rider.1): drop their rows.

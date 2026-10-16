@@ -22,6 +22,14 @@ namespace rr {
 // One DZHR actor record fired by a slice build: ring_sample is the slice's
 // route sample (ring position >> 8), position_q8 the record's position.
 struct RingActor { int32_t ring_sample=0; uint32_t position_q8=0, word0=0, word1=0, section=0, local=0; };
+// Value-only walker snapshots for optional original terrain diagnostics.
+struct TrackWalkerState {
+    int32_t position=0;
+    std::optional<TerrainIteratorState> terrain;
+};
+struct TrackRingState {
+    TrackWalkerState front,back;
+};
 class TrackRing {
 public:
     using Random = std::function<uint32_t()>;
@@ -43,6 +51,7 @@ public:
     int32_t front_q8() const { return front_; }
     int32_t back_q8() const { return back_; }
     bool unsupported() const { return unsupported_; }
+    TrackRingState diagnostic_state() const;
     // Terrain slice exported by a walker at its current sample.
     TerrainSlice front_terrain(int32_t left_edge, int32_t right_edge) const;
 private:
