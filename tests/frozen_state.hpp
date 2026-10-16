@@ -83,6 +83,7 @@ inline void apply_frozen_state(const std::map<std::string, int64_t>& header,
         int32_t half_position = 0, half_speed = 0;
         std::array<int32_t, 9> words{};
         uint8_t flags = 0;
+        bool bike_slice_present = true, half_slice_present = true;
         bool sched = false;
         int32_t sched_last = 0, sched_next = 0, sched_interval = 1, sched_dt = 1;
     };
@@ -111,6 +112,23 @@ inline void apply_frozen_state(const std::map<std::string, int64_t>& header,
             // This word belongs to the bike node's linked half. The half
             // node's own .half108 is a no-linked-half sentinel, not its speed.
             if (header.contains(key + ".half108")) state.half_speed = word(key + ".half108");
+            // frozen_words=1 predates slice-pointer diagnostics. Absent
+            // metadata retains the legacy valid-slice fallback. Keep the bike
+            // and its linked half independent: either may have a NULL +0x2c.
+            auto slice = [&](const std::string& field) -> const int64_t* {
+                auto it = header.find(field);
+                if (it == header.end()) return nullptr;
+                if (it->second < 0 || uint64_t(it->second) > std::numeric_limits<uint32_t>::max())
+                    throw std::runtime_error("frozen state pointer out of range: " + field);
+                return &it->second;
+            };
+            if (const auto* value = slice(key + ".w2c")) state.bike_slice_present = *value != 0;
+            const auto* half_slice = slice(half->second.key + ".w2c");
+            const auto* linked_slice = slice(key + ".half2c");
+            if (half_slice && linked_slice && *half_slice != *linked_slice)
+                throw std::runtime_error("inconsistent linked frozen half slice at " + std::to_string(position));
+            if (half_slice || linked_slice)
+                state.half_slice_present = *(half_slice ? half_slice : linked_slice) != 0;
             // frozen_words=1 predates half108; older dumps retain zero.
             for (size_t i = 0; i < state.words.size(); ++i)
                 state.words[i] = word(key + ".bike_" + suffixes[i]);
@@ -165,6 +183,8 @@ inline void apply_frozen_state(const std::map<std::string, int64_t>& header,
         if (declared) {
             for (size_t i = 0; i < state.words.size(); ++i) r.bike.i32(offsets[i]) = state.words[i];
             r.bike.u8(0xc0) = state.flags;
+            r.bike_slice_present = state.bike_slice_present;
+            r.half_slice_present = state.half_slice_present;
             if (state.sched) {
                 r.sched_last = state.sched_last;
                 r.sched_next = state.sched_next;

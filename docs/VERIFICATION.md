@@ -1294,3 +1294,43 @@ pass before it was inspected; the successful rerun is the verified result.
 - Full main CTest: **97/97 pass**, zero skips/failures,149.74s. Seeded fixture parity
   is component evidence, not strict simulation acceptance. No Android,
   device, packaging or sanitizer gate in this slice.
+
+## October 15 — plan32 screen/canvas and plan10 NULL-slice integration
+
+- Owned `build-agent-codex-plan32-20261015` configured Debug,
+  `CMAKE_EXPORT_COMPILE_COMMANDS=ON`, `RR_STRICT_WARNINGS=ON`; full
+  `cmake --build ... --parallel6` exits0. Presentation final native CTest
+ 99/99 passed173.89s; after NULL-slice source integration full build0 and
+ `ctest --test-dir ... --output-on-failure -j4`99/99 passed151.17s, zero skips.
+  Logs `/tmp/rr-codex-plan32-final-{build,ctest}.log` and
+  `/tmp/rr-codex-sim735-main-{build,ctest}.log`. Initial presentation gate
+  98/99 failed the new screen harness; fixture timing and real lost-menu-Resume
+  bug fixed, full gate rerun green.
+- Screen focused native4/4; ASan/UBSan4/4 (10.70s) and canvas1/1(49.86s),
+  no diagnostics. Apple LeakSanitizer unavailable (`detect_leaks=0`); no leak
+  acceptance claim. Real SDL software/dummy smoke includes pause/reset/restart
+  and30/60/120FPS frame/bike/RNG invariance. Hardware/device reset unobserved.
+- Native canvas six RGB and six Original no-HUD hashes exact before/after,
+  one/four threads equal, full snapshot unchanged; all opaque indexed HUD
+  pixels now preserved. Bounded complete-draw benchmark medians improve13–24%
+  on M3Pro software renderer; not controlled cold-cache/device/memory evidence.
+  Full methods/results in performance handoff.
+- `oracle-sim-test sched600-20261015.tsv --driver=demo`: exit0,600ticks
+  identical in compared fields, with uncovered field eras reported explicitly.
+  Same sched900 single-anchor replay exits1 first893 RNG707629878/2897718112
+  (previous735 brain5632/22784); source guard progress, not final parity.
+- Strict `verify_sim.py --mode acceptance --driver human` against valid
+  terrain-human200 receipt exits1, acceptance_met=false: frame0/tick1 front
+  terrain point0.end132/133. No fixture/allowlist weakened or RNG reanchored.
+  Report `/tmp/rr-codex-plan32-human-acceptance.json`.
+- Refreshed owned CDB, no client LSP endpoint: fallback clangd
+  `--check=... --compile-commands-dir=build-agent-codex-plan32-20261015 --tweaks=none`
+  exits0, zero errors for race.cpp/race_setup.cpp and cache/setup tests. Screen
+  worker screen/view/test parses also zero errors. Default Apple developer-tweak
+  failures documented separately, not disguised as source diagnostics.
+- No new original captures/proxy installation/Wine state mutation, Android,
+  package, hardware or new strict-pass claim. REA6.4.0 scan evidence and exact
+  commands in [research](agent-handoffs/codex-sim-research-20261015.md);
+  [integration](agent-handoffs/codex-sim735-integrate-20261015.md),
+  [screen](agent-handoffs/codex-screen-20261015.md),
+  [performance](agent-handoffs/codex-performance-20261015.md).

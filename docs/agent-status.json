@@ -1,28 +1,31 @@
 {
-  "reviewed_on": "2026-10-16",
+  "reviewed_on": "2026-10-15",
   "timezone": "America/Los_Angeles",
   "areas": [
     {
       "area": "Native build",
       "implementation": "Playable native game + research viewer",
-      "verification": "Strict Debug build and97/97 CTests (October15 countdown/half integration); saved gate receipts below are historical",
+      "verification": "Strict Debug full build and99/99 CTests (October15 screen/canvas and NULL-slice integration); historical gate receipts below remain separate",
       "remaining": "Simulation acceptance separate",
       "evidence": [
         "VERIFICATION.md",
-        "RUN_NATIVE.md"
+        "RUN_NATIVE.md",
+        "agent-handoffs/codex-sim735-integrate-20261015.md"
       ],
       "last_verified_commit": null,
       "fidelity_level": "not-claimed"
     },
     {
       "area": "Simulation parity",
-      "implementation": "Tick replay, frozen scheduler/half state, countdown timers, human-branch probe",
-      "verification": "Demo solo first divergence tick 584 (speed off by one); human tick 189 (terrain RNG); strict acceptance unmet",
-      "remaining": "Terrain hidden-state parity, speed arithmetic, traffic-field scenarios and full human parity",
+      "implementation": "Tick replay, frozen scheduler/half/slice state, countdown timers, measured player row and human-branch probe",
+      "verification": "Demo600 compared fields match; sched900 first divergence893 RNG; declared human terrain first hidden-state gap tick1 (front point end132/133), coarser RNG189; strict acceptance unmet",
+      "remaining": "Human terrain setup ordering/parity, contact eligibility, traffic-field scenarios and full human parity",
       "evidence": [
         "SIM_SCENARIOS.md",
         "plans/10-simulation-oracle.md",
-        "agent-handoffs/countdown-timers-20261015.md"
+        "agent-handoffs/countdown-timers-20261015.md",
+        "agent-handoffs/codex-sim-research-20261015.md",
+        "agent-handoffs/codex-sim735-integrate-20261015.md"
       ],
       "last_verified_commit": null,
       "fidelity_level": "partial"

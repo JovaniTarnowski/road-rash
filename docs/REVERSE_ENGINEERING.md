@@ -1534,3 +1534,23 @@ force26/throttle7352 (native25/7330). Original581–585 throttle is
 9188,8576,7964,7352,6740, with cap9188 and gear2. The one-unit speed
 gap is thus consistent with different drive-ramp inputs; no evidence
 justifies changing integrate_speed's faithful rounding.
+
+## Frozen scan slice validity (October 15, 2026; plan 10)
+
+Original00449ce0 checks self+0x2c at449ce1..449cee and candidate+0x2c
+at449d1f..449d24. A NULL self returns NULL; a NULL candidate is skipped
+while preserving position-window traversal. Independent REA6.4.0 output
+is whitespace-identical to the address export (783chars); assembly is the
+field-width/branch authority. Live captured frozen bike/half metadata
+w2c/half2c is independently nullable, so native route reconstruction must
+not invent membership. sched900 tick735 entered the2400-unit overtake
+window for NULL-slice nodepos27648, producing false lateral22784; retaining
+membership advances same single-anchor replay through892. Road-half flags
+and later contact eligibility remain separate coverage.
+
+This supersedes the native scan assumption that every reconstructed frozen
+node has a valid single-road slice. It does not supersede independent
+frozen-half position/speed state (needed at576). Optional missing pointer
+metadata explicitly keeps older fixture behavior; declared contradictory
+linked-half pointers reject before state mutation. See
+[full probe and REA evidence](agent-handoffs/codex-sim-research-20261015.md).

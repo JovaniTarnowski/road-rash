@@ -184,6 +184,10 @@ struct Rider {
     // Rider half (type 8 scheduler object): rides with the bike, so its
     // position, lateral and speed follow the bike unless detached. Frozen
     // solo halves keep their captured state even when contact moves the bike.
+    // Original scheduler scans reject NULL object+0x2c slices (0x00449ce0).
+    // Frozen replay nodes may retain NULL even at an in-range position;
+    // ordinary riders and legacy captures keep their existing valid slices.
+    bool bike_slice_present = true, half_slice_present = true;
     bool half_detached = false;
     int32_t half_lateral = 0, half_position = 0, half_speed = 0;
     AiState brain;

@@ -1,5 +1,8 @@
 # Port progress
 
+The opening inventory below is historical. See [CURRENT_STATUS.md](CURRENT_STATUS.md)
+for the current evidence matrix and the dated continuation entries for updates.
+
 Status of the native macOS ARM64 / Android ARM64 port of Road Rash (1996 Windows rerelease). The port is C++20 with SDL3 and uses no Wine or x86 emulation. It is a **playable game** (`rr-game`). The original front end (menus, Thrash and Big Game, characters, bike shop, Schmooze, restroom options, results, saves and credits) leads into races against seven AI opponents on the original courses. Races use the ported bike physics, AI driving, rider contact, combat and free traffic; none of these has yet been compared with the original tick by tick (plan 10 is building that oracle). All five courses draw with the original scene pipeline (road, hills, buildings, shoulders, scenery, horizon scroll and full dashboard) through the shared race factory (plan 26); the 640×480 output stays bit-identical at render scale 1. There are no police. Effects, engines, the RRA soundtrack and all videos play; race MIDI is not done. Remaining work is planned in [plans/00-INDEX.md](plans/00-INDEX.md) (plans 10–11, 13–31).
 
 Detailed evidence is in [REVERSE_ENGINEERING.md](REVERSE_ENGINEERING.md) and test results in [VERIFICATION.md](VERIFICATION.md). Build and run instructions are in [../README.md](../README.md).
@@ -962,3 +965,32 @@ throttle7352/force26 vs native7330/25; original throttle drops612 per tick
 at582–585. RNG/earlier compared fields remain matched. No one-unit bias
 was added; trace imported spec/ramp inputs next. Original proxy installation
 was restored to its pre-session hash after both captures.
+
+### October 15, 2026 — plan32 screen/canvas and plan10 frozen slice scans
+
+- Plan32 A/B complete in109c640: actual screen restart/pause/resume/reset
+  harness, consistent supplied timestamps, lost Resume event fix, FPS cache
+  recovery and explicit modular interpolation. Original pixels match at
+  30/60/120FPS; full bike state/RNG agree with interpolation on/off. Native
+  focused4/4, ASan/UBSan4/4 plus canvas1/1 pass; injected SDL resets do not
+  establish GPU/hardware recovery.
+- E canvas slice109c640: indexed HUD/panels survive horizon clear; RGB skips
+  unused indexed HUD pass and retains horizon storage.6 RGB and6 Original
+  no-HUD frame hashes remain exact; warmed horizon allocates zero, complete
+  RGB draw one fewer allocation. Bounded M3Pro software-renderer Release
+  benchmark RGB medians13–24% faster. Memory/device and cancellable first
+  upscale attachment remain open; no broad frame-performance acceptance.
+- Player-row regression60bae61 validates the only unset sentinel-1 and
+  original row0/8 mass-scaled ramps. Frozen scan slice guards now retain
+  independent NULL bike/half memberships from measured metadata. REA and
+  assembly confirm00449ce0 gates. Same single-anchor demo first735→893;
+  600ticks match compared fields. Human declared terrain trace exposes
+  setup mismatch at tick1, earlier than coarser RNG189. Strict acceptance
+  remains unmet; fixtures/allowlist unchanged.
+- Main strict Debug full build and99/99 CTests pass after each integration
+  (presentation173.89s; frozen scan151.17s), zero skips. Shared source changes
+  integrated serially from detached worker with clean affected main files;
+  old retained integrator claims not reaped. Corrected clean-checkout doc
+  dependency by tracking the delivered countdown-driver handoff.
+- Next: contact flags at893, human terrain setup order, cancellable upscale
+  loading. [Integration evidence](agent-handoffs/codex-sim735-integrate-20261015.md).

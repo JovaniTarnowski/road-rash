@@ -1241,7 +1241,7 @@ void Race::build_scan_list() const {
         bike.type = 4;
         bike.order = 0x10000000u + uint32_t(i) * 2;
         bike.rider = int(i);
-        bike.sample = &route_of(r)[std::min(r.sample, route_of(r).size() - 1)];
+        bike.sample = r.bike_slice_present ? &route_of(r)[std::min(r.sample, route_of(r).size() - 1)] : nullptr;
         scan_.push_back(bike);
         ScanObject half = bike;
         half.lateral = half_x(r);
@@ -1251,6 +1251,8 @@ void Race::build_scan_list() const {
             const auto& road = route_of(r);
             half.sample = &road[std::min(size_t(std::max(half.position, 0) >> 8), road.size() - 1)];
         }
+        if (!r.half_slice_present) half.sample = nullptr;
+        else if (!half.sample) half.sample = &route_of(r)[std::min(r.sample, route_of(r).size() - 1)];
         half.type = 8;
         half.order = bike.order + 1;
         scan_.push_back(half);
@@ -1302,20 +1304,22 @@ int Race::scan_find(int rider, uint32_t type) const {
 int Race::scan_next(int from, uint32_t mask, bool forward, int32_t window) const {
     // 0x00449ce0: the next object along the list in that direction whose type
     // matches the mask; the walk stops (null) at the first object window or
-    // more away from the starting object, matching or not. Single-road
-    // slices all carry road flags 7, so the +0x36 half test always passes.
+    // more away from the starting object, matching or not. A NULL slice
+    // rejects self or skips a candidate, even when its position is in range.
+    // Single-road slices carry road flags 7, so the +0x36 half test passes.
     if (from < 0) return -1;
     if (window < 0) window = 0x20000000;
     const ScanObject& f = scan_[size_t(from)];
+    if (!f.sample) return -1;
     if (forward) {
         for (size_t k = size_t(from) + 1; k < scan_.size(); ++k) {
             if (window <= scan_[k].position - f.position) return -1;
-            if (scan_[k].type & mask) return int(k);
+            if (scan_[k].sample && (scan_[k].type & mask)) return int(k);
         }
     } else {
         for (int k = from - 1; k >= 0; --k) {
             if (window <= f.position - scan_[size_t(k)].position) return -1;
-            if (scan_[size_t(k)].type & mask) return k;
+            if (scan_[size_t(k)].sample && (scan_[size_t(k)].type & mask)) return k;
         }
     }
     return -1;

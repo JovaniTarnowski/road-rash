@@ -70,6 +70,22 @@ int main() {
         check(r[1].half_position==500 && r[1].half_speed==-73,"moving bike leaves captured half state unchanged");
         check(r[0].bike.i32(0x28)==777 && !r[0].half_detached,"moving player untouched");
     }
+    // Slice diagnostics distinguish a NULL pointer from absent legacy data.
+    for (int64_t bike_slice : {0,12345}) for (int64_t half_slice : {0,54321}) {
+        auto slices=capture();
+        slices["nodeaddr.0.w2c"]=bike_slice;
+        slices["nodeaddr.1.w2c"]=half_slice;
+        slices["nodeaddr.0.half2c"]=half_slice;
+        auto native=riders(); rr::golden::apply_frozen_state(slices,native,false);
+        check(native[1].bike_slice_present==(bike_slice!=0) && native[1].half_slice_present==(half_slice!=0),
+              "captured bike and half slice validity hydrate independently");
+        slices.erase("nodeaddr.1.w2c"); native=riders();
+        rr::golden::apply_frozen_state(slices,native,false);
+        check(native[1].half_slice_present==(half_slice!=0),"linked half2c supplies slice when direct diagnostic absent");
+    }
+    auto legacy_slices=riders(); rr::golden::apply_frozen_state(capture(),legacy_slices,false);
+    check(legacy_slices[1].bike_slice_present && legacy_slices[1].half_slice_present,
+          "declared legacy capture without slice diagnostics preserves valid defaults");
     // A same-position unrelated half must not replace the pointer-linked half.
     auto linked=capture(); linked["nodeaddr.9"]=900; linked["nodeaddr.9.type"]=8;
     linked["nodeaddr.9.position"]=500; linked["nodeaddr.9.lateral"]=777;
@@ -84,9 +100,14 @@ int main() {
     auto reject=[&](Header h,const char* what) {
         auto r=riders(); bool threw=false;
         try {rr::golden::apply_frozen_state(h,r,false);} catch(const std::runtime_error&) {threw=true;}
-        check(threw,what); check(r[1].bike.i32(0x28)==888 && !r[1].half_detached && r[1].half_position==0 && r[1].half_speed==0,"invalid declaration does not mutate state");
+        check(threw,what); check(r[1].bike.i32(0x28)==888 && !r[1].half_detached && r[1].half_position==0 && r[1].half_speed==0 && r[1].bike_slice_present && r[1].half_slice_present,"invalid declaration does not mutate state");
     };
-    auto h=capture(); h.erase("nodeaddr.0.bike_3c"); reject(h,"missing declared word");
+    auto h=capture(); h["nodeaddr.0.w2c"]=-1; reject(h,"negative bike slice pointer rejected");
+    h=capture(); h["nodeaddr.0.half2c"]=int64_t(std::numeric_limits<uint32_t>::max())+1;
+    reject(h,"linked half slice pointer overflow rejected");
+    h=capture(); h["nodeaddr.0.half2c"]=0; h["nodeaddr.1.w2c"]=123;
+    reject(h,"inconsistent linked half slice diagnostics rejected");
+    h=capture(); h.erase("nodeaddr.0.bike_3c"); reject(h,"missing declared word");
     h=capture(); h["nodeaddr.2"]=300; h["nodeaddr.2.type"]=4; h["nodeaddr.2.position"]=500; reject(h,"duplicate bike position");
     h=capture(); h["nodeaddr.2"]=200; h["nodeaddr.2.type"]=8; h["nodeaddr.2.position"]=500; reject(h,"duplicate node address");
     h=capture(); h["nodeaddr.0.half"]=999; reject(h,"missing linked half");

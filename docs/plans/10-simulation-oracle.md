@@ -447,3 +447,27 @@ original race-walker hidden-state/init interleaving remains unproved;
 next capture pairs front/back walkers from setup through189. No speculative
 hill-step correction was made. Fresh600-tick demo retains the584 speed
 gap and captures original throttle7352/force26 for the ramp investigation.
+
+### Player-row identity and NULL-slice scans (October 15 continuation)
+
+The584 speed gap was initialized rider mass, not integration rounding:
+original row0 produces cap9188/rise918/fall612; character mapping row8 gave
+9160/916/610. Factory explicit row selection landed15ebc38, with sentinel
+validation and row0/row8 regressions60bae61. Demo600 matches all compared
+fields; sched900 next differed735 in overtaking.
+
+Original00449ce0 rejects NULL self+2c and skips NULL candidate+2c. Captured
+frozen bikes/halves can independently have NULL slices; native scan had
+manufactured valid route samples. Hydration now retains both memberships
+and scans apply those guards without excluding all frozen halves. Same
+single-anchor sched900 first differs893 in RNG, with all compared state
+through892 matching. Next diagnostic is the original contact candidate
+byte+c0 flags gate, not a guessed change to terrain arithmetic.
+
+Fresh declared human terrain trace identifies a still earlier setup gap:
+frame0/tick1 front point0.end original132/native133. The older189 RNG gap
+was merely the earliest difference visible in the coarser trace. Seeded
+component parity does not prove race setup ordering; strict human acceptance
+still fails. No golden/allowlist/reanchoring changes. See
+[research](../agent-handoffs/codex-sim-research-20261015.md) and
+[integration](../agent-handoffs/codex-sim735-integrate-20261015.md).

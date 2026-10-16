@@ -264,6 +264,44 @@ int main() {
               "countdown scan preserves independent bike and frozen half state");
     }
 
+    // 0x00449ce0 skips NULL-slice candidates and rejects a NULL-slice self.
+    // The half can remain eligible independently of its frozen bike. Tick735
+    // in sched900 enters a pair whose two captured +0x2c pointers are NULL.
+    for (bool bike_slice : {false,true}) for (bool half_slice : {false,true}) {
+        rr::Race scanned(straight(4000),straight(4000),t,spec,90,{opp});
+        auto& target=scanned.riders()[0];
+        target.frozen=true;
+        target.bike.i32(0x1c)=83*256;
+        target.bike.i32(0x28)=0;
+        target.bike.i32(0x108)=0;
+        target.sample=83;
+        target.bike_slice_present=bike_slice;
+        target.half_detached=true;
+        target.half_position=84*256;
+        target.half_lateral=0;
+        target.half_speed=0;
+        target.half_slice_present=half_slice;
+        auto& observer=scanned.riders()[1];
+        observer.bike.i32(0x1c)=82*256;
+        observer.bike.i32(0x28)=0;
+        observer.bike.i32(0x108)=4096;
+        observer.sample=82;
+        observer.brain.target_rider=-1;
+        scanned.countdown_step();
+        const auto& ai=observer.brain;
+        const uint32_t expected_type=bike_slice?4u:half_slice?8u:0u;
+        check(ai.overtake_type==expected_type,"NULL-slice candidates skipped independently without ending scan");
+        if (expected_type) {
+            check(ai.overtake_latched==0 && ai.overtake_position==(bike_slice?83:84)*256,
+                  "valid frozen candidate retains normal overtake selection");
+        } else check(ai.overtake_latched==-1,"pair with NULL slices cannot become overtake target");
+        observer.bike_slice_present=false;
+        observer.brain.target_rider=-1;
+        scanned.countdown_step();
+        check(observer.brain.overtake_type==0 && observer.brain.overtake_latched==-1,
+              "NULL-slice scan origin cannot latch a valid target");
+    }
+
     {
         rr::Race demo(straight(4000), straight(4000), t, spec, 90);
         demo.set_demo_hold(true, 95);
