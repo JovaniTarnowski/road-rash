@@ -6,7 +6,8 @@
 - Baseline commit: `bb41f2b` (main HEAD at session start). The main checkout
   also has the uncommitted widescreen-centre work
   (`widescreen-centre-20261015.md`); I did not touch it.
-- Owned/changed files: this handoff only. No source or golden edits.
+- Owned/changed files: this handoff; `tests/race_cache_test.cpp` (golden
+  re-record after owner approval, see Outcome).
 
 ## Result
 
@@ -67,7 +68,7 @@ without the band change.
 So I am **not** fixing anything in code. Reverting line 202 would bring back
 the scale-dependent width error.
 
-## Proposal (waiting for the owner; nothing re-recorded)
+## Proposal (owner approved 2026-10-15; applied, see Outcome)
 
 Re-record the two 4:3 entries in `rgb_baseline` in
 `tests/race_cache_test.cpp`:
@@ -83,14 +84,23 @@ width (at `8851ef6` the wide scale-2/4 hashes were `1477636935681336033` /
 `13490494933351736534`, before the centring fix too). The same comment should
 mention that.
 
-`race_cache_test.cpp` is currently modified (uncommitted) by the
-widescreen-centre session, so its owner/integrator should apply the edit to
-avoid overlapping edits.
+## Outcome
 
-## Checks not run
+The owner approved the re-record ("re-record rgb_baseline[2]=11345352425216510781
+and [4]=9967728013922361189 after 1b79351, and update the comment"). By then the
+widescreen work had been committed (`cb44f8b`), so the file was clean; I edited
+only the array and its comment.
 
-Full gate not re-run (no code change). After the re-record, run
-`ctest --test-dir <build> -R race-cache --output-on-failure`, then the full gate.
+Checks (own build dir `build-agent-race-cache-rgb-20261015`, Debug, logs inside it):
+
+- `race_cache-test` exit 0; all six RGB rows match the array.
+- Full `cmake --build` exit 0; `ctest --test-dir build-agent-race-cache-rgb-20261015
+  --output-on-failure` exit 0: 100% passed, 0 failed out of 99.
+- Caveat: the shared tree had another session's uncommitted edits during the
+  gate (`src/hud.cpp`, `src/hud.hpp`, `src/race_caches.hpp`,
+  `src/race_helpers.cpp`, `tests/hud_test.cpp`). The 99/99 result covers the
+  tree with those edits included; they are not mine and are not in my commit.
+  The race-cache hashes equal the values measured at `1b79351` in isolation.
 
 ## Held resources
 

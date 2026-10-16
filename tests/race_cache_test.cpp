@@ -59,11 +59,14 @@ int main(int argc, char** argv) {
             const uint64_t threaded=rgb?hash_bytes(canvas.rgb.row(0),size_t(canvas.scale_w)*canvas.scale_h*4):hash_bytes(canvas.frame.row(0),size_t(canvas.scale_w)*canvas.scale_h);
             check(checksum==threaded,"Canvas differs between one and four threads");
             std::cout<<"row="<<row++<<" scale="<<scale<<" wide="<<wide<<" rgb="<<rgb<<" hash="<<checksum<<" allocations="<<allocations<<" cold_ms="<<cold_ms<<" p50="<<percentile(50)<<" p95="<<percentile(95)<<" p99="<<percentile(99)<<'\n';
-            // Index = scale slot*2 + wide. 4:3 entries captured from fdcd4aa
-            // before this change; wide entries (1, 3, 5) re-recorded 2026-10-15
-            // after the Hor+ centring fix (owner-approved): the old values
-            // encoded scenery shifted a margin off the road.
-            static constexpr uint64_t rgb_baseline[]={2800544501961077726ULL,4304228047002938247ULL,8749086642151112002ULL,12848431387687779404ULL,637450489077128212ULL,1873835806207674357ULL};
+            // Index = scale slot*2 + wide. Entry 0 captured from fdcd4aa
+            // before this change; 4:3 entries 2 and 4 re-recorded 2026-10-15
+            // after 1b79351 (owner-approved): the needle pen band became
+            // 3*scale (was 2*scale+1), identical at scale 1 only. Wide entries
+            // (1, 3, 5) re-recorded 2026-10-15 after the Hor+ centring fix
+            // (owner-approved; already includes the 1b79351 needle): the old
+            // values encoded scenery shifted a margin off the road.
+            static constexpr uint64_t rgb_baseline[]={2800544501961077726ULL,4304228047002938247ULL,11345352425216510781ULL,12848431387687779404ULL,9967728013922361189ULL,1873835806207674357ULL};
             if(rgb)check(checksum==rgb_baseline[(row-1)/2],"RGB canvas output changed from pre-optimization baseline");
             // Dashboard overlays the scene; every opaque dashboard sample and
             // the full Hor+ margins must survive composition.
