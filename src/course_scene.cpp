@@ -46,6 +46,12 @@ CourseScene::CourseScene(const Assets& assets,const std::vector<uint8_t>& exe,
      logarithms_(read_exe_data(exe,0x00476af8,256)),
      horizon_(assets.read("IMAGES/HORIZONS/"+horizon_name(exe,name)+".BOB")) {
     if(horizon_.size()!=720*320)throw std::runtime_error("Invalid course horizon");
+    // 0x00441870: CEL 0x10 (WATER128) is the cliff-foot water template.
+    {
+        const auto global=assets.read("DATA/GLOBAL.RSC");
+        for(const auto& entry:read_resources(global))if(entry.tag=="CEL " && entry.id==0x10)
+            water_=read_cel(std::vector<uint8_t>(global.begin()+entry.offset,global.begin()+entry.offset+entry.size));
+    }
     const auto joins=read_exe_data(exe,0x004688e0,128);
     for(int i=0;i<16;++i) {auto word=[&](int p){uint32_t v=0;for(int b=0;b<4;++b)v|=uint32_t(joins[p+b])<<(b*8);return bits(v);};joins_[i]={word(i*8),word(i*8+4)};}
     std::set<uint32_t> needed;
@@ -115,6 +121,7 @@ void CourseScene::attach_upscaled(const UpscaleCache& cache) {
         if (entry.texture) one(*entry.texture);
     for (auto& terrain : roads_.terrain)
         if (terrain.texture) one(*terrain.texture);
+    if (water_.texture) one(*water_.texture);
 }
 void CourseScene::clear_upscaled() {
     for (auto& [id, family] : families_)
@@ -124,6 +131,7 @@ void CourseScene::clear_upscaled() {
         if (entry.texture) entry.texture->upscaled.clear();
     for (auto& terrain : roads_.terrain)
         if (terrain.texture) terrain.texture->upscaled.clear();
+    if (water_.texture) water_.texture->upscaled.clear();
 }
 const std::vector<SceneryObject>& CourseScene::objects(uint32_t section,uint32_t local) const {return objects_.at(section).at(local);}
 const AnimationFrame* CourseScene::object_frame(uint32_t section,uint32_t local,const SceneryObject& object) const {
@@ -196,7 +204,7 @@ void CourseScene::draw_horizon(Framebuffer& fb,int32_t scroll,int32_t logical_wi
 }
 std::vector<DrawNode> CourseScene::draw_nodes(const std::vector<RouteSample>& route,
     const std::vector<RoadSlice>& slices,const Camera& camera,const DepthTable& depths,ActorEmitter actors,int32_t logical_width) const {
-    struct Road {const PathSample* path;const TerrainSlice* terrain;uint32_t section,local;HillRoad hill[2];BuildingRoad building[2];int32_t ceiling;};
+    struct Road {const PathSample* path;const TerrainSlice* terrain;uint32_t section,local;HillRoad hill[2];BuildingRoad building[2];int32_t ceiling;int32_t wall_height[2];};
     std::vector<std::array<Road,2>> roads(slices.size());
     // Plan 19 Task 4: the ceiling stays logical (240 Q16 view rows); only
     // ViewMode::map converts it to surface rows at render time.
@@ -214,7 +222,9 @@ std::vector<DrawNode> CourseScene::draw_nodes(const std::vector<RouteSample>& ro
             for(int side=0;side<2;++side) {
                 auto& h=road.hill[side];h.type=road.terrain->type;h.depth=slice.depth;
                 const int32_t shoulder=side?s.shoulder_right:s.shoulder_left;
-                const int32_t shoulder_y=wrap(int64_t(camera.height-s.world_y-(side?road.path->height_right:road.path->height_left))*slice.scale+90*65536);
+                // 0x00454240 clears the pair B heights of type-1 sides.
+                const int32_t side_height=road.terrain->type==1?0:(side?road.path->height_right:road.path->height_left);
+                const int32_t shoulder_y=wrap(int64_t(camera.height-s.world_y-side_height)*slice.scale+90*65536);
                 h.world[0]={world_x+shoulder,s.world_y};h.projected[0]={wrap(slice.screen_x(r,shoulder)),shoulder_y};
                 if(road.terrain->type==0) {
                     auto& building=road.building[side];building.shoulder=h.projected[0];building.type=0;
@@ -231,6 +241,20 @@ std::vector<DrawNode> CourseScene::draw_nodes(const std::vector<RouteSample>& ro
                 for(int band=0;band<3;++band) {
                     const auto& point=road.terrain->points[band*2+side];
                     h.world[band+1]={world_x+point[0],s.world_y+point[1]};h.projected[band+1]={hills.points[band*2+side][0],hills.points[band*2+side][1]};
+                }
+                road.wall_height[side]=0;
+                if(road.terrain->type==1) {
+                    // 0x00454240: wall base/top x are the outer shoulder edge
+                    // minus (left) / plus (right) the exported offsets; a height
+                    // below 1 becomes -elevation. 0x00444630 projects base at
+                    // the road row and top height*scale above it (+0x70/+0x80).
+                    const auto& wall=road.terrain->walls[side];
+                    const int32_t base=side?shoulder+wall[0]:shoulder-wall[0],top=side?shoulder+wall[1]:shoulder-wall[1];
+                    const int32_t height=wall[2]<1?-road.path->elevation:wall[2];
+                    road.wall_height[side]=height;
+                    h.world[1]={world_x+base,s.world_y};h.world[2]=h.world[3]={world_x+top,s.world_y+height};
+                    h.projected[1]={wrap(slice.screen_x(r,base)),s.screen_y};
+                    h.projected[2]=h.projected[3]={wrap(slice.screen_x(r,top)),wrap(s.screen_y-int64_t(height)*slice.scale)};
                 }
             }
             road.ceiling=ceiling;ceiling=std::min(ceiling,max_row);
@@ -259,6 +283,9 @@ std::vector<DrawNode> CourseScene::draw_nodes(const std::vector<RouteSample>& ro
     // edge (start grid: low byte 0) reaches below that edge, and the nearer
     // road strip drawn afterwards otherwise cut its tyres along a scanline.
     std::vector<DrawNode> front;
+    // 0x0041d260: a hill/building side's shoulder ends at its shoulder edge
+    // (+0x60); a mountain side's at its wall base (+0x70, world +0x14c).
+    auto outer=[](const Road& road){return road.terrain->type==0 || road.terrain->type==4 ? 0 : 1;};
     for(size_t n=slices.size();n-->1;) {
         const auto& near=slices[n-1];const auto& far=slices[n];const int count=std::min(near.count,far.count);
         std::vector<DrawNode> pending;pending.swap(front);
@@ -276,7 +303,8 @@ std::vector<DrawNode> CourseScene::draw_nodes(const std::vector<RouteSample>& ro
             panels.left_lanes_q8=path.left_q8;panels.right_lanes_q8=path.right_q8;panels.left_lane_count=uint8_t((path.left_q8+255)/256);panels.right_lane_count=uint8_t((path.right_q8+255)/256);
             panels.marking_flags=path.marking_flags;panels.terrain_type=road.terrain->type;panels.next_terrain_type=old.terrain->type;panels.visible=visible;
             append(road_draw_nodes(road_panels(panels,logical_width),roads_));
-            if(path.marking_flags&32)for(int side=0;side<2;++side) {
+            // 0x0043bef0 draws marked ground (0x0043b970) only for types 0 and 4.
+            if((path.marking_flags&32) && road.terrain->type!=1)for(int side=0;side<2;++side) {
                 MarkedGroundInput ground;
                 ground.near_edge={wrap(near.screen_x(r,side?b.right:b.left)),b.screen_y};
                 ground.far_edge={wrap(far.screen_x(r,side?a.right:a.left)),a.screen_y};
@@ -290,12 +318,29 @@ std::vector<DrawNode> CourseScene::draw_nodes(const std::vector<RouteSample>& ro
             if(!(path.marking_flags&32) && road.terrain->type==4)for(int side=0;side<2;++side) {
                 if(visible) {
                     ShoulderPanelInput shoulder;shoulder.near_depth=near.depth;shoulder.has_lanes=panels.left_lane_count+panels.right_lane_count!=0;shoulder.strip.side=uint8_t(side);shoulder.strip.far_depth=far.depth;shoulder.logical_width=logical_width;
-                    shoulder.strip.world={{{a.road_x+camera.x+(side?a.right:a.left),a.world_y},old.hill[side].world[0],road.hill[side].world[0],{b.road_x+camera.x+(side?b.right:b.left),b.world_y}}};
-                    shoulder.strip.projected={{{wrap(far.screen_x(r,side?a.right:a.left)),old.hill[side].projected[0].y},old.hill[side].projected[0],road.hill[side].projected[0],{wrap(near.screen_x(r,side?b.right:b.left)),road.hill[side].projected[0].y}}};
+                    shoulder.strip.world={{{a.road_x+camera.x+(side?a.right:a.left),a.world_y},old.hill[side].world[outer(old)],road.hill[side].world[outer(road)],{b.road_x+camera.x+(side?b.right:b.left),b.world_y}}};
+                    shoulder.strip.projected={{{wrap(far.screen_x(r,side?a.right:a.left)),old.hill[side].projected[0].y},old.hill[side].projected[outer(old)],road.hill[side].projected[outer(road)],{wrap(near.screen_x(r,side?b.right:b.left)),road.hill[side].projected[0].y}}};
                     append(shoulder_draw_nodes(shoulder,camera,depths,[&](int32_t w,int32_t h){return material(road.section,road.local,path.side_flags[side],5,0,w,h);}));
                 }
                 HillPanelInput hills;hills.near=road.hill[side];hills.far=old.hill[side];hills.side=uint8_t(side);hills.occlusion_row=road.ceiling;hills.overlap=true;hills.join_offsets=joins_;hills.logical_width=logical_width;
                 append(hill_draw_nodes(hills,camera,depths,[&](uint8_t band,int32_t w,int32_t h){return material(road.section,road.local,road.terrain->selectors[side],1,band,w,h);}));
+            }
+            // 0x0043bef0 types 1-3: shoulder while the pair is visible, then the
+            // mountain side. Type 3 (split) sides are not produced natively yet.
+            if(road.terrain->type==1)for(int side=0;side<2;++side) {
+                if(visible) {
+                    ShoulderPanelInput shoulder;shoulder.near_depth=near.depth;shoulder.has_lanes=panels.left_lane_count+panels.right_lane_count!=0;shoulder.strip.side=uint8_t(side);shoulder.strip.far_depth=far.depth;shoulder.logical_width=logical_width;
+                    shoulder.strip.world={{{a.road_x+camera.x+(side?a.right:a.left),a.world_y},old.hill[side].world[outer(old)],road.hill[side].world[outer(road)],{b.road_x+camera.x+(side?b.right:b.left),b.world_y}}};
+                    shoulder.strip.projected={{{wrap(far.screen_x(r,side?a.right:a.left)),old.hill[side].projected[0].y},old.hill[side].projected[outer(old)],road.hill[side].projected[outer(road)],{wrap(near.screen_x(r,side?b.right:b.left)),road.hill[side].projected[0].y}}};
+                    append(shoulder_draw_nodes(shoulder,camera,depths,[&](int32_t w,int32_t h){return material(road.section,road.local,path.side_flags[side],5,0,w,h);}));
+                }
+                // A building neighbour's +0x70/+0x80 hold facade fields, not
+                // ground points; that transition is not ported.
+                if(old.terrain->type!=1 && old.terrain->type!=4)continue;
+                WallPanelInput wall;wall.near=road.hill[side];wall.far=old.hill[side];wall.side=uint8_t(side);wall.height=road.wall_height[side];
+                wall.near_lane_width=wrap(int64_t(250)*near.scale);wall.far_lane_width=wrap(int64_t(250)*far.scale);wall.logical_width=logical_width;
+                append(wall_draw_nodes(wall,[&](uint8_t frame,int32_t w,int32_t h){return material(road.section,road.local,road.terrain->selectors[side],1,frame,w,h);},
+                    water_.texture?&*water_.texture:nullptr));
             }
             if(!(path.marking_flags&32) && road.terrain->type==0)for(int side=0;side<2;++side) {
                 BuildingShoulderInput shoulder;shoulder.near_depth=near.depth;shoulder.far_base_y=a.screen_y;shoulder.near_base_y=b.screen_y;shoulder.far_world_base_y=a.world_y;shoulder.near_world_base_y=b.world_y;shoulder.logical_width=logical_width;

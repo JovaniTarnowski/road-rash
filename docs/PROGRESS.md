@@ -1019,3 +1019,26 @@ was restored to its pre-session hash after both captures.
   fade-out release frame. Countdown digits compared with the original
   `napa-dash-solo` post-dash capture: "1" 746/750 white pixels, "3"/"2" one-row
   GDI hinting offsets. Open: palette-state capture (proxy `SetEntries` hook).
+
+### October 16, 2026: mountain/cliff terrain sides (Pacific Highway black wedges)
+
+- Cause: terrain type 1 (`NTMR`/`DWDR` mountain, CANYN's first section, also
+  HIWAY/MEDLY) was decoded but never drawn. `0x0043bef0` draws types 1-3 with
+  shoulder `0x0041d260` then `0x0040dfd0` (height >= 1) or `0x0040d030`
+  (height < 1), and the native scene handled only types 0 and 4. The wedges
+  were the clear colour below the 320-row horizon. Not caused by cb44f8b
+  (4:3 showed them too).
+- Ported: `wall_draw_nodes` (`terrain_panels.cpp`): wall face with the near
+  edge one column out, plateau tiles four lanes wide to the view edge, cliff
+  face to sea level, WATER128 (`GLOBAL.RSC` CEL 0x10, `0x00441870`) for the
+  right side. The left water strip is emitted only fully off-screen, as in
+  `0x0040d2f2`. `course_scene.cpp` applies `0x00454240`'s wall transform
+  (outer shoulder edge ∓ exported offsets, height < 1 becomes -elevation),
+  projects base/top like `0x00444630` (+0x70/+0x80), ends mountain shoulders
+  at the wall base (`0x0041d260`) and feeds the points to hill transitions.
+  `PathSample::elevation` carries the HTPR absolute height (`0x00451970`,
+  `0x004519f0`). Type-1 sides drop pair-B shoulder heights and marked ground.
+- Remaining: type 3 split sides (`0x0040dac0`/`0x0040d420`), building-to-
+  mountain transitions (skipped), node flags 0x20000/0x40000, no pixel
+  comparison with the original frames. [Handoff](agent-handoffs/pch-terrain-20261016.md).
+

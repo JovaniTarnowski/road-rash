@@ -66,6 +66,32 @@ int main(int argc,char** argv) {
             }
             std::cout<<name<<": "<<course_views<<" views built\n";
         }
+        // Mountain (terrain type 1) sides: 0x0040dfd0 walls and 0x0040d030
+        // cliffs with water. Unported, these sections left the clear colour
+        // below the 320-row horizon beside the road (Pacific Highway's first
+        // section). The original CANYN capture pch-terrain-20261016 has no
+        // index-0 pixel below row 320. Count them over views whose camera
+        // sample is a mountain sample, at 4:3 and Hor+ 426.
+        for(const char* name:{"HIWAY","MEDLY","CANYN"}) {
+            const auto other=rr::read_course(assets.read(std::string("DATA/COURSES/")+name+".CRS"));
+            const rr::CourseScene other_scene(assets,exe,other,name);
+            const auto route=rr::make_route(other,false);
+            size_t views_checked=0,bad_views=0,worst=0;
+            for(const int32_t width:{320,426}) {
+                rr::Framebuffer frame(width*2,480);
+                for(uint32_t p=0;p+40<route.size();p+=11) {
+                    if(other_scene.terrain(route[p].section,route[p].local).type!=1)continue;
+                    const auto slices=rr::project_road(route,p*256+128,{0,150},depths,width);
+                    other_scene.draw_horizon(frame,0,width);
+                    auto mode=rr::view_mode(true);mode.surface_width=mode.display_width=width*2;
+                    rr::render_nodes(frame,other_scene.draw_nodes(route,slices,{0,150},depths,{},width),mode,16);
+                    size_t zeros=0;for(int y=320;y<480;++y)for(int x=0;x<frame.width();++x)zeros+=frame.row(y)[x]==0;
+                    ++views_checked;worst=std::max(worst,zeros);if(zeros*100>size_t(frame.width())*160)++bad_views;
+                }
+            }
+            std::cout<<name<<" mountain views: "<<views_checked<<", "<<bad_views<<" with over 1% clear colour below the horizon, worst "<<worst<<" pixels\n";
+            if(!views_checked || bad_views)throw std::runtime_error(std::string(name)+": mountain terrain left the clear colour below the horizon");
+        }
         // Hor+ widescreen: road slices and every builder centre on the same
         // logical_width/2. Each node fully inside the 4:3 view must reappear
         // at 426 shifted by exactly 53 columns. Regression: panel inputs kept

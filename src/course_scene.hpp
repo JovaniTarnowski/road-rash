@@ -56,6 +56,7 @@ private:
     std::vector<std::vector<std::array<uint16_t,4>>> family_slots_;
     std::map<uint32_t,Family> families_;
     RoadMaterials roads_;
+    Cel water_;  // GLOBAL.RSC CEL 0x10, cliff-foot water (0x0040d030)
     std::vector<uint8_t> logarithms_,horizon_;
     std::array<RasterPoint,16> joins_{};
     std::vector<std::vector<std::vector<SceneryObject>>> objects_;

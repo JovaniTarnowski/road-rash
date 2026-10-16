@@ -27,6 +27,11 @@ struct PathSample {
     // Section-local interval of the event record this sample sits in (0x00452710's
     // record +0/+4); 0x0041eca0 builds the intersection from its start.
     int32_t event_start=0,event_end=0;
+    // Absolute road height at this sample: HTPR iterator +4 (0x00451970 seeds
+    // the header short +0xc, 0x004519f0 adds each passed sample's rise).
+    // 0x00454240 copies it to sub-slice +0xc0; a mountain side whose height is
+    // below 1 becomes -elevation, a cliff down to height 0 (0x0040d030).
+    int32_t elevation=0;
 };
 struct CourseEvent {
     int32_t start=0,end=0; // CESR interval, section-local samples (0x00452690)

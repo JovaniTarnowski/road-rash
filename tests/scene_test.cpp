@@ -23,6 +23,59 @@ int main() {
     strip.far_depth=210;check(rr::subdivide_hill(strip,{0,150},synthetic).empty(),"reject too-near hill strip");
     strip.far_depth=1024;strip.occlusion_row=80*65536;
     check(rr::subdivide_hill(strip,{0,150},synthetic).empty(),"reject occluded hill strip");
+    {
+        // Terrain type 1 sides (0x0040dfd0 wall, 0x0040d030 cliff). Before
+        // these were ported, mountain sections drew nothing beside the
+        // shoulder and Pacific Highway showed the clear colour there.
+        const int32_t q=65536;
+        rr::CelTexture face,top,water;
+        auto pick=[&](uint8_t frame,int32_t,int32_t){return frame?&top:&face;};
+        auto pt=[&](int x,int y){return rr::RasterPoint{x*q,y*q};};
+        auto same=[](const std::array<rr::RasterPoint,4>& a,const std::array<rr::RasterPoint,4>& b){
+            for(size_t i=0;i<4;++i)if(a[i].x!=b[i].x || a[i].y!=b[i].y)return false;return true;};
+        auto eq=[](rr::RasterPoint a,rr::RasterPoint b){return a.x==b.x && a.y==b.y;};
+        rr::WallPanelInput wall;wall.side=1;wall.height=50;wall.near_lane_width=40*q;wall.far_lane_width=20*q;
+        wall.near.type=1;wall.near.depth=300;wall.near.projected={pt(200,120),pt(220,120),pt(230,80),pt(230,80)};
+        wall.far.type=1;wall.far.depth=556;wall.far.projected={pt(180,100),pt(190,100),pt(195,70),pt(195,70)};
+        auto nodes=rr::wall_draw_nodes(wall,pick,&water);
+        check(nodes.size()==3,"wall face plus two plateau tiles");
+        if(nodes.size()==3) {
+            const std::array<rr::RasterPoint,4> face_points={pt(195,70),pt(231,80),pt(221,121),pt(190,101)};
+            check(nodes[0].texture==&face && same(nodes[0].view_points,face_points),"wall face from far top to far base, near edge one column out");
+            const std::array<rr::RasterPoint,4> tile={pt(195,70),pt(275,70),pt(391,80),pt(231,80)};
+            check(nodes[1].texture==&top && same(nodes[1].view_points,tile),"first plateau tile four lanes wide");
+            check(nodes[2].view_points[0].x==275*q && nodes[2].view_points[3].x==391*q,"plateau tiles step until the view edge");
+        }
+        wall.near.depth=60;check(rr::wall_draw_nodes(wall,pick,&water).empty(),"no wall within 0x3d of the camera");
+        // Hill neighbour: far top/base are its first point and shoulder.
+        wall.near.depth=300;wall.far.type=4;
+        nodes=rr::wall_draw_nodes(wall,pick,&water);
+        check(!nodes.empty() && eq(nodes[0].view_points[0],pt(190,100)) && eq(nodes[0].view_points[3],pt(180,101)),"wall joins a hill at its shoulder");
+        // Cliff down to the water, right side: water clamps to the view edge
+        // unless within 256 columns of it.
+        rr::WallPanelInput cliff;cliff.side=1;cliff.height=-100;
+        cliff.near.type=1;cliff.near.depth=300;cliff.near.projected={pt(210,120),pt(220,120),pt(350,200),pt(350,200)};
+        cliff.far.type=1;cliff.far.depth=556;cliff.far.projected={pt(225,100),pt(230,100),pt(300,150),pt(300,150)};
+        nodes=rr::wall_draw_nodes(cliff,pick,&water);
+        check(nodes.size()==2,"cliff face plus water");
+        if(nodes.size()==2) {
+            const std::array<rr::RasterPoint,4> face_points={rr::RasterPoint{230*q,100*q-0x6000},rr::RasterPoint{220*q,120*q-0x6000},pt(350,200),pt(300,150)};
+            check(nodes[0].texture==&face && same(nodes[0].view_points,face_points),"cliff face from the road edge to the water");
+            const std::array<rr::RasterPoint,4> sea={pt(350,200),pt(606,200),pt(556,150),pt(300,150)};
+            check(nodes[1].texture==&water && same(nodes[1].view_points,sea),"right water strip");
+        }
+        cliff.near.projected[2]={20*q,200*q};cliff.far.projected[2]={10*q,150*q};
+        nodes=rr::wall_draw_nodes(cliff,pick,&water);
+        check(nodes.size()==2 && nodes[1].view_points[1].x==320*q && nodes[1].view_points[2].x==320*q,"water reaches the right view edge");
+        // Left: 0x0040d2f2 emits water only when both feet are left of 0.
+        cliff.side=0;cliff.near.projected={pt(110,120),pt(100,120),pt(-30,200),pt(-30,200)};
+        cliff.far.projected={pt(95,100),pt(90,100),pt(-10,150),pt(-10,150)};
+        nodes=rr::wall_draw_nodes(cliff,pick,&water);
+        const std::array<rr::RasterPoint,4> left_sea={pt(-30,200),pt(-286,200),pt(-266,150),pt(-10,150)};
+        check(nodes.size()==2 && same(nodes[1].view_points,left_sea),"left water strip off-screen");
+        cliff.far.projected[2]={10*q,150*q};
+        check(rr::wall_draw_nodes(cliff,pick,&water).size()==1,"no left water while a foot is on-screen");
+    }
     const auto path=rr::golden::oracle_dir()+"/raster-fixtures.tsv";
     if(std::filesystem::exists(path)) {
         try {

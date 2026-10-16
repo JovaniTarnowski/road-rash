@@ -88,9 +88,12 @@ Course read_course(const std::vector<uint8_t>& bytes) {
             segments.chunk(scenery,"DZHR",16,8);
             for(uint32_t j=0;j<segments.u32(scenery+8);++j)section.scenery_events.push_back({segments.u32(scenery+16+8*j),segments.u32(scenery+20+8*j)});
         }
-        for(uint32_t j=0;j<count;++j)
+        const int32_t start_height=int16_t(uint16_t(segments.byte(path+12)|segments.byte(path+13)<<8));
+        for(uint32_t j=0;j<count;++j) {
             // No lane table: 0x004528f0 reports 0x200 (two lanes) each side.
             section.samples.push_back({segments.signed_byte(path+16+2*j),segments.signed_byte(path+17+2*j),500,500,512,512});
+            section.samples.back().elevation=j?section.samples[j-1].elevation+section.samples[j-1].rise:start_height;
+        }
         // RLAN widths in lane units (0x00452820 / 0x00452920); 0x00454240 converts
         // Q8 lane units to 250-unit lanes.
         if(lanes) walk_intervals(segments,lanes,"NALR",20,{{8,10,12},{9,11,16}},count,

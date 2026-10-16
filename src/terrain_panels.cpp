@@ -108,4 +108,71 @@ std::vector<DrawNode> shoulder_draw_nodes(const ShoulderPanelInput& in,const Cam
     for(size_t qi=0;qi<quads.size();++qi)out.push_back(node(quads[qi],texture,qdepths[qi]));
     return out;
 }
+
+std::vector<DrawNode> wall_draw_nodes(const WallPanelInput& in,const WallMaterial& material,const CelTexture* water) {
+    if(in.side>1 || in.logical_width<1 || in.logical_width>32767 || in.logical_height<1 || in.logical_height>32767)
+        throw std::runtime_error("Invalid wall panel input");
+    const int32_t width=in.logical_width*65536;
+    const bool right=in.side==1;
+    // ((a>>12)*(b>>12)) products of the original visibility tests.
+    auto cross=[](int32_t a,int32_t b){return mul(a>>12,b>>12);};
+    auto absolute=[](int32_t n){return n<0?sub(0,n):n;};
+    std::vector<DrawNode> result;
+    const auto& np=in.near.projected;const auto& fp=in.far.projected;
+    if(in.height<1) {
+        // 0x0040d030: far base, near base (both 0x6000 up), near top, far top.
+        std::array<RasterPoint,4> p={RasterPoint{fp[1].x,sub(fp[1].y,0x6000)},RasterPoint{np[1].x,sub(np[1].y,0x6000)},np[2],fp[2]};
+        bool draw;
+        const int32_t a=cross(sub(p[1].y,p[2].y),sub(p[3].x,p[2].x)),b=cross(sub(p[3].y,p[2].y),sub(p[1].x,p[2].x));
+        const int32_t c=cross(sub(p[3].y,p[0].y),sub(p[1].x,p[0].x)),d=cross(sub(p[1].y,p[0].y),sub(p[3].x,p[0].x));
+        if(right)draw=p[1].x<p[0].x ? p[1].x<width : (a<b || c<d);
+        else draw=p[0].x<p[1].x ? p[1].x>0 : (a>b || c>d);
+        if(draw)result.push_back(node(p,material(0,length(p[0],p[1]),length(p[1],p[2])),{in.far.depth,in.near.depth,in.near.depth,in.far.depth}));
+        if(p[3].y<in.logical_height*65536) {
+            // Water from the cliff foot to the view edge; 0x00450140 makes
+            // both edges horizontal. Right: x clamps to the edge unless within
+            // 256 columns of it. Left (0x0040d2f2): only when both feet are
+            // already left of column 0, so the original never shows it.
+            bool fill=false;int32_t x1=0,x2=0;
+            if(right) {
+                if(p[3].x<width || p[2].x<width) {
+                    fill=true;const int32_t limit=(in.logical_width-256)*65536;
+                    x1=p[2].x<limit?width:add(p[2].x,0x1000000);
+                    x2=p[3].x<limit?width:add(p[3].x,0x1000000);
+                }
+            } else if(p[2].x<0 && p[3].x<0) {fill=true;x1=sub(p[2].x,0x1000000);x2=sub(p[3].x,0x1000000);}
+            if(fill)result.push_back(node({p[2],RasterPoint{x1,p[2].y},RasterPoint{x2,p[3].y},p[3]},water,{in.near.depth,in.near.depth,in.far.depth,in.far.depth}));
+        }
+        return result;
+    }
+    // 0x0040dfd0: nothing within 0x3d of the camera.
+    if(in.near.depth<0x3d)return result;
+    // Far top/base: a hill neighbour joins at its shoulder and first point.
+    const RasterPoint far_top=in.far.type==4?fp[1]:fp[2],far_base=in.far.type==4?fp[0]:fp[1];
+    std::array<RasterPoint,4> p={far_top,np[2],RasterPoint{np[1].x,add(np[1].y,0x10000)},RasterPoint{far_base.x,add(far_base.y,0x10000)}};
+    const int32_t a=cross(sub(p[2].x,p[1].x),sub(p[0].y,p[1].y)),b=cross(sub(p[2].y,p[1].y),sub(p[0].x,p[1].x));
+    const int32_t c=cross(sub(p[2].x,p[3].x),sub(p[0].y,p[3].y)),d=cross(sub(p[2].y,p[3].y),sub(p[0].x,p[3].x));
+    bool draw;
+    if(right)draw=p[3].x<p[2].x ? p[3].x<width : (a>b || c<d);
+    else draw=p[2].x<p[3].x ? p[3].x>0 : (a<b || c>d);
+    if(draw) {
+        // Near edge pushed one column outward.
+        const int32_t shift=right?65536:-65536;
+        p[2].x=add(p[2].x,shift);p[1].x=add(p[1].x,shift);
+        result.push_back(node(p,material(0,length(p[0],p[1]),length(p[1],p[2])),{in.far.depth,in.near.depth,in.near.depth,in.far.depth}));
+    }
+    // Plateau above a wall that rises towards the camera: tiles four lanes
+    // wide (+0x24*4 per pair end) until both ends leave the view.
+    if(p[0].y<p[1].y && p[1].y>0) {
+        const int32_t near_step=mul(in.near_lane_width,right?4:-4),far_step=mul(in.far_lane_width,right?4:-4);
+        std::array<RasterPoint,4> q={p[0],RasterPoint{add(p[0].x,far_step),p[0].y},RasterPoint{add(p[1].x,near_step),p[1].y},p[1]};
+        const auto* texture=material(1,absolute(sub(q[1].x,q[0].x)),absolute(sub(q[3].y,q[0].y)));
+        // The original loops until off-screen; bound it against a zero step.
+        for(int tiles=0;tiles<4096 && (right ? q[0].x<width || q[3].x<width : q[0].x>0 || q[3].x>0);++tiles) {
+            result.push_back(node(q,texture,{in.far.depth,in.far.depth,in.near.depth,in.near.depth}));
+            q[0].x=add(q[0].x,far_step);q[1].x=add(q[1].x,far_step);q[2].x=add(q[2].x,near_step);q[3].x=add(q[3].x,near_step);
+        }
+    }
+    return result;
+}
 }

@@ -1386,3 +1386,32 @@ pass before it was inspected; the successful rerun is the verified result.
   this bootstrap never reaches; native timing of the fade relative to frames
   (only the original's wall-clock spacing is checked); human-mode Escape and
   Pause without the mode override.
+
+## Mountain/cliff terrain sides (October 16, 2026)
+
+- Reproduction: `rr-game --course 3 --autopilot --ticks 900 --screenshot`
+  (CANYN) with `widescreen=0` and `=1` (`RR_PREF_OVERRIDE` copies of the
+  owner's settings): before the fix, 51,200 / 43,008 black pixels in the
+  region beside the road (rows 62–72%, left 20%); after, 0 / 0. Napa and
+  MEDLY start frames were unaffected before (no mountain at their starts).
+- Original: `RR_ORACLE_COURSE=5 RR_ORACLE_DRIVE=2 RR_ORACLE_SEED=1
+  RR_ORACLE_PIXELS=1 RR_ORACLE_SHOT_EVERY=60 RR_ORACLE_FRAMES=420
+  oracle/run.sh pch-terrain-20261016 400`: exit 0, 420 frames, proxy
+  `48f9bdf5…`, capture accepted. Shots f0..f360 show the mountain wall left,
+  water right and no index-0 pixel below row 320. Native race frames have the
+  same layout: visual comparison only, no pixel or display-list match.
+- `scene-test`: new synthetic cases for `wall_draw_nodes` (wall face points
+  and one-column shift, plateau tiles and their stop, depth 0x3d skip, hill
+  neighbour, right/left water, left-strip off-screen rule): 0 failures.
+- `course_scene-test`: new check renders every 11th route sample whose camera
+  sample is a mountain sample at 320 and 426 columns. HIWAY 40 views (worst
+  26 index-0 pixels below the horizon), MEDLY 36 (0), CANYN 566 (16); none
+  above 1%. Before the shoulder outer-edge fix HIWAY had 17 failing views
+  (worst 37,750). CITY/NAPA widescreen centring unchanged (0 not at +53).
+- Gate: `cmake --build build-agent-pch-terrain-20261016 --parallel` exit 0;
+  `ctest --test-dir build-agent-pch-terrain-20261016` 99/99 passed. No
+  simulation or RNG code changed (`PathSample::elevation` is read only by the
+  scene).
+- Not covered: type 3 split sides, building→mountain transitions, scene
+  display-list comparison against the capture's `-scene*.raw` dumps.
+
