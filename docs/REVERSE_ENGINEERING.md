@@ -1587,3 +1587,11 @@ Evidence: project exports `00442dd0.c`, `00442e10.c`, `0044c780.c`,
   Fade-out `0x00415e90`: from the half palette, cumulative
   `x = trunc(x × 0.96)` per upload. The loop clock (`0x004163b0`) starts
   after the fade-in. Native: `fade_in_lut`/`fade_out_lut`, `RaceScreen`.
+- In-race pump `0x004431d0` callers (wndproc key-up, disasm `0x423345..`):
+  Escape → `0x423408` string 316 (exit 1 → `PostQuitMessage(0)`, outcome 5
+  while racing; `0x00442e10` ends on `WM_QUIT` at once, no 0xb4 run-on),
+  `VK_PAUSE` → `0x4234f7` string 317 (countdown off its start, mode 1/2),
+  `V` → string 380. The message is drawn by `0x00446c30` in the countdown
+  rect with small Badloc `DAT_004c1210`, over the half palette.
+- Original countdown pixels (`napa-dash-solo` post-dash d2/d36/d70): white
+  index 255, shadow index 0, digit box x 303–331 / 312–321, y 143–220.

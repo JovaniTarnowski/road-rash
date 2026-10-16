@@ -49,7 +49,7 @@ RaceScreen::RaceScreen(Game& g, SDL_Renderer* r, const RaceOptions& opt, Display
 RaceActionContext RaceScreen::ctx_now() const {
     RaceActionContext c;
     c.demo = opt_.demo; c.career = g_.career; c.finished = g_.race().finished();
-    c.paused = lifecycle_.state.paused(); c.quitting = g_.quitting;
+    c.paused = lifecycle_.state.paused(); c.quitting = g_.quitting; c.pause_message = g_.pause_message;
     c.has_menu = opt_.menu != nullptr; c.menu_open = opt_.menu && opt_.menu->pause_open();
     c.pad = pad_ ? SDL_GetGamepadID(pad_.get()) : 0;
     return c;
@@ -60,12 +60,17 @@ void RaceScreen::end_as_quit() {
 }
 
 void RaceScreen::update_fade(uint64_t now) {
+    hold_frame_ = false;
     if (fade_ == Fade::none) { g_.fade_lut.reset(); return; }
     if (!fade_start_) fade_start_ = now;
     // Callback k (1-based) fires at k * 14 ms; 63 upload, the 64th releases.
     const uint64_t callbacks = (now - fade_start_) / palette_fade_period_ns;
     if (callbacks <= uint64_t(palette_fade_uploads)) {
-        g_.fade_lut = fade_ == Fade::in ? fade_in_lut(int(callbacks)) : fade_out_lut(int(callbacks));
+        // Until the first callback uploads, the previous screen (the loading
+        // screen's palette) stays on display: present nothing new.
+        hold_frame_ = fade_ == Fade::in && callbacks == 0;
+        g_.fade_lut = fade_ == Fade::in ? fade_in_lut(int(callbacks))
+                    : callbacks == 0 && fade_from_half_ ? half_palette_lut() : fade_out_lut(int(callbacks));
         return;
     }
     if (fade_ == Fade::in) {
@@ -106,9 +111,23 @@ void RaceScreen::event(const SDL_Event& e) {
     case RaceAction::open_pause: opt_.menu->open_pause(capture_race_frame(renderer_)); lifecycle_.state.resume(); return;
     case RaceAction::toggle_pause: lifecycle_.state.paused() ? lifecycle_.state.resume() : lifecycle_.state.pause(); return;
     case RaceAction::resume: lifecycle_.state.resume(); return;
-    case RaceAction::request_quit: g_.quitting = true; return;
+    // 0x00423378: Escape is ignored until the loop has run (countdown off
+    // its start value) and during a fade (the original is blocked then).
+    case RaceAction::request_quit:
+        if (g_.countdown != countdown_ticks && fade_ == Fade::none) g_.quitting = true;
+        return;
     case RaceAction::cancel_quit: g_.quitting = false; return;
-    case RaceAction::confirm_quit: g_.quitting = false; end_as_quit(); running_ = false; return;
+    // 0x00423408: the pump returns 1, PostQuitMessage(0); 0x00442e10 ends
+    // the race on WM_QUIT at once (no 0xb4 run-on), outcome 5 only while
+    // still racing, then 0x004163d0 fades out from the half palette.
+    case RaceAction::confirm_quit:
+        g_.quitting = false; end_as_quit();
+        fade_ = Fade::out; fade_start_ = 0; fade_from_half_ = true;
+        return;
+    case RaceAction::pause_message:
+        if (g_.countdown != countdown_ticks && fade_ == Fade::none) g_.pause_message = true;
+        return;
+    case RaceAction::resume_message: g_.pause_message = false; return;
     case RaceAction::restart: restart_ = true; return;
     case RaceAction::none: case RaceAction::demo_exit: break;
     }
@@ -194,13 +213,18 @@ bool RaceScreen::iterate(uint64_t now_ns) {
     // pause_open(); the mixer pauses race sounds but the interface levels
     // stay live so the sound sliders apply (no preview click, as in Task 6).
     const bool menu_pause = opt_.menu && opt_.menu->pause_open();
-    const bool frozen = lifecycle_.state.paused() || g_.quitting || menu_pause;
+    const bool frozen = lifecycle_.state.paused() || g_.quitting || g_.pause_message || menu_pause;
     if (g_.mixer) g_.mixer->pause(frozen || lifecycle_.state.background());
     if (g_.race_music && !frozen && !lifecycle_.state.background()) g_.race_music->update();
     update_fade(now);
+    // DAT_004c5bd0 for this frame: quit prompt (316) or pause message (317,
+    // also shown for a lifecycle pause when there is no native pause menu).
+    g_.banner_message = g_.quitting ? g_.quit_prompt
+                      : g_.pause_message || (lifecycle_.state.paused() && !opt_.menu) ? g_.pause_prompt
+                      : std::string();
     const int steps = clock_.advance(now - last_, frozen);
     last_ = now;
-    for (int step = 0; step < steps && !frozen && fade_ == Fade::none; ++step) {
+    for (int step = 0; step < steps && !frozen && fade_ == Fade::none && running_; ++step) {
         if (g_.view_ready) g_.view_prev = g_.view_cur;   // adjacent tick snapshot
         g_.tick(controls);
         // Capture every simulation tick (even during catch-up), keeping both
@@ -220,6 +244,7 @@ bool RaceScreen::iterate(uint64_t now_ns) {
             // 0x00442e10 returned true: 0x004163d0 fades out, then returns.
             fade_ = Fade::out;
             fade_start_ = now;
+            fade_from_half_ = false;
             g_.fade_lut = fade_out_lut(0);
         }
     }
@@ -228,6 +253,7 @@ bool RaceScreen::iterate(uint64_t now_ns) {
         blend_view(g_.view_drawn, g_.view_prev, g_.view_cur, alpha);
     }
     if (lifecycle_.state.background()) { SDL_Delay(20); return true; }
+    if (hold_frame_) { SDL_Delay(1); return running_; }
     if (menu_pause && opt_.menu) {
         // Plan 18 Task 8: the pause menu draws over the captured frame.
         // Plan 19 Task 8: pause menu draws at the effective scale too.
@@ -272,7 +298,8 @@ bool RaceScreen::iterate(uint64_t now_ns) {
         draw_opponents(renderer_, g_, sprites_, slices);
         draw_bike(renderer_, g_, sprites_,slices);
         draw_hud(renderer_, g_);
-        if (g_.quitting) draw_quit_prompt(renderer_, g_.quit_prompt);
+        if (!g_.banner_message.empty() && (!g_.scene() || !g_.assets.hud))
+            draw_quit_prompt(renderer_, g_.banner_message);   // asset-less fallback
     }
     // Plan 18 Task 9: FPS + simulation ticks/sec, top-right, Futura Bold 24
     // #DEFFF0 with a 2-pixel black shadow like all original text, twice a second.

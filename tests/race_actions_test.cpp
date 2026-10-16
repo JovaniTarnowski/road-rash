@@ -36,6 +36,14 @@ int main() {
     check(rr::race_action(tap, no_menu) == A::resume, "tap resumes without a menu");
     rr::RaceActionContext menu_open = quick; menu_open.menu_open = true;
     check(rr::race_action(key(SDLK_ESCAPE), menu_open) == A::none, "menu owns input");
+    // VK_PAUSE -> 0x004234f7 "Game paused." pump; any key / button / tap resumes.
+    check(rr::race_action(key(SDLK_PAUSE), quick) == A::pause_message, "Pause key opens the original pause message");
+    rr::RaceActionContext held = quick; held.pause_message = true;
+    check(rr::race_action(key(SDLK_A), held) == A::resume_message, "any key resumes the pause message");
+    check(rr::race_action(key(SDLK_ESCAPE), held) == A::resume_message, "Escape resumes (pump param 0)");
+    check(rr::race_action(key(SDLK_F10), held) == A::none, "F10 is handled inside the pump");
+    check(rr::race_action(button(7, SDL_GAMEPAD_BUTTON_SOUTH), held) == A::resume_message, "pad button resumes");
+    check(rr::race_action(tap, held) == A::resume_message, "tap resumes");
     if (failures == 0) std::cout << "race_actions OK\n";
     return failures ? 1 : 0;
 }

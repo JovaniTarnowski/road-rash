@@ -332,6 +332,7 @@ int run_game(const rr::Assets& assets, SDL_Window* window, SDL_Renderer* rendere
                 g.load_course(assets,exe);
                 g.career = true;
                 g.quit_prompt = fe.string_slot(316);
+                g.pause_prompt = fe.string_slot(317);
                 g.restart();
                 if (ev.demo) {
                     // Attract demo (plan 13 Task 5): AI drives (DAT_004753c8); any input exits to the menu.
@@ -632,6 +633,7 @@ int main(int argc, char** argv) {
             // string slot (0x00437860), as the career path resolves them.
             {
                 const auto strings = rr::frontend_strings(rr::read_string_resources(assets.read(rr::language_dll(rr::default_language()))));
+                if (strings.size() > 317) g.pause_prompt = strings[317];
                 const auto name_table = rr::read_exe_data(exe, 0x00464188, 9 * 4);
                 g.restart();
                 g.rider_names.assign(1, g.player_name);

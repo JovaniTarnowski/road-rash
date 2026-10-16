@@ -53,6 +53,8 @@ private:
     enum class Fade { none, in, out };
     Fade fade_ = Fade::none;
     uint64_t fade_start_ = 0;   // 0: starts on the next iterate
+    bool fade_from_half_ = false;   // quit-confirm leaves the half palette up
+    bool hold_frame_ = false;       // fade-in before its first upload: keep the old screen
     void update_fade(uint64_t now);
 
     RaceActionContext ctx_now() const;

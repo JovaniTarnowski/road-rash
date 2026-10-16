@@ -2,6 +2,9 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdlib>
+#include <fstream>
+#include <iterator>
+#include <vector>
 #include <iostream>
 #include <utility>
 static uint8_t brute_index(uint32_t c, const rr::Palette& pal) {
@@ -121,6 +124,37 @@ int main(){
             rr::RgbImage none(640,480,0x01000000);
             hud.draw_countdown(none,"");
             for(const auto c:none.pixels)if(c!=0x01000000)throw std::runtime_error("Empty countdown drew ink");
+            // Original pixel comparison (local, git-ignored oracle capture
+            // napa-dash-solo: post-0x00446c30 indexed frames of the demo
+            // countdown; d2 "3", d36 "2", d70 "1"; white = index 255, shadow
+            // = index 0). Region excludes clouds. Native "1" is the original
+            // minus 4 white pixels; "3"/"2" differ by GDI hinting (one extra
+            // top row, "3" one column right). Pins today's agreement.
+            {
+                const char* digit[]={"3","2","1"};const char* frame[]={"2","36","70"};
+                for(int k=0;k<3;++k) {
+                    std::ifstream in(std::string(RR_SOURCE_DIR "/analysis/oracle/napa-dash-solo-d")+frame[k]+".raw",std::ios::binary);
+                    if(!in)break;
+                    const std::vector<unsigned char> o((std::istreambuf_iterator<char>(in)),std::istreambuf_iterator<char>());
+                    if(o.size()!=640u*480u)throw std::runtime_error("Countdown capture size");
+                    rr::RgbImage n(640,480,0x01000000);hud.draw_countdown(n,digit[k]);
+                    int both=0,ow=0,nw=0,shadow_both=0,os=0,ns=0;
+                    for(int y=130;y<222;++y)for(int x=295;x<345;++x) {
+                        const bool a=o[size_t(y)*640+size_t(x)]==255,b=n.at(x,y)==0xffffff;
+                        const bool c=o[size_t(y)*640+size_t(x)]==0,d=n.at(x,y)==0;
+                        both+=a&&b;ow+=a;nw+=b;shadow_both+=c&&d;os+=c;ns+=d;
+                    }
+                    if(k==2 && (both!=nw || both*100<ow*99))throw std::runtime_error("Countdown 1 differs from the original capture");
+                    if(both*10<(ow+nw-both)*8)throw std::runtime_error("Countdown digit drifted from the original capture");
+                    std::cout<<"countdown "<<digit[k]<<" vs original: white "<<both<<"/"<<(ow+nw-both)<<" shadow "<<shadow_both<<"/"<<(os+ns-shadow_both)<<"\n";
+                }
+            }
+            // 0x004431d0 message: small Badloc 0x20, same rect, two lines.
+            rr::RgbImage msg(640,480,0x01000000);
+            hud.draw_message(msg,"Game paused.\nHit any key to continue.");
+            int mtop=480,mbottom=0,mink=0;
+            for(int y=0;y<480;++y)for(int x=0;x<640;++x)if(msg.at(x,y)!=0x01000000){++mink;mtop=std::min(mtop,y);mbottom=std::max(mbottom,y);}
+            if(!mink || mtop<118 || mbottom<mtop+0x20 || mbottom>120+2*0x20+4)throw std::runtime_error("Pause message placement");
             // Low resolution: 0x48 face at +60 in 320x240, shadow 1, doubled.
             hud.set_low_mode(true);
             rr::RgbImage low(640,480,0x01000000);

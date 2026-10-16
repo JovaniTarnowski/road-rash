@@ -1011,3 +1011,11 @@ was restored to its pre-session hash after both captures.
   as channel maps driven by `RaceScreen`; low-resolution countdown metrics
   (0x48, +60, shadow 1, pixel-doubled). Remaining: pixel capture comparison,
   quit-confirm fade/delay, pause message.
+- Follow-up 2: original in-race pump messages (quit prompt 316 on career
+  Escape, "Game paused." 317 on the Pause key) drawn in small Badloc over
+  the half palette; quit-confirm ends the race at once (`WM_QUIT`, no 0xb4
+  run-on: corrects the earlier claim) with the fade-out; fade-in holds the
+  previous screen until its first upload; fixed catch-up ticks on the
+  fade-out release frame. Countdown digits compared with the original
+  `napa-dash-solo` post-dash capture: "1" 746/750 white pixels, "3"/"2" one-row
+  GDI hinting offsets. Open: palette-state capture (proxy `SetEntries` hook).

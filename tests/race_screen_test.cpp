@@ -94,6 +94,42 @@ int main() {
             screen.iterate(now += 34000000);
             check(game.countdown == rr::countdown_ticks - 3, "subsequent iterations preserve rebuilt race");
         }
+        // 0x004431d0 pump messages and 0x00423408 quit: message drawn in the
+        // race frame over the half palette, quit ends at once and fades out.
+        {
+            game.restart(); game.countdown = 0; game.career = true;
+            game.quit_prompt = "QUIT?"; game.pause_prompt = "PAUSED";
+            rr::RaceScreen screen(game, renderer, options, display);
+            uint64_t now = 1000000000ull;
+            screen.iterate(now);
+            screen.iterate(now += 17000000);
+            const int ticks = game.race().ticks();
+            screen.event(key(SDLK_PAUSE));
+            screen.iterate(now += 170000000);
+            check(game.pause_message && game.banner_message == "PAUSED" && game.race().ticks() == ticks,
+                  "Pause key freezes the race under string 317");
+            screen.event(key(SDLK_A));
+            screen.iterate(now += 17000000);
+            check(!game.pause_message && game.banner_message.empty(), "any key resumes the pause message");
+            screen.iterate(now += 17000000);
+            const int before_quit = game.race().ticks();
+            check(before_quit > ticks, "race runs again after the pause message");
+            screen.event(key(SDLK_ESCAPE));
+            screen.iterate(now += 17000000);
+            check(game.quitting && game.banner_message == "QUIT?" && game.race().ticks() == before_quit,
+                  "career Escape shows string 316 and freezes");
+            screen.event(key(SDLK_ESCAPE));
+            check(screen.iterate(now += 17000000), "quit confirm starts the fade-out");
+            check(game.fade_lut && *game.fade_lut == rr::half_palette_lut() && game.race().ticks() == before_quit,
+                  "quit fade-out starts from the half palette with no run-on ticks");
+            const uint64_t fade = now;
+            check(screen.iterate(now = fade + 14000000ull * 10) && *game.fade_lut == rr::fade_out_lut(10),
+                  "quit fade-out follows the upload count");
+            check(!screen.iterate(now = fade + 14000000ull * 64), "fade-out release ends the race");
+            check(game.race().ticks() == before_quit, "no ticks during the quit fade-out");
+            check(screen.result().outcome == rr::RaceOutcome::wrecked, "quit counts as wrecked");
+            game.career = false;
+        }
         const rr::TextRenderer text(assets);
         auto frontend_data = rr::read_frontend_data(exe);
         rr::add_native_screens(frontend_data, false);

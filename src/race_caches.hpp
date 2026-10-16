@@ -130,12 +130,17 @@ struct CourseCanvas {
         const bool need_dash = game.assets.hud != nullptr && banner.dashboard;
         // A RaceScreen fade (0x00415d90 / 0x00415e90) overrides the
         // countdown's half palette while it runs.
-        const bool remap = game.fade_lut.has_value() || banner.dim;
-        const ChannelLut lut = game.fade_lut ? *game.fade_lut : banner.dim ? half_palette_lut() : identity_lut();
+        // 0x004431d0 uploads the half palette while its message is up (the
+        // countdown already shows it) and the message replaces the digit.
+        const bool message = !game.banner_message.empty();
+        const bool dim = banner.dim || message;
+        const bool remap = game.fade_lut.has_value() || dim;
+        const ChannelLut lut = game.fade_lut ? *game.fade_lut : dim ? half_palette_lut() : identity_lut();
         RgbImage dash = need_dash ? game.assets.hud->compose(game.assets.hud->state(game.race(), game.player_name, game.rider_names),
                                                 game.assets.physics, rr::DashMode::full, s)
                                         : RgbImage(0, 0, 0);
-        if (need_dash) game.assets.hud->draw_countdown(dash, banner.text, s);
+        if (need_dash && message) game.assets.hud->draw_message(dash, game.banner_message, s);
+        else if (need_dash) game.assets.hud->draw_countdown(dash, banner.text, s);
         if (!workers || worker_count != threads) { workers = std::make_unique<RenderThreads>(threads); worker_count = threads; }
         // Plan 20 Task 3: lazy attach/detach on detail flips (load_course runs
         // before the settings sync, so attach here where the setting is live).

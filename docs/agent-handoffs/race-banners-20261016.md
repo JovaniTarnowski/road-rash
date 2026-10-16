@@ -94,16 +94,72 @@ before upload 1, first upload `trunc(127 * 0.96^62)`, last = half, fade-out
 the fade (countdown held, 30th-upload map, half palette at upload 63, release
 at 64 × 14 ms with zero catch-up, then normal ticking).
 
+## Follow-up 2: pump messages, quit, fade hold, original pixel check (October 16)
+
+Recovered (disassembly `0x423345..0x4235a0`, exports `004431d0.c`,
+`00442e10.c`, `00416010.c`):
+
+- Key-up dispatch in the wndproc: Escape (`0x423378`) is ignored while
+  `DAT_004753c0 == DAT_004753bc` (start frame). Racing with mode != 3 →
+  `0x423408`: pump `0x004431d0(1, string 316)`. Return 1 →
+  `PostQuitMessage(0)` and outcome 5 if still racing. `0x00442e10` sets
+  `DAT_004753b4` on `WM_QUIT`, so the race ends on the next frame. There
+  is **no** 0xb4 run-on (that delay belongs to `0x00416010` decided
+  outcomes). This corrects the previous handoff. Then the fade-out runs.
+- `VK_PAUSE` (0x13) → `0x4234f7`: when the countdown is off its start value
+  and `DAT_004753b0` ∈ {1, 2}, `0x004431d0(0, string 317 "Game paused.\nHit
+  any key to continue.")`. `'V'` (0x56) → string 380 (version), not ported.
+- `0x004431d0`: sprintf into `DAT_004c5bd0`, `DAT_004753b8 = 1`, half
+  palette when the countdown is 0, render-only loop (no simulation). F10
+  cycles MiniDash, PrintScreen requests a screenshot, any other key-up exits
+  2 (Escape exits 1 when param 1). Joystick buttons exit 2. Exit 2 restores
+  the full palette when the countdown is 0.
+- `0x00446c30` draws `DAT_004c5bd0` in the countdown rect with the face
+  already selected: small Badloc `DAT_004c1210` (0x20/0x12), black then
+  white at −(HiRes+1).
+
+Native:
+- `Hud::draw_message` (shared `draw_banner` with the countdown).
+- `Game::banner_message` is set by `RaceScreen` each frame: quit prompt
+  (career Escape) or pause message (`SDLK_PAUSE`, or a lifecycle pause with
+  no native menu). Drawn in the race frame over the half palette.
+- `RaceAction::pause_message`/`resume_message`: any key (except F10 and
+  PrintScreen), pad button or tap resumes.
+- Quit-confirm ends the race at once, outcome wrecked, and fades out from
+  the half palette. Escape and Pause are ignored on the start frame and
+  during fades.
+- Fade-in before its first upload now presents nothing new, so the previous
+  screen stays up instead of black.
+- Fixed: the fade-out release frame could step a burst of catch-up ticks;
+  the step loop now also requires `running_`.
+- Strings 316/317 come from the career front end; the quick-race path
+  loads 317.
+
+Original pixel check: existing local capture `napa-dash-solo` (post-dash
+`-dN.raw`, demo countdown, d2 "3", d36 "2", d70 "1") vs `Hud::draw_countdown`,
+in region x 295–344, y 130–221, white index 255, shadow index 0:
+"3" white 1096/1315, shadow 163/349; "2" 1167/1322, 196/346; "1" 746/750,
+162/162. The glyph outlines match. Native "3" has one extra top row and
+sits one column right, "2" has one extra top row: GDI hinting in the shared
+`TextRenderer`. Changing it would move every text golden, so it was left
+alone. `hud-test` pins these numbers when the capture is present.
+
+Checks: full build exit 0; `ctest` 99/99. `race-actions` covers the Pause
+key/resume. `race-screen` covers the pause freeze and banner, the quit
+banner and freeze, the quit fade-out from half with zero run-on ticks, and
+release → wrecked.
+
 ## Remaining / not established
 
-- No original capture compares countdown/fade frames pixel-for-pixel; GDI
-  glyph raster is the existing `TextRenderer` approximation.
-- Before the first fade-in upload native shows black; the original still
-  shows the previous (loading screen) palette for up to 14 ms.
-- Native FPS overlay and pause menu are not dimmed (native surfaces). The
-  original pause message (small Badloc `DAT_004c5bd0`, half palette) remains
-  native per plan 18.
-- Quit-confirm (outcome 5) still ends the native race immediately; the
-  original keeps running 0xb4 ticks and fades out. Native no-fade branch
-  (`DAT_00482b68`, network) not modelled.
+- Palette state is not in the captures: the proxy's logged `0x0049e138`
+  palette is all zeros. Proving the countdown/pause dimming and both fade
+  curves against the original needs a proxy hook on the DirectDraw palette
+  `SetEntries` and a new Wine capture (with Escape/Pause key injection for
+  the message frames). The oracle proxy claim `terrain-integrate-20261015`
+  is still registered; its owner PID 53167 is gone, but it was not reaped.
+- GDI hinting offsets for "3"/"2" (above).
+- String 380 (`V` key version message), the in-pump F10 MiniDash cycle and
+  PrintScreen are not ported; the native race canvas always uses the full
+  dashboard.
+- Native FPS overlay and the native pause menu (plan 18) are not dimmed.
 - Multiplayer scoreboard/chat text in `0x00446c30` is out of scope (plan 09).

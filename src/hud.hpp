@@ -121,6 +121,11 @@ public:
     // shadow 2. Low mode: Badloc 0x48, +60, shadow 1 in 320x240 space,
     // pixel-doubled like the low dashboard art. Empty text draws nothing.
     void draw_countdown(RgbImage&,const std::string& text,int scale = 1) const;
+    // 0x004431d0 in-race message (DAT_004753b8 set): the same 0x00446c30
+    // block draws DAT_004c5bd0 with the face already selected for the
+    // dashboard, small Badloc DAT_004c1210 (0x20 high / 0x12 low): string
+    // 316 quit prompt, 317 "Game paused.". Text is Windows-1252.
+    void draw_message(RgbImage&,const std::string& text,int scale = 1) const;
     // Low-mode artwork: 320-wide KLODASH/MLODASH dashboard + 95-stride LILMETER,
     // selected in low resolution (0x004457f0 choice 1/2); MiniDash picks the stride.
     void set_low_mode(bool low);
@@ -128,6 +133,7 @@ public:
     static int numeric_speed(int32_t velocity,bool metric);
     static int cycle_mini_dash(int mode);   // 0->1->2->0, as the F10 pump does
 private:
+    void draw_banner(RgbImage&,const std::string& text,bool big,int scale) const;
     bool metric_;
     bool low_ = false;
     Palette palette_;

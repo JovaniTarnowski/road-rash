@@ -1349,3 +1349,8 @@ pass before it was inspected; the successful rerun is the verified result.
   `hud-test` pins fade-in/out channel maps and the low-mode raster;
   `race-screen` walks a restart through the blocking fade-in (updated
   expectation: the countdown now holds for 64 × 14 ms after restart).
+- Follow-up 2 (messages/quit/pixel check): full build exit 0; `ctest`
+  99/99. Original pixel comparison against the local `napa-dash-solo` capture
+  (post-dash d2/d36/d70): white overlap "3" 1096/1315, "2" 1167/1322, "1"
+  746/750; shadow "1" 162/162. Palette dimming/fades are not covered: the
+  capture's palette field is all zeros.

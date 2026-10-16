@@ -61,11 +61,16 @@ CountdownBanner countdown_banner(int countdown,int start) {
     if(countdown>0)b.text=std::to_string(countdown/60+1);
     return b;
 }
-void Hud::draw_countdown(RgbImage& image,const std::string& text,int scale) const {
+void Hud::draw_countdown(RgbImage& image,const std::string& text,int scale) const { draw_banner(image,text,true,scale); }
+void Hud::draw_message(RgbImage& image,const std::string& text,int scale) const { draw_banner(image,text,false,scale); }
+void Hud::draw_banner(RgbImage& image,const std::string& text,bool big,int scale) const {
     if(text.empty() || scale<1)return;
     // Fullscreen view origin 0,0 (DAT_00475394/98), size 640x480 or 320x240
     // (DAT_0047539c/a0); the rect top moves down 0x78 >> (1 - HiRes).
-    const int w=low_?320:640,h=low_?240:480,height=low_?0x48:0x80,shadow=low_?1:2;
+    // Faces from 0x00442990: big DAT_004c11ec 0x80/0x48, small DAT_004c1210
+    // 0x20/0x12.
+    const int w=low_?320:640,h=low_?240:480,shadow=low_?1:2;
+    const int height=big?(low_?0x48:0x80):(low_?0x12:0x20);
     RgbImage local(low_?w*scale:0,low_?h*scale:0,transparent);
     RgbImage& target=low_?local:image;
     TextRect rect{0,(0x78>>(low_?1:0))*scale,w*scale,h*scale};

@@ -10,6 +10,14 @@ RaceAction race_action(const SDL_Event& e, const RaceActionContext& c) {
         return RaceAction::demo_exit;
     // Menu owns all input while open.
     if (c.menu_open) return RaceAction::none;
+    // 0x004431d0 pump with string 317: key-up of any key (other than F10 /
+    // PrintScreen), a joystick button or (native) a tap resumes.
+    if (c.pause_message) {
+        if ((e.type == SDL_EVENT_KEY_DOWN && !e.key.repeat && e.key.key != SDLK_F10 && e.key.key != SDLK_PRINTSCREEN) ||
+            e.type == SDL_EVENT_GAMEPAD_BUTTON_DOWN || e.type == SDL_EVENT_FINGER_DOWN)
+            return RaceAction::resume_message;
+        return RaceAction::none;
+    }
     if (e.type == SDL_EVENT_KEY_DOWN && !e.key.repeat) {
         if (c.quitting) {
             // Second Escape confirms the quit (career); any other key cancels.
@@ -17,6 +25,8 @@ RaceAction race_action(const SDL_Event& e, const RaceActionContext& c) {
             return RaceAction::cancel_quit;
         }
         if (e.key.key == SDLK_Q && !c.career) return RaceAction::quit_app;
+        // VK_PAUSE (0x13) -> 0x004234f7: "Game paused." through 0x004431d0.
+        if (e.key.key == SDLK_PAUSE && !c.paused) return RaceAction::pause_message;
         if (e.key.key == SDLK_AC_BACK) return c.has_menu ? RaceAction::open_pause : RaceAction::toggle_pause;
         if (e.key.key == SDLK_ESCAPE && c.career && !c.paused) return RaceAction::request_quit;
         if (e.key.key == SDLK_ESCAPE || e.key.key == SDLK_P)
