@@ -7,11 +7,19 @@ namespace rr {
 namespace {
 constexpr uint32_t transparent=0x01000000;
 int32_t high_product(int32_t a,int32_t b){return int32_t((int64_t(a)*b)>>32);}
-void line(RgbImage& out,int x,int y,int end_x,int end_y,uint32_t color,int width=1) {
+// Native stand-in for the GDI pen stroke: a Bresenham spine stamped with a
+// band x band block per step. band is the full GDI width in destination
+// pixels (pen width x compose scale): 3 -> centered 3-wide (exact old
+// behavior), 2 -> 2-wide anchored at the spine pixel (low-resolution
+// approximation; the exact GDI band/cap shape is still open per the
+// needle-trace handoff §7).
+void line(RgbImage& out,int x,int y,int end_x,int end_y,uint32_t color,int band=3) {
+    if(band<1)band=1;
+    const int lo=-(band/2),hi=(band-1)/2;
     const int dx=std::abs(end_x-x),sx=x<end_x?1:-1,dy=-std::abs(end_y-y),sy=y<end_y?1:-1;
     int error=dx+dy;
     for(int guard=0;guard<2048;++guard) {
-        for(int yy=y-width;yy<=y+width;++yy)for(int xx=x-width;xx<=x+width;++xx)if(out.contains(xx,yy))out.at(xx,yy)=color;
+        for(int yy=y+lo;yy<=y+hi;++yy)for(int xx=x+lo;xx<=x+hi;++xx)if(out.contains(xx,yy))out.at(xx,yy)=color;
         if(x==end_x && y==end_y)return;
         const int twice=2*error;if(twice>=dy){error+=dy;x+=sx;}if(twice<=dx){error+=dx;y+=sy;}
     }
@@ -49,6 +57,12 @@ int Hud::cycle_mini_dash(int mode) {
     return (mode+1)%3;
 }
 void Hud::set_low_mode(bool low) { low_=low; }
+NeedlePen Hud::needle_pen(bool high_res) {
+    // 0x00446c30: CreatePen(PS_SOLID, HiRes+2, 0x81172), one cached HPEN per
+    // HiRes slot. COLORREF 0x081172 is R 0x72, G 0x11, B 0x08.
+    return NeedlePen{high_res ? 3 : 2, 0x721108};
+}
+NeedlePen Hud::pen() const { return needle_pen(!low_); }
 int Hud::numeric_speed(int32_t velocity,bool metric) {
     // 0x00446950..0x004469a4: mask before signed shifts, truncate the
     // metric sum toward zero, then clamp reverse speed. These sums fit i32.
@@ -81,6 +95,10 @@ NearestOpponent nearest_opponent(const Race& race) {
         if(d<0){if(-d<behind){behind_rider=int(i);behind=-d;}}
         else if(d<ahead){ahead_rider=int(i);ahead=d;}
     }
+    // No target (0x00438550 leaves DAT_004b8a30 null): normalize the gap to
+    // 0; no draw path reads a gap without a target (0x00446b80 clears the
+    // name and meter, the entry-10 gap text is gated on the name).
+    if(behind_rider<0 && ahead_rider<0)return {};
     if(behind*2<ahead)return {behind_rider,behind};
     return {ahead_rider,-ahead};
 }
@@ -115,11 +133,13 @@ HudState Hud::state(const Race& race,const std::string& player,const std::vector
     s.stamina=meter_level(race.riders()[0].stamina.current,race.riders()[0].stamina.base);
     s.condition=meter_level(b.i32(0x2f0),b.i32(0x2ec));
     // 0x00446b80: name (0x00446bf0) and stamina meter of the 0x00438550
-    // target; both clear without one. +0x3c current, +0x34 base.
+    // target; both clear without one. +0x3c current, +0x34 base. The gap
+    // rides with the name: no name row means no gap either, so a state with
+    // an empty target always carries gap 0 (as compose assumes).
     const auto nearest=nearest_opponent(race);
-    if(nearest.rider>0) {
+    if(nearest.rider>0 && size_t(nearest.rider)<rider_names.size()) {
         const auto& rider=race.riders().at(size_t(nearest.rider));
-        if(size_t(nearest.rider)<rider_names.size())s.target=rider_names[size_t(nearest.rider)];
+        s.target=rider_names[size_t(nearest.rider)];
         s.target_stamina=meter_level(rider.stamina.current,rider.stamina.base);
         s.target_gap=nearest.gap;
     }
@@ -177,15 +197,19 @@ RgbImage Hud::compose(const HudState& state,const PhysicsTables& physics,DashMod
     bar(state.stamina,40);bar(state.condition,45);bar(state.target.empty()?0:state.target_stamina,50);
     const int dashboard_height=int(dash_art.size()/stride);
     blit(dash_art,stride,0,0,stride,dashboard_height,0,480-dashboard_height);
+    const auto selected_pen = pen();
+    const uint32_t pen_color = selected_pen.color;
+    const int pen_band = selected_pen.width*scale;
     auto needle=[&](int angle,int offset) {
-        // Native 3x3-block Bresenham, colour 0x721108. The original instead
-        // selects CreatePen(PS_SOLID, HiRes?3:2, 0x81172) and issues
-        // MoveToEx/LineTo (0x00446c30) — documented, NOT ported (see notes).
+        // 0x00446c30 draws the speed needle first and the rpm needle second,
+        // both with the selected pen; the rpm needle is on top. Colors are
+        // identical so only the width selection is observable here.
         const int32_t sx=sine(physics,uint32_t(angle)),cy=sine(physics,uint32_t(angle+1024));
         const int x=int(layout[offset]*lscale)*scale,y=int(layout[offset+1]*lscale)*scale;
-        line(image,x,y,x+high_product(sx,int(layout[offset+2]*lscale))*scale,y-high_product(cy,int(layout[offset+3]*lscale))*scale,0x721108,scale);
+        line(image,x,y,x+high_product(sx,int(layout[offset+2]*lscale))*scale,y-high_product(cy,int(layout[offset+3]*lscale))*scale,pen_color,pen_band);
     };
-    needle(state.rpm_angle,16);needle(state.speed_angle,21);
+    // 0x00446c30 order: speed (DAT_0049e10c) first, rpm (DAT_0049e108) second.
+    needle(state.speed_angle,21);needle(state.rpm_angle,16);
     auto label=[&](const std::string& value,int offset,uint32_t color) {
         TextRect rect{int(layout[offset+1]*lscale)*scale,int(layout[offset+2]*lscale)*scale,int(layout[offset+3]*lscale)*scale,int(layout[offset+4]*lscale)*scale};
         auto shadow=rect;shadow.left+=2*scale;shadow.top+=2*scale;shadow.right+=2*scale;shadow.bottom+=2*scale;

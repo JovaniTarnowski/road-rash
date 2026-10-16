@@ -20,9 +20,11 @@ struct HudState {
 // 0x00438550, run every frame from 0x00438450: the opponent the dashboard
 // names. d = player.+0x1f8 - opponent.+0x1f8 over every opponent slot (no
 // crash/finish filter); +0x1f8 is the Q8 distance still to the finish
-// (0x00407410). The nearest behind wins only when less than half the
-// nearest ahead; gap > 0 behind, <= 0 ahead. rider is -1 when no opponent
-// is ahead and none is close enough behind (or there are none).
+// (0x00407410). The nearest behind wins only when behind*2 < ahead
+// (0x00438550, strict); gap > 0 behind, <= 0 ahead. rider is -1 when there
+// is no target (no opponent ahead and none close enough behind, or no
+// opponents at all); the gap is then 0. The original leaves the stale
+// -0x20000000 in DAT_004b8a34 with a null target, which no draw path reads.
 struct NearestOpponent { int rider=-1; int32_t gap=0; };
 NearestOpponent nearest_opponent(const Race&);
 // MiniDash 0x00467a98 (F10 cycles 0->1->2->0 in 0x004431d0): 0 full dashboard,
@@ -30,8 +32,15 @@ NearestOpponent nearest_opponent(const Race&);
 enum class DashMode : int { full = 0, mini = 1, off = 2 };
 // Original full high-resolution dashboard. Geometry and indexed artwork come
 // from the imported executable/disc; text and pen rasterization use native code.
-// Native 3x3 Bresenham needles document, but do not replicate, the original
-// GDI pen (CreatePen(PS_SOLID, HiRes?3:2, 0x81172), MoveToEx/LineTo in 0x00446c30).
+// Needle pen: CreatePen(PS_SOLID, HiRes?3:2, 0x81172) cached per HiRes slot,
+// MoveToEx/LineTo in 0x00446c30 (speed needle first, rpm second, so the rpm
+// needle is on top). Native selection matches the width (3 high, 2 low) and
+// the raw COLORREF 0x081172 = RGB 0x721108 through the per-frame palette
+// path (never a hard-coded 8-bit index: the realized index animates 37/52).
+// The band/cap SHAPE is still the native block Bresenham (a Windows GDI
+// reference raster or a parked-needle capture is needed to settle it;
+// needle-trace handoff 20261015 §7): full-width band at high resolution,
+// 2-wide band at low resolution, both scaled by the compose scale.
 // Review 2026-10-13 item 2: exact memo for the per-frame dashboard map.
 // Same nearest-distance metric as the old inline search, memoized per exact
 // color (a cell table would quantize: two colors in one RGB555 cell can map
@@ -45,6 +54,10 @@ public:
 private:
     std::unordered_map<uint32_t, uint8_t> memo_;
 };
+// Needle pen selected per frame from the resolution (0x00446c30:
+// CreatePen(PS_SOLID, HiRes+2, 0x81172)). width is the GDI band width in
+// device pixels; color is the raw COLORREF as RGB (0x081172 -> 0x721108).
+struct NeedlePen { int width; uint32_t color; };
 class Hud {
 public:
     Hud(const Assets&,const std::vector<uint8_t>& exe,int bike,bool metric);
@@ -55,6 +68,10 @@ public:
     // 0xea down); Wingdings is a Windows system font, not on the disc, so a
     // native arrow of the same cell height stands in for the glyph.
     static void draw_gap_arrow(RgbImage&,int left,int top,bool up,uint32_t color,int scale = 1);
+    // Pen for the tach/speedo needles at the current resolution: width
+    // HiRes?3:2, color 0x721108 (0x00446c30 pen cache slot HiRes).
+    NeedlePen pen() const;
+    static NeedlePen needle_pen(bool high_res);
     RgbImage compose(const HudState&,const PhysicsTables&,DashMode mode = DashMode::full,int scale = 1) const;
     // Low-mode artwork: 320-wide KLODASH/MLODASH dashboard + 95-stride LILMETER,
     // selected in low resolution (0x004457f0 choice 1/2); MiniDash picks the stride.

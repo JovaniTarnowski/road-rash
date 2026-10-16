@@ -39,6 +39,24 @@ int main(){
         }
         // F10 MiniDash cycle (0x004431d0): 0->1->2->0.
         if(rr::Hud::cycle_mini_dash(0)!=1 || rr::Hud::cycle_mini_dash(1)!=2 || rr::Hud::cycle_mini_dash(2)!=0)throw std::runtime_error("MiniDash cycle");
+        // Plan 16 Task 6: needle pen selection (0x00446c30 pen cache:
+        // CreatePen(PS_SOLID, HiRes+2, 0x81172)). High resolution draws
+        // 3-wide, low resolution 2-wide; the color is the raw COLORREF
+        // 0x081172 (R 0x72, G 0x11, B 0x08), never a palette index.
+        {
+            const auto hi = rr::Hud::needle_pen(true);
+            const auto lo = rr::Hud::needle_pen(false);
+            if(hi.width != 3 || lo.width != 2)throw std::runtime_error("Needle pen width selection");
+            if(hi.color != 0x721108 || lo.color != 0x721108)throw std::runtime_error("Needle pen color");
+        }
+        // Meter level shared by 0x00446b00/0x00446b40/0x00446b80:
+        // ((current*2-2)*15)/(base-1)+1 clamped to 0..31, with the
+        // divide-by-zero guards the original never needs (base > 1 live).
+        if(rr::Hud::meter_level(0,2500)!=0 || rr::Hud::meter_level(-5,2500)!=0)throw std::runtime_error("Meter level clamps empty");
+        if(rr::Hud::meter_level(10,1)!=31 || rr::Hud::meter_level(10,0)!=31 || rr::Hud::meter_level(10,-3)!=31)throw std::runtime_error("Meter level guards degenerate base");
+        if(rr::Hud::meter_level(2500,2500)!=31)throw std::runtime_error("Meter level full stamina");
+        if(rr::Hud::meter_level(5000,2500)!=31)throw std::runtime_error("Meter level clamps overfull");
+        if(rr::Hud::meter_level(1250,2500)!=15)throw std::runtime_error("Meter level mid value");
         // 0x0044693a..0x004469a4: numeric speed uses separate integer
         // conversions from the full dial, with negative results clamped to 0.
         struct SpeedCase { int32_t velocity; int mph,kmh; };
@@ -80,11 +98,55 @@ int main(){
                 throw std::runtime_error("Dashboard target is not the nearest opponent");
             if(rr::nearest_opponent(race).rider!=-1 || !rr::Hud(assets,exe,0,false).state(race,"Player",names).target.empty())
                 throw std::runtime_error("Solo race names a target");
+            // Plan 16 Task 6: no target means a normalized gap of 0 (the
+            // original leaves a stale -0x20000000 with its null target,
+            // which no draw path reads).
+            if(rr::nearest_opponent(race).gap!=0)throw std::runtime_error("Solo race gap is not normalized");
+            // Tied opponents: the first minimal slot wins, and the 0 gap
+            // counts as ahead (0x00438550 takes the else-if branch for 0).
+            at(1,me+10*256);at(2,me+10*256);at(3,me-40*256);
+            n=rr::nearest_opponent(field);
+            if(n.rider!=1 || n.gap!=-10*256)throw std::runtime_error("Tied opponents do not name the first slot ahead");
+            // Strict behind rule: behind*2 == ahead still names the ahead
+            // rider (0x00438550 uses strict <).
+            at(2,me-5*256);
+            n=rr::nearest_opponent(field);
+            if(n.rider!=1 || n.gap!=-10*256)throw std::runtime_error("Behind-half boundary does not name the ahead rider");
+            // Naming without a name row: the whole target block stays clear,
+            // so an empty target always carries gap 0 and stamina 0.
+            {
+                const std::vector<std::string> short_names{"Player"};
+                const auto s=rr::Hud(assets,exe,0,false).state(field,"Player",short_names);
+                if(!s.target.empty() || s.target_gap!=0 || s.target_stamina!=0)
+                    throw std::runtime_error("Target naming without a name row");
+            }
         }
         // 11a Task 2: the tachometer needle angle follows bike +0x2dc.
         race.riders()[0].bike.i32(0x2dc) = 0x3000;
         const auto needle = rr::Hud(assets,exe,0,false).state(race,"Player",names);
         if(needle.rpm_angle != 0x3000/44 - 1024 + 4096)throw std::runtime_error("RPM needle does not follow +0x2dc");
+        // Plan 16 Task 6: needle pen width by resolution. Parked-left angle
+        // 3072 (q3, i=0: cos -65536, sin 0) lays each spine horizontal.
+        {
+            rr::HudState parked;parked.player="P";parked.rpm_angle=3072;parked.speed_angle=3072;
+            rr::Hud hud(assets,exe,0,false);
+            // High mode: tach (388,441) radii (28,20) -> spine y441, 3-wide
+            // band rows 440..442; speedo (250,449) radii (44,28) -> y449.
+            const auto full=hud.compose(parked,physics,rr::DashMode::full);
+            if(full.at(370,441)!=0x721108 || full.at(370,440)!=0x721108 || full.at(370,442)!=0x721108)
+                throw std::runtime_error("High-resolution tach needle is not 3-wide");
+            if(full.at(230,449)!=0x721108 || full.at(230,448)!=0x721108 || full.at(230,450)!=0x721108)
+                throw std::runtime_error("High-resolution speedo needle is not 3-wide");
+            // Low mode: halved-high tach origin (194,220), rx 14 -> spine
+            // y220 x180..194; the width-2 pen paints rows 219..220 only.
+            hud.set_low_mode(true);
+            const auto low=hud.compose(parked,physics,rr::DashMode::full);
+            if(low.at(185,220)!=0x721108 || low.at(185,219)!=0x721108)
+                throw std::runtime_error("Low-resolution needle spine is missing");
+            if(low.at(185,221)==0x721108)
+                throw std::runtime_error("Low-resolution needle is not 2-wide");
+            hud.set_low_mode(false);
+        }
         // 0x00446a40 via the 0x00438450 +0x1c -> +0x44 snapshot: tenths travelled.
         const auto grid=race.riders()[0].bike.i32(0x1c);
         race.riders()[0].bike.i32(0x1c)=(50+33*12)*256;
