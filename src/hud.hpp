@@ -1,5 +1,8 @@
 #pragma once
 #include "assets.hpp"
+#include <array>
+#include <cstdint>
+#include <string>
 #include <unordered_map>
 #include <vector>
 #include "framebuffer.hpp"
@@ -75,6 +78,27 @@ struct CountdownBanner {
     std::string text;        // "3", "2", "1"; empty once the race is live
 };
 CountdownBanner countdown_banner(int countdown, int start);
+// Race palette presentation as a per-channel map from the full palette
+// (DAT_004b8490) value to the uploaded value. half_palette_lut is
+// DAT_004b8030 (0x00448f90: >> 1).
+using ChannelLut = std::array<uint8_t,256>;
+ChannelLut identity_lut();
+ChannelLut half_palette_lut();
+// 0x00415f70 runs a fade worker from timeSetEvent(14 ms, periodic) and
+// blocks until it releases its semaphore on the 64th callback; the race
+// loop's clock (0x004163b0) starts afterwards. 63 uploads happen first.
+constexpr int palette_fade_uploads = 63;
+constexpr uint64_t palette_fade_period_ns = 14'000'000;
+// Race-start fade-in 0x00415d90: table 0x467860 = {1.0, 0.96^1 .. 0.96^63}
+// (iterated double products by 0x462000 = 0.96); upload n (counter 63..1)
+// is trunc(half * table[n - 1]), so the last one is the half palette.
+// uploads = callbacks so far (0..63); 0 shows black (the loading screen's
+// palette before the first upload is not modelled).
+ChannelLut fade_in_lut(int uploads);
+// Race-end fade-out 0x00415e90: copy the half palette, then every callback
+// x = trunc(x * 0.96) in place (cumulative) and upload. uploads 0 leaves
+// the full palette in place.
+ChannelLut fade_out_lut(int uploads);
 class Hud {
 public:
     Hud(const Assets&,const std::vector<uint8_t>& exe,int bike,bool metric);
@@ -93,8 +117,9 @@ public:
     // 0x00446c30 countdown block into a compose() image (640x480 x scale).
     // Rect {view left, view top + 0x78 (120 high, 60 low), view right, view
     // bottom}; 0x00447b20 draws black at the rect, then white at -2,-2
-    // (DAT_0049e120 = HiRes + 1). Uses the high-resolution metrics, as the
-    // dashboard labels do; empty text draws nothing.
+    // (DAT_0049e120 = HiRes + 1). High resolution: Badloc 0x80, +120,
+    // shadow 2. Low mode: Badloc 0x48, +60, shadow 1 in 320x240 space,
+    // pixel-doubled like the low dashboard art. Empty text draws nothing.
     void draw_countdown(RgbImage&,const std::string& text,int scale = 1) const;
     // Low-mode artwork: 320-wide KLODASH/MLODASH dashboard + 95-stride LILMETER,
     // selected in low resolution (0x004457f0 choice 1/2); MiniDash picks the stride.

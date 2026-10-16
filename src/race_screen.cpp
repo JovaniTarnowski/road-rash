@@ -40,6 +40,8 @@ RaceScreen::RaceScreen(Game& g, SDL_Renderer* r, const RaceOptions& opt, Display
     touch_.set_left_handed(opt_.left_handed);
     pad_ = open_first_gamepad();
     if (opt_.show_fps && opt_.assets) fps_ = std::make_unique<FpsOverlay>(*opt_.assets);
+    // 0x004163d0: a fresh race (timer still at its start value) fades in.
+    if (g_.countdown == countdown_ticks) fade_ = Fade::in;
     display_.frame = 0;
     display_.apply(480);
 }
@@ -55,6 +57,25 @@ RaceActionContext RaceScreen::ctx_now() const {
 
 void RaceScreen::end_as_quit() {
     if (!decided_) { result_.outcome = RaceOutcome::wrecked; result_.place = std::max(0, g_.race().place(0) - 1); }
+}
+
+void RaceScreen::update_fade(uint64_t now) {
+    if (fade_ == Fade::none) { g_.fade_lut.reset(); return; }
+    if (!fade_start_) fade_start_ = now;
+    // Callback k (1-based) fires at k * 14 ms; 63 upload, the 64th releases.
+    const uint64_t callbacks = (now - fade_start_) / palette_fade_period_ns;
+    if (callbacks <= uint64_t(palette_fade_uploads)) {
+        g_.fade_lut = fade_ == Fade::in ? fade_in_lut(int(callbacks)) : fade_out_lut(int(callbacks));
+        return;
+    }
+    if (fade_ == Fade::in) {
+        g_.fade_lut.reset();
+        reset_clock(now);   // 0x004163b0 starts the loop clock after the fade
+    } else {
+        g_.fade_lut = fade_out_lut(palette_fade_uploads);
+        running_ = false;
+    }
+    fade_ = Fade::none;
 }
 
 void RaceScreen::reset_clock(uint64_t now_ns) {
@@ -114,6 +135,8 @@ bool RaceScreen::iterate(uint64_t now_ns) {
         end_ticks_ = 0;
         result_ = RaceEnd{};
         reset_clock(now);
+        fade_ = Fade::in;
+        fade_start_ = now;
     }
     // Plan 18 Task 8: a lifecycle freeze (background return, focus loss,
     // pad removal) opens the pause menu instead of the old PAUSED text.
@@ -174,9 +197,10 @@ bool RaceScreen::iterate(uint64_t now_ns) {
     const bool frozen = lifecycle_.state.paused() || g_.quitting || menu_pause;
     if (g_.mixer) g_.mixer->pause(frozen || lifecycle_.state.background());
     if (g_.race_music && !frozen && !lifecycle_.state.background()) g_.race_music->update();
+    update_fade(now);
     const int steps = clock_.advance(now - last_, frozen);
     last_ = now;
-    for (int step = 0; step < steps && !frozen; ++step) {
+    for (int step = 0; step < steps && !frozen && fade_ == Fade::none; ++step) {
         if (g_.view_ready) g_.view_prev = g_.view_cur;   // adjacent tick snapshot
         g_.tick(controls);
         // Capture every simulation tick (even during catch-up), keeping both
@@ -192,7 +216,12 @@ bool RaceScreen::iterate(uint64_t now_ns) {
             // 0x00416010: finished becomes won for places 1-3 (0-based < 3), lost otherwise.
             result_.outcome = g_.race().finished() ? (result_.place < 3 ? RaceOutcome::won : RaceOutcome::lost)
                                                 : RaceOutcome::wrecked;
-        } else if (decided_ && --end_ticks_ <= 0) running_ = false;
+        } else if (decided_ && --end_ticks_ <= 0) {
+            // 0x00442e10 returned true: 0x004163d0 fades out, then returns.
+            fade_ = Fade::out;
+            fade_start_ = now;
+            g_.fade_lut = fade_out_lut(0);
+        }
     }
     if (g_.view_ready) {
         const uint32_t alpha = g_.enhancements.interpolate ? clock_.alpha_q16() : 65536;

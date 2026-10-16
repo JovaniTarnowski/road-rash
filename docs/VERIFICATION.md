@@ -1345,3 +1345,7 @@ pass before it was inspected; the successful rerun is the verified result.
 - Visual: `rr-game --ticks 30` and `--ticks 200` screenshots (scratch).
   Not a pixel comparison against an original capture.
   [Handoff](agent-handoffs/race-banners-20261016.md).
+- Follow-up (fades + low metrics): full build exit 0; `ctest` 99/99.
+  `hud-test` pins fade-in/out channel maps and the low-mode raster;
+  `race-screen` walks a restart through the blocking fade-in (updated
+  expectation: the countdown now holds for 64 × 14 ms after restart).

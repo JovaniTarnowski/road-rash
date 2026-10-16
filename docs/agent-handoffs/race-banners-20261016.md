@@ -62,15 +62,48 @@ Ghidra writes held. Nothing committed.
   view with a centred Badloc "3"; tick 200 full brightness, no banner.
   (Scratch only, not committed.)
 
+## Follow-up: palette fades and low-resolution metrics (same day)
+
+Recovered from `analysis/original-disassembly.txt` (0x415d90..0x415f6a):
+
+- `0x00415f70` runs the worker on `timeSetEvent(14, 1, ...)` and blocks on a
+  semaphore; counter `0x482350` starts at 0x40, each callback decrements it,
+  uploads while > 0 (63 uploads) and releases at 0 (64th callback, 896 ms).
+- Fade-in `0x00415d90`: on the first call rebuilds `0x467860[1..63]` as
+  `prev * 0.96` (`0x462000`, double) from `table[0] = 1.0`; upload n uses
+  `table[n-1]` (n = 63..1): `trunc(half[c] * 0.96^(n-1))` via `fildl`/`fmull`
+  /`_ftol`. The last upload is exactly the half palette.
+- Fade-out `0x00415e90`: copies the half palette `0x4b8030` to `0x482358`,
+  then every callback `x = trunc(x * 0.96)` in place (cumulative) and uploads.
+  It runs when `0x00442e10` ends the race (after the decided race's 0xb4
+  ticks).
+- `0x004163b0` (loop clock base) runs after the fade-in, so no catch-up
+  ticks accrue during it.
+
+Native: `fade_in_lut`/`fade_out_lut`/`half_palette_lut` (`src/hud.*`) as
+per-channel maps; `Game::fade_lut` (presentation only); `RaceScreen::update_fade`
+drives them at 14 ms per upload, holds input/simulation during the fade-in,
+resets the clock on release, and ends a decided career race after the
+fade-out. `CourseCanvas` applies the map to the whole frame (indexed palette
+cache keyed by generation + map; RGB per channel). Low mode countdown now
+draws Badloc 0x48 at +60 with a 1-pixel shadow in 320x240 and pixel-doubles.
+
+Checks: full build exit 0; `ctest` 99/99. `hud-test` pins the maps (black
+before upload 1, first upload `trunc(127 * 0.96^62)`, last = half, fade-out
+121/116 truncation) and the low raster; `race-screen` walks a restart through
+the fade (countdown held, 30th-upload map, half palette at upload 63, release
+at 64 × 14 ms with zero catch-up, then normal ticking).
+
 ## Remaining / not established
 
-- No original capture compares the countdown frame pixel-for-pixel; GDI
-  hinting/glyph raster is the existing `TextRenderer` approximation.
-- The blocking ~0.9 s black-to-half fade-in at race start (64 steps × 14 ms)
-  is not ported; native starts at half brightness.
-- Low-resolution geometry (0x48 font, +60) is not separately modelled;
-  low mode uses the high metrics in the 640 compose space.
+- No original capture compares countdown/fade frames pixel-for-pixel; GDI
+  glyph raster is the existing `TextRenderer` approximation.
+- Before the first fade-in upload native shows black; the original still
+  shows the previous (loading screen) palette for up to 14 ms.
 - Native FPS overlay and pause menu are not dimmed (native surfaces). The
   original pause message (small Badloc `DAT_004c5bd0`, half palette) remains
   native per plan 18.
+- Quit-confirm (outcome 5) still ends the native race immediately; the
+  original keeps running 0xb4 ticks and fades out. Native no-fade branch
+  (`DAT_00482b68`, network) not modelled.
 - Multiplayer scoreboard/chat text in `0x00446c30` is out of scope (plan 09).

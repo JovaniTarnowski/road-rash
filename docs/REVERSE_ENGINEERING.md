@@ -1580,3 +1580,10 @@ Evidence: project exports `00442dd0.c`, `00442e10.c`, `0044c780.c`,
   strings 176–183 (`WRECKED!` ...) belong to the results screen.
 - Native port: `countdown_banner`/`Hud::draw_countdown` (`src/hud.*`),
   `CourseCanvas::draw` (`src/race_caches.hpp`).
+- Palette fades (`0x00415f70`, disassembly 0x415d90..0x415f6a): 14 ms
+  periodic timer, 63 uploads then release on the 64th callback, blocking.
+  Fade-in `0x00415d90`: table `0x467860` = 0.96^i (double, iterated from
+  1.0, factor at `0x462000`), upload n = 63..1 is `trunc(half × table[n−1])`.
+  Fade-out `0x00415e90`: from the half palette, cumulative
+  `x = trunc(x × 0.96)` per upload. The loop clock (`0x004163b0`) starts
+  after the fade-in. Native: `fade_in_lut`/`fade_out_lut`, `RaceScreen`.

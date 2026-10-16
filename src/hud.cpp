@@ -63,12 +63,52 @@ CountdownBanner countdown_banner(int countdown,int start) {
 }
 void Hud::draw_countdown(RgbImage& image,const std::string& text,int scale) const {
     if(text.empty() || scale<1)return;
-    // Fullscreen high resolution: view origin 0,0 and size 640x480
-    // (DAT_00475394/98/9c/a0); top moves down 0x78 >> (1 - HiRes).
-    TextRect rect{0,120*scale,640*scale,480*scale};
-    text_.draw_box(&image,Face::badloc,0x80*scale,rect,0,text,0x4851);
-    TextRect white{rect.left-2*scale,rect.top-2*scale,rect.right-2*scale,rect.bottom-2*scale};
-    text_.draw_box(&image,Face::badloc,0x80*scale,white,0xffffff,text,0x4851);
+    // Fullscreen view origin 0,0 (DAT_00475394/98), size 640x480 or 320x240
+    // (DAT_0047539c/a0); the rect top moves down 0x78 >> (1 - HiRes).
+    const int w=low_?320:640,h=low_?240:480,height=low_?0x48:0x80,shadow=low_?1:2;
+    RgbImage local(low_?w*scale:0,low_?h*scale:0,transparent);
+    RgbImage& target=low_?local:image;
+    TextRect rect{0,(0x78>>(low_?1:0))*scale,w*scale,h*scale};
+    text_.draw_box(&target,Face::badloc,height*scale,rect,0,text,0x4851);
+    TextRect white{rect.left-shadow*scale,rect.top-shadow*scale,rect.right-shadow*scale,rect.bottom-shadow*scale};
+    text_.draw_box(&target,Face::badloc,height*scale,white,0xffffff,text,0x4851);
+    if(!low_)return;
+    for(int y=0;y<local.height;++y)for(int x=0;x<local.width;++x) {
+        const uint32_t c=local.at(x,y);
+        if(c==transparent)continue;
+        for(int yy=0;yy<2;++yy)for(int xx=0;xx<2;++xx)if(image.contains(2*x+xx,2*y+yy))image.at(2*x+xx,2*y+yy)=c;
+    }
+}
+ChannelLut identity_lut() {
+    ChannelLut lut{};
+    for(size_t v=0;v<lut.size();++v)lut[v]=uint8_t(v);
+    return lut;
+}
+ChannelLut half_palette_lut() {
+    ChannelLut lut{};
+    for(size_t v=0;v<lut.size();++v)lut[v]=uint8_t(v>>1);
+    return lut;
+}
+ChannelLut fade_in_lut(int uploads) {
+    ChannelLut lut{};
+    if(uploads<=0)return lut;
+    uploads=std::min(uploads,palette_fade_uploads);
+    // 0x00415d90 rebuilds entries 1..63 as table[i] = table[i-1] * 0.96
+    // (fldl/fmull/fstpl, double precision) from table[0] = 1.0.
+    std::array<double,64> table{};
+    table[0]=1.0;
+    for(size_t i=1;i<table.size();++i)table[i]=table[i-1]*0.96;
+    const int counter=palette_fade_uploads+1-uploads;   // 63 on the first upload
+    for(size_t v=0;v<lut.size();++v)lut[v]=uint8_t(int(double(int(v>>1))*table[size_t(counter-1)]));
+    return lut;
+}
+ChannelLut fade_out_lut(int uploads) {
+    if(uploads<=0)return identity_lut();
+    uploads=std::min(uploads,palette_fade_uploads);
+    ChannelLut lut=half_palette_lut();
+    for(int step=0;step<uploads;++step)
+        for(auto& x:lut)x=uint8_t(int(double(x)*0.96));
+    return lut;
 }
 int Hud::cycle_mini_dash(int mode) {
     // F10 key-up in the 0x004431d0 pump: 0->1->2->0.

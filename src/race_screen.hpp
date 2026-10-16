@@ -46,6 +46,14 @@ private:
     int end_ticks_ = 0;
     uint64_t last_ = 0;
     bool restart_ = false;
+    // 0x00415f70 palette fades: race start (0x00415d90) blocks input and the
+    // simulation until it ends, then the loop clock starts; race end
+    // (0x00415e90) runs after the decided race's 0xb4 ticks. Wall-clock
+    // driven at 14 ms per upload; presentation only (Game::fade_lut).
+    enum class Fade { none, in, out };
+    Fade fade_ = Fade::none;
+    uint64_t fade_start_ = 0;   // 0: starts on the next iterate
+    void update_fade(uint64_t now);
 
     RaceActionContext ctx_now() const;
     void end_as_quit();

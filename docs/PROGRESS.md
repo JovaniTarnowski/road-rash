@@ -1005,3 +1005,9 @@ was restored to its pre-session hash after both captures.
   banner; native `FINISHED` stays only in the quick-race shell.
 - Gaps: start fade-in not ported, no pixel capture comparison, low-resolution
   metrics. [Handoff](agent-handoffs/race-banners-20261016.md).
+- Follow-up: race-start fade-in (`0x00415d90`, 63 × 14 ms, `trunc(half ×
+  0.96^(n−1))`, blocks the race, clock starts after) and race-end fade-out
+  (`0x00415e90`, cumulative `trunc(x × 0.96)` from the half palette) ported
+  as channel maps driven by `RaceScreen`; low-resolution countdown metrics
+  (0x48, +60, shadow 1, pixel-doubled). Remaining: pixel capture comparison,
+  quit-confirm fade/delay, pause message.

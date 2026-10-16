@@ -4,6 +4,7 @@
 #include <array>
 #include <cstdint>
 #include <functional>
+#include <optional>
 #include <string>
 #include <vector>
 #include "actor_nodes.hpp"
@@ -89,6 +90,9 @@ struct Game {
     Camera blend_camera() const { return view_ready ? view_drawn.camera : race().camera(); }
     int32_t logical_width() const;
     int countdown = 0;  // set to countdown_ticks by callers (game_main.cpp)
+    // RaceScreen's race-start/race-end palette fade (0x00415d90/0x00415e90)
+    // as a channel map; empty when no fade is running. Presentation only.
+    mutable std::optional<ChannelLut> fade_lut;
     std::vector<Image8> bobs;
     RiderRemaps remaps;
     Palette palette;

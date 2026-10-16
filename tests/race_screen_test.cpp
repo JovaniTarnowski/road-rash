@@ -77,6 +77,18 @@ int main() {
             screen.event(key(SDLK_RETURN));
             screen.iterate(now += 17000000);
             check(game.race().ticks() == 0 && game.countdown == rr::countdown_ticks, "restart rebuilds and resets countdown");
+            // 0x00415f70 race-start fade: 63 uploads at 14 ms block the race,
+            // the 64th callback releases it and the loop clock starts then.
+            const uint64_t fade_start = now;
+            check(game.fade_lut && *game.fade_lut == rr::fade_in_lut(0), "fade-in starts black");
+            screen.iterate(now = fade_start + 14000000ull * 30);
+            check(game.countdown == rr::countdown_ticks && game.fade_lut && *game.fade_lut == rr::fade_in_lut(30),
+                  "fade-in holds the countdown and follows the upload count");
+            screen.iterate(now = fade_start + 14000000ull * 63 + 13000000);
+            check(game.countdown == rr::countdown_ticks && *game.fade_lut == rr::half_palette_lut(),
+                  "last fade-in upload is the half palette");
+            screen.iterate(now = fade_start + 14000000ull * 64);
+            check(game.countdown == rr::countdown_ticks && !game.fade_lut, "fade release starts the clock without catch-up");
             screen.iterate(now += 17000000);
             check(game.countdown == rr::countdown_ticks - 1, "restart consumed once and countdown advances");
             screen.iterate(now += 34000000);

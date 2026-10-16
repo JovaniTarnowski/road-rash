@@ -1,5 +1,6 @@
 #include "hud.hpp"
 #include <algorithm>
+#include <cmath>
 #include <cstdlib>
 #include <iostream>
 #include <utility>
@@ -84,6 +85,21 @@ int main(){
             const auto live=rr::countdown_banner(0,180);
             if(!live.dashboard || live.dim || !live.text.empty())throw std::runtime_error("Countdown expiry");
         }
+        // 0x00415d90 fade-in / 0x00415e90 fade-out channel maps.
+        {
+            const auto half=rr::half_palette_lut();
+            if(half[255]!=127 || half[1]!=0 || rr::identity_lut()[200]!=200)throw std::runtime_error("Palette maps");
+            for(auto v:rr::fade_in_lut(0))if(v)throw std::runtime_error("Fade-in before the first upload");
+            // First upload: counter 63, table[62] = 0.96^62 ~ 0.0795.
+            if(rr::fade_in_lut(1)[255]!=int(127*std::pow(0.96,62)))throw std::runtime_error("First fade-in upload");
+            if(rr::fade_in_lut(63)!=half || rr::fade_in_lut(99)!=half)throw std::runtime_error("Fade-in ends on the half palette");
+            for(int k=1;k<63;++k)for(int v=0;v<256;++v)
+                if(rr::fade_in_lut(k)[size_t(v)]>rr::fade_in_lut(k+1)[size_t(v)])throw std::runtime_error("Fade-in not monotone");
+            if(rr::fade_out_lut(0)!=rr::identity_lut())throw std::runtime_error("Fade-out before the first upload");
+            // Cumulative truncation from 127: 127*0.96 = 121.92 -> 121, then 116.16 -> 116.
+            if(rr::fade_out_lut(1)[255]!=121 || rr::fade_out_lut(2)[255]!=116)throw std::runtime_error("Fade-out truncation");
+            if(rr::fade_out_lut(63)[255]>=rr::fade_out_lut(62)[255] && rr::fade_out_lut(62)[255]!=0)throw std::runtime_error("Fade-out not decreasing");
+        }
         rr::Assets assets(RR_SOURCE_DIR "/../cdrom/ROADRASH");
         if(!assets.exists("ROADRASH.EXE")){std::cout<<"Meter levels pass; imported HUD corpus absent\n";return 0;}
         // Countdown digit raster: black at the rect, white at -2,-2, centred
@@ -105,6 +121,17 @@ int main(){
             rr::RgbImage none(640,480,0x01000000);
             hud.draw_countdown(none,"");
             for(const auto c:none.pixels)if(c!=0x01000000)throw std::runtime_error("Empty countdown drew ink");
+            // Low resolution: 0x48 face at +60 in 320x240, shadow 1, doubled.
+            hud.set_low_mode(true);
+            rr::RgbImage low(640,480,0x01000000);
+            hud.draw_countdown(low,"3");
+            int ink=0,top=480;
+            for(int y=0;y<480;y+=2)for(int x=0;x<640;x+=2) {
+                const uint32_t c=low.at(x,y);
+                if(low.at(x+1,y)!=c || low.at(x,y+1)!=c || low.at(x+1,y+1)!=c)throw std::runtime_error("Low countdown not pixel-doubled");
+                if(c!=0x01000000){++ink;top=std::min(top,y);}
+            }
+            if(!ink || top<118)throw std::runtime_error("Low countdown placement");
         }
         const auto exe=assets.read("ROADRASH.EXE");const auto physics=rr::read_physics_tables(exe);
         const auto course=rr::read_course(assets.read("DATA/COURSES/NAPA.CRS"));
