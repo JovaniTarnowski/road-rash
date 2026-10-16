@@ -221,22 +221,25 @@ void draw_hud(SDL_Renderer* r, const rr::Game& g) {
     SDL_snprintf(line, sizeof line, "%s  PLACE %d/%zu  SPEED %3d  GEAR %d  TIME %d:%02d  %3d%%", g.course_name.c_str(),
                  race.place(0), race.riders().size(), race.speed() / 100, race.gear() + 1, seconds / 60, seconds % 60, progress);
     if(!g.assets.hud)SDL_RenderDebugText(r, 8, 8, line);
-    if (g.countdown > 0) {
-        SDL_snprintf(line, sizeof line, "GET READY  %d", g.countdown / rr::ticks_per_second + 1);
-        SDL_SetRenderScale(r, 3, 3);
-        SDL_RenderDebugText(r, 60, 60, line);
+    // The original's only single-player in-race banner is the countdown
+    // digit (hud.hpp CountdownBanner), drawn by CourseCanvas with the
+    // dashboard. DAT_004c5bd0 is otherwise written only by the pause message
+    // (0x004431d0) and the network race end (0x00416010): there is no wipeout
+    // text and no finish text in a career race. The debug-text digit below
+    // stands in only when no course scene or dashboard is loaded.
+    const auto banner = countdown_banner(g.countdown, rr::countdown_ticks);
+    if (!banner.text.empty() && (!g.scene() || !g.assets.hud)) {
+        SDL_SetRenderScale(r, 6, 6);
+        SDL_RenderDebugText(r, 320.f / 6 - 4, 20, banner.text.c_str());
         SDL_SetRenderScale(r, 1, 1);
-    } else if (race.finished()) {
+    } else if (banner.text.empty() && race.finished() && !g.career) {
+        // Native quick-race shell (no results screen): finish and restart prompt.
         const int finish = race.riders()[0].finish_tick / rr::ticks_per_second;
         SDL_snprintf(line, sizeof line, "FINISHED %d%s  %d:%02d", race.place(0), race.place(0) == 1 ? "ST" : race.place(0) == 2 ? "ND" : race.place(0) == 3 ? "RD" : "TH", finish / 60, finish % 60);
         SDL_SetRenderScale(r, 3, 3);
         SDL_RenderDebugText(r, 50, 60, line);
         SDL_SetRenderScale(r, 1, 1);
-        if (!g.career) SDL_RenderDebugText(r, 200, 260, "Enter / A / tap: race again");
-    } else if (race.crashed()) {
-        SDL_SetRenderScale(r, 3, 3);
-        SDL_RenderDebugText(r, 80, 60, "WIPEOUT!");
-        SDL_SetRenderScale(r, 1, 1);
+        SDL_RenderDebugText(r, 200, 260, "Enter / A / tap: race again");
     }
     // Stamina bars: player and the rider it last hit.
     auto bar = [&](float y, const char* label, const rr::RiderStats& st) {

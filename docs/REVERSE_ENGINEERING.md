@@ -1047,7 +1047,9 @@ matches `analysis/inventory.json`. No legacy Android executable was used.
   the sixty-tick replan replaced their scalar speed with zero. They now use
   the opponent-style fallback when the speed table is absent. Existing
   imported personality speed tables remain authoritative.
-- Visual audit: `draw_hud` still adds SDL debug text `WIPEOUT!` during crashes;
+- Visual audit (superseded October 16, 2026 for the crash/countdown text: the
+  original has no wipeout banner and the countdown is now the original digit;
+  see "Race countdown banner" below): `draw_hud` still adds SDL debug text `WIPEOUT!` during crashes;
   `draw_pause` draws a translucent full-screen shade and SDL debug text.
   Neither is a pixel-exact original screen. The original pause message uses
   `MessageBoxA` in `0x00443120`; see the options/pause trace above. Native
@@ -1554,3 +1556,27 @@ frozen-half position/speed state (needed at576). Optional missing pointer
 metadata explicitly keeps older fixture behavior; declared contradictory
 linked-half pointers reject before state mutation. See
 [full probe and REA evidence](agent-handoffs/codex-sim-research-20261015.md).
+
+## Race countdown banner (October 16, 2026)
+
+Evidence: project exports `00442dd0.c`, `00442e10.c`, `0044c780.c`,
+`00446c30.c`, `00447b20.c`, `00442990.c`, `004163d0.c`, `00448f90.c`,
+`004431d0.c`, `00416010.c`; ENU.DLL string table; EXE data `0x466654` = `"%d"`.
+
+- Countdown `DAT_004753c0` = `DAT_004753bc` = 0xb4 (network 0x168) at
+  `0x00442dd0`; `0x00442e10` subtracts the frame's steps and skips the
+  stepper `0x0044b2e0` while positive; at expiry uploads `DAT_004b8490`.
+- `DAT_004b8030` is the half-brightness palette (`0x00448f90`, channels
+  `>> 1`); `DAT_004b8490` the full one. (Corrects the plan 21 Task 4 note
+  above, which swapped the two labels.) The race starts on the half palette
+  (`0x004163d0` fade or direct upload), so the countdown view is half-bright.
+- `0x0044c780` skips `0x00446c30` while the timer equals its start value.
+- `0x00446c30` draws `"%d"` of `t/0x3c + 1` (179..120 → 3, 119..60 → 2,
+  59..1 → 1) in Badloc `DAT_004c11ec` (0x80/0x48), rect top = view top +
+  `0x78 >> (1-HiRes)`, DrawText 0x4851 via `0x00447b20` (black, then white at
+  −(HiRes+1)), independent of MiniDash.
+- `DAT_004c5bd0` has no other single-player in-race writer except the pause
+  message `0x004431d0`. There is no wipeout/crash or finish banner; ENU
+  strings 176–183 (`WRECKED!` ...) belong to the results screen.
+- Native port: `countdown_banner`/`Hud::draw_countdown` (`src/hud.*`),
+  `CourseCanvas::draw` (`src/race_caches.hpp`).

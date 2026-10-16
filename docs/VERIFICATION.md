@@ -1334,3 +1334,14 @@ pass before it was inspected; the successful rerun is the verified result.
   [integration](agent-handoffs/codex-sim735-integrate-20261015.md),
   [screen](agent-handoffs/codex-screen-20261015.md),
   [performance](agent-handoffs/codex-performance-20261015.md).
+
+## Race countdown banner (October 16, 2026)
+
+- `cmake --build build-agent-overlay-20261016 --parallel`: exit 0.
+- `ctest --test-dir build-agent-overlay-20261016 --output-on-failure -j8`:
+  99/99 passed, no skips reported.
+- `hud-test` covers banner timing (180 start frame without dashboard, digits
+  3/2/1 at 179..120/119..60/59..1, live at 0) and the digit raster.
+- Visual: `rr-game --ticks 30` and `--ticks 200` screenshots (scratch).
+  Not a pixel comparison against an original capture.
+  [Handoff](agent-handoffs/race-banners-20261016.md).

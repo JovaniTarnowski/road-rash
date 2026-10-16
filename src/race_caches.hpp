@@ -75,6 +75,21 @@ struct CourseCanvas {
     DashLut dash_lut;
     uint32_t dash_lut_gen = 0;
     uint8_t dash_index(uint32_t c, const Palette& pal) { return dash_lut.index(c, pal); }
+    // Countdown palette DAT_004b8030, cached per palette generation.
+    Palette half;
+    uint32_t half_gen = 0;
+    bool half_ready = false;
+    const Palette& half_palette(const Palette& pal) {
+        const uint32_t gen = palette_generation(pal);
+        if (!half_ready || gen != half_gen) {
+            half = pal;
+            for (size_t i = 0; i < 256; ++i)
+                for (size_t c = 0; c < 3; ++c) half.rgbx[4 * i + c] = uint8_t(pal.rgbx[4 * i + c] >> 1);
+            half_gen = gen;
+            half_ready = true;
+        }
+        return half;
+    }
     // Plan 32 E: every horizon pixel is converted, including the zero-filled
     // lower rows. Storage is retained across frames and rebuilt only on resize.
     void draw_horizon_rgb(const CourseScene& scene,const Palette& palette,int32_t scroll,int32_t logical_width) {
@@ -105,10 +120,15 @@ struct CourseCanvas {
         const bool use_rgb = game.enhancements.full_colour ||
                              game.enhancements.filter != rr::TextureFilter::nearest ||
                              game.enhancements.fog > 0 || game.enhancements.grade != Grade::none;
-        const bool need_dash = game.assets.hud != nullptr;
-        const RgbImage dash = need_dash ? game.assets.hud->compose(game.assets.hud->state(game.race(), game.player_name, game.rider_names),
+        // 0x0044c780 / 0x00446c30 countdown presentation (hud.hpp): no
+        // dashboard on the start-value frame, the digit inside the dashboard
+        // draw, and the half-brightness palette until the timer expires.
+        const CountdownBanner banner = countdown_banner(game.countdown, countdown_ticks);
+        const bool need_dash = game.assets.hud != nullptr && banner.dashboard;
+        RgbImage dash = need_dash ? game.assets.hud->compose(game.assets.hud->state(game.race(), game.player_name, game.rider_names),
                                                 game.assets.physics, rr::DashMode::full, s)
                                         : RgbImage(0, 0, 0);
+        if (need_dash) game.assets.hud->draw_countdown(dash, banner.text, s);
         if (!workers || worker_count != threads) { workers = std::make_unique<RenderThreads>(threads); worker_count = threads; }
         // Plan 20 Task 3: lazy attach/detach on detail flips (load_course runs
         // before the settings sync, so attach here where the setting is live).
@@ -178,6 +198,14 @@ struct CourseCanvas {
                     }
                 }
             }
+            // DAT_004b8030: every channel >> 1 (0x00448f90), applied to the
+            // whole presented frame as the palette swap does.
+            if (banner.dim)
+                for (int y = 0; y < scale_h; ++y)
+                    for (int x = 0; x < scale_w; ++x) {
+                        const uint32_t p = rgb.row(y)[x];
+                        rgb.row(y)[x] = (p & 0xff000000u) | ((p >> 1) & 0x7f7f7fu);
+                    }
         } else {
         game.assets.scene->draw_horizon(frame,game.race().horizon_scroll(),wide);
         // The dashboard stays a centred 4:3 image (plan 21 Task 8); side
@@ -223,7 +251,7 @@ struct CourseCanvas {
                 }
             }
         }
-        frame.to_rgba(game.palette,rgba.data(),scale_w*4);
+        frame.to_rgba(banner.dim ? half_palette(game.palette) : game.palette,rgba.data(),scale_w*4);
         }
         if(!texture || texture_is_rgb != use_rgb) {
             texture.reset(SDL_CreateTexture(renderer,use_rgb?SDL_PIXELFORMAT_ARGB8888:SDL_PIXELFORMAT_RGBA32,SDL_TEXTUREACCESS_STREAMING,scale_w,scale_h));

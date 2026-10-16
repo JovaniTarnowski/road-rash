@@ -58,6 +58,23 @@ private:
 // CreatePen(PS_SOLID, HiRes+2, 0x81172)). width is the GDI band width in
 // device pixels; color is the raw COLORREF as RGB (0x081172 -> 0x721108).
 struct NeedlePen { int width; uint32_t color; };
+// Pre-race countdown presentation, from DAT_004753c0 (ticks left). 0x00442dd0
+// sets it to 0xb4 (0x168 in network play); 0x00442e10 decrements it by the
+// frame's steps and runs no simulation (0x0044b2e0) while it is positive; on
+// expiry it uploads the full palette DAT_004b8490. Until then the race shows
+// the half-brightness copy DAT_004b8030 (0x00448f90: every channel >> 1) that
+// 0x004163d0 fades in. 0x0044c780 skips the whole dashboard draw 0x00446c30
+// while the timer still equals its start value (the frame before the first
+// step). Inside 0x00446c30 the countdown block is outside the MiniDash != 2
+// test, so it shows with the dashboard off as well: sprintf("%d", t/60 + 1)
+// into DAT_004c5bd0, drawn with the big Badloc face (0x00442990: 0x80 high,
+// 0x48 low resolution) by 0x00447b20 with DrawText flags 0x4851.
+struct CountdownBanner {
+    bool dashboard = true;   // 0x0044c780: countdown != start value
+    bool dim = false;        // half-brightness palette still selected
+    std::string text;        // "3", "2", "1"; empty once the race is live
+};
+CountdownBanner countdown_banner(int countdown, int start);
 class Hud {
 public:
     Hud(const Assets&,const std::vector<uint8_t>& exe,int bike,bool metric);
@@ -73,6 +90,12 @@ public:
     NeedlePen pen() const;
     static NeedlePen needle_pen(bool high_res);
     RgbImage compose(const HudState&,const PhysicsTables&,DashMode mode = DashMode::full,int scale = 1) const;
+    // 0x00446c30 countdown block into a compose() image (640x480 x scale).
+    // Rect {view left, view top + 0x78 (120 high, 60 low), view right, view
+    // bottom}; 0x00447b20 draws black at the rect, then white at -2,-2
+    // (DAT_0049e120 = HiRes + 1). Uses the high-resolution metrics, as the
+    // dashboard labels do; empty text draws nothing.
+    void draw_countdown(RgbImage&,const std::string& text,int scale = 1) const;
     // Low-mode artwork: 320-wide KLODASH/MLODASH dashboard + 95-stride LILMETER,
     // selected in low resolution (0x004457f0 choice 1/2); MiniDash picks the stride.
     void set_low_mode(bool low);

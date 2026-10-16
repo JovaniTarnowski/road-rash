@@ -1,5 +1,8 @@
 #include "hud.hpp"
+#include <algorithm>
+#include <cstdlib>
 #include <iostream>
+#include <utility>
 static uint8_t brute_index(uint32_t c, const rr::Palette& pal) {
     uint8_t best = 0;
     int best_d = INT_MAX;
@@ -68,8 +71,41 @@ int main(){
                rr::Hud::numeric_speed(c.velocity,true)!=c.kmh)
                 throw std::runtime_error("Mini dashboard numeric speed conversion");
         }
+        // 0x00442dd0/0x00442e10/0x0044c780/0x00446c30 countdown banner:
+        // 0xb4 ticks, "%d" of t/60+1, dashboard skipped on the start-value
+        // frame, half palette until expiry.
+        {
+            const auto start=rr::countdown_banner(180,180);
+            if(start.dashboard || !start.dim || start.text!="4")throw std::runtime_error("Countdown start frame");
+            for(const auto c:{std::pair{179,"3"},{120,"3"},{119,"2"},{60,"2"},{59,"1"},{1,"1"}}) {
+                const auto b=rr::countdown_banner(c.first,180);
+                if(!b.dashboard || !b.dim || b.text!=c.second)throw std::runtime_error("Countdown digit");
+            }
+            const auto live=rr::countdown_banner(0,180);
+            if(!live.dashboard || live.dim || !live.text.empty())throw std::runtime_error("Countdown expiry");
+        }
         rr::Assets assets(RR_SOURCE_DIR "/../cdrom/ROADRASH");
         if(!assets.exists("ROADRASH.EXE")){std::cout<<"Meter levels pass; imported HUD corpus absent\n";return 0;}
+        // Countdown digit raster: black at the rect, white at -2,-2, centred
+        // across the 640-wide view starting 120 rows down; nothing above it.
+        {
+            rr::Hud hud(assets,assets.read("ROADRASH.EXE"),0,false);
+            rr::RgbImage image(640,480,0x01000000);
+            hud.draw_countdown(image,"3");
+            int white=0,black=0,minx=640,maxx=0,miny=480;
+            for(int y=0;y<480;++y)for(int x=0;x<640;++x) {
+                const uint32_t c=image.at(x,y);
+                if(c==0x01000000)continue;
+                if(c==0xffffff)++white;else if(c==0)++black;else throw std::runtime_error("Countdown ink colour");
+                minx=std::min(minx,x);maxx=std::max(maxx,x);miny=std::min(miny,y);
+            }
+            if(!white || !black)throw std::runtime_error("Countdown digit not drawn");
+            if(miny<118)throw std::runtime_error("Countdown digit above view top + 0x78 - 2");
+            if(std::abs((minx+maxx)/2-319)>8)throw std::runtime_error("Countdown digit not centred");
+            rr::RgbImage none(640,480,0x01000000);
+            hud.draw_countdown(none,"");
+            for(const auto c:none.pixels)if(c!=0x01000000)throw std::runtime_error("Empty countdown drew ink");
+        }
         const auto exe=assets.read("ROADRASH.EXE");const auto physics=rr::read_physics_tables(exe);
         const auto course=rr::read_course(assets.read("DATA/COURSES/NAPA.CRS"));
         const auto specs=rr::read_bike_specs(assets.read("DATA/BIKESPEC.RSC"));

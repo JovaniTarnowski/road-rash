@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cstdio>
 #include <cstring>
+#include <string>
 namespace rr {
 namespace {
 constexpr uint32_t transparent=0x01000000;
@@ -50,6 +51,24 @@ Hud::Hud(const Assets& assets,const std::vector<uint8_t>& exe,int bike,bool metr
     // strides 0/1 are the low (320-wide) full/mini rows, 2/3 the high rows.
     layout_=read_stride(2);
     layout_mini_=read_stride(3);
+}
+CountdownBanner countdown_banner(int countdown,int start) {
+    CountdownBanner b;
+    b.dashboard=countdown!=start;
+    b.dim=countdown>0;
+    // DAT_004753c0 / 0x3c + 1 with "%d" (DAT_00466654): 179..120 -> "3",
+    // 119..60 -> "2", 59..1 -> "1"; the start value (180, "4") is never drawn.
+    if(countdown>0)b.text=std::to_string(countdown/60+1);
+    return b;
+}
+void Hud::draw_countdown(RgbImage& image,const std::string& text,int scale) const {
+    if(text.empty() || scale<1)return;
+    // Fullscreen high resolution: view origin 0,0 and size 640x480
+    // (DAT_00475394/98/9c/a0); top moves down 0x78 >> (1 - HiRes).
+    TextRect rect{0,120*scale,640*scale,480*scale};
+    text_.draw_box(&image,Face::badloc,0x80*scale,rect,0,text,0x4851);
+    TextRect white{rect.left-2*scale,rect.top-2*scale,rect.right-2*scale,rect.bottom-2*scale};
+    text_.draw_box(&image,Face::badloc,0x80*scale,white,0xffffff,text,0x4851);
 }
 int Hud::cycle_mini_dash(int mode) {
     // F10 key-up in the 0x004431d0 pump: 0->1->2->0.

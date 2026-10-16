@@ -994,3 +994,14 @@ was restored to its pre-session hash after both captures.
   dependency by tracking the delivered countdown-driver handoff.
 - Next: contact flags at893, human terrain setup order, cancellable upscale
   loading. [Integration evidence](agent-handoffs/codex-sim735-integrate-20261015.md).
+
+### October 16, 2026 — original countdown banner, no wipeout text
+
+- Replaced the native SDL debug banners `GET READY n` and `WIPEOUT!` with the
+  original presentation: half-brightness palette (`DAT_004b8030`) during the
+  0xb4-tick countdown, Badloc 0x80 digit `t/60+1` with black shadow 120 rows
+  below the view top (`0x00446c30`/`0x00447b20`), no dashboard on the
+  start-value frame (`0x0044c780`). The original has no wipeout or finish
+  banner; native `FINISHED` stays only in the quick-race shell.
+- Gaps: start fade-in not ported, no pixel capture comparison, low-resolution
+  metrics. [Handoff](agent-handoffs/race-banners-20261016.md).
