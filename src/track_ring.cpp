@@ -181,12 +181,26 @@ void TrackRing::Borr::step(int32_t delta) {
     }
 }
 
-void TrackRing::Borr::slots(const PathSample&, const Random& draw) const {
+void TrackRing::Borr::slots(const PathSample& path, const Random& draw, RingStatics& out) const {
+    // 0x00451cb0: +0x60 = 0, then (gates passing) count+1 slots stepping
+    // outward from 224 units inside the road edge (+0xe0/+0xe4).
+    out.borr_count = 0;
     if (!words) return;
     if (period != 0 && (current - start) % (period + 1) != 0) return;
     if ((selector & 0x3f) == 0x3f) return;
-    if (!random) return;
-    for (int i = 0; i <= count; ++i) draw();   // slot spacing spacing/2 + rand % (spacing - spacing/2 + 1)
+    const bool left_side = alternate == 0 ? left != 0 : ((current - start) & 1) == 0 ? left == 0 : left != 0;
+    int32_t x = left_side ? -int32_t(path.left) - spacing + 0xe0 : int32_t(path.right) - 0xe0 + spacing;
+    for (int i = 0; i <= count; ++i) {
+        out.borr[size_t(i)] = x;
+        int32_t step = spacing;
+        if (random) {
+            const uint32_t half = uint32_t(spacing) >> 1;
+            step = int32_t(half + draw() % (uint32_t(spacing) - half + 1));   // unsigned divl
+        }
+        x += left_side ? -step : step;
+    }
+    out.borr_count = uint8_t(count + 1);
+    out.borr_selector = selector;
 }
 
 void TrackRing::enter(Walker& w, uint32_t offset) {
@@ -237,21 +251,29 @@ void TrackRing::build_slice(Walker& w, int32_t ring_q8, const ActorSink& sink) {
     const auto& section = course_.sections.at(node.link);
     const uint32_t local = uint32_t(w.position >> 8);
     const auto& path = section.samples.at(local);
-    w.borr.slots(path, *random_);
+    RingStatics statics;
+    w.borr.slots(path, *random_, statics);   // first walk: stale edges, positions overwritten
     if (slice_sink_ && w.terrain)   // 0x00451910 (draw-free)
         slice_sink_(node.link, local, path, w.terrain->slice(-path.left - path.shoulder_left, path.right + path.shoulder_right));
-    w.borr.slots(path, *random_);
+    w.borr.slots(path, *random_, statics);
     auto& records = events_.at(w.dzhr.node).records;
     for (size_t i = size_t(std::max(0, w.dzhr.index)); i < records.size(); ++i) {
         auto& r = records[i];
         if ((r[0] & 0x7fff0000u) >> 16 != uint32_t(w.dzhr.position >> 8)) break;
         if (((r[0] >> 8) & 0x3f) == 0x3f) continue;
-        if (!(r[0] & 0x80000000u)) continue;   // billboard slot: no draw
+        if (!(r[0] & 0x80000000u)) {   // billboard (+0x40 + 16n, two at most): no draw
+            if (statics.billboards < 2) {
+                const int32_t offset = (r[1] & 0x800) ? int32_t(r[1] | 0xfffff000u) : int32_t(r[1] & 0xfff);
+                statics.billboard[statics.billboards++] = {uint8_t(r[0] & 15), uint8_t(r[0] >> 8), offset};
+            }
+            continue;
+        }
         const uint32_t jitter = (*random_)();
         const RingActor actor{ring_q8 >> 8, local * 0x100u + (r[1] >> 24), r[0], r[1], node.link, local};
         if (sink) sink(actor, jitter);
         r[0] |= 0x3f00u;
     }
+    if (static_sink_) static_sink_(ring_q8 >> 8, node.link, local, statics);
 }
 
 void TrackRing::setup(int32_t camera, const Random& random, const ActorSink& sink) {

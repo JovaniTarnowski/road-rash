@@ -489,3 +489,9 @@ Ring-built terrain slices (October 16). Physics read off-road ground from
 the scene's isolated-stream terrain; the ring's slice builds now supply it
 (`0x00451910`). Human replay advances **371 -> 702** (RNG at a speed drop
 3956 -> 992 at lateral −271123). Demo replays unchanged.
+
+Solid roadside objects (October 16). Tick 702 was a BORR tree hit; with
+the `0x004373f0` sweep, frame collision boxes and the type-1 static contact
+ported, **`sched-human-20261016` replays all 1431 ticks identical** in every
+compared field with one RNG anchor. Strict acceptance remains unmet on
+field coverage (264 golden-only fields) only.

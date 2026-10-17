@@ -53,6 +53,9 @@ public:
     void draw_horizon(Framebuffer&,int32_t scroll,int32_t logical_width=320) const;
     const std::vector<SceneryObject>& objects(uint32_t section,uint32_t local) const;
     const AnimationFrame* object_frame(uint32_t section,uint32_t local,const SceneryObject&) const;
+    // Frame 2 of a slice object's family selector (BORR category 0,
+    // billboard category 4 frame 0), as 0x0044b630 resolves it.
+    const AnimationFrame* static_frame(uint32_t section,uint32_t local,uint8_t selector,bool billboard) const;
     // DZHR actor records placed on this sample (place_dzhr), in original order.
     const std::vector<DzhrActor>& dzhr_actors(uint32_t section,uint32_t local) const;
     // 0x0044acd0(selector, 2, n) against the families resident at this

@@ -1,6 +1,7 @@
 #include "race.hpp"
 #include "scenery.hpp"
 #include "track_ring.hpp"
+#include "animation.hpp"
 #include "pedestrians.hpp"
 #include "terrain_ground.hpp"
 #include "traffic.hpp"
@@ -367,6 +368,10 @@ void Race::move_along(Rider& r, int32_t distance, bool sweep) {
     b.i32(0x12c) = sweep ? rise : saved_rise;
 }
 
+// 32-bit imul wraparound: 0x00436a40 multiplies depths and speeds by the
+// partner mass, which is 0x1000000 for the 0x00437660 static object.
+static int32_t wrap_mul(int32_t a, int32_t b) { return int32_t(uint32_t(a) * uint32_t(b)); }
+
 void Race::separate(Rider& r1, uint32_t t1, Rider& r2, uint32_t t2) {
     // 0x00436a40, line for line. p1 is the walk's outer node, p2 its partner;
     // t1/t2 are their object types (+0xc4). 0x00439270 moves along the road.
@@ -400,18 +405,18 @@ void Race::separate(Rider& r1, uint32_t t1, Rider& r2, uint32_t t2) {
         if (p2.i32(0x30) < p1.i32(0x30)) {
             p1.u8(0x19c) |= 1; p2.u8(0x19c) |= 2;
             if (!any) {
-                move_along(r1, (depth * m2) / m + 3, false);
-                if (t1 != 4 || rel < 0x14) move_along(r2, -((depth * m1) / m) - 3, false);
+                move_along(r1, wrap_mul(depth, m2) / m + 3, false);
+                if (t1 != 4 || rel < 0x14) move_along(r2, -(wrap_mul(depth, m1) / m) - 3, false);
             }
         } else {
             p1.u8(0x19c) |= 2; p2.u8(0x19c) |= 1;
             if (!any) {
-                if (t1 != 4 || rel < 0x14) move_along(r1, -((depth * m2) / m) - 3, false);
-                move_along(r2, (depth * m1) / m + 3, false);
+                if (t1 != 4 || rel < 0x14) move_along(r1, -(wrap_mul(depth, m2) / m) - 3, false);
+                move_along(r2, wrap_mul(depth, m1) / m + 3, false);
             }
         }
         const int32_t imp = t2 == 1 ? (p2.i32(0x108) - p1.i32(0x108)) * ((m2 * 2) / m)
-                                    : ((p2.i32(0x108) - p1.i32(0x108)) * m2 * 2) / m;
+                                    : wrap_mul(wrap_mul(p2.i32(0x108) - p1.i32(0x108), m2), 2) / m;
         p1.i32(0x184) = imp; p2.i32(0x184) = -imp;
     } else {
         p1.i32(0x184) = 0; p2.i32(0x184) = 0;
@@ -420,15 +425,15 @@ void Race::separate(Rider& r1, uint32_t t1, Rider& r2, uint32_t t2) {
         const int32_t depth = (p2.i32(0x174) - std::abs(p1.i32(0x28) - p2.i32(0x28))) + 0x800 + p1.i32(0x174);
         if (p2.i32(0x3c) < p1.i32(0x3c)) {
             p1.u8(0x19c) |= 4; p2.u8(0x19c) |= 8;
-            p1.i32(0x28) += (depth * m2) / m + 3;
-            p2.i32(0x28) -= (depth * m1) / m + 3;
+            p1.i32(0x28) += wrap_mul(depth, m2) / m + 3;
+            p2.i32(0x28) -= wrap_mul(depth, m1) / m + 3;
         } else {
             p1.u8(0x19c) |= 8; p2.u8(0x19c) |= 4;
-            p1.i32(0x28) -= (depth * m2) / m + 3;
-            p2.i32(0x28) += (depth * m1) / m + 3;
+            p1.i32(0x28) -= wrap_mul(depth, m2) / m + 3;
+            p2.i32(0x28) += wrap_mul(depth, m1) / m + 3;
         }
         const int32_t imp = t2 == 1 ? (p2.i32(0x10c) - p1.i32(0x10c)) * ((m2 * 2) / m)
-                                    : ((p2.i32(0x10c) - p1.i32(0x10c)) * m2 * 2) / m;
+                                    : wrap_mul(wrap_mul(p2.i32(0x10c) - p1.i32(0x10c), m2), 2) / m;
         p1.i32(0x188) = imp; p2.i32(0x188) = -imp;
     } else {
         p1.i32(0x188) = 0; p2.i32(0x188) = 0;
@@ -441,18 +446,18 @@ void Race::separate(Rider& r1, uint32_t t1, Rider& r2, uint32_t t2) {
             if (p2.i32(0x34) < p1.i32(0x34)) {
                 p1.u8(0x19c) |= 0x20;
                 p2.u8(0x19c) = uint8_t((p2.u8(0x19c) & 0xbf) | 0x10);
-                p1.i32(0x20) += (depth * m2) / m + 3;
-                p2.i32(0x20) = (p2.i32(0x20) - (depth * m1) / m) - 3;
+                p1.i32(0x20) += wrap_mul(depth, m2) / m + 3;
+                p2.i32(0x20) = (p2.i32(0x20) - wrap_mul(depth, m1) / m) - 3;
                 if (p2.i32(0x20) < 0) { p1.i32(0x20) -= p2.i32(0x20); p2.i32(0x20) = 0; }
             } else {
                 p1.u8(0x19c) = uint8_t((p1.u8(0x19c) & 0xbf) | 0x10);
                 p2.u8(0x19c) |= 0x20;
-                p1.i32(0x20) -= (depth * m2) / m + 3;
-                p2.i32(0x20) = p2.i32(0x20) + 3 + (depth * m1) / m;
+                p1.i32(0x20) -= wrap_mul(depth, m2) / m + 3;
+                p2.i32(0x20) = p2.i32(0x20) + 3 + wrap_mul(depth, m1) / m;
                 if (p1.i32(0x20) < 0) { p2.i32(0x20) -= p1.i32(0x20); p1.i32(0x20) = 0; }
             }
             imp = t2 == 1 ? (p2.i32(0x110) - p1.i32(0x110)) * ((m2 * 2) / m)
-                          : ((p2.i32(0x110) - p1.i32(0x110)) * m2 * 2) / m;
+                          : wrap_mul(wrap_mul(p2.i32(0x110) - p1.i32(0x110), m2), 2) / m;
             p1.i32(0x18c) = imp;
             imp = -imp;
         } else {
@@ -472,37 +477,37 @@ void Race::separate(Rider& r1, uint32_t t1, Rider& r2, uint32_t t2) {
             else p2.i32(0x20) = up + p2.i32(0x20) + 3;
         } else {
             const int32_t fwd = t2 == 1 ? (p2.i32(0x108) - p1.i32(0x108)) * ((m2 * 2) / m)
-                                        : ((p2.i32(0x108) - p1.i32(0x108)) * m2 * 2) / m;
+                                        : wrap_mul(wrap_mul(p2.i32(0x108) - p1.i32(0x108), m2), 2) / m;
             p1.i32(0x184) = fwd; p2.i32(0x184) = -fwd;
             const int32_t lat = t2 == 1 ? (p2.i32(0x10c) - p1.i32(0x10c)) * ((m2 * 2) / m)
-                                        : ((p2.i32(0x10c) - p1.i32(0x10c)) * m2 * 2) / m;
+                                        : wrap_mul(wrap_mul(p2.i32(0x10c) - p1.i32(0x10c), m2), 2) / m;
             p1.i32(0x188) = lat; p2.i32(0x188) = -lat;
             if (std::abs(div_pow2(fwd, 2)) < std::abs(lat) || p1.i32(0x10c) <= p1.i32(0x108)) {
                 const int32_t x1 = p1.i32(0x28);
                 const int32_t depth = (p2.i32(0x174) - std::abs(x1 - p2.i32(0x28))) + 0x800 + p1.i32(0x174);
                 if (t1 != 4) {   // bikes are never pushed sideways here
-                    if (lat < 0) { p1.u8(0x19c) |= 8; p1.i32(0x28) = (x1 - (depth * m2) / m) - 3; }
-                    else { p1.u8(0x19c) |= 4; p1.i32(0x28) = (depth * m2) / m + x1 + 3; }
+                    if (lat < 0) { p1.u8(0x19c) |= 8; p1.i32(0x28) = (x1 - wrap_mul(depth, m2) / m) - 3; }
+                    else { p1.u8(0x19c) |= 4; p1.i32(0x28) = wrap_mul(depth, m2) / m + x1 + 3; }
                 }
                 if (t2 != 4) {
-                    if (-lat < 1) { p2.u8(0x19c) |= 8; p2.i32(0x28) -= (depth * m1) / m + 3; }
-                    else { p2.u8(0x19c) |= 4; p2.i32(0x28) += (depth * m1) / m + 3; }
+                    if (-lat < 1) { p2.u8(0x19c) |= 8; p2.i32(0x28) -= wrap_mul(depth, m1) / m + 3; }
+                    else { p2.u8(0x19c) |= 4; p2.i32(0x28) += wrap_mul(depth, m1) / m + 3; }
                 }
             } else {
                 const int32_t depth = (p2.i32(0x178) - std::abs(p1.i32(0x1c) - p2.i32(0x1c))) + 8 + p1.i32(0x178);
                 if (fwd < 0) {
                     p1.u8(0x19c) |= 2;
-                    if (t1 != 4 || rel < 0x14) move_along(r1, -((depth * m2) / m) - 3, false);
+                    if (t1 != 4 || rel < 0x14) move_along(r1, -(wrap_mul(depth, m2) / m) - 3, false);
                 } else {
                     p1.u8(0x19c) |= 1;
-                    move_along(r1, (depth * m2) / m + 3, false);
+                    move_along(r1, wrap_mul(depth, m2) / m + 3, false);
                 }
                 if (-fwd < 1) {
                     p2.u8(0x19c) |= 2;
-                    if (t2 != 4 || rel < 0x14) move_along(r2, -((depth * m1) / m) - 3, false);
+                    if (t2 != 4 || rel < 0x14) move_along(r2, -(wrap_mul(depth, m1) / m) - 3, false);
                 } else {
                     p2.u8(0x19c) |= 1;
-                    move_along(r2, (depth * m1) / m + 3, false);
+                    move_along(r2, wrap_mul(depth, m1) / m + 3, false);
                 }
             }
         }
@@ -663,6 +668,7 @@ std::vector<DzhrSolid> dzhr_solids_for_sample(int32_t centre_q8,
 // big-gap crash entry reason 1). No RNG, no allocation in the tick path.
 void Race::collide_hazards(Rider& r) {
     if (r.finished || r.bike.i32(0x2f4) != 0) return;   // 0x004049c0 rejects
+    if (!statics_[r.route].empty()) { sweep_statics(r); return; }   // live ring slices
     Bike& s = r.bike;
     const auto& table = hazards_[r.route];
     if (!table.empty() && r.sample < table.size()) for (const auto& h : table[r.sample]) {
@@ -685,6 +691,196 @@ void Race::collide_hazards(Rider& r) {
         if (s.i32(0x2f4) != 0) return;   // knocked off: stop scanning
     }
 }
+void Race::set_static_frames(StaticFrames frames) {
+    static_frames_ = std::move(frames);
+    for (int road = 0; road < 2; ++road) statics_[road].assign(routes_[road].size(), StaticSlice{});
+}
+
+void Race::ring_statics(int32_t sample, uint32_t section, uint32_t local, const RingStatics& in) {
+    // A ring slice build (0x00454240) for this route sample. The ring walks
+    // single roads, so the slice belongs to every road whose sample is the
+    // same section sample. Frames resolve the slice's family selectors as
+    // 0x0044b630 does when the slice is first drawn (+0x64 bit 4).
+    if (!static_frames_ || sample < 0) return;
+    for (int road = 0; road < 2; ++road) {
+        auto& table = statics_[road];
+        if (size_t(sample) >= table.size()) continue;
+        const auto& rs = routes_[road][size_t(sample)];
+        if (rs.section != section || rs.local != local) continue;
+        StaticSlice& out = table[size_t(sample)];
+        out = StaticSlice{};
+        out.built = true;
+        out.borr_count = in.borr_count;
+        for (size_t i = 0; i < in.borr_count && i < out.borr.size(); ++i) out.borr[i] = rs.offset + in.borr[i];
+        if (in.borr_count) out.borr_frame = static_frames_(section, local, in.borr_selector, false);
+        out.billboards = in.billboards;
+        for (size_t i = 0; i < in.billboards && i < 2; ++i) {
+            const auto& b = in.billboard[i];
+            out.billboard[i] = {b.type, rs.offset + b.offset, static_frames_(section, local, b.selector, true)};
+        }
+    }
+}
+
+bool Race::sweep_statics(Rider& r) {
+    // 0x004373f0 over the rider's own slice (+0x140): BORR slots (+0x60
+    // count, boxes +0x61/+0x68) first, then the billboards (+0x3d). The first
+    // overlapping box runs its contact and ends the sweep.
+    const auto& table = statics_[r.route];
+    if (r.sample >= table.size() || !table[r.sample].built) return false;
+    const StaticSlice& slice = table[r.sample];
+    Bike& s = r.bike;
+    const int32_t lo = s.i32(0x28) - s.i32(0x174), hi = s.i32(0x174) + s.i32(0x28);
+    const int32_t bottom = s.i32(0x20) - s.i32(0x17c), top = s.i32(0x17c) + s.i32(0x20);
+    auto overlaps = [&](const std::array<int32_t,4>& b, int32_t base) {
+        return b[0] + base <= hi && lo <= b[2] + base && b[1] <= top && bottom < b[3];
+    };
+    if (slice.borr_frame) {
+        const auto& boxes = slice.borr_frame->boxes;
+        for (size_t i = 0; i < slice.borr_count; ++i) {
+            const int32_t units = slice.borr[i];
+            const int32_t base = units * 0x100;   // slice +0xcc frame, as pedestrians and terrain_height
+            for (const auto& box : boxes) {
+                std::array<int32_t,4> b = box;
+                // Single-box objects far off the centre line are three times
+                // as wide (sub-slice +0xac bit 0x4000 never set by the ring).
+                if (std::abs(units) >= 0x400 && boxes.size() == 1) { b[0] *= 3; b[2] *= 3; }
+                if (!overlaps(b, base)) continue;
+                hit_static(r, units, {b[0] + base, b[1], b[2] + base, b[3]});
+                return true;
+            }
+        }
+    }
+    for (size_t n = 0; n < slice.billboards; ++n) {
+        const auto& bb = slice.billboard[n];
+        if (!bb.frame) continue;
+        const int32_t base = bb.lateral * 0x100;
+        for (const auto& box : bb.frame->boxes) {
+            if (!overlaps(box, base)) continue;
+            // 0x00437750: types 0..2 build the static; 1 and 2 lower its
+            // bottom to 0x2000 / 0x3fff under the top. Types 3+ take the
+            // marking branch of the contact handler (not ported).
+            std::array<int32_t,4> b{box[0] + base, box[1], box[2] + base, box[3]};
+            if (bb.type < 3) {
+                if (bb.type == 1) b[1] = b[3] - 0x2000;
+                else if (bb.type == 2) b[1] = b[3] - 0x3fff;
+                hit_static(r, bb.lateral, b);
+            }
+            return true;
+        }
+    }
+    return false;
+}
+
+void Race::hit_static(Rider& r, int32_t lateral_units, const std::array<int32_t,4>& box) {
+    // 0x00437660: the shared static object 0x004c3e90 at mid-sample with the
+    // box extents, separated (0x00436a40) and handed to the rider's handler.
+    Rider& o = static_actor_;
+    o.route = r.route; o.sample = o.previous_sample = r.sample;
+    Bike& b = o.bike;
+    const int32_t position = int32_t((uint32_t(r.bike.i32(0x1c)) & 0xffffff00u) + 0x80);
+    b.i32(0x1c) = position; b.i32(0x20) = 0; b.i32(0x28) = lateral_units * 0x100;
+    for (int k = 0; k < 5; ++k) b.i32(0x30 + 4 * k) = b.i32(0x1c + 4 * k);
+    b.i32(0xc4) = 1;
+    b.i32(0xec) = 0; b.i32(0xf4) = 0; b.i32(0xf0) = 0;
+    b.i32(0x108) = 0; b.i32(0x110) = 0; b.i32(0x10c) = 0;
+    b.i32(0x134) = position; b.i32(0x138) = position;
+    b.i32(0x174) = box[2] - box[0];
+    b.i32(0x17c) = box[3] - box[1];
+    b.i32(0x178) = 0;
+    b.i32(0x180) = 0xc0;
+    b.i32(0x194) = 0x1000000;
+    b.u8(0xc0) = uint8_t(b.u8(0xc0) | 0x10);   // native guard: the static never latches the finish
+    separate(r, 4, o, 1);
+    contact_static(r, o);
+}
+
+void Race::contact_static(Rider& self, Rider& other) {
+    // 0x004049c0 with a type-1 static (+0xc4 == 1) as the hit object.
+    Bike& s = self.bike; Bike& o = other.bike;
+    const int32_t raw184 = s.i32(0x184), raw188 = s.i32(0x188), raw18c = s.i32(0x18c);
+    const uint32_t full = uint32_t(std::abs(raw184)) + uint32_t(std::abs(raw188)) + uint32_t(std::abs(raw18c));
+    int32_t local20 = int32_t(full) >> 10;
+    int iclass = 6;
+    bool down = false;
+    if (s.i32(0x2f4) != 0) {
+        s.i32(0xf4) += 0x150;
+    } else {
+        o.i32(0x17c) = o.i32(0x17c) / 2;   // short object (+0xc4 == 1)
+        if (&self == &riders_[0]) {
+            const int32_t hit = std::abs(raw184);
+            if (hit < 0x1771) {
+                if (hit >= 0x7d1 || std::abs(raw188) >= 0x3e9) {
+                    sound(SoundEvent((random() & 1) + 3), s);
+                    sound(SoundEvent(random() & 1), s);
+                }
+            } else {
+                sound(SoundEvent((random() & 1) + 4), s);
+                sound(SoundEvent((random() & 1) + 1), s);
+            }
+        }
+        if (o.i32(0x17c) < 0x2000) iclass = 0;
+        else if ((s.u8(0x19c) & 0x40) == 0) iclass = 3;
+        else if (o.i32(0x17c) < 0x2800 && (o.i32(0xc4) & 0x10) == 0) iclass = 1;
+        else iclass = 2;
+        const int32_t elasticity = s.i32(0x180);
+        s.i32(0x188) = div256(int64_t(raw188) * elasticity);
+        s.i32(0x18c) = div256(int64_t(raw18c) * elasticity);
+        s.i32(0x184) = div256(int64_t(raw184) * elasticity);
+        const int32_t steer = s.i32(0xf0);
+        if (iclass != 0) {
+            down = knock_off(self, local20, local20, iclass);   // (+0xc4 & 0xc) == 0: stamina and bike damage
+            if (iclass == 1 || iclass == 2) {
+                if (down) {
+                    if (iclass == 2) s.i32(0xec) += s.i32(0x184);
+                } else if (s.i32(0xec) - o.i32(0x108) < 0x1771) {
+                    s.i32(0xec) += s.i32(0x184);
+                } else {
+                    crash_reason(self, iclass, {0, 0, 0x200}, {0, 0, 0x100});   // 0x404eeb immediates
+                }
+            } else if (down) {
+                s.i32(0xf4) += div256(std::abs(s.i32(0x184)));
+            } else {
+                const int32_t shove = std::abs(s.i32(0x184));
+                if (o.i32(0x28) < s.i32(0x28)) { if (s.i32(0xf0) < 0) s.i32(0xf0) = 0; s.i32(0xf0) += shove / 2; }
+                else { if (s.i32(0xf0) > 0) s.i32(0xf0) = 0; s.i32(0xf0) -= shove / 2; }
+                s.i32(0xec) -= div_pow2(shove, 2);
+                if (s.i32(0xec) < 0) s.i32(0xec) = 0;
+            }
+            local20 = steer;
+        } else {
+            // Short object: slow riders are nudged aside, faster ones ride over.
+            if (s.i32(0xec) < 300 && s.u8(0x19c) == 0x20) { move_along(self, s.i32(0x18) * 2, false); iclass = 6; }
+            else if (s.i32(0xec) < 500) iclass = 6;
+            local20 = steer;
+            if (iclass == 0) {
+                s.i32(0x20) += o.i32(0x17c) / 2;
+                const int32_t t = wrap_mul(wrap_mul(o.i32(0x17c), std::abs(s.i32(0x184))), 2);
+                const int32_t u = (t + ((t >> 31) & 0x3fff)) >> 14;
+                s.i32(0xf4) += ((u + ((u >> 31) & 0xf)) >> 4) * 4;
+            }
+        }
+    }
+    if (iclass != 0) {
+        // 0x00404f4d: step sideways away from the object.
+        const int32_t w = s.i32(0x174) + o.i32(0x174);
+        const int32_t step = div_pow2(w, 4) * s.i32(0x18);
+        s.i32(0x28) += o.i32(0x28) < s.i32(0x28) ? step : -step;
+    }
+    // 0x00404f93 steering kick (skipped when knocked down or unchanged).
+    if (!down && local20 != s.i32(0xf0)) {
+        const uint32_t raw = uint32_t(s.i32(0x2d8)) * uint32_t(s.i32(0xf0) - local20) * 2u;
+        const int32_t prod = int32_t(raw);
+        const int32_t next = s.i32(0x288) + ((prod + ((prod >> 31) & 0xff)) >> 8);
+        const int32_t lim = s.i32(0x29c);
+        s.i32(0x288) = (next > lim || (-lim != -next && next <= -lim)) ? (next > lim ? lim : -lim) : next;
+    }
+    // 0x00404feb tail.
+    if (s.i32(0xf4) > 0x600) s.i32(0xf4) = 0x600;
+    s.i32(0x188) = 0; s.i32(0x18c) = 0; s.i32(0x184) = 0; s.u8(0x19c) = 0;
+    if (s.i32(0xec) > 30000) s.i32(0xec) = 30000;
+    if (s.i32(0xec) < -1000) s.i32(0xec) = -1000;
+}
+
 void Race::contact_hazard(Rider& self, int32_t hazard_lo_q8, int32_t hazard_hi_q8) {
     Bike& s = self.bike;
     if (s.i32(0x2f4) != 0) return;

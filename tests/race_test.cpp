@@ -1,4 +1,7 @@
 #include "race.hpp"
+#include "track_ring.hpp"
+#include "animation.hpp"
+#include <memory>
 #include "assets.hpp"
 #include "race_setup.hpp"
 #include "scenery.hpp"
@@ -537,6 +540,46 @@ int main() {
         const int32_t st0 = me.stamina.current;
         hz.step(0);
         check(me.stamina.current == st0 && me.bike.i32(0x2f4) == 0, "outside-edge span never fires");
+    }
+    // Live ring statics (0x004373f0 / 0x00437660 / 0x004049c0 type 1): BORR
+    // slots are solid wherever they stand, through frame 2's collision boxes
+    // (Napa sample 76 tree box). An overlapping rider beside a tall static is
+    // contained (class 2 here: halved height 0x5000 >= 0x2800), so the scaled
+    // forward impulse comes off the speed and the knock deals damage.
+    {
+        rr::AnimationFrame tree;
+        tree.boxes = {{-14848, -43008, 11264, -2048}};
+        auto run = [&](int32_t slot_units, int32_t rider_q8, const rr::AnimationFrame* frame) {
+            // A wide synthetic road keeps the walls stand-in off the rider.
+            auto wide_road = straight(4000);
+            for (auto& rs : wide_road) rs.path.left = rs.path.right = 1600;
+            auto hz = std::make_unique<rr::Race>(wide_road, wide_road, t, spec, 90);
+            auto& me = hz->riders()[0];
+            const size_t s = me.sample;
+            const auto& rs = hz->route_for(0)[s];
+            hz->set_static_frames([frame](uint32_t, uint32_t, uint8_t, bool) { return frame; });
+            rr::RingStatics st; st.borr_count = 1; st.borr_selector = 5; st.borr[0] = slot_units;
+            hz->ring_statics(int32_t(s), rs.section, rs.local, st);
+            // Approach from just outside the half-length so the previous
+            // position was clear (forward impulse, containment bit 0x40).
+            me.bike.i32(0x1c) = int32_t(s) * 256 + 0x80 - me.bike.i32(0x178) - 5;
+            for (int k = 0; k < 5; ++k) me.bike.i32(0x30 + 4 * k) = me.bike.i32(0x1c + 4 * k);
+            me.bike.i32(0x28) = rider_q8; me.bike.i32(0x3c) = rider_q8;
+            me.bike.i32(0xec) = 4000; me.bike.i32(0x2f0) = 1000;
+            const int32_t lateral0 = me.bike.i32(0x28);
+            hz->step(0);
+            return std::array<int32_t,3>{me.bike.i32(0xec), me.bike.i32(0x2f0), me.bike.i32(0x28) - lateral0};
+        };
+        const auto hit = run(-980, -980 * 256 - 9000, &tree);
+        check(hit[0] < 2500 && hit[1] < 1000 && hit[2] < -2000, "off-road BORR slot is solid: speed, damage and push");
+        rr::AnimationFrame bare;
+        const auto none = run(-980, -980 * 256 - 9000, &bare);
+        check(none[0] > 3500 && none[1] == 1000, "frame without boxes is not solid");
+        // Far slots (|units| >= 0x400) with one box are three times as wide.
+        const auto wide = run(-1100, -1100 * 256 - 30000, &tree);
+        check(wide[0] < 2500, "single-box far slot collides at three times the width");
+        const auto narrow = run(-1000, -1000 * 256 - 30000, &tree);
+        check(narrow[0] > 3500, "near slot keeps its one-times width");
     }
     // Span builder keeps only strictly-inside BORR slots (0x00454240): slots
     // at right-96/right+32 keep the first and drop the second here; pictured

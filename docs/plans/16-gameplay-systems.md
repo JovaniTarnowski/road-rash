@@ -69,7 +69,7 @@ Status words: **verified** (golden passes), **ported** (translated, no golden ye
 | Rider–car contact | missing (owner-reported) | 11a Task 1 |
 | Rider–cop contact | missing | **Task 1** (after plan 11 Task 6 spawns cops) |
 | Walls and terrain `0x0043a610` | stand-in clamp | Plan 11 Task 4 |
-| Roadside objects (signs, posts, trees, buildings) | missing; unknown whether the original tests them | **Task 2** |
+| Roadside objects (signs, posts, trees, buildings) | ported Oct 16: BORR slots and billboards swept by `0x004373f0` with frame-2 boxes, type-1 static contact; human replay 1431/1431 (billboard types 3+ open) | **Task 2** |
 | Attacks: hit test, damage, stamina | partial; timing stand-in (hit at tick 7 of 18) | Plan 11 Tasks 2 and 5 |
 
 ### Animation

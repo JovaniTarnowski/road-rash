@@ -1,6 +1,7 @@
 #pragma once
 #include "course.hpp"
 #include "terrain.hpp"
+#include <array>
 #include <functional>
 #include <optional>
 #include <vector>
@@ -23,6 +24,17 @@ namespace rr {
 // route sample (ring position >> 8), position_q8 the record's position.
 struct RingActor { int32_t ring_sample=0; uint32_t position_q8=0, word0=0, word1=0, section=0, local=0; };
 // Value-only walker snapshots for optional original terrain diagnostics.
+// Collidable roadside objects of one ring slice (0x00454240): the BORR
+// slots of its second 0x00451cb0 walk (+0x60 count, +0x63 selector, +0x6c
+// laterals) and up to two 0x004520d0 billboards (+0x3d, entries +0x40).
+// Laterals are units relative to the road centre (slice +0xcc).
+struct RingStatics {
+    uint8_t borr_count = 0, borr_selector = 0x3f;
+    std::array<int32_t,8> borr{};
+    uint8_t billboards = 0;
+    struct Billboard { uint8_t type = 0, selector = 0; int32_t offset = 0; };
+    std::array<Billboard,2> billboard{};
+};
 struct TrackWalkerState {
     int32_t position=0;
     std::optional<TerrainIteratorState> terrain;
@@ -44,6 +56,10 @@ public:
     using SliceSink = std::function<void(uint32_t section, uint32_t local, const PathSample&, const TerrainSlice&)>;
     TrackRing(const Course&, int level);
     void set_slice_sink(SliceSink sink) { slice_sink_ = std::move(sink); }
+    // Called at each slice build with its collidable statics, keyed by the
+    // slice's route sample.
+    using StaticSink = std::function<void(int32_t ring_sample, uint32_t section, uint32_t local, const RingStatics&)>;
+    void set_static_sink(StaticSink sink) { static_sink_ = std::move(sink); }
     TrackRing(const TrackRing&) = delete;
     TrackRing& operator=(const TrackRing&) = delete;
     // 0x004552e0 (random part): DZHR jitter, walker init, walk to camera -
@@ -71,7 +87,7 @@ private:
         void load(int32_t index);        // 0x00451a90
         void init(const std::vector<uint32_t>*);   // 0x00451b60 forward
         void step(int32_t delta);        // 0x00451e20
-        void slots(const PathSample&, const Random&) const;   // 0x00451cb0 (draws only)
+        void slots(const PathSample&, const Random&, RingStatics&) const;   // 0x00451cb0
     };
     struct Dzhr {
         size_t node = 0;                 // index into events_ (per course node)
@@ -110,5 +126,6 @@ private:
     int32_t front_ = 0, back_ = 0;
     bool unsupported_ = false;
     SliceSink slice_sink_;
+    StaticSink static_sink_;
 };
 }

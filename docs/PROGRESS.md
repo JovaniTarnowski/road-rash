@@ -1182,3 +1182,28 @@ was restored to its pre-session hash after both captures.
 - `race-cache` native hash baselines (12 entries) re-recorded,
   owner-approved: hill shapes changed (screenshots compared, riders/HUD
   identical). [Handoff](agent-handoffs/human371-20261016.md).
+
+### October 16, 2026: solid roadside objects, human replay 1431/1431 (plans 10, 16)
+
+- Tick 702: the player rode into a roadside tree (BORR slot at −980
+  units, off-road). The original sweeps every BORR slot of the rider's
+  slice and its billboards (`0x004373f0`) with the collision boxes the
+  renderer copies from the object's frame 2 (`0x0044b630`: frame `+0x10`
+  count, `+0xc` boxes); a hit builds the static object `0x00437660`
+  (type 1, mass 0x1000000) and runs `0x00436a40` plus `0x004049c0`.
+- Ported: RRAN frames keep every collision box (disc: 0/1/2 per frame);
+  `TrackRing` exports each slice build's BORR slots (second `0x00451cb0`
+  walk) and billboards (`0x004520d0`); `Race` keeps them per route sample,
+  sweeps them (incl. the ×3 width rule for one-box far slots), and runs a
+  literal type-1 `0x004049c0` (classes 0–3, kick and tail). `0x00436a40`
+  mass products now wrap like `imul`. Without a scene/frames the legacy
+  span tables still apply.
+- `sched-human-20261016` (genuine human branch, single anchor): **1431 of
+  1431 ticks identical** in every compared field. Demo sched600 600
+  identical, sched900 893, terrain-human200 200: unchanged; all pinned
+  diagnostics unchanged. Strict `verify_sim.py --mode acceptance` on it
+  still fails on coverage only (264 golden-only fields not in the
+  comparison set).
+- Open: billboard types 3+ (marking branch), crashed-rider static contact
+  (`+0xf4 += 0x150` path), the render-window gate on box loading.
+  [Handoff](agent-handoffs/human702-20261016.md).

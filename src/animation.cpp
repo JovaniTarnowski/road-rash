@@ -1,4 +1,5 @@
 #include "animation.hpp"
+#include <algorithm>
 #include <cstring>
 #include <stdexcept>
 namespace rr {
@@ -25,7 +26,14 @@ Animation read_animation(const std::vector<uint8_t>& bytes,uint32_t offset) {
         value.collision_reference=word(frame+12);
         // Some original files retain a stale absolute collision address in
         // frames whose collision flag is zero. The drawing path never uses it.
-        if(value.flags && value.collision_reference){const size_t collision=pointer(frame+12,16);for(int j=0;j<4;++j)value.collision[j]=signed_word(collision+j*4);}
+        if(value.flags && value.collision_reference){
+            const size_t collision=pointer(frame+12,16);
+            for(int j=0;j<4;++j)value.collision[j]=signed_word(collision+j*4);
+            // Frame +0x10 is the box count (0x0044b630; disc frames hold 0..2).
+            const uint64_t room=(bytes.size()-collision)/16;
+            const uint32_t count=uint32_t(std::min<uint64_t>(value.flags,room));
+            for(uint32_t b=0;b<count;++b)value.boxes.push_back({signed_word(collision+b*16),signed_word(collision+b*16+4),signed_word(collision+b*16+8),signed_word(collision+b*16+12)});
+        }
         if(word(frame+4)) {
             const size_t body=pointer(frame+4,12)+8;
             if(word(body)==0xbc614e)value.texture=std::make_shared<CelTexture>(read_indexed_texture(bytes.data()+body,bytes.size()-body));

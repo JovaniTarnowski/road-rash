@@ -174,6 +174,18 @@ RaceInstance build_race(const RaceAssets& assets, const std::vector<uint8_t>& ex
     if (config.ring_rng_state) race->set_rng_state(*config.ring_rng_state);
     if (config.track_ring) {
         out.ring = std::make_unique<TrackRing>(*assets.course, config.level);
+        // Live slice statics for the 0x004373f0 sweep (boxes via the scene's
+        // family residency, 0x0044b630).
+        if (assets.scene) {
+            auto* scene = assets.scene.get();
+            Race* r = race.get();
+            r->set_static_frames([scene](uint32_t section, uint32_t local, uint8_t selector, bool billboard) {
+                return scene->static_frame(section, local, selector, billboard);
+            });
+            out.ring->set_static_sink([r](int32_t sample, uint32_t section, uint32_t local, const RingStatics& statics) {
+                r->ring_statics(sample, section, local, statics);
+            });
+        }
         // Ring slices carry the race stream's terrain (0x00451910); the
         // scene's isolated-stream values stand in only where the ring has
         // not built a slice (splits/merges, the native quick setup).

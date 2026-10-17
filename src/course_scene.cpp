@@ -230,6 +230,10 @@ const AnimationFrame* CourseScene::object_frame(uint32_t section,uint32_t local,
     if(animation->second.frames.size()<3)return nullptr;
     return &animation->second.frames[2];
 }
+const AnimationFrame* CourseScene::static_frame(uint32_t section,uint32_t local,uint8_t selector,bool billboard) const {
+    SceneryObject object;object.selector=selector;object.static_family=billboard;
+    return object_frame(section,local,object);
+}
 const std::vector<DzhrActor>& CourseScene::dzhr_actors(uint32_t section,uint32_t local) const {return actors_.at(section).at(local);}
 const PedestrianLook* CourseScene::pedestrian_look(uint32_t section,uint32_t local,uint8_t selector) const {
     const uint16_t id=family_slots_.at(section).at(local)[selector>>6];

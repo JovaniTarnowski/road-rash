@@ -18,6 +18,8 @@ struct Pedestrian;
 struct DzhrActor;
 class TrackRing;
 struct RingActor;
+struct RingStatics;
+struct AnimationFrame;
 // Original timing: 0x004163d0 steps the simulation at QueryPerformanceFrequency/0x3c,
 // at most 0x14 steps per frame.
 constexpr int ticks_per_second = 60;
@@ -315,6 +317,15 @@ public:
     using DzhrTable = std::vector<std::vector<DzhrSolid>>;
     void set_roadside(DzhrTable road0, DzhrTable road1) {
         dzhr_[0] = std::move(road0); dzhr_[1] = std::move(road1); }
+    // Live ring statics (0x00454240 slice builds, plan 16 Task 2): BORR slots
+    // and billboards of each built slice, swept by 0x004373f0 with the
+    // collision boxes 0x0044b630 copies from the object's frame 2. The frame
+    // source resolves a slice's family selector (BORR category 0, billboard
+    // category 4 frame 0); attaching it sizes the per-sample tables and
+    // replaces the legacy hazard/DZHR spans in the sweep.
+    using StaticFrames = std::function<const AnimationFrame*(uint32_t section, uint32_t local, uint8_t selector, bool billboard)>;
+    void set_static_frames(StaticFrames frames);
+    void ring_statics(int32_t sample, uint32_t section, uint32_t local, const RingStatics&);
     // Wiring query for the factory disc tests: total solid spans on a road.
     size_t roadside_solids(int road) const {
         size_t n = 0;
@@ -443,6 +454,9 @@ private:
     void contact_pedestrian(Rider&, Pedestrian&);                     // 0x004049c0 short-object branch for the rider
     void pedestrian_voice(Pedestrian&, int which);                    // 0x00436830(0x16) with the MROF voice
     void contact_hazard(Rider&, int32_t hazard_lo_q8, int32_t hazard_hi_q8);
+    bool sweep_statics(Rider&);                                       // 0x004373f0 against the live ring slice
+    void hit_static(Rider&, int32_t lateral_units, const std::array<int32_t,4>& box);   // 0x00437660
+    void contact_static(Rider& self, Rider& other);                   // 0x004049c0 against a type-1 static
     void fight(Rider&, uint32_t controls, size_t index);
     bool fight_hit_frame(const Rider&) const;  // descriptor flags + frame-2 gate (0x004096f0 head)
     bool fight_reach(const Rider&, const Rider&, bool side) const;  // 0x00409c10
@@ -478,6 +492,18 @@ private:
     PhysicsTables tables_;
     std::vector<std::vector<RoadHazard>> hazards_[2];   // BORR spans per route sample per road
     DzhrTable dzhr_[2];   // DZHR solid billboards per route sample per road
+    struct StaticSlice {
+        bool built = false;
+        uint8_t borr_count = 0;
+        std::array<int32_t,8> borr{};              // absolute laterals, units (+0x6c)
+        const AnimationFrame* borr_frame = nullptr;
+        uint8_t billboards = 0;
+        struct Billboard { uint8_t type = 0; int32_t lateral = 0; const AnimationFrame* frame = nullptr; };
+        std::array<Billboard,2> billboard{};
+    };
+    std::vector<StaticSlice> statics_[2];
+    StaticFrames static_frames_;
+    Rider static_actor_{};   // 0x004c3e90 static hazard object (rebuilt per hit)
     std::vector<Rider> riders_;
     int32_t ticks_ = 0;
     int level_ = 0;

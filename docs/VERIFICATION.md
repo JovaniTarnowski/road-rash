@@ -1532,3 +1532,19 @@ pass before it was inspected; the successful rerun is the verified result.
   pixels, horizon) unchanged and passing; passes twice in a row.
 - `track_ring`: setup exports 128 wall slices through the slice sink.
 - Gate: full Debug build exit 0; ctest 101/101.
+
+## Solid roadside objects (October 16, 2026)
+
+- Disc survey of every FAMILIES.RSC RRAN frame with a collision pointer:
+  frame `+0x10` = box count, 75 × 0, 3,433 × 1, 737 × 2 boxes.
+- `oracle-sim-test analysis/oracle/sched-human-20261016.tsv`: exit 0,
+  `1431 ticks identical` (was tick 702 RNG).
+- `--driver=demo` sched600: 600 identical; sched900: tick 893 RNG
+  (unchanged); terrain-human200: 200 identical.
+- `tools/verify_sim.py --mode acceptance --driver=human --fixture
+  analysis/oracle/sched-human-20261016.tsv`: unexpected-failure, solely
+  because the output carries the coverage note (264 golden-only fields);
+  receipt, human branch and capability checks pass.
+- `race` test: off-road BORR slot solid (speed, damage, push), box-less
+  frame inert, ×3 width for a one-box slot at |lateral| ≥ 0x400.
+- Gate: full Debug build exit 0; ctest 101/101.
