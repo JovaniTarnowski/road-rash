@@ -163,6 +163,7 @@ RaceInstance build_race(const RaceAssets& assets, const std::vector<uint8_t>& ex
                                        assets.specs[size_t(assets.bike_index)], assets.rider_value,
                                        std::move(opponents), config.level, config.road_base_q8,
                                        assets.personalities, exe);
+    race->set_pedestrian_setup_tick(config.pedestrian_setup_tick);
     // 2. Prepare hook (demo hold) runs after the ctor, before the ring.
     if (config.prepare) config.prepare(*race);
     // 3. Pedestrians: ring-driven DZHR spawns take a static empty actor
@@ -214,6 +215,7 @@ RaceInstance build_race(const RaceAssets& assets, const std::vector<uint8_t>& ex
     race->build_draws();
     // 5. Finish line + terrain source.
     race->set_finish_q8(int32_t(assets.bounds.finish_position_q8));
+    if (config.live_schedule && !config.solo) race->set_live_schedule(true);
     if (assets.scene) {
         auto* scene = assets.scene.get();
         race->set_terrain_source([scene](const RouteSample& sample) -> const TerrainSlice& {

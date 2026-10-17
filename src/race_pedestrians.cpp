@@ -117,8 +117,8 @@ void Race::spawn_pedestrian(const RouteSample& sample, size_t s, const DzhrActor
     // riders; later spawns come after every rider.
     p.order = (ring_setup_ ? 0u : 0x40000000u) + spawn_order_++;
     // 0x00438930: +0x10 = tick - interval, +0xc = tick; ring-setup spawns
-    // see the setup tick counter (TrafficSystem::setup_tick, measured 2).
-    const int32_t created = ring_setup_ ? int32_t(TrafficSystem::setup_tick) : ticks_;
+    // see Race::set_pedestrian_setup_tick.
+    const int32_t created = ring_setup_ ? setup_tick_ : ticks_;
     p.last_tick = created - b.i32(0x14);
     p.next_tick = created;
     p.look = system.look(sample, p.selector);

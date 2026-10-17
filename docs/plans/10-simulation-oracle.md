@@ -507,3 +507,28 @@ acceptance` (new defaults: this fixture, driver human) reports
 `acceptance_met: true`. Remaining outside this capture: live-AI
 parking/waking, the 70 unmodeled-but-constant original words, and the
 traffic-field scenarios.
+
+### Live rider scheduler (October 17, Task 6)
+
+`src/race_schedule.cpp` now ports `0x00438170(0)`/`0x00437e60` for bikes and
+rider halves (own cadences, the interval LOD), parking `0x00406940`, the
+parked virtual walk and tracker wake of `0x004060b0`, and the `0x00407610`
+pace band. `RaceConfig::live_schedule` (default true) runs it for every
+non-solo race, so the native game path carries the original cadences; the
+solo freeze and strict acceptance are unchanged (`verify_sim.py --mode
+acceptance` exit 0, `1431 ticks identical`).
+
+The non-solo harness is `tests/field_replay.hpp`: slot identity follows the
+scheduler list walk (the proxy's `rider.<k>` contract), parked bikes become
+`node.*`/`sched.<addr>` keys, and row 9..14 brain levels load from the
+capture. On the new 2400-tick `napa-field-l1-20261017` capture the replay
+matches through tick 226 (countdown included) with rng in sync — tick-1
+parkings, their tick-9 advances and the spine of names/positions all equal;
+the first divergence is the tick-226 free car's scheduled move, which is
+Task 7 scope (car cadence and `0x0044e710`/`0x0043adc0` dt physics).
+Diagnostics that exclude cars/pedestrians and load the captured car states
+compare to frame 623 (tick 624) and first diverge at tick 625
+(`rider.1.lateral`), past the tick-337 parking. Remaining Task 6 items: the
+interleaved walk of pedestrian/car nodes, tracker split/merge hand-over,
+the crashed-bike move slot, and the `napa-field-l5`/`napa-fight`/
+`napa-contact` scenarios.

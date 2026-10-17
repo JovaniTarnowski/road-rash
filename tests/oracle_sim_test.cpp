@@ -5,6 +5,7 @@
 #include "exe_tables.hpp"
 #include "golden.hpp"
 #include "frozen_state.hpp"
+#include "field_replay.hpp"
 #include "race.hpp"
 #include "race_setup.hpp"
 #include "traffic.hpp"
@@ -408,6 +409,12 @@ int main(int argc, char** argv) {
     // Offline 0x00405600 always builds 14 opponents (DAT_004642d4 = 0x10).
     config.opponents = 14;
     config.road_base_q8 = road_base;
+    // Field captures (no solo freeze) run the live rider scheduler.
+    config.live_schedule = !solo;
+    // The field capture's setup pedestrians first run at tick 1 (frame-0
+    // positions +36, one tick-1 move with dt 1 + interval), where the solo
+    // captures measured next = 2 (see Race::set_pedestrian_setup_tick).
+    if (!solo) config.pedestrian_setup_tick = 0;
     // Track ring (plan 10 Task 5): the original builds it inside the setup
     // stream, srand(seed) + ring.pre_draws (9 on the Napa solo captures:
     // the 9,098 ring-probe measured before 0x00453b60's window walks were
@@ -474,6 +481,30 @@ int main(int argc, char** argv) {
                 brain.reach = p.reach;
             }
             rr.set_demo_hold(true, base, lane, bias, weapon, stats);
+        };
+    }
+    // Field captures: brains of rider rows 9..14 are personality 0 with the
+    // five level speeds +0x1bc jittered by rand()%13-6 (0x004078f0 into
+    // 0x004c5f20, the 0x004c4cfc + row*0x204 brains of 0x00407990). Those
+    // 30 draws run before the oracle's srand, so they are capture input: the
+    // dumped levels (+0x1bc..+0x1c4) are loaded for every slotted row
+    // before the spawn reads them; levels 3..4 are not dumped.
+    if (!solo) {
+        auto prepare = config.prepare;
+        config.prepare = [&h, prepare](rr::Race& rr) {
+            if (prepare) prepare(rr);
+            for (int k = 1;; ++k) {
+                const std::string p = "rider." + std::to_string(k) + ".";
+                const auto row = h.find(p + "raw_1e0");
+                if (row == h.end()) break;
+                const int64_t index = (row->second - 0x00463c78) / 0x40;
+                if (index < 9 || index > 14 || size_t(index) >= rr.riders().size()) continue;
+                auto& brain = rr.riders()[size_t(index)].brain;
+                for (int level = 0; level < 3; ++level) {
+                    char key[32]; std::snprintf(key, sizeof key, "brain_%x", 0x1bc + 4 * level);
+                    brain.spd_b[level] = int32_t(h.at(p + key));
+                }
+            }
         };
     }
     rr::RaceSetup setup = rr::make_race_setup(assets, exe, config);
@@ -611,6 +642,12 @@ int main(int argc, char** argv) {
                   << " driver=" << (demo ? "demo" : "human") << (driver_cli.empty() ? " (measured player.demo_hold=" + std::to_string(measured_hold) + ")" : " (cli override)")
                   << " think=0x" << std::hex << think_entry << std::dec << " count=" << think_count
                   << " rider.0.think=" << r0_think << " rider.1.think=" << r1_think << " (0x00434660=4408928)\n";
+    }
+    // Field captures: live scheduler replay with list-order slot identity
+    // (tests/field_replay.hpp). Solo captures continue below.
+    if (!solo) {
+        rr::golden::FieldReplay field{g, setup, tick0, green, demo, coverage};
+        return field.run();
     }
     // Default: free-run from the single green anchor, so any missing or
     // extra Race::random() call shows up as rng divergence. --reanchor

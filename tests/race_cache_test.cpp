@@ -76,7 +76,11 @@ int main(int argc, char** argv) {
             // ported after the ring (0x00405600 lane draws, 0x00405c80 brain
             // spawn and straight-target placement), so riders stand on their
             // original spawn laterals and opponents use their drawn lanes.
-            static constexpr uint64_t rgb_baseline[]={5580241488231030766ULL,16911564171020350757ULL,3308161946899320515ULL,10663341369971034264ULL,6386746752969507927ULL,13565506552256797168ULL};
+            // Scale 2 and 4 entries re-recorded 2026-10-17 (sched-20261017):
+            // the field runs the live rider scheduler (0x00438170 cadences,
+            // window parking), so opponents move on their own intervals; the
+            // scale-1 frames are unchanged.
+            static constexpr uint64_t rgb_baseline[]={5580241488231030766ULL,16911564171020350757ULL,13624535667755419058ULL,13664611030281557249ULL,17683900989714944697ULL,7260162631364834522ULL};
             if(rgb)check(checksum==rgb_baseline[(row-1)/2],"RGB canvas output changed from pre-optimization baseline");
             // Dashboard overlays the scene; every opaque dashboard sample and
             // the full Hor+ margins must survive composition.
@@ -103,7 +107,7 @@ int main(int argc, char** argv) {
             // Wide entries (1, 3, 5) re-recorded 2026-10-15 after the Hor+ centring fix;
             // all entries 2026-10-16 for ring-built terrain (owner-approved);
             // all entries 2026-10-17 for the ported rider spawn placement.
-            static constexpr uint64_t original_scene[]={16522315210060068270ULL,14663097353646083664ULL,4755825462613422509ULL,12251435499718520722ULL,16840421449827770034ULL,5193932132851053461ULL};
+            static constexpr uint64_t original_scene[]={16522315210060068270ULL,14663097353646083664ULL,4900232200795323305ULL,3274112107641630510ULL,6150278981331920990ULL,10581021226160029313ULL};
             std::cout<<"  original_scene="<<no_hud<<'\n';
             check(no_hud==original_scene[(row-1)/2],"Original scene output changed");
             game.assets.hud=std::move(hud);

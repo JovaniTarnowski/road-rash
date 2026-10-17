@@ -1371,3 +1371,54 @@ was restored to its pre-session hash after both captures.
   sim-napa-solo.tsv stops at tick 210, which is the same native-only contact
   as its sibling capture. Its frozen-word coverage is missing, and sched600,
   which runs the same stream, passes it.
+
+### October 17, 2026: live rider scheduler and field replay (plan 10 Task 6)
+
+- `src/race_schedule.cpp` ports the live scheduler. `0x00438170(0)` walks the
+  position-sorted node list and runs every due bike (type 4) and rider-half
+  (type 8) node through `0x00437e60`, each with its own `+0x0c` next, `+0x10`
+  last, `+0x14` interval and dt; the interval is the `0x00437e60` LOD tail
+  (1..8 by distance from the ring camera, 30 without a slice) with the
+  pre-tick-300 slow-object bonus; `0x004383e0` re-sorts after the pass and
+  after the contacts, and the AI scans walk the last sort's link order (a
+  pass does not reorder links).
+- Parking `0x00406940`: pace `+0x314 = ((+0x310 << 8) / +0x30c)` at 95% for
+  a rider ahead of the player or 105% behind, the `0x00407610` 60-tick band
+  (nearest three ahead lose 60/30/15 with floor 3000, nearest three behind
+  gain 60/30/15 with cap 30000), crash delay `+0x318`, live byte `+0x300`
+  (0x00431960), callbacks and slices nulled. Parked walk `0x004060b0`:
+  `dt * pace >> 8` over the virtual position `+0x304/+0x308` (route node
+  walk; end nodes clamp and zero the pace), a virtual finish adds
+  `rand()%0x701 + 0x100`; waking needs the ring tracker window (back + 14 ..
+  back + 91 slices), lands the bike mid-slice on the road centre, retakes the
+  `0x004091f0`/`0x00408e40` targets, sets speed = pace and `+0xc0 |= 3`.
+- The AI reads the target half's words (`+0x2fc`): follow `0x00409ca0`,
+  can-overtake `0x004092e0`, plan clock `0x00407bd0` (half dt). `0x004368f0`
+  contacts only riders that moved this tick (`+0xc0 & 6 == 6`). The countdown
+  hold runs the whole pass, so tick 1 uses dt 5 (opponents) and 2 (player)
+  and the three front riders park on tick 1 (pace 8440, band 15/30/60; the
+  tick-9 advances 263/262/261 match the capture).
+- `RaceConfig::live_schedule` (default true) selects the live path for every
+  non-solo race, so the native game rides the original cadences; solo oracle
+  replays keep the frozen path. Field harness `tests/field_replay.hpp`
+  replays non-solo captures with slot identity by scheduler list order
+  (parked bikes move to `node.*`/`sched.<addr>` keys) and loads the captured
+  row 9..14 brain levels (the `0x004078f0` jitter draws precede the anchor).
+- Evidence: `napa-field-l1-20261017` — countdown and ticks 6..226 compare
+  identical on every rider, brain, half, sched and node-list field with rng
+  in sync. First divergence tick 227: the free car spawned on tick 226 ran
+  its first scheduled think (dt 11, +12) in the original while native cars
+  still move every tick (plan 10 Task 7). Diagnostics that leave cars and
+  pedestrians out and load the captured car states compare to frame 623
+  (tick 624) and first diverge at frame 624 (tick 625): `rider.1.lateral`,
+  past the tick-337 parking; the tick-765 wake is measured on the capture,
+  not yet replayed. Pinned in `tools/sim_known_divergences.json` (`ecf24cab…`).
+- `race_schedule` unit tests pin the measured rules; `race` CANYN wall check
+  follows the live scheduler (first live opponent, its scheduled move);
+  race-cache scene hashes re-recorded at scale 2/4 (scale-1 frames unchanged).
+- Known limits, labelled in `race_schedule.cpp`: pedestrians/cars keep their
+  own passes instead of interleaving by list position; the tracker split/
+  merge hand-over is not modelled; a crashed bike keeps the native crash
+  path in its move slot; the parked virtual walk follows the rider's own
+  route at splits; the pace-band split-branch exclusion is not modelled
+  (every parked rider qualifies while the field is on the trunk).

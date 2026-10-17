@@ -196,8 +196,22 @@ struct Rider {
     // 0x00437e60 window test (bikes/halves: within 0x1e00 of the ring front
     // or 0x800 of the ring back on a scheduled run) calls +0xe8 = 0x00406940,
     // which parks the rider: think/draw callbacks and both slices nulled.
-    // Recorded for frozen solo riders; live AI parking/waking is not ported.
+    // Recorded for frozen solo riders; live field races park and wake through
+    // Race::park/Race::wake (race_schedule.cpp).
     bool parked = false;
+    // Live scheduler (Race::set_live_schedule, 0x00438170(0) -> 0x00437e60):
+    // the rider half is its own node with its own cadence (+0x0c next,
+    // +0x10 last, +0x14 interval, +0x18 dt of the half object).
+    int32_t half_sched_last = 0, half_sched_next = 0, half_sched_interval = 1, half_dt = 1;
+    // Parking state of the bike (0x00406940 / 0x004060b0): +0x300 live byte
+    // (0x00431960) and +0x304/+0x308 as the section-local virtual position
+    // (virtual_section is the route sample where that section starts). The
+    // bike image keeps +0x30c live ticks and +0x310 live distance (summed
+    // by the live branch), +0x314 parked pace (Q8 per tick) and +0x318
+    // crash delay.
+    bool live = true;
+    int32_t virtual_local = 0;
+    size_t virtual_section = 0;
     int32_t half_lateral = 0, half_position = 0, half_speed = 0;
     // Live rider-half mirror (the +0x2fc object of a stepped rider): after
     // the 0x00438170 scheduler pass and before the 0x004368f0 contacts the
@@ -239,6 +253,18 @@ struct Rider {
     int32_t nitro_throttle = 0;             // +0x240 throttle force holding 0x0040adb0 output
 };
 
+// Live-scheduler rules (race_schedule.cpp), pure for unit tests.
+// 0x00437e60 interval of a bike or rider half: 30 without a slice, else by
+// distance from the ring camera DAT_004b6e5c, slow-object bonus before tick
+// 300 (not for the player's bike or half), capped at 8.
+int32_t live_interval(bool slice, int32_t position, int32_t ring_camera, int32_t speed, int32_t tick, bool player_object);
+// 0x00406940 pace: (+0x310 << 8) / +0x30c, times 95% ahead of the player or 105% behind.
+int32_t parked_pace(int32_t live_distance, int32_t live_ticks, bool ahead_of_player);
+// 0x00407610 body over parked paces indexed by place - 1: the three nearest
+// ahead of the player lose 60/30/15 (floor 3000), the three nearest behind
+// gain 60/30/15 (cap 30000).
+void pace_band(std::array<std::optional<int32_t>,16>& by_place, int player_place);
+
 // Per-tick snapshot for the simulation oracle (plan 10). Rider fields are
 // keyed "rider.<grid slot>.<field>" from tests/sim_fields.hpp; the tick and
 // rng come first. Traffic cars are appended by TrafficSystem.
@@ -270,7 +296,7 @@ public:
     // Free traffic steps with the race on the player's route (0x0044b3b0 calls
     // 0x0044dd90 with the per-step camera advance). The random-call
     // interleaving against the original's scheduler is not verified.
-    void set_traffic(TrafficSystem* t) { traffic_ = t; attach_terrain_type(); }
+    void set_traffic(TrafficSystem* t);
     // Nulled-pool solo: keep timer/density draws, never place (Task 5/7).
     void set_spawn_enabled(bool v);
     // Pedestrians (plan 24 Task 4, src/race_pedestrians.cpp): spawned as the
@@ -294,6 +320,27 @@ public:
     // Oracle solo captures (RR_ORACLE_SOLO) freeze every scheduler node but
     // the player's: pedestrians spawn from the ring but never think.
     void set_freeze_actors(bool v) { freeze_actors_ = v; }
+    // First +0xc next of the pedestrians the 0x004552e0 ring setup spawns.
+    // Measured 2 on the solo captures (unlinks on 2 + 60k) but 0 on
+    // napa-field-l1-20261017, whose setup pedestrians already moved in tick 1
+    // (+36 = one move with dt 1 + interval) while its intersection objects
+    // keep TrafficSystem::setup_tick 2 (torn down on tick 392 = 2 + 13*30).
+    void set_pedestrian_setup_tick(int32_t t) { setup_tick_ = t; }
+    // Live rider scheduler (field races): every tick 0x00438170(0) walks the
+    // position-sorted object list front to back and runs each bike and
+    // rider-half node whose +0x0c next tick is due through 0x00437e60
+    // (dt, think, move, interval LOD by camera distance, window parking).
+    // Bikes move with their own dt; parked bikes advance virtually at their
+    // pace and wake inside the ring trackers (0x004060b0). Off by default:
+    // solo oracle replays keep the frozen field and every-tick stepping.
+    // Enable before the first tick: the build words (+0x10 = -interval,
+    // 0x00438930; +0x30c/+0x310, 0x00405c80) are set here.
+    void set_live_schedule(bool v);
+    bool live_schedule() const { return live_schedule_; }
+    // Rider-half and bike nodes in the order 0x00438170 walks them (front to
+    // back; a tie puts the half first). type 4 = bike, 8 = half.
+    struct ScheduleNode { int rider; uint32_t type; int32_t position; int32_t sorted = 0; };   // sorted: +0x1c at the last 0x004383e0
+    std::vector<ScheduleNode> schedule_order() const;
     void set_crash_library(const ActorAnimationLibrary&,const CrashConfig&);
     void set_ride_library(const ActorAnimationLibrary* library,
                           const std::array<std::array<std::array<int8_t,4>,2>,2>* attacks);
@@ -408,17 +455,38 @@ private:
     void crash(Rider&);
     void step_crash(Rider&,bool player,uint32_t controls);
     void step_rider(Rider&, uint32_t controls, bool player);
+    void rider_think(Rider&, uint32_t controls, bool player);   // think body after fight()
+    void rider_move(Rider&, bool player);                       // physics move 0x0043a580
     void step_frozen_schedule(Rider&);       // 0x00437e60 metadata cadence for hydrated frozen riders
+    // Live scheduler (race_schedule.cpp).
+    void schedule_pass(uint32_t controls, bool countdown);         // 0x00438170(0)
+    void run_bike_node(Rider&, uint32_t controls, bool countdown); // 0x00437e60 on a bike
+    void run_half_node(Rider&, uint32_t controls, bool countdown); // 0x00437e60 on a rider half
+    void think_half(Rider&, uint32_t controls, bool countdown);    // 0x00407bd0 / 0x00434660
+    void move_bike_live(Rider&, uint32_t controls, bool countdown);// 0x004060b0 live branch
+    void move_bike_parked(Rider&);                                 // 0x004060b0 parked branch
+    void park(Rider&);                                             // 0x00406940 (edx 0)
+    void wake(Rider&, size_t sample);                              // 0x004060b0 tail
+    void live_standings(Rider&);                                   // 0x004067d0 + 0x004075f0
+    int32_t schedule_interval(const Rider&, bool half) const;      // 0x00437e60 LOD tail
+    void sort_schedule();                                          // 0x004383e0
+    int32_t node_position(const ScheduleNode&) const;
+    void parked_pace_band();                                       // 0x00407610 (end of 0x00438170)
+    int32_t pace_band_tick_ = 0;                                   // DAT_004642e4 (0 at 0x00405600)
+    bool live_schedule_ = false;
+    mutable std::vector<ScheduleNode> schedule_;
     void update_halves();                   // rider-half mirror and standings (0x004060b0 tail)
     void collide_riders();                  // 0x004368f0 list walk: bikes, pedestrians, hazard gate
     void contact_rider_pedestrian(Rider&, Pedestrian&, bool rider_outer);
     void separate(Rider& outer, uint32_t outer_type, Rider& partner, uint32_t partner_type);   // 0x00436a40
     // Position-ordered scheduler list (0x00438aa0 insert sort, ties in
     // creation order) for the AI ring scans: rider bikes (type 4) and halves
-    // (8), pedestrians (0x20), free cars (1).
+    // (8), pedestrians (0x20), free cars (0x10).
     struct ScanObject {
         int32_t position = 0, lateral = 0, speed = 0;   // +0x1c, +0x28, +0x108
         uint32_t type = 0, order = 0;
+        int32_t key = 0;     // list key: +0x1c, or for live-scheduled riders the position at the last sort
+        int rank = -1;       // live-scheduled riders: ascending list rank
         int rider = -1, pedestrian = -1, car = -1;
         const RouteSample* sample = nullptr;      // the object's slice (+0x2c)
     };
@@ -513,6 +581,7 @@ private:
     TrackRing* ring_ = nullptr;
     bool ring_setup_ = false;      // inside 0x004552e0: no player object yet
     bool freeze_actors_ = false;
+    int32_t setup_tick_ = 2;   // set_pedestrian_setup_tick
     std::function<uint32_t()> ring_random_;
     std::function<void(const RingActor&, uint32_t)> ring_sink_;
     const ActorAnimationLibrary* crash_library_ = nullptr;

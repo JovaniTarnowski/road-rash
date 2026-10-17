@@ -1667,3 +1667,43 @@ pass before it was inspected; the successful rerun is the verified result.
   rider.12), and the hold is 5 frames. Non-solo slot identity mapping is the
   first Task 6 harness step.
 
+## Live rider scheduler and field replay (October 17, 2026; sched-20261017)
+
+- Build `build-sched-20261017` (Debug): full build exit 0;
+  `ctest --test-dir build-sched-20261017 -j 8 --output-on-failure`:
+  **103/103 pass**, 0 skips (incl. `oracle-sim-field`, `race_schedule`, the
+  re-recorded `race-cache`), 161 s wall.
+- `make -C build-sched-20261017 verify-sim` (strict acceptance,
+  `sched-human-cov2-20261017`, driver human): exit 0, `acceptance_met:
+  true`, compare 0. Replay prints `ring setup closes on the green anchor
+  (+0 draws)` and `1431 ticks identical` — the live default
+  (`RaceConfig::live_schedule`) leaves the solo path unchanged.
+- Field known-divergence replay: `oracle-sim-test --driver=demo
+  analysis/oracle/napa-field-l1-20261017.tsv` exits 1 with the pinned
+  output — `countdown: 5 native ticks equal` (5-frame hold, green at tick
+  6), every compared rider/brain/half/sched/node-list field identical
+  through tick 226, first divergence frame 226 (tick 227) node list: the
+  free car spawned on tick 226 moved in the original (dt 11) while native
+  cars still step every tick (task 7 scope). Output sha256
+  `ecf24cab48261975ac400163848e7a33cfa8b4253e72ddcca06abc231f731663`
+  matches the `tools/sim_known_divergences.json` pin (trace `99e20344…`);
+  `verify_sim.py --mode diagnostic --fixture …` classifies it
+  `known-divergence` and the `oracle-sim-field` ctest passes (exit 77 skip
+  without the git-ignored capture).
+- Diagnostic field run (`RR_FIELD_IGNORE_CARS=1 RR_FIELD_IGNORE_PEDS=1
+  RR_FIELD_CARS_FROM_GOLDEN=1`): first divergence frame 624 (tick 625)
+  `rider.1.lateral` original 9296 native -5722 (native rider 14) — compared
+  past the tick-337 parking; the tick-765 wake is measured on the capture,
+  not yet replayed.
+- `race_schedule-test`: 0 failures; pins the rules against the captured
+  numbers (interval LOD 8/7/6/5 at tick 1 and the 1/30 cases, pace
+  8440/9329, band 15/30/60 with floor/cap, tie order later-rider-first /
+  half-before-bike, tick-1 dt 2/5, tick-9 dt 8).
+- race-cache: RGB and original-scene hashes for scale 2/4 re-recorded
+  (scale-1 entries unchanged — the old values still pass, localizing the
+  difference to opponent positions under the live cadences). The re-run
+  test and the ctest both pass with the new values.
+- `race-test`: CANYN wall check now takes the first live opponent and
+  steps to its scheduled move (parked bikes are not contact candidates);
+  0 failures. `oracle-sim` diagnostic on `sim-napa-solo.tsv`: unchanged.
+

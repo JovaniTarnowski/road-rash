@@ -1706,3 +1706,96 @@ Further runtime facts from the same proxy:
   pedestrians neither think nor move; they hold their spawn position and are
   unlinked on a scheduled run once the ring back passes them (the two behind
   the player leave at tick 1382 = 2 + 23×60 in `sched-human-cov2-20261017`).
+
+## Live rider scheduler, parking and waking (October 17, 2026; plan 10 Task 6)
+
+Measured on `napa-field-l1-20261017` (2400 ticks, demo, no solo freeze);
+ported in `src/race_schedule.cpp` (`Race::set_live_schedule`).
+
+- Driver: `0x0044b3b0` calls `0x00438170` with `ecx = 0`
+  (`0x44b3fc xorl %ecx,%ecx`), so the zone walk of `0x00438170` is unused:
+  every node with `+0x0c <= tick` runs `0x00437e60(node, tick, +0x2c != 0)`,
+  front to back. After the pass `0x004383e0` insertion-sorts the list by
+  `+0x1c` (swap only on strictly smaller, so equal positions keep their
+  previous order), `0x004368f0` runs the contacts, the list is sorted again,
+  and `0x00407610` closes the pass. The AI scans (`0x00449ce0`) walk links,
+  so mid-pass they see the order of the last sort, not current positions.
+- Templates (`.data`): opponent bike `0x00463ad8` = flags 3, type 4,
+  interval 4, draw `0x00446250`, think `0x00407a90`, move `0x004060b0`, park
+  `0x00406940`; opponent half `0x00463b40` = type 8, interval 4, draw
+  `0x004463e0`, think `0x00407bd0`, move `0x00406890`, park `0x00406b40`;
+  player half `0x00463c10` interval 1 (think `0x00434660`); the player bike
+  runs interval 1. `0x00438930` builds `+0x10 = tick - interval`, `+0x0c =
+  tick` at tick 0, so tick 1 runs everything with dt 5 (opponents) and 2
+  (player). The free-car template `0x00475698` is type `0x10`, interval 10,
+  think `0x0044e710`, move `0x0043adc0`.
+- Interval tail for `+0xc4 & 0xc` (bikes and halves): 30 with no slice;
+  else `d = (pos - DAT_004b6e5c) / 256` (signed), `v = 1` for `-2 <= d < 4`,
+  `(-2 - d)/4 + 1` below, `(d + 1)/4 + 1` above; before tick 300 a
+  non-player object with `+0xec < 0x1800` adds 1, `< 0x1000` 2, `< 0x800` 4;
+  capped at 8. Measured at tick 1: 8, 7, 6, 5 by grid distance, 1 for the
+  player bike and half. The half node uses its own `+0x1c/+0xec/+0x2c`.
+- Calls through `+0xe8`: the slice-end test and the window test pass
+  `edx = 0` (park), the `|lateral| > 0xc8000` test `edx = 1` (clamp). For a
+  half, `0x00406b40` only clamps; halves are parked by their bike.
+- `0x004060b0` live branch: physics `0x0043a580` (the countdown ticks run it
+  too: tick 1 settles `+0x160` 37 -> 74 with no throttle), then for an
+  uncrashed bike `0x004067d0` copies `+0x1c..+0x2c`, `+0x30..+0x40`, slices,
+  `+0x58..+0x60` and `+0xec..+0x110` to the half; half `+0x1f8 += old - new`
+  on the same node, else `0x00407410` recomputes it; `0x004075f0` refreshes
+  the place; `+0x310 += distance`, `+0x30c += dt`. `0x00405c80` starts them
+  at 600 and `((level*5 + 45)*200 >> 8)*600` (21000 at level 0).
+  `0x004049c0` (rider contact) also ends with `0x00407410` for an uncrashed
+  rider, from the half's position.
+- `0x00439390` (sample crossing) copies the new slice's node and local
+  offset into `+0x304/+0x308` for type-4 objects, so a bike's virtual
+  position tracks its slice while live.
+- Parking `0x00406940` (live, `+0x324 != 0`): `+0x318` crash delay (crashed
+  only), pace `+0x314 = ((+0x310 << 8) / +0x30c) * 95/100` with the player
+  behind it (`DAT_00464304 = 0x5f`) or `* 105/100` (`DAT_00464308 = 0x69`),
+  `0x00431960(bike, 0)` clears `+0x300`, `+0xdc/+0xe0` saved to
+  `+0x31c/+0x320` (half: `+0x200/+0x204`), `+0xc0 &= 0xfc` on the bike only,
+  both `+0x2c` nulled.
+- Parked branch: step `dt * pace >> 8` (player crashed: level 3 `3/4`,
+  level 4 full, else half pace), added to `+0x308`, bike and half `+0x1c`,
+  and subtracted from half `+0x1f8`; node walk over `+0x304` links (types
+  0/1/2, end types 3/4 clamp and zero the pace); virtual finish when the node
+  carries a finish (`node+0x10 -> +0x2c`) and `+0x1f8 < 1`: `0x00437800`,
+  `+0x308 = finish*256 + rand()%0x701 + 0x100`.
+- Ring trackers (`0x00450d30`, two per ring, `0x00450dc0` steps them):
+  `0x004552e0` creates both on the back slice and steps tracker 0 by 14 and
+  tracker 1 by 91 slices; `0x00454120` steps both with every slice crossing.
+  Each writes its slice into its node's `+0x18` (tracker 0) or `+0x1c`
+  (tracker 1) while inside that node. Wake test: a parked bike in a node
+  holding a tracker wakes when `lo <= +0x308 <= hi` (`lo` = tracker-0 slice
+  local or 0, `hi` = tracker-1 slice local or `len*256 - 1`); it lands on
+  `0x00449910` from the nearer tracker slice at `sample*256 + 0x80`, road
+  centre, takes `0x004091f0` then `0x00408e40` targets (`+0x28` = target x),
+  speed = pace, `+0xc0 |= 3`, callbacks restored, `0x00431960(bike, 1)`,
+  `0x004067d0`, `0x00407550`. Parking happens within 0x1e00 of the front or
+  0x800 of the back; waking needs the tracker window (back + 14 .. back +
+  91 samples), which gives the hysteresis.
+- `0x00407610` (every 60 ticks from `DAT_004642e4 = 0`, set by `0x00405600`):
+  parked halves by place; the three nearest ahead of the player lose
+  60/30/15 of pace (`DAT_004642e8`, floor 3000), the three nearest behind
+  gain 60/30/15 (`DAT_004642f8`, cap 30000). A rider is skipped only when its
+  `+0x304` node and the player's lie on the two branches of one split
+  (`0x00454040` node flags: trunk 0xc0, next branch 0x40, previous branch
+  0x80; section `+0x20` = the split).
+- Measured: the three front riders park on tick 1 (pace 8440 from 21000/605,
+  band -15/-30/-60 on tick 1), advance 263/262/261 on tick 9 and 987 on tick
+  39; rider 1402c34 parks on tick 337 (front distance 7659 < 0x1e00) and
+  wakes on tick 765.
+- Brains of rider rows 9..14 (`0x00407990`: `0x004c4cfc + row*0x204`, i.e.
+  `0x004c5f20 + (row-9)*0x204`) are personality 0 with the five level speeds
+  `+0x1bc` jittered by `rand()%13 - 6` in `0x004078f0`, whose 30 draws precede
+  the oracle's `srand`; the replay loads the dumped levels.
+- Setup tick: the field capture's setup pedestrians move in tick 1 (+36 =
+  one move with dt 1 + interval) while its intersection objects tear down on
+  tick 392 = 2 + 13×30 (next = 2, as on the solo captures). Why the two
+  differ is open; the replay sets them separately.
+- `0x00409ca0` (follow) and `0x004092e0` (can-overtake) read the target's
+  half (`+0x168 -> +0x2fc`), whose words lag the bike between its moves and
+  contacts.
+- Free-car spawns (`0x0044df60` -> `0x004387a0`): position is the spawn
+  slice's sample * 256 with fraction 0 (kinds 0/2) or 0x80 (crossing kinds).

@@ -176,11 +176,32 @@ with `--driver=demo` for `napa-solo`; a TRUE human golden needs the
 `RR_ORACLE_HUMAN` hook (clear `DAT_004753c8` post-setup, open). The
 current `napa-solo-human` file documents the control stream + determinism
 proof, not the control-driven branch.
+## napa-field-l1 (live field, task 6 diagnostic)
+
+Level 1 Napa, seed 1, drive=2 autopilot, no `RR_ORACLE_SOLO`: live field
+with 14 opponents (the offline `0x00405600` build, `DAT_004642d4 = 0x10`),
+traffic and pedestrians, 2400 ticks.
+
+```sh
+RR_ORACLE_COURSE=4 RR_ORACLE_SEED=1 RR_ORACLE_SIM=1 RR_ORACLE_DRIVE=2 RR_ORACLE_FRAMES=2400 tools/oracle_capture.py capture napa-field-l1-20261017
+```
+
+`analysis/oracle/napa-field-l1-20261017.tsv` is git-ignored (`99e20344…`,
+receipt in its `.captures/` dir). It is not an acceptance golden: it is the
+`oracle-sim-field` ctest known-divergence diagnostic, skipped when the
+capture is absent. It pins the live rider scheduler replay (`0x00438170`
+cadences, tick-1/337 parking, virtual advance): countdown and ticks 6..226
+compare identical on rider, brain, half, sched and node-list fields; the
+first divergence is the tick-226 free car's scheduled move (task 7).
+`RR_FIELD_IGNORE_CARS=1 RR_FIELD_IGNORE_PEDS=1 RR_FIELD_CARS_FROM_GOLDEN=1`
+compares to frame 623 (tick 624) and first diverges at tick 625
+(`rider.1.lateral`) for scheduler debugging.
+
 ## Planned (tasks 5–7)
 
 - `napa-solo-split-left`, `napa-solo-split-right`: branch commits at the first split (solo).
 - `napa-solo-jump`: airborne ticks on crest sections (solo).
-- `napa-field-l1`, `napa-field-l5`: seven opponents, levels 1 and 5.
+- `napa-field-l5`: 14 opponents at level 5.
 - `napa-fight`, `napa-contact`: combat and contact scenarios.
 - `napa-traffic-solo`, `napa-traffic-field`: traffic scenarios.
 

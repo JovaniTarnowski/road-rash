@@ -51,7 +51,7 @@ else()
 endif()
 add_library(rr-resource STATIC src/resource.cpp src/course.cpp src/road.cpp src/assets.cpp src/framebuffer.cpp src/bike.cpp src/race.cpp src/input.cpp src/bob.cpp src/session.cpp src/iso9660.cpp src/sha256.cpp src/importer.cpp src/import_job.cpp src/wav.cpp src/mixer.cpp src/ima_adpcm.cpp src/avi.cpp src/cinepak.cpp src/video_player.cpp src/raster.cpp src/terrain.cpp src/scene.cpp src/polygon.cpp src/texture.cpp src/cel.cpp src/world_renderer.cpp src/render_threads.cpp src/road_panels.cpp src/road_materials.cpp src/exe_tables.cpp src/pe_strings.cpp src/career.cpp src/text.cpp src/settings.cpp src/rri.cpp src/frontend.cpp src/sound.cpp src/explode.cpp src/rider_sprites.cpp src/mmpx.cpp src/upscale_cache.cpp src/atomic_file.cpp src/display.cpp src/native_strings.cpp src/native_screens.cpp src/view_state.cpp src/texture_perspective.cpp src/framebuffer_rgb.cpp src/raster_rgb.cpp src/fog.cpp src/post_chain.cpp src/upscale_import.cpp src/race_actions.cpp src/race_overlay.cpp src/race_helpers.cpp src/game_types.cpp src/race_screen.cpp)
 target_link_libraries(rr-resource PUBLIC SDL3::SDL3 Threads::Threads)
-target_sources(rr-resource PRIVATE src/family.cpp src/terrain_panels.cpp src/building_panels.cpp src/terrain_ground.cpp src/course_scene.cpp src/hud.cpp src/animation.cpp src/actor_animation.cpp src/actor_descriptors.cpp src/actor_render.cpp src/actor_nodes.cpp src/crash.cpp src/police.cpp src/scenery.cpp src/traffic.cpp src/pedestrians.cpp src/race_pedestrians.cpp src/race_music.cpp src/race_setup.cpp src/track_ring.cpp)
+target_sources(rr-resource PRIVATE src/family.cpp src/terrain_panels.cpp src/building_panels.cpp src/terrain_ground.cpp src/course_scene.cpp src/hud.cpp src/animation.cpp src/actor_animation.cpp src/actor_descriptors.cpp src/actor_render.cpp src/actor_nodes.cpp src/crash.cpp src/police.cpp src/scenery.cpp src/traffic.cpp src/pedestrians.cpp src/race_pedestrians.cpp src/race_schedule.cpp src/race_music.cpp src/race_setup.cpp src/track_ring.cpp)
 set_target_properties(rr-resource PROPERTIES POSITION_INDEPENDENT_CODE ON)
 target_include_directories(rr-resource PUBLIC src)
 target_include_directories(rr-resource SYSTEM PRIVATE third_party)   # plan 30 Task 3: vendor headers out of warnings
@@ -133,6 +133,14 @@ else()
             "${CMAKE_SOURCE_DIR}/tools/verify_sim.py" --mode diagnostic
             --binary "$<TARGET_FILE:oracle-sim-test>"
             --report "${CMAKE_BINARY_DIR}/oracle-diagnostic.json")
+        # Live-field capture (plan 10 Task 6): pinned first divergence of the
+        # live rider scheduler replay; skipped without the git-ignored capture.
+        add_test(NAME oracle-sim-field COMMAND ${Python3_EXECUTABLE}
+            "${CMAKE_SOURCE_DIR}/tools/verify_sim.py" --mode diagnostic
+            --binary "$<TARGET_FILE:oracle-sim-test>"
+            --fixture "${CMAKE_SOURCE_DIR}/analysis/oracle/napa-field-l1-20261017.tsv"
+            --report "${CMAKE_BINARY_DIR}/oracle-field-diagnostic.json")
+        set_tests_properties(oracle-sim-field PROPERTIES SKIP_RETURN_CODE 77)
         add_test(NAME agent-tooling COMMAND ${Python3_EXECUTABLE}
             "${CMAKE_SOURCE_DIR}/tests/agent_tooling_test.py")
         add_custom_target(verify-sim
@@ -250,7 +258,7 @@ else()
             rr_web_hostfs(road-test)
         endif()
         add_test(NAME road-projection COMMAND road-test)
-        foreach(t framebuffer assets bike race car_contact frozen_state input bob session golden sha256 iso9660 importer import_job wav mixer ima_adpcm avi cinepak raster view terrain scene polygon texture cel family course course_scene hud animation actor_animation actor_descriptors actor_render actor_nodes crash police scenery building_panels terrain_ground world_renderer road_panels road_materials exe_tables pe_strings career text frontend settings sound music traffic actor_traffic sim_fields mmpx upscale_cache race_setup pedestrian track_ring display native_screens render_threads rgba_cache atomic_file texture_edge check)
+        foreach(t framebuffer assets bike race race_schedule car_contact frozen_state input bob session golden sha256 iso9660 importer import_job wav mixer ima_adpcm avi cinepak raster view terrain scene polygon texture cel family course course_scene hud animation actor_animation actor_descriptors actor_render actor_nodes crash police scenery building_panels terrain_ground world_renderer road_panels road_materials exe_tables pe_strings career text frontend settings sound music traffic actor_traffic sim_fields mmpx upscale_cache race_setup pedestrian track_ring display native_screens render_threads rgba_cache atomic_file texture_edge check)
             add_executable(${t}-test tests/${t}_test.cpp)
             target_link_libraries(${t}-test PRIVATE rr-resource SDL3::SDL3)
             if(EMSCRIPTEN)
@@ -288,7 +296,7 @@ else()
         # `sim` = simulation coverage; `disc` = reads the disc (77 without it);
         # everything else gets `unit` from the loop below (Review Focus 1).
         set(RR_SLOW_TESTS hires-render race-soak course_scene race_setup raster-rgb widescreen oracle-scene oracle-terrain oracle-terrain-medly)
-        set(RR_SIM_TESTS oracle-sim race car_contact frozen_state race-soak race_setup bike crash traffic actor_traffic pedestrian police sim_fields track_ring)
+        set(RR_SIM_TESTS oracle-sim oracle-sim-field race race_schedule car_contact frozen_state race-soak race_setup bike crash traffic actor_traffic pedestrian police sim_fields track_ring)
         set(RR_DISC_TESTS oracle-road oracle-scene oracle-terrain oracle-terrain-medly oracle-raster hires-render raster-rgb widescreen polygon text frontend
             native_screens sound music pe-strings-corpus career-corpus wav-corpus race-soak race_setup course_scene)
         foreach(t ${RR_SLOW_TESTS})

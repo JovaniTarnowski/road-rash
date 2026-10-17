@@ -47,6 +47,8 @@ struct RaceConfig {
     bool high_resolution = true; // Settings::high_resolution (plan 18 Task 4)
     bool metric = false;
     bool solo = false;                         // freeze opponents + scheduler actors (oracle)
+    bool live_schedule = true;                 // live rider scheduler 0x00438170 (Race::set_live_schedule)
+    int pedestrian_setup_tick = 2;             // Race::set_pedestrian_setup_tick
     int32_t road_base_q8 = 0;                  // Race ctor anchor (game 0; replay measured)
     bool track_ring = true;                    // ring-driven DZHR pedestrians (0x004552e0)
     bool optional_scene = false;               // plan 26 Task 3: game fallback keeps a null scene

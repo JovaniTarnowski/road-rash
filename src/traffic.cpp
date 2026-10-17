@@ -123,7 +123,9 @@ bool TrafficSystem::place(uint8_t kind,int8_t lane,const RouteSample& at,int32_t
         // 0x0044df60 (kind bit 0 clear): lateral from the road centre.
         car=TrafficCar{};
         car.lateral=wrap(int64_t(at.offset+lane*250+125)*256);
-        car.position=spawn_q8;
+        // 0x004387a0 -> 0x00438930: +0x1c = the spawn slice's sample * 0x100
+        // plus the fraction 0 kinds 0/2 pass.
+        car.position=spawn_q8&~0xff;
         car.kind=kind;car.vehicle=uint8_t(vehicle);car.lane=lane;car.speed=0;
         car.heading=kind==2?-0x800000:0;
         car.phase=(random()&0x7f)+0xc0;    // +0x71: full int slot, 192..319

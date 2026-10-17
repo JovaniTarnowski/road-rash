@@ -827,7 +827,14 @@ int main() {
             auto& race = *pch.instance.race;
             for (int tick = 0; tick < 400; ++tick) race.step(rr::control_accelerate);
             auto& player = race.riders()[0];
-            auto& ai = race.riders()[1];
+            // The front of the grid parks on tick 1 (0x00406940 window test):
+            // take the first opponent the live scheduler still runs.
+            size_t live_ai = 1;
+            while (live_ai + 1 < race.riders().size() && !race.riders()[live_ai].live) ++live_ai;
+            auto& ai = race.riders()[live_ai];
+            // Its bike moves on its own cadence (0x00437e60 interval up to
+            // 8): place both riders on the tick before its next move.
+            for (int k = 0; k < 8 && ai.sched_next != race.ticks() + 1; ++k) race.step(rr::control_accelerate);
             const auto& route = race.route();
             const auto& ps = route[player.sample];
             const auto& as = race.route_of(ai)[ai.sample];
@@ -843,10 +850,15 @@ int main() {
             race.step(rr::control_accelerate);
             if (player.sample == player_sample && player.bike.i32(0x2f4) == 0)
                 check(player.bike.i32(0x28) == (ps.offset + pw.top[1]) * 256 - hw, "player held at the cliff foot (+0x15c)");
-            if (ai.sample == ai_sample && ai.bike.i32(0x2f4) == 0)
-                check(ai.bike.i32(0x28) == ai.bike.i32(0x174) + (as.offset - as.path.left - as.path.shoulder_left) * 256, "AI held at the outer shoulder edge (+0xe8)");
+            check(ai.sched_last == race.ticks() && ai.live, "AI bike moved on its scheduled tick");
+            // The AI's dt-long move may cross samples; the wall holds it at
+            // the edge of the sample it ends on.
+            (void)ai_sample;
+            const auto& as_now = race.route_of(ai)[ai.sample];
+            if (ai.bike.i32(0x2f4) == 0)
+                check(ai.bike.i32(0x28) == ai.bike.i32(0x174) + (as_now.offset - as_now.path.left - as_now.path.shoulder_left) * 256, "AI held at the outer shoulder edge (+0xe8)");
             const bool player_checked = player.sample == player_sample && player.bike.i32(0x2f4) == 0;
-            const bool ai_checked = ai.sample == ai_sample && ai.bike.i32(0x2f4) == 0;
+            const bool ai_checked = ai.bike.i32(0x2f4) == 0;
             std::cout << "CANYN walls: player " << player.bike.i32(0x28) << " (want " << (ps.offset + pw.top[1]) * 256 - hw << ", checked " << player_checked
                       << ") ai " << ai.bike.i32(0x28) << " (checked " << ai_checked << ")\n";
             check(player_checked || ai_checked, "a CANYN wall case was exercised");
