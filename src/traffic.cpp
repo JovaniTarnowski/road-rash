@@ -499,7 +499,10 @@ void TrafficSystem::build_slices(const std::vector<RouteSample>& route, int32_t 
     if(!filled_) {
         filled_=true;
         built_end_=(front_q8-distance_moved)>>8;
-        for(int32_t s=built_end_-128;s<built_end_;++s)build_slice(route,s,back_q8,front_q8,tick);
+        // The initial fill belongs to the 0x004552e0 ring setup, which runs
+        // while the race tick counter reads setup_tick (measured: the setup
+        // controller tears down on ticks 2 + 30k in both solo captures).
+        for(int32_t s=built_end_-128;s<built_end_;++s)build_slice(route,s,back_q8,front_q8,setup_tick);
     }
     for(;built_end_<front_sample;++built_end_)build_slice(route,built_end_,back_q8,front_q8,tick);
     if(front_sample<built_end_)built_end_=front_sample;   // backward: rebuilt later
@@ -511,6 +514,10 @@ void TrafficSystem::countdown_step(const std::vector<RouteSample>& route, int32_
     // Reuse the lazy fill without advancing any cursor during the hold.
     build_slices(route,front_q8,0,tick);
     step_timers(route,front_q8,front_q8-0x8000,0,random);
+    // The 0x00438170 scheduler runs during the hold too: controllers keep
+    // their 0x1e cadence from creation (measured: demo and human captures
+    // tear the controller down on ticks 2 + 30k), cars stay put.
+    think_intersections(front_q8-0x8000,front_q8,tick,route,random);
 }
 
 void TrafficSystem::step(const std::vector<RouteSample>& route,int32_t camera_q8,int32_t front_q8,

@@ -69,7 +69,10 @@ int main(int argc, char** argv) {
             // All entries re-recorded 2026-10-16 (owner-approved): hill and
             // wall terrain now comes from the live race stream via the track
             // ring's slice builds (0x00451910), not the scene's own stream.
-            static constexpr uint64_t rgb_baseline[]={13324780666000863972ULL,11781225790523202150ULL,18289156974635944184ULL,7513113084004009039ULL,6439062191116640040ULL,2831052286577117410ULL};
+            // Re-recorded 2026-10-17: ring-setup objects start on the setup
+            // tick (2) and pedestrians run during the hold, as both solo
+            // captures measure; one pedestrian pose differs at tick 300.
+            static constexpr uint64_t rgb_baseline[]={387927748625765407ULL,16950369914752520773ULL,10619927192660364897ULL,8116068768840064418ULL,15565404957971759949ULL,8340985524461300919ULL};
             if(rgb)check(checksum==rgb_baseline[(row-1)/2],"RGB canvas output changed from pre-optimization baseline");
             // Dashboard overlays the scene; every opaque dashboard sample and
             // the full Hor+ margins must survive composition.
@@ -95,7 +98,7 @@ int main(int argc, char** argv) {
             const uint64_t no_hud=hash_bytes(canvas.frame.row(0),size_t(canvas.scale_w)*canvas.scale_h);
             // Wide entries (1, 3, 5) re-recorded 2026-10-15 after the Hor+ centring fix;
             // all entries 2026-10-16 for ring-built terrain (owner-approved).
-            static constexpr uint64_t original_scene[]={10094337149923882775ULL,15933655999438847079ULL,1785310164594141104ULL,14133145286414236587ULL,5983123200423289452ULL,16054401525581687220ULL};
+            static constexpr uint64_t original_scene[]={12661375431986602373ULL,7263761804897724973ULL,13933945606597204134ULL,5956047106008011393ULL,17799582848718289314ULL,10030506204738663430ULL};
             std::cout<<"  original_scene="<<no_hud<<'\n';
             check(no_hud==original_scene[(row-1)/2],"Original scene output changed");
             game.assets.hud=std::move(hud);

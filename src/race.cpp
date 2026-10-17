@@ -2640,6 +2640,7 @@ void Race::countdown_step() {
         if (r.ai || (demo_hold_ && i == 0)) ai_think(r);
     }
     update_halves();   // the bike move 0x004060b0 runs during the hold too
+    step_pedestrians();   // the scheduler pass runs pedestrians during the hold too
     // 0x0044b3b0 calls 0x0044dd90 even while the camera is stationary:
     // at rate 2500 each hold tick banks +9 behind/rear and -9 oncoming.
     if (traffic_ && !riders_.empty())

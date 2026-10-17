@@ -1616,3 +1616,12 @@ pass before it was inspected; the successful rerun is the verified result.
   fix only touches the class-1/2 big-gap crash, which the solo replay never
   reaches). Gate receipt
   `analysis/agent-gates/oracle-12060ac09aff4f2093f2f84ec47d9bb5/receipt.json`.
+
+## Setup-object cadence (October 17, 2026)
+
+- Before: sched600/sched900 `--driver=demo` first divergence tick 480
+  (node list: controller and signals still listed in the original until 482).
+- After: sched600 600 identical; sched900 tick 893 RNG (unchanged);
+  sched-human-cov2-20261017 bare `1431 ticks identical`; verify_sim
+  acceptance exit 0; ctest 101/101 with race-cache re-recorded (tick-300
+  frame: one pedestrian pose differs, checked against a clean HEAD build).

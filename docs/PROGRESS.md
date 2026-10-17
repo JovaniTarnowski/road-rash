@@ -1315,3 +1315,17 @@ was restored to its pre-session hash after both captures.
 - This does not change the strict acceptance replay: `sched-human-cov2`
   remains 1431/1431 identical. New test log and gate receipt in
   [VERIFICATION.md](VERIFICATION.md). [Handoff](agent-handoffs/crash-vector-20261017.md).
+
+### October 17, 2026: setup-object cadence, demo replays restored (plan 10)
+
+- After the node-list comparison landed (84166fb/851e795), the demo
+  captures sched600/sched900 failed at tick 480: the intersection controller
+  left one tick-phase early. Measured on both solo captures: the controller
+  tears down on ticks 2 + 30k and setup pedestrians unlink on 2 + 60k, so
+  objects built by the 0x004552e0 ring setup start with +0xc next = 2
+  (`TrafficSystem::setup_tick`; the player and grid, built later by
+  0x00405600, see 0). The scheduler also runs controllers and pedestrians
+  during the countdown hold (native `countdown_step` now thinks them).
+- Result: sched600 600 identical, sched900 tick 893 (as before),
+  sched-human-cov2 strict pass, sched-human-20261016 and terrain-human200
+  identical. race-cache hashes re-recorded (one pedestrian pose at tick 300).

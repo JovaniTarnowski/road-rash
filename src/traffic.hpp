@@ -118,6 +118,10 @@ public:
     static constexpr size_t pool_size = 16;   // 0x00438b70(0x210, 0x10): 16 objects
     static constexpr size_t controller_pool = 10;   // 0x00468ee4: 10 x 0x114
     static constexpr size_t signal_pool = 40;       // 0x00468ee0: 40 x 0x108
+    // DAT_004b7ecc while 0x004552e0 builds the first ring (objects created
+    // there get +0xc next = 2, +0x10 last = 2 - interval); the player and
+    // grid built later by 0x00405600 see 0.
+    static constexpr uint32_t setup_tick = 2;
     // Nulled-pool solo equivalent: the oracle zeroes the car pool count, so
     // 0x0044df60 returns on entry AFTER 0x0044dd90/0x0041f040 drew the lane
     // pick -- one stream draw per gated expiry, zero cars. Disabled spawns
