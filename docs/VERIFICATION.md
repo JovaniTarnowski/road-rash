@@ -1558,3 +1558,12 @@ pass before it was inspected; the successful rerun is the verified result.
   200 identical; `oracle-sim` and `frozen_state` ctests pass.
 - Strict `verify_sim.py --mode acceptance` still unmet (coverage note
   printed).
+
+## Rider half, standings, finish line (October 17, 2026)
+
+- `sched-human-20261016 --coverage`: 1431 identical; 87 golden-only not
+  compared (node list), 70 verified invariant, 14,300 uncovered (10 fields).
+- `race_bounds` for every original course and level returns a finish
+  (CITY/HIWAY/MEDLY/NAPA/CANYN L0..L4); Napa L0 439040 equals the capture's
+  `+0x1f8 + position` on every tick.
+- sched600 600 identical, sched900 893 (unchanged). ctest 101/101.

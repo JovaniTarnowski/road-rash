@@ -2574,6 +2574,36 @@ int Race::place(size_t index) const {
     return place;
 }
 
+void Race::update_halves() {
+    // Rider halves mirror their bikes after the scheduler pass, before contacts.
+    for (auto& r : riders_) {
+        if (r.frozen) continue;
+        const Bike& b = r.bike;
+        r.half_mirror = {b.i32(0x1c), b.i32(0x28), b.i32(0x20), b.i32(0xf4), b.i32(0xec),
+                         b.i32(0xf0), b.i32(0x10c), b.i32(0x108), b.i32(0x60), r.sample};
+    }
+    // 0x004060b0 tail for riding (uncrashed) riders: distance to the finish,
+    // then 0x004075f0 refreshes the place when the half's scheduler tick
+    // (+0x10) reaches +0x1f4. Frozen riders keep finish - position.
+    for (auto& r : riders_) if (finish_q8_ != 0) r.finish_distance = finish_q8_ - r.bike.i32(0x1c);
+    for (size_t i = 0; i < riders_.size(); ++i) {
+        Rider& r = riders_[i];
+        if (r.frozen || r.bike.i32(0x2f4) != 0) continue;
+        const int32_t last = r.sched_live ? r.sched_last : ticks_;
+        if (r.place_refresh > last) continue;
+        int place = 1;   // 0x00407550 over the other riders
+        for (size_t j = 0; j < riders_.size(); ++j) {
+            if (j == i) continue;
+            const Rider& o = riders_[j];
+            const bool shared = o.bike_slice_present && r.bike_slice_present &&
+                !(route_of(r)[r.sample].dual && o.route != r.route);
+            if (shared ? o.bike.i32(0x1c) > r.bike.i32(0x1c) : o.finish_distance < r.finish_distance) ++place;
+        }
+        r.place = place;
+        r.place_refresh = last + (i == 0 ? 4 : 0x3c);
+    }
+}
+
 void Race::countdown_step() {
     ++ticks_;
     // 0x00438930 stores the player bike's last run as creation tick - 1
@@ -2594,6 +2624,7 @@ void Race::countdown_step() {
         if (r.finished || r.bike.i32(0x2f4) != 0) continue;
         if (r.ai || (demo_hold_ && i == 0)) ai_think(r);
     }
+    update_halves();   // the bike move 0x004060b0 runs during the hold too
     // 0x0044b3b0 calls 0x0044dd90 even while the camera is stationary:
     // at rate 2500 each hold tick banks +9 behind/rear and -9 oncoming.
     if (traffic_ && !riders_.empty())
@@ -2665,6 +2696,7 @@ void Race::step(uint32_t controls) {
     // the fresh one. Hydrated riders only; legacy/live keep prior behavior.
     for (size_t i = 0; i < riders_.size(); ++i) step_frozen_schedule(riders_[i]);
     step_pedestrians();   // same scheduler pass (0x00438170) as the riders
+    update_halves();   // rider halves mirror their bikes before contacts
     collide_riders();
     for (size_t i = 0; i < riders_.size(); ++i) collide_traffic(riders_[i]);
     collide_pedestrians();   // pedestrians against cars

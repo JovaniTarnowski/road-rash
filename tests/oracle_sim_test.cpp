@@ -735,6 +735,14 @@ int main(int argc, char** argv) {
             p.sched_live = true;
         }
     }
+    // Frame 0 is post tick 1, which the replay does not re-run: take the
+    // player half's standings words from it (the countdown computes them
+    // natively from tick 1 in a live game).
+    if (solo && h.count("rider.0.raw_1fc") && h.count("rider.0.raw_1f4")) {
+        auto& p = race.riders()[0];
+        p.place = int(h.at("rider.0.raw_1fc"));
+        p.place_refresh = int32_t(h.at("rider.0.raw_1f4"));
+    }
     // Measured spawn-frozen brain snapshot (frame 0 is post tick 1): hydrate
     // once for any solo capture with a brain window. The human path never
     // touches these words (0x00405c80 spawn init stays frozen), so the same
@@ -864,6 +872,16 @@ int main(int argc, char** argv) {
             for (const auto& kv : frame) {
                 const std::string& k = kv.first;
                 int64_t native;
+                if (k == "rider.0.raw_1f8" || k == "rider.0.raw_1fc" || k == "rider.0.raw_1f4") {
+                    native = k == "rider.0.raw_1f8" ? pr.finish_distance : k == "rider.0.raw_1fc" ? pr.place : pr.place_refresh;
+                    g_used_keys.insert(k);
+                    if (native != kv.second) {
+                        std::cout << "first divergence at frame " << i << " (tick " << tick0 + int64_t(i) << "): " << k
+                                  << " original " << kv.second << " native " << native << " (standings)\n";
+                        return 1;
+                    }
+                    continue;
+                }
                 if (k == "rider.0.bike_c") native = pr.sched_next;
                 else if (k == "rider.0.bike_10") native = pr.sched_last;
                 else if (k == "rider.0.bike_14") native = pr.sched_interval;
@@ -876,6 +894,38 @@ int main(int argc, char** argv) {
                 if (native != kv.second) {
                     std::cout << "first divergence at frame " << i << " (tick " << tick0 + int64_t(i) << "): " << k
                               << " original " << kv.second << " native " << native << " (bike image)\n";
+                    return 1;
+                }
+            }
+        }
+        // Player rider half (rider.1, think 0x00434660 on solo captures):
+        // motion words against the native mirror; its scheduler words follow
+        // the bike's (same cadence); slice_ptr through the derived sample.
+        if (solo) {
+            const rr::Rider& pr = race.riders()[0];
+            const auto& m = pr.half_mirror;
+            for (const auto& kv : frame) {
+                const std::string& k = kv.first;
+                if (k.rfind("rider.1.", 0) != 0) continue;
+                const std::string f = k.substr(8);
+                int64_t native;
+                if (f == "position") native = m.position;
+                else if (f == "lateral") native = m.lateral;
+                else if (f == "height") native = m.height;
+                else if (f == "velocity") native = m.velocity;
+                else if (f == "speed" || f == "lat108") native = f == "speed" ? m.speed : m.lat108;
+                else if (f == "steer_rate") native = m.steer_rate;
+                else if (f == "lat_vel" || f == "lat10c") native = m.lat_vel;
+                else if (f == "yaw60") native = m.yaw;
+                else if (f == "bike_c") native = pr.sched_next;
+                else if (f == "bike_10") native = pr.sched_last;
+                else if (f == "bike_14") native = pr.sched_interval;
+                else if (f == "bike_18") native = pr.bike.i32(0x18);
+                else continue;
+                g_used_keys.insert(k);
+                if (native != kv.second) {
+                    std::cout << "first divergence at frame " << i << " (tick " << tick0 + int64_t(i) << "): " << k
+                              << " original " << kv.second << " native " << native << " (rider half)\n";
                     return 1;
                 }
             }
@@ -947,10 +997,23 @@ int main(int argc, char** argv) {
                    suffix == "raw_1a4" || suffix == "raw_1c4" || suffix == "raw_1d8" || suffix == "raw_1e0";
         };
         g_used_keys.insert("rng");   // compared every tick before the fields
+        // Verified invariants: original object words the port does not model
+        // (rider-half own words, the AI brain window on a human run) are
+        // accepted only while the capture shows them constant on every tick;
+        // a single change makes them uncovered again.
+        size_t invariants = 0;
+        auto invariant = [&](const std::string& k) {
+            if (k.rfind("rider.0.raw_", 0) != 0 && k.rfind("rider.0.brain_", 0) != 0 && k.rfind("rider.1.", 0) != 0) return false;
+            const auto first = g.frames.front().find(k);
+            if (first == g.frames.front().end()) return false;
+            for (const auto& fr : g.frames) { const auto it = fr.find(k); if (it == fr.end() || it->second != first->second) return false; }
+            return true;
+        };
         std::map<std::string, size_t> fam;
         size_t extras = 0;
         for (const auto& kv : g.frames.back()) {
             if (g_used_keys.count(kv.first) || non_state(kv.first)) continue;
+            if (invariant(kv.first)) { ++invariants; if (coverage) std::cout << "invariant " << kv.first << ' ' << kv.second << '\n'; continue; }
             ++extras;
             ++fam[fold_digits(kv.first)];
         }
@@ -964,7 +1027,7 @@ int main(int argc, char** argv) {
             for (const auto& kv : fam) std::cout << "golden-only " << kv.first << ' ' << kv.second << '\n';
         }
         if (uncovered == 0 && extras == 0) std::cout << g.frames.size() << " ticks identical\n";
-        else std::cout << g.frames.size() << " ticks identical (" << extras << " golden-only fields not compared; "
+        else std::cout << g.frames.size() << " ticks identical (" << extras << " golden-only fields not compared; " << invariants << " verified invariant; "
                        << uncovered << " field-comparisons uncovered: " << uncovered_names << ")\n";
     }
     return 0;

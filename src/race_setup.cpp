@@ -102,9 +102,22 @@ RaceAssets load_race_assets(const Assets& assets, const std::vector<uint8_t>& ex
     const auto route_a = make_route(*out.course, false);
     const auto route_b = make_route(*out.course, true);
     if (route_a.size() < 64 || route_b.size() < 64) throw std::runtime_error("race setup: route too short for a race");
+    // Original per-course/per-level start and level-tagged finish line
+    // (plan 17 Task 1, race_bounds); the route end remains only for course
+    // files outside the five originals.
     out.bounds.start_position_q8 = 0x3200; // 0x00464088 slot 0
     out.bounds.finish_position_q8 = uint32_t((route_a.size() - 1) << 8);
     out.bounds.route_hint = 0;
+    {
+        static const char* originals[] = {"CITY", "HIWAY", "MEDLY", "NAPA", "CANYN"};   // 0x0046df58
+        for (int c = 0; c < 5; ++c)
+            if (config.course == originals[c]) {
+                // Finish only: the grid still places slot 0 at 0x3200, so the
+                // level-4 start 0x3300 waits for the grid port.
+                out.bounds.finish_position_q8 = race_bounds(exe, *out.course, c + 1, config.level).finish_position_q8;
+                break;
+            }
+    }
     try {
         out.scene = std::make_unique<CourseScene>(assets, exe, *out.course, config.course, 1, config.level);
     } catch (const std::exception& e) {

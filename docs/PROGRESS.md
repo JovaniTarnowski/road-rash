@@ -1228,3 +1228,22 @@ was restored to its pre-session hash after both captures.
   (riding animation block, nitro globals, stamina in the rider table row
   `*(half+0x1e0)+0x38/0x3c`), which need a proxy extension and a new
   capture. [Handoff](agent-handoffs/coverage-20261016.md).
+
+### October 17, 2026: rider half, standings, original finish line (plans 10, 17, 32 D)
+
+- Rider-half mirror (`Race::update_halves`): after the scheduler pass and
+  before contacts the half carries the bike's motion words; compared as
+  `rider.1.*` on `sched-human-20261016`, equal on all 1431 ticks (it differs
+  from the bike exactly at the contact ticks 149–151 and 702–704).
+- Standings words of `0x004060b0`'s tail: `+0x1f8` distance to the finish,
+  `+0x1fc` place (`0x00407550`), `+0x1f4` next refresh (`0x004075f0`, every 4
+  ticks for the player, 60 for others), also during the countdown.
+- The race factory now uses the original level-tagged finish
+  (`race_bounds`, all 25 course/level pairs; Napa level 0 = sample 1715)
+  instead of the route end. Start stays 0x3200 (level-4 start 0x3300 waits
+  for the grid port). Game races end at the original finish line.
+- Constant original words the port does not model (rider-half own words,
+  the brain window on a human run) count as verified invariants only while
+  constant on every captured tick.
+- Coverage now: 87 golden-only keys (the non-rider scheduler node list) and
+  10 undumped native fields (riding animation, nitro, stamina) remain.

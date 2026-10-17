@@ -192,6 +192,18 @@ struct Rider {
     bool bike_slice_present = true, half_slice_present = true;
     bool half_detached = false;
     int32_t half_lateral = 0, half_position = 0, half_speed = 0;
+    // Live rider-half mirror (the +0x2fc object of a stepped rider): after
+    // the 0x00438170 scheduler pass and before the 0x004368f0 contacts the
+    // half carries the bike's motion words (measured on sched-human-20261016:
+    // equal every tick except where contacts then move the bike).
+    struct HalfMirror { int32_t position = 0, lateral = 0, height = 0, velocity = 0, speed = 0,
+                        steer_rate = 0, lat_vel = 0, lat108 = 0, yaw = 0; size_t sample = 0; };
+    HalfMirror half_mirror;
+    // Rider-half standings words (0x004060b0 after the bike physics):
+    // +0x1f8 Q8 distance still to the finish (0x00407410; finish minus
+    // position once the finish is known), +0x1fc place and +0x1f4 the
+    // scheduler tick of the next place refresh (0x004075f0/0x00407550).
+    int32_t finish_distance = 0, place = 0, place_refresh = 0;
     AiState brain;
     bool finished = false;
     int32_t finish_tick = -1;
@@ -379,6 +391,7 @@ private:
     void step_crash(Rider&,bool player,uint32_t controls);
     void step_rider(Rider&, uint32_t controls, bool player);
     void step_frozen_schedule(Rider&);       // 0x00437e60 metadata cadence for hydrated frozen riders
+    void update_halves();                   // rider-half mirror and standings (0x004060b0 tail)
     void collide_riders();                  // 0x004368f0 list walk: bikes, pedestrians, hazard gate
     void contact_rider_pedestrian(Rider&, Pedestrian&, bool rider_outer);
     void separate(Rider& outer, uint32_t outer_type, Rider& partner, uint32_t partner_type);   // 0x00436a40
