@@ -18,14 +18,15 @@
     {
       "area": "Simulation parity",
       "implementation": "Tick replay, frozen scheduler/half/slice state, countdown timers, measured player row and human-branch probe",
-      "verification": "Demo600 compared fields match; sched900 first divergence893 RNG; declared human terrain first hidden-state gap tick1 (front point end132/133), coarser RNG189; strict acceptance unmet",
-      "remaining": "Human terrain setup ordering/parity, contact eligibility, traffic-field scenarios and full human parity",
+      "verification": "Demo600 compared fields match; sched900 first divergence893 RNG; human terrain200 trace identical (ring setup window walks, srand+0 pre draws); sched-human first divergence371 (velocity, RNG in sync); strict acceptance unmet",
+      "remaining": "Human tick-371 velocity gap, contact eligibility, split/merge ring walking, traffic-field scenarios and full human parity",
       "evidence": [
         "SIM_SCENARIOS.md",
         "plans/10-simulation-oracle.md",
         "agent-handoffs/countdown-timers-20261015.md",
         "agent-handoffs/codex-sim-research-20261015.md",
-        "agent-handoffs/codex-sim735-integrate-20261015.md"
+        "agent-handoffs/codex-sim735-integrate-20261015.md",
+        "agent-handoffs/ring-terrain-20261016.md"
       ],
       "last_verified_commit": null,
       "fidelity_level": "partial"

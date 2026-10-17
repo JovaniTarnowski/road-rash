@@ -48,7 +48,9 @@ int main(int argc, char** argv) {
         if (g.frames[green].at("rider.0.position") != h.at("rider.0.position") ||
             g.frames[green].at("rider.0.speed") != h.at("rider.0.speed")) break;
     const uint32_t anchor = uint32_t(g.frames.at(green - 1).at("rng"));
-    const int32_t camera0 = int32_t(h.at("rider.0.position"));
+    // The ring camera (0x004b6e5c); a walker trace pins it as back + 0x3000.
+    const int32_t camera0 = h.count("ring.walk.back.position") ? int32_t(h.at("ring.walk.back.position")) + 0x3000
+                                                               : int32_t(h.at("rider.0.position"));
     // Golden crossings: ticks where the player's sample changes (camera proxy).
     struct Crossing { size_t frame; int golden; };
     std::vector<Crossing> crossings;
@@ -59,6 +61,7 @@ int main(int argc, char** argv) {
     }
     std::printf("course %s level %d anchor %u green frame %zu camera %d crossings %zu\n",
                 name.c_str(), level, anchor, green, camera0, crossings.size());
+    const bool terrain_keys = h.count("ring.terrain.schema") != 0;
     int best = -1, best_k = -1;
     std::map<int, int> hist;
     for (int k = 1; k <= max_k; ++k) {
@@ -76,6 +79,26 @@ int main(int argc, char** argv) {
         try { ring.setup(camera0, random, sink); } catch (const std::exception&) { continue; }
         const int setup_draws = sim.count;
         if (setup_draws > k) continue;
+        if (terrain_keys) {
+            // Walker terrain trace (ring.terrain.schema): the setup must leave
+            // both walkers' hidden hill state exactly as frame 0 shows it.
+            const auto state = ring.diagnostic_state();
+            bool same = true;
+            for (int w = 0; w < 2 && same; ++w) {
+                const auto& walk = w ? state.back : state.front;
+                const std::string prefix = std::string("ring.walk.") + (w ? "back" : "front") + ".terrain.";
+                if (!walk.terrain) { same = !h.count(prefix + "position"); continue; }
+                auto eq = [&](const std::string& key, int64_t v) { auto it = h.find(prefix + key); return it == h.end() || it->second == v; };
+                same = eq("position", walk.terrain->position) && eq("last_sample", walk.terrain->last_sample) && eq("record", int64_t(walk.terrain->record));
+                for (size_t i = 0; i < walk.terrain->points.size() && same; ++i) {
+                    const auto& pt = walk.terrain->points[i];
+                    const std::string pk = "point." + std::to_string(i) + ".";
+                    same = eq(pk + "start", pt.start) && eq(pk + "end", pt.end) && eq(pk + "x", pt.x) &&
+                           eq(pk + "height", pt.height) && eq(pk + "dx", pt.dx) && eq(pk + "dh", pt.dh);
+                }
+            }
+            if (same) std::printf("K %d setup %d after %d: frame-0 walker terrain matches\n", k, setup_draws, k - setup_draws);
+        }
         player = true;
         int matched = 0;
         int32_t camera = camera0;

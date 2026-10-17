@@ -82,6 +82,15 @@ private:
         bool stopped = false;
     };
     struct Events { uint32_t section = 0; std::vector<std::array<uint32_t,2>> records; };
+    // Terrain part of one section walker inside a 0x00453b60 window probe.
+    struct ProbeHalf {
+        uint32_t node = 0;
+        int32_t position = 0;            // Q8 within the node's section
+        std::optional<TerrainIterator> terrain;
+    };
+    void probe_enter(ProbeHalf&, uint32_t node, bool start);    // 0x00452cb0 terrain init
+    int probe_step(ProbeHalf&, int32_t delta);                  // 0x00452e10 (0/1/2/3)
+    void probe_window(uint32_t node, int32_t direction);        // 0x00453b60 draws
     void jitter_events(uint32_t node, std::vector<uint32_t>& visited, const Random&);   // 0x00453e60
     void enter(Walker&, uint32_t node);                         // 0x00452cb0 forward
     void step(Walker&, int32_t delta);                          // 0x00453030 -> 0x00452e10

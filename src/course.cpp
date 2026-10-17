@@ -185,6 +185,7 @@ Course read_course(const std::vector<uint8_t>& bytes) {
             graph.range(offset,32);
             node.next=graph.u32(offset+8); node.previous=graph.u32(offset+12);
             node.link=graph.u32(offset+16); node.length=graph.u32(offset+20);
+            node.primary=int8_t(graph.u32(offset+24)>>8);
             pending.push_back(node.next); pending.push_back(node.previous);
             if(node.kind) pending.push_back(node.link);
             else if(node.link>=course.sections.size() || !node.length || node.length>course.sections[node.link].samples.size())

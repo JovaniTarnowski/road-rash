@@ -54,6 +54,8 @@ struct CourseEvent {
  };
 struct CourseNode {
     uint32_t offset, kind, next=0, previous=0, link=0, length=0;
+    // Split/merge byte +0x19: the half 0x00453030 steps first (traversal [1]).
+    int8_t primary=0;
 };
 struct Course {
     uint32_t root;

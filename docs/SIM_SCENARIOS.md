@@ -229,3 +229,15 @@ skips AI target selection. RNG in sync. Next: maintain target state on the
 human path (0x00434660 trace), then the five human physics gates (steer
 authority 0x0040ad30, skid 0x00438c70, move-push 0x004395e0, scheduler +0xc
 copy 0x00438170, wreck attack rule 0x0040a600), all demo-tuned natively.
+
+Ring setup calibration (October 16, ring-terrain-20261016): with the
+`0x00453b60` window walks ported, the ring setup starts directly at
+srand(seed) (`ring.pre_draws` default **0**, was 9,098) and ends
+`ring.post_draws` **16** draws before the green anchor (was 11). Measured
+with `build/ring-probe analysis/oracle/terrain-human200-20261015.tsv
+../cdrom/ROADRASH 20000`: K = 11,461 back from the anchor is state 1 and
+leaves both walkers' frame-0 terrain exact. Headers may still override
+both; `oracle-sim-test --ring-pre-draws=N` is a diagnostic override only.
+Results: `terrain-human200-20261015` 200 ticks identical (walker trace
+every frame); `sched-human-20261016` first divergence tick 371
+(`rider.0.velocity` 40 vs 296, RNG in sync).

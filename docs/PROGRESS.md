@@ -1145,3 +1145,24 @@ was restored to its pre-session hash after both captures.
   the isolated placement stream, so trees match in x but drift in y and
   posts/signs land elsewhere. Open.
 
+### October 16, 2026: ring setup window walks, human replay to tick 371 (plan 10)
+
+- `TrackRing` now runs the `0x00453b60` split/merge window walks inside
+  the DZHR pass (`0x00453e60`): a scratch walker 0x51 slices through both
+  halves, whose terrain iterators draw from the shared stream. Napa's three
+  splits and three merges added 9,089 draws (from the old start state) that the fitted 9,098
+  `ring.pre_draws` had absorbed. `CourseNode::primary` reads the
+  split/merge byte +0x19 (half stepped first).
+- Recalibrated with `ring-probe` (new walker-terrain scoring): the ring
+  setup starts at srand(1) with 0 pre draws and ends 16 draws before the
+  green anchor; frame-0 walker terrain matches exactly.
+- `terrain-human200-20261015`: 200 ticks identical, including the walker
+  terrain trace (was tick 1). `sched-human-20261016`: first divergence
+  **189 -> 371** (`rider.0.velocity` 40 vs 296, RNG in sync). Demo sched600
+  600 identical, sched900 893 unchanged. Legacy pinned diagnostics keep the
+  same divergence lines; only the closure line changed (re-pinned).
+- Remaining: tick-371 human velocity gap; live split/merge ring walking
+  (the real ring copies the merge snapshot, `0x00453030` event 6); a branch
+  shorter than 81 slices is reported unsupported.
+  [Handoff](agent-handoffs/ring-terrain-20261016.md).
+

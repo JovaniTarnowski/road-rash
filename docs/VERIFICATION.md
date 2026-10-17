@@ -1494,3 +1494,27 @@ pass before it was inspected; the successful rerun is the verified result.
   player not wrecked.
 - Gate: full build exit 0; ctest 101/101.
 
+## Ring setup window walks (October 16, 2026)
+
+- `build-agent-ring-terrain-20261016/ring-probe
+  analysis/oracle/terrain-human200-20261015.tsv ../cdrom/ROADRASH 20000`:
+  walker terrain matches at K = 11,428..11,476 (8 candidates, all 16 after);
+  K = 11,461 steps back to state 1 = srand(1), so pre draws 0.
+- `oracle-sim-test analysis/oracle/terrain-human200-20261015.tsv`: exit 0,
+  200 ticks identical, closure +16.
+- `oracle-sim-test analysis/oracle/sched-human-20261016.tsv`: first
+  divergence frame 370 (tick 371) `rider.0.velocity` original 40 native
+  296; RNG equal through 371 (was tick 189 RNG).
+- `--driver=demo` sched600-20261015: 600 ticks identical; sched900-20261015:
+  first divergence tick 893 RNG (unchanged).
+- `sim-napa-solo` / `sim-napa-solo-human` outputs equal the pinned outputs
+  except `(+11 draws)` -> `(+16 draws)` (checked by hashing the substituted
+  text against the old `output_sha256`); hashes re-pinned in
+  `tools/sim_known_divergences.json`, divergence lines unchanged.
+- `track_ring` test: new synthetic split/merge course; window walks cost
+  80×12 + 81×12 wall draws; a 60-sample branch reports unsupported.
+- Gate: full Debug build exit 0; ctest 101/101 after re-pinning (first
+  run 100/101 with `oracle-sim` failing only on the closure-line hash). A
+  later `-j8` run had `render-threads-alloc` fail once under load (renderer
+  code untouched); it passed alone 4/4. `tools/doc_checks.py` OK.
+

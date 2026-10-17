@@ -31,11 +31,12 @@ void TrackRing::jitter_events(uint32_t offset, std::vector<uint32_t>& visited, c
         if (node.kind > 2) return;
         visited.push_back(offset);
         if (node.kind == 1) {
+            probe_window(offset, 1);
             jitter_events(node.next, visited, random);
             offset = node.previous;
             continue;
         }
-        if (node.kind == 2) { offset = node.link; continue; }
+        if (node.kind == 2) { probe_window(offset, -1); offset = node.link; continue; }
         auto& records = events_.at(node.link).records;
         int32_t base = 0;
         for (auto& r : records) {   // 0x00451ee0
@@ -54,6 +55,85 @@ void TrackRing::jitter_events(uint32_t offset, std::vector<uint32_t>& visited, c
             for (size_t j = i + 1; j < records.size(); ++j)
                 if ((records[j][0] & 0x7fff0000u) < (records[i][0] & 0x7fff0000u)) std::swap(records[i], records[j]);
         offset = node.next;
+    }
+}
+
+void TrackRing::probe_enter(ProbeHalf& h, uint32_t offset, bool start) {
+    // 0x00452cb0: position 0 (param_3 = 1) or the section end (0); the
+    // terrain iterator 0x004510c0 initialises at that position.
+    const auto& node = node_of(course_, offset);
+    const auto& section = course_.sections.at(node.link);
+    h.node = offset;
+    h.position = start ? 0 : int32_t(node.length) * 0x100;
+    h.terrain.reset();
+    if (section.terrain.kind != TerrainDefinition::Kind::none) h.terrain.emplace(section.terrain, h.position, forward_);
+}
+
+int TrackRing::probe_step(ProbeHalf& h, int32_t delta) {
+    // 0x00452e10: 2 at a split/merge, 3 at a missing or unknown node (both
+    // without moving), 1 after entering the next/previous road node.
+    const auto& node = node_of(course_, h.node);
+    const int32_t end = int32_t(node.length) * 0x100;
+    int32_t next = h.position + delta;
+    int result = 0;
+    auto neighbour = [&](uint32_t offset) {
+        if (!offset) return 3;
+        const uint32_t kind = node_of(course_, offset).kind;
+        return kind == 0 ? 0 : kind <= 2 ? 2 : 3;
+    };
+    if (next >= end) {
+        if (const int k = neighbour(node.next)) return k;
+        next -= end;
+        probe_enter(h, node.next, true);
+        delta = next;
+        result = 1;
+    } else if (next < 0) {
+        if (const int k = neighbour(node.previous)) return k;
+        // 0x452f1d: the step becomes minus the old position, from the end
+        // of the previous section (assembly, not a decompiler artefact).
+        const int32_t old = h.position;
+        probe_enter(h, node.previous, false);
+        delta = -old;
+        next = h.position + delta;
+        result = 1;
+    }
+    h.position = next;
+    if (h.terrain) h.terrain->step(delta);   // 0x004516e0; the other iterators do not draw
+    return result;
+}
+
+// 0x00453b60: 0x00453e60 walks a scratch walker 0x51 slices through every
+// split (forward from the end of the road before it) and merge (backward
+// from the start of the road after it) to measure the halves' separation.
+// Only its terrain iterators draw from the stream. The walker starts with
+// 0x00452f50 (enter at 0), re-enters (at the end for a split, at 0 for a
+// merge), and its first step reaches the split/merge: 0x00453030 enters
+// both halves (+8, +12) and steps each. Later steps move the node's +0x19
+// half first. Both halves stay well inside their sections on the original
+// courses; anything else marks the ring unsupported.
+void TrackRing::probe_window(uint32_t offset, int32_t direction) {
+    const auto& window = node_of(course_, offset);
+    ProbeHalf half[2];
+    probe_enter(half[0], window.link, true);
+    probe_enter(half[0], window.link, direction < 0);
+    const int32_t delta = direction * 0x100;
+    if (probe_step(half[0], delta) != 2) { unsupported_ = true; return; }
+    const auto& reached = node_of(course_, direction > 0 ? node_of(course_, half[0].node).next
+                                                         : node_of(course_, half[0].node).previous);
+    if (reached.offset != offset) { unsupported_ = true; return; }
+    probe_enter(half[0], window.next, direction > 0);
+    probe_enter(half[1], window.previous, direction > 0);
+    // Forward: the outer position's fraction (0x100 & 0xff = 0); backward:
+    // (0 & 0xff) - 0x100.
+    const int32_t first = direction > 0 ? 0 : delta;
+    probe_step(half[0], first);
+    probe_step(half[1], first);
+    const int active = window.primary ? 1 : 0;
+    for (int i = 1; i <= 0x50; ++i) {
+        const int moved = probe_step(half[active], delta);
+        if (moved == 2) { unsupported_ = true; return; }
+        if (moved == 3) continue;   // 0x00453030 returns before the other half
+        probe_step(half[active ^ 1], delta);
     }
 }
 

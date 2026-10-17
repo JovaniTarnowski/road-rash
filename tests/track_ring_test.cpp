@@ -32,9 +32,63 @@ rr::Course synthetic_course() {
     c.nodes.emplace(40u, rr::CourseNode{40, 4});
     return c;
 }
+
+// Road A -> split 40 -> branches 60 / 80 (wall terrain) -> merge 100 ->
+// road B. Only the branches have terrain, so every setup draw comes from
+// the 0x00453b60 window walks the DZHR pass (0x00453e60) runs at the split
+// and at the merge.
+rr::Course window_course(uint32_t branch_length) {
+    rr::Course c;
+    c.root = 20;
+    rr::CourseSection plain;
+    plain.samples.resize(300, rr::PathSample{0, 0, 500, 500, 512, 512});
+    rr::CourseSection walled = plain;
+    walled.samples.resize(branch_length, rr::PathSample{0, 0, 500, 500, 512, 512});
+    walled.terrain.kind = rr::TerrainDefinition::Kind::wall;
+    for (int side = 0; side < 2; ++side) {
+        rr::TerrainWallRecord r;
+        r.parameters = {0, 1, 4, 1, 4, 0, 1, 4};
+        walled.terrain.walls[side].push_back(r);
+    }
+    walled.terrain.selectors.resize(branch_length, {0, 0});
+    c.sections = {plain, walled, walled, plain};
+    c.nodes.emplace(20u, rr::CourseNode{20, 0, 40, 0, 0, 300});
+    rr::CourseNode split{40, 1, 60, 80, 20, 0};
+    split.primary = 1;
+    c.nodes.emplace(40u, split);
+    c.nodes.emplace(60u, rr::CourseNode{60, 0, 100, 40, 1, branch_length});
+    c.nodes.emplace(80u, rr::CourseNode{80, 0, 100, 40, 2, branch_length});
+    c.nodes.emplace(100u, rr::CourseNode{100, 2, 60, 80, 120, 0});
+    c.nodes.emplace(120u, rr::CourseNode{120, 0, 140, 100, 3, 300});
+    c.nodes.emplace(140u, rr::CourseNode{140, 4});
+    return c;
+}
+
+void window_walks() {
+    auto run = [](uint32_t branch_length, int& draws) {
+        const rr::Course course = window_course(branch_length);
+        rr::TrackRing ring(course, 0);
+        uint32_t state = 777;
+        draws = 0;
+        std::function<uint32_t()> random = [&] { ++draws; state = state * 0x343fdu + 0x269ec3u; return (state >> 16) & 0x7fffu; };
+        std::function<void(const rr::RingActor&, uint32_t)> sink = [](const rr::RingActor&, uint32_t) {};
+        ring.setup(0x3200, random, sink);
+        return ring.unsupported();
+    };
+    int draws = 0;
+    // Split: the first step enters both branches at 0 and steps them by 0
+    // (no sample change); 80 more steps move both halves one sample (2 x 6
+    // wall draws). Merge: both inputs entered at their ends, then 81
+    // backward steps of both halves.
+    check(!run(200, draws), "window walks supported");
+    check(draws == 80 * 12 + 81 * 12, "split and merge window walk draws");
+    // Branches shorter than the 0x51-slice window reach the other node.
+    check(run(60, draws), "window walk through a short branch reported unsupported");
+}
 }
 
 int main() {
+    window_walks();
     const rr::Course course = synthetic_course();
     rr::TrackRing ring(course, 0);
     uint32_t state = 12345;

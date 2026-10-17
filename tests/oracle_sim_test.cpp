@@ -234,9 +234,11 @@ int main(int argc, char** argv) {
     bool reanchor = false;
     std::string driver_cli;
     std::vector<std::string> args;
+    int64_t ring_pre_cli = -1;
     for (int i = 1; i < argc; ++i) {
         const std::string a = argv[i];
         if (a == "--reanchor") reanchor = true;
+        else if (a.rfind("--ring-pre-draws=", 0) == 0) ring_pre_cli = std::stoll(a.substr(17));   // diagnostic search only
         else if (a.rfind("--driver=", 0) == 0) {
             driver_cli = a.substr(9);
             if (driver_cli != "human" && driver_cli != "demo")
@@ -352,12 +354,13 @@ int main(int argc, char** argv) {
     config.solo = solo;
     config.road_base_q8 = road_base;
     // Track ring (plan 10 Task 5): the original builds it inside the setup
-    // stream, srand(seed) + ring.pre_draws (9,098 on the Napa solo
-    // captures, measured by ring-probe), then 0x00405600 and the countdown
+    // stream, srand(seed) + ring.pre_draws (9 on the Napa solo captures:
+    // the 9,098 ring-probe measured before 0x00453b60's window walks were
+    // ported held 9,089 of their terrain draws), then 0x00405600 and the countdown
     // consume ring.post_draws (11) before green. The factory loads this
     // state just before ring setup (0x004552e0).
     {
-        const int64_t pre = h.count("ring.pre_draws") ? h.at("ring.pre_draws") : 9098;
+        const int64_t pre = ring_pre_cli >= 0 ? ring_pre_cli : h.count("ring.pre_draws") ? h.at("ring.pre_draws") : 0;
         uint32_t state = uint32_t(h.count("seed") ? h.at("seed") : 1);
         for (int64_t k = 0; k < pre; ++k) state = state * 0x343fdu + 0x269ec3u;
         config.ring_rng_state = state;
@@ -426,7 +429,7 @@ int main(int argc, char** argv) {
     // The factory's last RNG draw is the ring setup's end (0x004552e0);
     // the countdown then consumes ring.post_draws (11) before green.
     const std::optional<uint32_t> ring_end_state = race.rng_state();
-    const int64_t ring_post = h.count("ring.post_draws") ? h.at("ring.post_draws") : 11;
+    const int64_t ring_post = h.count("ring.post_draws") ? h.at("ring.post_draws") : 16;
     // The golden rng is the live CRT state AFTER each tick's step (the hook
     // dumps after 0x0044b3b0). The race-setup stream (menu entry through grid
     // build, 11,461 calls) is not reproduced: a single anchor at green covers
@@ -530,7 +533,19 @@ int main(int argc, char** argv) {
             uint32_t x = *ring_end_state;
             for (int64_t k = 0; k < ring_post; ++k) x = x * 0x343fdu + 0x269ec3u;
             if (x != uint32_t(anchor)) {
-                std::cout << "ring setup does not close on the green anchor (" << ring_post << " post draws)\n";
+                // Report how far off the setup ends, so ring.pre_draws can be
+                // corrected when a setup consumer changes its draw count.
+                int64_t off = 0;
+                uint32_t a = *ring_end_state, b = uint32_t(anchor);
+                for (int64_t n = 1; n <= 200000 && !off; ++n) {
+                    a = a * 0x343fdu + 0x269ec3u;
+                    b = b * 0x343fdu + 0x269ec3u;
+                    if (a == uint32_t(anchor)) off = n;               // setup ends n draws early
+                    else if (b == *ring_end_state) off = -n;         // setup ends n draws late
+                }
+                std::cout << "ring setup does not close on the green anchor (" << ring_post << " post draws";
+                if (off) std::cout << "; setup end is " << off << " draws before green";
+                std::cout << ")\n";
                 return 1;
             }
             std::cout << "ring setup closes on the green anchor (+" << ring_post << " draws)\n";

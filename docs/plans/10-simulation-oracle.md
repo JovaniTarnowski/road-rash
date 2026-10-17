@@ -471,3 +471,16 @@ component parity does not prove race setup ordering; strict human acceptance
 still fails. No golden/allowlist/reanchoring changes. See
 [research](../agent-handoffs/codex-sim-research-20261015.md) and
 [integration](../agent-handoffs/codex-sim735-integrate-20261015.md).
+
+Ring setup window walks (October 16, [handoff](../agent-handoffs/ring-terrain-20261016.md)).
+The tick-1 terrain gap was missing setup draws, not hill arithmetic:
+`0x00453e60` runs `0x00453b60` at every split and merge, walking a scratch
+walker 0x51 slices through both halves, and its terrain iterators draw.
+Napa has 3 splits and 3 merges (9,089 draws from the old start). Ported in `TrackRing`;
+`ring-probe` then finds the ring setup at srand(1) with **zero** pre draws
+and frame-0 walker terrain exact, ending 16 draws before the green anchor
+(the old 9,098/11 split absorbed the missing draws). `terrain-human200`
+now replays 200 ticks identical including the walker trace;
+`sched-human-20261016` advances **189 -> 371** (`rider.0.velocity` 40 vs
+296, RNG in sync). Demo sched600 (600 identical) and sched900 (893) are
+unchanged; legacy pinned diagnostics differ only in the closure line.
