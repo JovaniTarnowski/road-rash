@@ -53,7 +53,6 @@ inline constexpr SimField rider_fields[] = {
     {"steal_until", 0x1cc, 4, true},
     {"hit_until", 0x1d0, 4, true},
     {"nitro_charge", 0xfffffffeu, 4, true},
-    {"nitro_throttle", 0xfffffffdu, 4, true},
     {"nitro_charges", 0xffffffFCu, 4, true},
 };
 

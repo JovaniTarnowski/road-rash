@@ -1640,3 +1640,14 @@ Further runtime facts from the same proxy:
   before the first upload; not compared.
 - `0x0049e138` (the `palette.N` field) is not the live palette: it stays
   zero through every upload.
+
+- Nitro configuration (October 17, 2026): `0x00405600` calls
+  `0x0040b0e0(*(0x0047ea40[row+5]) + 0x14c)`, copying six words (recharge,
+  boost, maximum, charges, minimum, tail) into `DAT_00465a28..3c` and
+  setting the charge `DAT_004c5f10 = maximum << 8`; zero words mean no
+  nitro. `+0x14c` is BIKESPEC word 83 (bikes 7–10: 256, 288..384,
+  180..240, 10, 120, 15). Riding animation: the advancing block is the
+  rider half's `+0x70` (`0x00434660` line 13, `0x00407f30` → `0x0043ae90`);
+  the bike's block is only set at spawn/crash and its `+0x81` mirrors
+  `half+0x1e9` while riding (`0x00407a90`). Stamina is in the 0x00463c78
+  row `*(half+0x1e0)` (`+0x38` maximum, `+0x3c` current).

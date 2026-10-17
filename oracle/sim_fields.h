@@ -43,7 +43,6 @@ static const rr_sim_field rr_sim_rider_fields[] = {
     {"steal_until", 0x1cc, 4, 1},
     {"hit_until", 0x1d0, 4, 1},
     {"nitro_charge", 0xfffffffeu, 4, 1},
-    {"nitro_throttle", 0xfffffffd, 4, 1},
     {"nitro_charges", 0xfffffffc, 4, 1}
 };
 

@@ -282,6 +282,10 @@ static void dump_sim_tick(void) {
      * (plan 24 Task 1 Step 2/5): front 0x004b6e50, back 0x0049f240,
      * camera 0x004b6e5c. */
     rr_log("ring.front", (long long)(int32_t)RD32(0x004b6e50));
+    /* Nitro globals (0x0040b110/0x0040b1a0): charge accumulator Q8 and
+     * charges left. */
+    rr_log("nitro.charge", (long long)(int32_t)RD32(0x004c5f10));
+    rr_log("nitro.charges", (long long)(int32_t)RD32(0x00465a34));
     rr_log("ring.back", (long long)(int32_t)RD32(0x0049f240));
     rr_log("ring.camera", (long long)(int32_t)RD32(0x004b6e5c));
     if (g_terrain_trace) {
@@ -442,6 +446,30 @@ static void dump_sim_tick(void) {
                  * (weapon +0x1d4, invuln +0x1d0, AI words, lookahead +0x1dc..+0x1f0).
                  * Values are compared across runs; pointers are stable in practice. */
                 const uintptr_t rh = readable(node + 0x2fc, 4) ? (uint32_t)*(uint32_t*)(node + 0x2fc) : 0;
+                /* Stamina lives in the rider-table row *(half+0x1e0)
+                 * (0x004050c0: +0x38 maximum, +0x3c current). */
+                /* The rider's riding/attack animation block is on the half
+                 * (0x00434660/0x00407f30 advance half+0x70; 0x0043ae10:
+                 * +0x80 animation, +0x81 frame, +0x82 queued, +0x84
+                 * deadline, +0x88 loops). The riding bike's own block only
+                 * mirrors +0x81 from half+0x1e9 (0x00407a90). */
+                if (node == player && rh && readable(rh + 0x80, 12)) {
+                    for (unsigned f = 0; f < RR_SIM_RIDER_FIELD_COUNT; ++f) {
+                        const uint32_t off = rr_sim_rider_fields[f].offset;
+                        if (off != 0x80 && off != 0x81 && off != 0x82 && off != 0x84 && off != 0x88) continue;
+                        snprintf(key, sizeof key, "rider.%d.%s", slot, rr_sim_rider_fields[f].name);
+                        rr_log(key, sim_field_value(rh, off, rr_sim_rider_fields[f].width, rr_sim_rider_fields[f].is_signed));
+                    }
+                }
+                if (node == player && rh && readable(rh + 0x1e0, 4)) {
+                    const uintptr_t row = (uint32_t)*(uint32_t*)(rh + 0x1e0);
+                    if (row && readable(row + 0x3c, 4)) {
+                        snprintf(key, sizeof key, "rider.%d.stamina_max", slot);
+                        rr_log(key, sim_field_value(row, 0x38, 4, 1));
+                        snprintf(key, sizeof key, "rider.%d.stamina_current", slot);
+                        rr_log(key, sim_field_value(row, 0x3c, 4, 1));
+                    }
+                }
                 if (rh) {
                     for (unsigned w = 0; w < 32; ++w) {
                         snprintf(key, sizeof key, "rider.%d.raw_%x", slot, 0x180 + 4 * w);

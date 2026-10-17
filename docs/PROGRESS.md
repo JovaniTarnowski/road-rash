@@ -1247,3 +1247,24 @@ was restored to its pre-session hash after both captures.
   constant on every captured tick.
 - Coverage now: 87 golden-only keys (the non-rider scheduler node list) and
   10 undumped native fields (riding animation, nitro, stamina) remain.
+
+### October 17, 2026: animation, nitro and stamina compared; spec nitro words fixed (plans 10, 16)
+
+- Proxy now dumps the rider half's riding/attack animation block
+  (`half+0x80..+0x88`; the riding bike's own block only mirrors `+0x81`),
+  stamina from the rider-table row `*(half+0x1e0)+0x38/0x3c`, and the nitro
+  globals `DAT_004c5f10`/`DAT_00465a34`. New capture
+  `sched-human-cov2-20261017` (same recipe): every simulation word equals
+  `sched-human-20261016`; only the wall-clock frame schedule (`+0x44`, rpm)
+  differs at ticks 1197/1220.
+- Riding-animation selection/advance (`0x00407f30`) now runs at the end of
+  the think, before physics, as in `0x00434660`/`0x00407bd0` (it read the
+  current tick's speed and switched one tick early).
+- Nitro config came from the wrong spec words: `0x0040b0e0` copies
+  `spec+0x14c` = words 83..88 (only bikes 7–10 carry nitro); the port read
+  77..82 and gave every bike 127 nitro. The factory now copies the words
+  literally (zero words = no nitro).
+- Native-only `nitro_throttle` (mid-tick copy, no original offset) left the
+  snapshot; bike `+0x114`/`+0x240` are compared through the bike image.
+- `sched-human-cov2-20261017`: 1431 identical, **0 uncovered native
+  comparisons**; 87 golden-only keys (the scheduler node list) remain.

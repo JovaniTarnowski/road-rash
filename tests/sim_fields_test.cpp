@@ -122,7 +122,7 @@ int main() {
     {
         const std::set<std::string> fresh = {"anim", "anim_frame", "anim_queued", "anim_loops",
             "anim_deadline", "attack_weapon", "steal_until", "hit_until",
-            "nitro_charge", "nitro_throttle", "nitro_charges"};
+            "nitro_charge", "nitro_charges"};
         for (const auto& f : rr::sim::rider_fields)
             if (fresh.count(f.name) && f.offset != 0x80 && f.offset != 0x81 && f.offset != 0x82 &&
                 f.offset != 0x88 && f.offset != 0x84 && f.offset != 0x1d4 && f.offset != 0x1cc &&

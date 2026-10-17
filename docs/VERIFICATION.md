@@ -1567,3 +1567,15 @@ pass before it was inspected; the successful rerun is the verified result.
   (CITY/HIWAY/MEDLY/NAPA/CANYN L0..L4); Napa L0 439040 equals the capture's
   `+0x1f8 + position` on every tick.
 - sched600 600 identical, sched900 893 (unchanged). ctest 101/101.
+
+## Animation, nitro, stamina coverage (October 17, 2026)
+
+- Capture: `RR_ORACLE_COURSE=4 SEED=1 SIM=1 SOLO=1 HUMAN=1 FRAMES=1431
+  INPUT=C:\napa-human.controls tools/oracle_capture.py capture
+  sched-human-cov2-20261017` (proxy `53322b8a…`), exit 0, 1431 frames,
+  branch human, `validate --simulation` complete. Keys shared with
+  `sched-human-20261016`: equal except `+0x44`/rpm at ticks 1197 and 1220.
+- `oracle-sim-test analysis/oracle/sched-human-cov2-20261017.tsv
+  --coverage`: 1431 identical; 87 golden-only, 70 invariant, 0 uncovered.
+- `sched-human-20261016` 1431 identical; sched600 600; sched900 893;
+  terrain-human200 200. ctest 101/101.

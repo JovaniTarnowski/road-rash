@@ -88,14 +88,13 @@ const char* golden_key_for(const std::string& slot_prefix,
         return out.c_str();
     }
     if (suffix == "steer" || suffix == "steer_rate" || suffix == "ground" ||
-        suffix == "stamina_current" || suffix == "stamina_max") {
-        // Offsets the proxy never dumps (no golden key in any era).
+        false) {
         return nullptr;
     }
     // Animation/combat/nitro fields (plan 16): direct golden keys when the
     // proxy dumps them, else uncovered (reported, never failing).
     static const char* passthrough[] = {"anim", "anim_frame", "anim_queued", "anim_loops",
-        "anim_deadline", "nitro_charge", "nitro_throttle", "nitro_charges", nullptr};
+        "anim_deadline", "stamina_current", "stamina_max", nullptr};
     for (const char** d = passthrough; *d; ++d)
         if (suffix == *d) {
             out = slot_prefix + suffix;
@@ -114,6 +113,13 @@ const char* golden_key_for(const std::string& slot_prefix,
             if (golden.find(out) == golden.end()) return nullptr;
             return out.c_str();
         }
+    // Nitro state is global in the original (0x0040b110/0x0040b1a0); the
+    // native keeps a per-rider charge, compared for the player only.
+    if ((suffix == "nitro_charge" || suffix == "nitro_charges") && slot_prefix == "rider.0.") {
+        out = suffix == "nitro_charge" ? "nitro.charge" : "nitro.charges";
+        if (golden.find(out) == golden.end()) return nullptr;
+        return out.c_str();
+    }
     // AI offsets live in the brain window (rider.N.brain_<hex>, brain
     // +0x138..+0x1c4) in the full era; earlier eras lack them.
     static const struct { const char* suffix; const char* hex; } ai_map[] = {
@@ -738,6 +744,17 @@ int main(int argc, char** argv) {
     // Frame 0 is post tick 1, which the replay does not re-run: take the
     // player half's standings words from it (the countdown computes them
     // natively from tick 1 in a live game).
+    // The rider half's riding-animation block (+0x80..+0x88) enters the
+    // race with a pending queue (measured 2; its spawn writer is not in the
+    // exported code), so take the whole block from frame 0 when dumped.
+    if (solo && h.count("rider.0.anim_queued")) {
+        auto& st = race.riders()[0].ride_animation;
+        st.animation = int8_t(h.at("rider.0.anim"));
+        st.frame = int8_t(h.at("rider.0.anim_frame"));
+        st.queued = int8_t(h.at("rider.0.anim_queued"));
+        st.loops = uint8_t(h.at("rider.0.anim_loops"));
+        st.deadline = uint32_t(h.at("rider.0.anim_deadline"));
+    }
     if (solo && h.count("rider.0.raw_1fc") && h.count("rider.0.raw_1f4")) {
         auto& p = race.riders()[0];
         p.place = int(h.at("rider.0.raw_1fc"));

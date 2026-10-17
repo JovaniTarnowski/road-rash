@@ -206,10 +206,10 @@ Race::Race(std::vector<RouteSample> a, std::vector<RouteSample> b, const Physics
     {
         bool spec_nitro = false;
         for (int k = 0; k < 6; ++k)
-            if (spec.d[size_t(77 + k)] != 0) spec_nitro = true;
+            if (spec.d[size_t(83 + k)] != 0) spec_nitro = true;   // +0x14c = word 83
         if (spec_nitro) {
-            nitro_.recharge = spec.d[77]; nitro_.boost = spec.d[78]; nitro_.max = spec.d[79];
-            nitro_.charges = spec.d[80]; nitro_.minimum = spec.d[81]; nitro_.tail = spec.d[82];
+            nitro_.recharge = spec.d[83]; nitro_.boost = spec.d[84]; nitro_.max = spec.d[85];
+            nitro_.charges = spec.d[86]; nitro_.minimum = spec.d[87]; nitro_.tail = spec.d[88];
         }
         nitro_charges_ = nitro_.charges;
         for (auto& rider : riders_) rider.nitro_charge = nitro_.max << 8;
@@ -2238,6 +2238,9 @@ void Race::step_rider(Rider& r, uint32_t controls, bool player) {
             b.i32(0x104) = 0; b.i32(0x10c) = 0; b.u8(0x278) = 0;
         }
     }
+    // 0x00407f30 runs at the end of the think (0x00434660 / 0x00407bd0),
+    // before the physics move: selection reads the previous tick's speed.
+    advance_ride_animation(r, player);
     const int surface = surface_class(edges(r, r.sample), b.i32(0x28));
     traction(b, tables_, surface, player);
     if (b.i32(0x2f4) != 0 && !(b.u8(0xc0) & 0x10)) crash(r);   // skid crash raised by traction
@@ -2298,7 +2301,6 @@ RaceSnapshot Race::snapshot() const {
         out.fields.push_back({p + "steal_until", int64_t(r.steal_until)});
         out.fields.push_back({p + "hit_until", int64_t(r.hit_until)});
         out.fields.push_back({p + "nitro_charge", int64_t(r.nitro_charge)});
-        out.fields.push_back({p + "nitro_throttle", int64_t(r.nitro_throttle)});
         out.fields.push_back({p + "nitro_charges", int64_t(nitro_charges_)});
     }
     // Free-traffic rows (tests/sim_fields.hpp car_fields) for every pool
@@ -2700,7 +2702,7 @@ void Race::step(uint32_t controls) {
     collide_riders();
     for (size_t i = 0; i < riders_.size(); ++i) collide_traffic(riders_[i]);
     collide_pedestrians();   // pedestrians against cars
-    for (size_t i = 0; i < riders_.size(); ++i) advance_ride_animation(riders_[i], i == 0);
+    // Riding animations advance inside each rider's think (step_rider).
     update_camera();
     const auto& player=riders_[0];const auto& road=route_of(player);
     camera_heading_=advance_heading(camera_heading_,previous_camera_position_,camera_position(),road[player.previous_sample].path.bend,road[player.sample].path.bend,(player.bike.u8(0xc0)&16)!=0);

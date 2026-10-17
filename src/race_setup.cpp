@@ -44,15 +44,15 @@ AttackCodes read_attack_codes(const std::vector<uint8_t>& exe) {
 }
 
 NitroConfig nitro_from_spec(const BikeSpec& spec) {
+    // 0x00405600 -> 0x0040b0e0(spec + 0x14c) copies the six words even when
+    // they are all zero (no nitro: charge max 0 << 8 = 0, no charges); the
+    // EXE defaults at 0x00465a28 apply only to a null spec.
     NitroConfig nitro;
-    bool spec_nitro = false;
-    for (int k = 0; k < 6; ++k)
-        if (spec.d[size_t(77 + k)] != 0) spec_nitro = true;
-    if (spec_nitro) {
-        nitro.recharge = spec.d[77]; nitro.boost = spec.d[78];
-        nitro.max = spec.d[79]; nitro.charges = spec.d[80];
-        nitro.minimum = spec.d[81]; nitro.tail = spec.d[82];
-    }
+    // +0x14c is spec word 83 (BIKESPEC: only the nitro bikes 7..10 carry
+    // nonzero words there).
+    nitro.recharge = spec.d[83]; nitro.boost = spec.d[84];
+    nitro.max = spec.d[85]; nitro.charges = spec.d[86];
+    nitro.minimum = spec.d[87]; nitro.tail = spec.d[88];
     return nitro;
 }
 
