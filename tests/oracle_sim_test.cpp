@@ -8,6 +8,7 @@
 #include "race.hpp"
 #include "race_setup.hpp"
 #include "traffic.hpp"
+#include <set>
 #include <cstdio>
 #include <filesystem>
 #include <functional>
@@ -87,18 +88,29 @@ const char* golden_key_for(const std::string& slot_prefix,
         return out.c_str();
     }
     if (suffix == "steer" || suffix == "steer_rate" || suffix == "ground" ||
-        suffix == "stamina_current" || suffix == "stamina_max" || suffix == "weapon") {
+        suffix == "stamina_current" || suffix == "stamina_max") {
         // Offsets the proxy never dumps (no golden key in any era).
         return nullptr;
     }
     // Animation/combat/nitro fields (plan 16): direct golden keys when the
     // proxy dumps them, else uncovered (reported, never failing).
     static const char* passthrough[] = {"anim", "anim_frame", "anim_queued", "anim_loops",
-        "anim_deadline", "attack_weapon", "steal_until", "hit_until",
-        "nitro_charge", "nitro_throttle", "nitro_charges", nullptr};
+        "anim_deadline", "nitro_charge", "nitro_throttle", "nitro_charges", nullptr};
     for (const char** d = passthrough; *d; ++d)
         if (suffix == *d) {
             out = slot_prefix + suffix;
+            if (golden.find(out) == golden.end()) return nullptr;
+            return out.c_str();
+        }
+    // Rider-half words (0x00434660/0x004096f0, object *(bike+0x2fc)): the
+    // raw window rider.N.raw_<hex> covers +0x180..+0x1fc in the full era.
+    static const struct { const char* suffix; const char* key; } half_map[] = {
+        {"weapon", "raw_1c8"}, {"steal_until", "raw_1cc"}, {"hit_until", "raw_1d0"},
+        {"attack_weapon", "raw_1d4"},
+    };
+    for (const auto& m : half_map)
+        if (suffix == m.suffix) {
+            out = slot_prefix + m.key;
             if (golden.find(out) == golden.end()) return nullptr;
             return out.c_str();
         }
@@ -118,6 +130,16 @@ const char* golden_key_for(const std::string& slot_prefix,
         }
     return nullptr;
 }
+// --coverage: uncovered native field names (digits folded to N) with counts.
+std::map<std::string, size_t> g_uncovered_names;
+// Golden keys some comparison consumed (acceptance coverage ledger).
+std::set<std::string> g_used_keys;
+bool g_solo_nulled_cars = false;   // solo capture whose frames carry no car.* rows
+std::string fold_digits(const std::string& n) {
+    std::string out; bool in = false;
+    for (char c : n) { if (c >= '0' && c <= '9') { if (!in) out += 'N'; in = true; } else { out += c; in = false; } }
+    return out;
+}
 int compare_fields(const std::map<std::string, int64_t>& golden,
                    const std::vector<rr::FieldValue>& native, size_t frame, int64_t tick,
                    const std::vector<std::pair<int64_t, uint64_t>>& rng_history,
@@ -128,6 +150,7 @@ int compare_fields(const std::map<std::string, int64_t>& golden,
         const std::string suffix = f.name.substr(dot + 1);
         auto it = golden.find(f.name);
         if (it != golden.end()) {
+            g_used_keys.insert(f.name);
             if (it->second != f.value) {
                 std::cout << "first divergence at frame " << frame << " (tick " << tick
                           << "): " << f.name << " original " << it->second << " native " << f.value << '\n';
@@ -143,6 +166,19 @@ int compare_fields(const std::map<std::string, int64_t>& golden,
         // kind+position+lateral, then compare the remaining field there.
         // Unmatched cars (or ambiguous matches) stay uncovered, reported
         // per frame, never skipped-green.
+        // Solo captures null the car pool (no car rows in any frame): the
+        // native pool must stay empty, so an inactive native row is covered
+        // and an active one is a divergence.
+        if (prefix.rfind("car.", 0) == 0 && g_solo_nulled_cars) {
+            int64_t active = 0;
+            for (const auto& n : native) if (n.name == prefix + "active") { active = n.value; break; }
+            if (active != 0) {
+                std::cout << "first divergence at frame " << frame << " (tick " << tick << "): " << prefix
+                          << "active native " << active << " (solo capture has no cars)\n";
+                return 1;
+            }
+            continue;
+        }
         if (prefix.rfind("car.", 0) == 0 && (suffix == "vehicle" || suffix == "lane" ||
             suffix == "speed" || suffix == "phase")) {
             auto car_field = [&](const std::string& addr, const char* field) -> const int64_t* {
@@ -155,7 +191,7 @@ int compare_fields(const std::map<std::string, int64_t>& golden,
                 auto jp = golden.find(prefix + "position");
                 auto jl = golden.find(prefix + "lateral");
                 if (jk == golden.end() || jp == golden.end() || jl == golden.end()) {
-                    ++uncovered;
+                    ++uncovered; ++g_uncovered_names[fold_digits(f.name)];
                     continue;
                 }
                 kind = jk->second; position = jp->second; lateral = jl->second;
@@ -173,7 +209,8 @@ int compare_fields(const std::map<std::string, int64_t>& golden,
                 }
             }
             auto want = match_addr.empty() ? nullptr : car_field(match_addr, suffix.c_str());
-            if (!want) { ++uncovered; continue; }
+            if (want) g_used_keys.insert("ring." + match_addr + "." + suffix);
+            if (!want) { ++uncovered; ++g_uncovered_names[fold_digits(f.name)]; continue; }
             if (*want != f.value) {
                 std::cout << "first divergence at frame " << frame << " (tick " << tick
                           << "): " << f.name << " original " << *want << " native " << f.value
@@ -204,12 +241,13 @@ int compare_fields(const std::map<std::string, int64_t>& golden,
                         suffix.rfind("anim", 0) == 0 || suffix == "attack_weapon" ||
                         suffix == "steal_until" || suffix == "hit_until" ||
                         suffix.rfind("nitro_", 0) == 0)) {
-            ++uncovered;
+            ++uncovered; ++g_uncovered_names[fold_digits(f.name)];
             continue;
         }
         if (!mapped) { missing = f.name + " (no golden key in any era)"; return 1; }
         auto jt = golden.find(key);
         if (jt == golden.end()) { missing = f.name + " (via " + key + ": absent)"; return 1; }
+        g_used_keys.insert(key);
         int64_t want = jt->second;
         if (suffix == "slice") {
             // Pointer-valued slice_ptr: derive the sample from position.
@@ -235,9 +273,11 @@ int main(int argc, char** argv) {
     std::string driver_cli;
     std::vector<std::string> args;
     int64_t ring_pre_cli = -1;
+    bool coverage = false;
     for (int i = 1; i < argc; ++i) {
         const std::string a = argv[i];
         if (a == "--reanchor") reanchor = true;
+        else if (a == "--coverage") coverage = true;
         else if (a.rfind("--ring-pre-draws=", 0) == 0) ring_pre_cli = std::stoll(a.substr(17));   // diagnostic search only
         else if (a.rfind("--driver=", 0) == 0) {
             driver_cli = a.substr(9);
@@ -309,6 +349,11 @@ int main(int argc, char** argv) {
     if (measured_hold == -2 && driver_cli.empty())
         throw std::runtime_error("golden player.demo_hold changes mid-capture: pass --driver=human|demo");
     const bool solo = h.find("solo") != h.end() && h.at("solo") != 0;
+    if (solo) {
+        bool any_car = false;
+        for (const auto& fr : g.frames) { for (const auto& kv : fr) if (kv.first.rfind("car.", 0) == 0) { any_car = true; break; } if (any_car) break; }
+        g_solo_nulled_cars = !any_car;
+    }
     rr::Assets assets(assets_root);
     std::vector<uint8_t> exe = assets.read("ROADRASH.EXE");
     const std::string course_name = original_courses[course_entry - 1];
@@ -809,44 +854,118 @@ int main(int argc, char** argv) {
             if (!missing.empty()) std::cout << "missing required field at frame " << i << " (tick " << tick0 + int64_t(i) << "): " << missing << '\n';
             return rc;
         }
-    }
-    // Coverage report: golden-only extras are diagnostic context (not
-    // acceptance); uncovered native fields are acceptance gaps the proxy
-    // never dumped (listed, never silently skipped).
-    {
-        size_t extras = 0;
-        const auto snap0 = race.snapshot();
-        for (const auto& kv : g.frames.back()) {
-            bool native_has = false;
-            for (const auto& f : snap0.fields) if (f.name == kv.first) { native_has = true; break; }
-            if (!native_has && kv.first != "tick" && kv.first != "rng" && kv.first != "rng_calls" &&
-                kv.first != "controls" && kv.first != "riders" && kv.first != "course" && kv.first != "level" &&
-                kv.first != "bike" && kv.first != "character" && kv.first != "seed" && kv.first != "solo" &&
-                kv.first != "tick1_caller" && kv.first != "probe.S" && kv.first != "probe.end" &&
-                kv.first != "probe.player" && kv.first != "player.demo_hold" && kv.first != "player.think" &&
-                kv.first != "player.think_count" && kv.first != "grid.bias" &&
-                kv.first != "demo.base_speed" && kv.first != "demo.lane") ++extras;
-        }
-        // Name one uncovered native field per rider slot for the report.
-        std::string uncovered_names;
+        // Player bike-image words the proxy dumps beside the field set
+        // (rider.0.bike_<hex>, lat104/108/10c, yaw60): the native Bike is the
+        // original object image, so each compares at its own offset. The
+        // scheduler words +0x0c/+0x10/+0x14 are kept on Rider (sched_*), and
+        // +0x44 is the 0x00438450 render-prep copy (presentation, not ported).
         {
-            std::map<std::string, bool> seen;
-            // Re-scan the final snapshot against the final golden frame.
-            for (const auto& f : snap0.fields) {
-                const auto dot = f.name.rfind('.');
-                const std::string prefix = f.name.substr(0, dot + 1);
-                const std::string suffix = f.name.substr(dot + 1);
-                if (g.frames.back().find(f.name) != g.frames.back().end()) continue;
-                std::string key;
-                const char* mapped = golden_key_for(prefix, suffix, g.frames.back(), key);
-                if ((!mapped || g.frames.back().find(key) == g.frames.back().end()) && !seen[suffix]) {
-                    seen[suffix] = true;
-                    uncovered_names += (uncovered_names.empty() ? "" : ",") + suffix;
+            const rr::Rider& pr = race.riders()[0];
+            for (const auto& kv : frame) {
+                const std::string& k = kv.first;
+                int64_t native;
+                if (k == "rider.0.bike_c") native = pr.sched_next;
+                else if (k == "rider.0.bike_10") native = pr.sched_last;
+                else if (k == "rider.0.bike_14") native = pr.sched_interval;
+                else if (k == "rider.0.bike_44") continue;
+                else if (k.rfind("rider.0.bike_", 0) == 0) native = pr.bike.i32(uint32_t(std::stoul(k.substr(13), nullptr, 16)));
+                else if (k.rfind("rider.0.lat1", 0) == 0) native = pr.bike.i32(uint32_t(std::stoul(k.substr(11), nullptr, 16)));
+                else if (k == "rider.0.yaw60") native = pr.bike.i32(0x60);
+                else continue;
+                g_used_keys.insert(k);
+                if (native != kv.second) {
+                    std::cout << "first divergence at frame " << i << " (tick " << tick0 + int64_t(i) << "): " << k
+                              << " original " << kv.second << " native " << native << " (bike image)\n";
+                    return 1;
                 }
             }
         }
-        std::cout << g.frames.size() << " ticks identical (" << extras << " golden-only diagnostic fields not in acceptance set; "
-                  << uncovered << " field-comparisons uncovered across eras: " << uncovered_names << ")\n";
+        // Ring cursors and frozen-node scheduler words (sched.<addr>.*,
+        // matched to native riders through the frame-0 address identities).
+        {
+            for (const auto& kv : frame) {
+                const std::string& k = kv.first;
+                int64_t native = 0;
+                if (k == "ring.front" || k == "ring.back" || k == "ring.camera") {
+                    if (!setup.instance.ring) continue;
+                    native = k == "ring.front" ? setup.instance.ring->front_q8()
+                           : k == "ring.back" ? setup.instance.ring->back_q8()
+                           : int64_t(setup.instance.ring->front_q8()) - 0x5000;   // DAT_004b6e5c ring camera
+                } else if (k.rfind("sched.", 0) == 0) {
+                    const size_t dot = k.find('.', 6);
+                    if (dot == std::string::npos) continue;
+                    const auto who = rider_by_address.find(int64_t(std::stoul(k.substr(6, dot - 6), nullptr, 16)));
+                    if (who == rider_by_address.end() || who->second < 0) continue;
+                    const rr::Rider& fr = race.riders()[size_t(who->second)];
+                    const std::string f = k.substr(dot + 1);
+                    native = f == "next" ? fr.sched_next : f == "last" ? fr.sched_last
+                           : f == "interval" ? fr.sched_interval : f == "dt" ? fr.bike.i32(0x18) : INT64_MIN;
+                    if (native == INT64_MIN) continue;
+                } else continue;
+                g_used_keys.insert(k);
+                if (native != kv.second) {
+                    std::cout << "first divergence at frame " << i << " (tick " << tick0 + int64_t(i) << "): " << k
+                              << " original " << kv.second << " native " << native << '\n';
+                    return 1;
+                }
+            }
+        }
+        // Per-frame hook 0x00434980 (the game calls it after each tick:
+        // sound pump or game_types without sound): player rpm +0x2dc and its
+        // speed cache +0x2e8, read by the next tick's dump.
+        // The capture's frame schedule is an input like the controls: the
+        // render prep 0x00438450 copies +0x1c into +0x44 once per frame, so a
+        // frame ends after this tick exactly when the next dump's +0x44 is
+        // this tick's position (ticks 13, 493 and 1197 share a frame with the
+        // tick before on sched-human-20261016).
+        bool frame_ends = true;
+        if (i + 1 < g.frames.size()) {
+            const auto next44 = g.frames[i + 1].find("rider.0.bike_44");
+            const auto pos = frame.find("rider.0.position");
+            if (next44 != g.frames[i + 1].end() && pos != frame.end()) frame_ends = next44->second == pos->second;
+        }
+        if (frame_ends) rr::update_engine_rpm(race.riders()[0].bike);
+    }
+    // Coverage report. Acceptance needs every native field compared
+    // (uncovered == 0) and every golden key either compared (ledger) or
+    // listed below as a non-state key; only then is the bare
+    // "N ticks identical" line printed (tools/verify_sim.py strict mode).
+    {
+        // Non-state golden keys: header/branch probes, inputs (controls and
+        // the frame schedule +0x44 of the 0x00438450 render prep), and
+        // process-specific code/object pointers (think callbacks are checked
+        // at green; slice_ptr is compared through the derived sample).
+        auto non_state = [](const std::string& k) {
+            static const std::set<std::string> exact = {"tick", "rng_calls", "controls", "riders", "course",
+                "level", "bike", "character", "seed", "solo", "tick1_caller", "probe.S", "probe.end",
+                "probe.player", "player.demo_hold", "player.think", "player.think_count", "grid.bias",
+                "demo.base_speed", "demo.lane"};
+            if (exact.count(k)) return true;
+            if (k.rfind("rider.", 0) != 0) return false;
+            const std::string suffix = k.substr(k.rfind('.') + 1);
+            return suffix == "think" || suffix == "slice_ptr" || suffix == "bike_44" ||
+                   suffix == "raw_1a4" || suffix == "raw_1c4" || suffix == "raw_1d8" || suffix == "raw_1e0";
+        };
+        g_used_keys.insert("rng");   // compared every tick before the fields
+        std::map<std::string, size_t> fam;
+        size_t extras = 0;
+        for (const auto& kv : g.frames.back()) {
+            if (g_used_keys.count(kv.first) || non_state(kv.first)) continue;
+            ++extras;
+            ++fam[fold_digits(kv.first)];
+        }
+        std::string uncovered_names;
+        for (const auto& kv : g_uncovered_names) {
+            const std::string suffix = kv.first.substr(kv.first.rfind('.') + 1);
+            if (uncovered_names.find(suffix) == std::string::npos) uncovered_names += (uncovered_names.empty() ? "" : ",") + suffix;
+        }
+        if (coverage) {
+            for (const auto& kv : g_uncovered_names) std::cout << "uncovered " << kv.first << ' ' << kv.second << '\n';
+            for (const auto& kv : fam) std::cout << "golden-only " << kv.first << ' ' << kv.second << '\n';
+        }
+        if (uncovered == 0 && extras == 0) std::cout << g.frames.size() << " ticks identical\n";
+        else std::cout << g.frames.size() << " ticks identical (" << extras << " golden-only fields not compared; "
+                       << uncovered << " field-comparisons uncovered: " << uncovered_names << ")\n";
     }
     return 0;
 }

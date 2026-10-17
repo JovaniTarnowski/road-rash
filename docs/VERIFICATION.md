@@ -1548,3 +1548,13 @@ pass before it was inspected; the successful rerun is the verified result.
 - `race` test: off-road BORR slot solid (speed, damage, push), box-less
   frame inert, ×3 width for a one-box slot at |lateral| ≥ 0x400.
 - Gate: full Debug build exit 0; ctest 101/101.
+
+## Strict replay coverage, first pass (October 16, 2026)
+
+- `oracle-sim-test analysis/oracle/sched-human-20261016.tsv --coverage`:
+  1431 ticks identical; 174 golden-only keys not compared (was 264), 14,300
+  uncovered native comparisons (was 203,060: 10 rider fields × 1430).
+- sched600 600 identical, sched900 tick 893 (unchanged), terrain-human200
+  200 identical; `oracle-sim` and `frozen_state` ctests pass.
+- Strict `verify_sim.py --mode acceptance` still unmet (coverage note
+  printed).

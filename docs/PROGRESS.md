@@ -1207,3 +1207,24 @@ was restored to its pre-session hash after both captures.
 - Open: billboard types 3+ (marking branch), crashed-rider static contact
   (`+0xf4 += 0x150` path), the render-window gate on box loading.
   [Handoff](agent-handoffs/human702-20261016.md).
+
+### October 16, 2026: strict replay coverage, first pass (plan 10)
+
+- `oracle-sim-test` now keeps a ledger of the golden keys it compares and
+  prints the bare `N ticks identical` (what `verify_sim.py` acceptance
+  needs) only when every native field is compared and every golden key is
+  either compared or a listed non-state key (inputs, probes, code/object
+  pointers). `--coverage` lists what is left.
+- Newly compared on `sched-human-20261016`, all 1431 ticks equal: rider-half
+  weapon/steal/hit/attack words (`raw_1c8..1d4`), every dumped player
+  bike-image word (`bike_*`, `lat104..10c`, `yaw60`; scheduler words via
+  `Rider::sched_*`), player rpm `+0x2dc`/`+0x2e8` through the per-frame
+  `0x00434980` hook (frame schedule from the capture's `+0x44` render-prep
+  copy: ticks 13, 493 and 1197 share a frame), ring cursors, frozen-node
+  scheduler words (`sched.<addr>.*`) and the empty solo car pool.
+- Remaining for strict acceptance: 174 golden-only keys (rider-half object
+  `rider.1.*`, rider-half raw window AI words, 28 brain words, the
+  non-rider node list) and 10 native fields the proxy never dumped
+  (riding animation block, nitro globals, stamina in the rider table row
+  `*(half+0x1e0)+0x38/0x3c`), which need a proxy extension and a new
+  capture. [Handoff](agent-handoffs/coverage-20261016.md).
