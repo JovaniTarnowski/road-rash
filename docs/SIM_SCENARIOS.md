@@ -233,7 +233,9 @@ copy 0x00438170, wreck attack rule 0x0040a600), all demo-tuned natively.
 Ring setup calibration (October 16, ring-terrain-20261016): with the
 `0x00453b60` window walks ported, the ring setup starts directly at
 srand(seed) (`ring.pre_draws` default **0**, was 9,098) and ends
-`ring.post_draws` **16** draws before the green anchor (was 11). Measured
+`ring.post_draws` **16** draws before the green anchor (was 11). Since spawn-20261017 those 16 draws are ported (0x00405600: one
+lane `rand()%3` per rider, player first, then `rand()%100` for the name
+set), so `ring.post_draws` defaults to **0**. Measured
 with `build/ring-probe analysis/oracle/terrain-human200-20261015.tsv
 ../cdrom/ROADRASH 20000`: K = 11,461 back from the anchor is state 1 and
 leaves both walkers' frame-0 terrain exact. Headers may still override
@@ -257,8 +259,10 @@ wall-clock frame schedule (`+0x44`, and the rpm it gates) differs at ticks
 Replay with `driver=human` is `1431 ticks identical` with **0 uncovered
 native comparisons and 0 golden-only keys**: `node.N.*` now compares as a
 per-frame multiset of (draw callback `+0xdc`, position) over the 0x00437e60
-list minus the player's two slots, and the 70 remaining original words are
-accepted only as verified invariants (constant on every captured tick).
+list minus the player's two slots. The 70 words first accepted as verified
+invariants now compare against native state (rider build port,
+spawn-20261017: player brain window, rider-half object image, half raw
+window); the invariant category is gone.
 
 `tools/verify_sim.py --mode acceptance` now defaults to this fixture with
 `driver=human` (diagnostic keeps `sim-napa-solo.tsv`/`driver=demo`) and
