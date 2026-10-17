@@ -238,6 +238,8 @@ void TrackRing::build_slice(Walker& w, int32_t ring_q8, const ActorSink& sink) {
     const uint32_t local = uint32_t(w.position >> 8);
     const auto& path = section.samples.at(local);
     w.borr.slots(path, *random_);
+    if (slice_sink_ && w.terrain)   // 0x00451910 (draw-free)
+        slice_sink_(node.link, local, path, w.terrain->slice(-path.left - path.shoulder_left, path.right + path.shoulder_right));
     w.borr.slots(path, *random_);
     auto& records = events_.at(w.dzhr.node).records;
     for (size_t i = size_t(std::max(0, w.dzhr.index)); i < records.size(); ++i) {

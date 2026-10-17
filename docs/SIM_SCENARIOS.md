@@ -240,4 +240,5 @@ leaves both walkers' frame-0 terrain exact. Headers may still override
 both; `oracle-sim-test --ring-pre-draws=N` is a diagnostic override only.
 Results: `terrain-human200-20261015` 200 ticks identical (walker trace
 every frame); `sched-human-20261016` first divergence tick 371
-(`rider.0.velocity` 40 vs 296, RNG in sync).
+(`rider.0.velocity` 40 vs 296, RNG in sync), and tick 702 (RNG) once the
+race reads ring-built terrain slices (same day).

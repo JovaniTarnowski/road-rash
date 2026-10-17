@@ -484,3 +484,8 @@ now replays 200 ticks identical including the walker trace;
 `sched-human-20261016` advances **189 -> 371** (`rider.0.velocity` 40 vs
 296, RNG in sync). Demo sched600 (600 identical) and sched900 (893) are
 unchanged; legacy pinned diagnostics differ only in the closure line.
+
+Ring-built terrain slices (October 16). Physics read off-road ground from
+the scene's isolated-stream terrain; the ring's slice builds now supply it
+(`0x00451910`). Human replay advances **371 -> 702** (RNG at a speed drop
+3956 -> 992 at lateral −271123). Demo replays unchanged.

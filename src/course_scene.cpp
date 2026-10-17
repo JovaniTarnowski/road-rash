@@ -126,6 +126,14 @@ CourseScene::CourseScene(const Assets& assets,const std::vector<uint8_t>& exe,
 
 }
 const TerrainSlice& CourseScene::terrain(uint32_t section,uint32_t local) const {return terrain_.at(section).at(local);}
+void CourseScene::apply_ring_terrain(uint32_t section,uint32_t local,const PathSample& path,const TerrainSlice& slice) {
+    if(slice.type!=1 && slice.type!=4)return;
+    auto& t=terrain_.at(section).at(local);
+    const uint8_t type=t.type;
+    t.walls=slice.walls;t.points=slice.points;t.shades=slice.shades;
+    if(slice.type==4 && path.marking_flags && !(path.marking_flags&0x40))for(auto& point:t.points)point[1]=0;
+    t.type=type;
+}
 bool CourseScene::tunnel(uint32_t section,uint32_t local) const {return tunnels_.at(section).at(local);}
 int32_t CourseScene::rail_height(uint32_t section,uint32_t local) const {
     const auto* group=rail_group(section,local,event_selectors_.at(section).at(local));

@@ -38,7 +38,12 @@ public:
     // (4s + 1), s = (word1 & 0xff0000) >> 14). The sink makes the 0x004409e0
     // draws (pool allocation, police).
     using ActorSink = std::function<void(const RingActor&, uint32_t jitter)>;
+    // Called at each slice build with the front walker's terrain slice
+    // (0x00451910 into the ring slice, 0x00454240), keyed by section and
+    // local sample. The race reads ground heights from these slices.
+    using SliceSink = std::function<void(uint32_t section, uint32_t local, const PathSample&, const TerrainSlice&)>;
     TrackRing(const Course&, int level);
+    void set_slice_sink(SliceSink sink) { slice_sink_ = std::move(sink); }
     TrackRing(const TrackRing&) = delete;
     TrackRing& operator=(const TrackRing&) = delete;
     // 0x004552e0 (random part): DZHR jitter, walker init, walk to camera -
@@ -104,5 +109,6 @@ private:
     Walker front_walker_, back_walker_;
     int32_t front_ = 0, back_ = 0;
     bool unsupported_ = false;
+    SliceSink slice_sink_;
 };
 }

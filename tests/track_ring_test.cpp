@@ -94,6 +94,11 @@ int main() {
     uint32_t state = 12345;
     int draws = 0;
     std::function<uint32_t()> random = [&] { ++draws; state = state * 0x343fdu + 0x269ec3u; return (state >> 16) & 0x7fffu; };
+    int slices = 0, wall_slices = 0;
+    ring.set_slice_sink([&](uint32_t section, uint32_t local, const rr::PathSample&, const rr::TerrainSlice& t) {
+        ++slices;
+        if (section == 0 && local >= 2 && local < 130 && t.type == 1) ++wall_slices;
+    });
     std::vector<rr::RingActor> actors;
     std::function<void(const rr::RingActor&, uint32_t)> sink = [&](const rr::RingActor& a, uint32_t) { actors.push_back(a); };
     ring.setup(0x3200, random, sink);
@@ -104,6 +109,7 @@ int main() {
     check(actors.size() == 1 && actors[0].ring_sample == 20 && (actors[0].word0 & 15) == 4, "actor fired once at sample 20");
     check(ring.back_q8() == 0x200 && ring.front_q8() == 0x8200, "ring cursors");
     check(!ring.unsupported(), "single road supported");
+    check(slices == 128 && wall_slices == 128, "every slice build exports its wall terrain slice");
     draws = 0;
     ring.advance(0x80, random, sink);
     check(draws == 0, "no crossing, no draws");

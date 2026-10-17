@@ -18,8 +18,8 @@
     {
       "area": "Simulation parity",
       "implementation": "Tick replay, frozen scheduler/half/slice state, countdown timers, measured player row and human-branch probe",
-      "verification": "Demo600 compared fields match; sched900 first divergence893 RNG; human terrain200 trace identical (ring setup window walks, srand+0 pre draws); sched-human first divergence371 (velocity, RNG in sync); strict acceptance unmet",
-      "remaining": "Human tick-371 velocity gap, contact eligibility, split/merge ring walking, traffic-field scenarios and full human parity",
+      "verification": "Demo600 compared fields match; sched900 first divergence893 RNG; human terrain200 trace identical (ring setup window walks, srand+0 pre draws); sched-human first divergence702 (RNG, ring-built terrain); strict acceptance unmet",
+      "remaining": "Human tick-702 RNG gap, contact eligibility, split/merge ring walking, traffic-field scenarios and full human parity",
       "evidence": [
         "SIM_SCENARIOS.md",
         "plans/10-simulation-oracle.md",

@@ -174,6 +174,15 @@ RaceInstance build_race(const RaceAssets& assets, const std::vector<uint8_t>& ex
     if (config.ring_rng_state) race->set_rng_state(*config.ring_rng_state);
     if (config.track_ring) {
         out.ring = std::make_unique<TrackRing>(*assets.course, config.level);
+        // Ring slices carry the race stream's terrain (0x00451910); the
+        // scene's isolated-stream values stand in only where the ring has
+        // not built a slice (splits/merges, the native quick setup).
+        if (assets.scene) {
+            auto* scene = assets.scene.get();
+            out.ring->set_slice_sink([scene](uint32_t section, uint32_t local, const PathSample& path, const TerrainSlice& slice) {
+                scene->apply_ring_terrain(section, local, path, slice);
+            });
+        }
         race->set_track_ring(out.ring.get());
     }
     // 5. Finish line + terrain source.

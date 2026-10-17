@@ -1518,3 +1518,17 @@ pass before it was inspected; the successful rerun is the verified result.
   later `-j8` run had `render-threads-alloc` fail once under load (renderer
   code untouched); it passed alone 4/4. `tools/doc_checks.py` OK.
 
+## Ring-built terrain slices (October 16, 2026)
+
+- `oracle-sim-test analysis/oracle/sched-human-20261016.tsv`: first
+  divergence frame 701 (tick 702) rng original 2400785084 native
+  2517057202 (was tick 371 `rider.0.velocity`).
+- `--driver=demo` sched600: 600 identical; sched900: tick 893 (unchanged);
+  terrain-human200: 200 identical.
+- `rr-game --autopilot --ticks 300|900 --screenshot`, HEAD vs change:
+  only hill silhouettes differ.
+- `race-cache`: all six RGB and six Original-scene hashes re-recorded
+  (owner-approved, October 16); other checks (thread equality, dashboard
+  pixels, horizon) unchanged and passing; passes twice in a row.
+- `track_ring`: setup exports 128 wall slices through the slice sink.
+- Gate: full Debug build exit 0; ctest 101/101.

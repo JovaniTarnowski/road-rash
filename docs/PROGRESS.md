@@ -1166,3 +1166,19 @@ was restored to its pre-session hash after both captures.
   shorter than 81 slices is reported unsupported.
   [Handoff](agent-handoffs/ring-terrain-20261016.md).
 
+### October 16, 2026: ring-built terrain slices, human replay to tick 702 (plan 10)
+
+- Tick 371 (`+0xf4` 296 vs 40, then the original's −218 at 373): the race
+  read off-road ground from `CourseScene` terrain built with its own random
+  stream. `TrackRing` now exports the front walker's terrain slice at every
+  slice build (`0x00451910` in `0x00454240`) and the factory writes it into
+  the scene (`CourseScene::apply_ring_terrain`: hill/wall geometry only,
+  same `0x00454240` point-height rule; building/empty samples unchanged).
+  Physics and rendering now share the race stream's terrain.
+- `sched-human-20261016`: first divergence **371 -> 702** (RNG: the
+  original draws as speed drops 3956 -> 992 at lateral −271123, likely a
+  wall/hill contact). sched600 600 identical, sched900 893, terrain-human200
+  200 identical: unchanged.
+- `race-cache` native hash baselines (12 entries) re-recorded,
+  owner-approved: hill shapes changed (screenshots compared, riders/HUD
+  identical). [Handoff](agent-handoffs/human371-20261016.md).

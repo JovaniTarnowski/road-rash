@@ -66,7 +66,10 @@ int main(int argc, char** argv) {
             // (1, 3, 5) re-recorded 2026-10-15 after the Hor+ centring fix
             // (owner-approved; already includes the 1b79351 needle): the old
             // values encoded scenery shifted a margin off the road.
-            static constexpr uint64_t rgb_baseline[]={2800544501961077726ULL,4304228047002938247ULL,11345352425216510781ULL,12848431387687779404ULL,9967728013922361189ULL,1873835806207674357ULL};
+            // All entries re-recorded 2026-10-16 (owner-approved): hill and
+            // wall terrain now comes from the live race stream via the track
+            // ring's slice builds (0x00451910), not the scene's own stream.
+            static constexpr uint64_t rgb_baseline[]={13324780666000863972ULL,11781225790523202150ULL,18289156974635944184ULL,7513113084004009039ULL,6439062191116640040ULL,2831052286577117410ULL};
             if(rgb)check(checksum==rgb_baseline[(row-1)/2],"RGB canvas output changed from pre-optimization baseline");
             // Dashboard overlays the scene; every opaque dashboard sample and
             // the full Hor+ margins must survive composition.
@@ -90,8 +93,10 @@ int main(int argc, char** argv) {
             game.enhancements.full_colour=false;
             canvas.draw(renderer.get(),game,slices,scale,1);
             const uint64_t no_hud=hash_bytes(canvas.frame.row(0),size_t(canvas.scale_w)*canvas.scale_h);
-            // Wide entries (1, 3, 5) re-recorded 2026-10-15 after the Hor+ centring fix.
-            static constexpr uint64_t original_scene[]={13444732443979624547ULL,15653804743185687758ULL,6395269177200922959ULL,8935959284729329489ULL,9343361947229583644ULL,11834733791893956520ULL};
+            // Wide entries (1, 3, 5) re-recorded 2026-10-15 after the Hor+ centring fix;
+            // all entries 2026-10-16 for ring-built terrain (owner-approved).
+            static constexpr uint64_t original_scene[]={10094337149923882775ULL,15933655999438847079ULL,1785310164594141104ULL,14133145286414236587ULL,5983123200423289452ULL,16054401525581687220ULL};
+            std::cout<<"  original_scene="<<no_hud<<'\n';
             check(no_hud==original_scene[(row-1)/2],"Original scene output changed");
             game.assets.hud=std::move(hud);
             game.enhancements.full_colour=rgb;

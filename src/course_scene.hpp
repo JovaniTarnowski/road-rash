@@ -33,6 +33,11 @@ public:
     // Oracle fixtures: replace one sample's terrain values (e.g. those an
     // original scene dump holds, drawn from the live race random stream).
     void set_terrain(uint32_t section,uint32_t local,const TerrainSlice& slice) {terrain_.at(section).at(local)=slice;}
+    // Live ring slice (TrackRing slice sink): replaces the random terrain
+    // geometry of wall/hill samples with the race stream's values, applying
+    // the same 0x00454240 sub-slice rules as construction. Building and
+    // empty samples are deterministic and keep their resolved heights.
+    void apply_ring_terrain(uint32_t section,uint32_t local,const PathSample& path,const TerrainSlice& slice);
     // Plan 20 Task 3: family textures for generation (read-only walk).
     const std::map<uint32_t, Family>& families() const { return families_; }
     // Plan 20 Task 3: attach cached MMPX levels to every family texture.
