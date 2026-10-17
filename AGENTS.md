@@ -114,9 +114,11 @@ coverage, and the relevant plan for acceptance. Read what the task needs.
   Use sanitizer/oracle checks appropriate to the change. No build is needed for
   a documentation-only edit.
 - Report skipped tests and known divergences separately. `oracle-sim` is an exact
-  diagnostic check; `make verify-sim` is strict acceptance and currently fails
-  because player-control proof/parity is incomplete. A green native suite does
-  not prove simulation parity. Never bless a new divergence just to pass CI.
+  diagnostic check; `make verify-sim` is strict acceptance on the receipted
+  human capture (`sched-human-cov2-20261017`, driver human) and currently
+  passes; full human parity outside that capture and the live-AI systems are
+  still open. A green native suite does not prove simulation parity. Never
+  bless a new divergence just to pass CI.
 - Preserve command exit codes. Log long commands to files and inspect the logs;
   a `tail`/`grep` pipeline or `|| true` must not turn a failed build into success.
 - Oracle captures mutate shared state. Coordinate the prefix, DLL install, output

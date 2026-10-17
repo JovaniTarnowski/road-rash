@@ -495,3 +495,15 @@ the `0x004373f0` sweep, frame collision boxes and the type-1 static contact
 ported, **`sched-human-20261016` replays all 1431 ticks identical** in every
 compared field with one RNG anchor. Strict acceptance remains unmet on
 field coverage (264 golden-only fields) only.
+
+Strict acceptance met (October 17,
+[handoff](../agent-handoffs/coverage-20261017.md)). The extended capture
+`sched-human-cov2-20261017` adds the riding-animation block, stamina and the
+nitro globals; the `node.N.*` scheduler list now compares as a per-frame
+multiset of (draw `+0xdc`, position) with rider parking (`0x00406940`) and
+the frozen-pedestrian semantics ported. Replay is `1431 ticks identical`
+with **0 golden-only and 0 uncovered**; `tools/verify_sim.py --mode
+acceptance` (new defaults: this fixture, driver human) reports
+`acceptance_met: true`. Remaining outside this capture: live-AI
+parking/waking, the 70 unmodeled-but-constant original words, and the
+traffic-field scenarios.

@@ -1268,3 +1268,30 @@ was restored to its pre-session hash after both captures.
   snapshot; bike `+0x114`/`+0x240` are compared through the bike image.
 - `sched-human-cov2-20261017`: 1431 identical, **0 uncovered native
   comparisons**; 87 golden-only keys (the scheduler node list) remain.
+
+### October 17, 2026: scheduler node list, rider parking, pedestrian freeze (plan 10)
+
+- The non-rider scheduler node list (`node.N.*`, the 0x00437e60 object list
+  minus the two player slots) is now compared as a per-frame multiset of
+  (draw callback `+0xdc`, position): 14 frozen opponent bike/half pairs, the
+  three pedestrians (`0x00440680`) and the intersection controller/signals
+  (no draw). `+0x73` is the top byte of the `+0x70` pointer, not state.
+- Parking (`0x00406940`, reached from the `0x00438108` window test):
+  `front - pos < 0x1e00 || pos - back < 0x800` on a scheduled run backs up
+  `+0xdc`/`+0xe0` and nulls draw/think, both `+0x2c` slices and `+0xc0 & 0xfc`
+  on the bike and its half. Native `Rider::parked` reproduces it for frozen
+  solo riders; the capture's NULL-slice frozen riders are parked at frame 0.
+- Frozen pedestrians never think, move or recompute `+0x14`: the proxy zeroes
+  `+0xe0`/`+0xe4` at the start of every step, so `0x00437e60` jumps to
+  `0x00438108` (NULL move). The scheduler metadata and the window test still
+  run, which is why the frozen nodes hold position and leave the list on a
+  scheduled run once the ring passes them (the two behind leave at tick
+  1382 = 2 + 23×60; the ahead one stays).
+- `sched-human-cov2-20261017`: 1431 identical, **0 uncovered native
+  comparisons and 0 golden-only keys**; 70 unmodeled-but-constant original
+  words remain accepted only as verified invariants. Strips the node-list
+  gate on a declared `probe.frozen_words` capture (legacy demo captures lack
+  the frozen slice flags parking needs).
+- Open: live-AI packing/waking scheduling (the `0x00438108` window for
+  stepped opponents, plan 10 Task 6) is still unported; only frozen solo
+  riders park. [Handoff](agent-handoffs/coverage-20261017.md).

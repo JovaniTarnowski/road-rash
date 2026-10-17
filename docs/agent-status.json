@@ -17,16 +17,16 @@
     },
     {
       "area": "Simulation parity",
-      "implementation": "Tick replay, frozen scheduler/half/slice state, countdown timers, measured player row and human-branch probe",
-      "verification": "Demo600 compared fields match; sched900 first divergence893 RNG; human terrain200 trace identical (ring setup window walks, srand+0 pre draws); sched-human 1431/1431 compared fields identical (strict coverage unmet); strict acceptance unmet",
-      "remaining": "Strict field coverage (264 golden-only fields), billboard marking branch, contact eligibility, split/merge ring walking, traffic-field scenarios and full human parity",
+      "implementation": "Tick replay, frozen scheduler/half/slice state, countdown timers, measured player row, human-branch probe and scheduler node list",
+      "verification": "Demo600 compared fields match; sched900 first divergence893 RNG; human terrain200 trace identical (ring setup window walks, srand+0 pre draws); sched-human-cov2 1431/1431 identical with 0 golden-only and 0 uncovered native comparisons (strict acceptance met)",
+      "remaining": "Live-AI parking/waking, 70 unmodeled-but-constant original words (rider-half object, human brain window), billboard marking branch, contact eligibility, split/merge ring walking, traffic-field scenarios and full human parity",
       "evidence": [
         "SIM_SCENARIOS.md",
         "plans/10-simulation-oracle.md",
         "agent-handoffs/countdown-timers-20261015.md",
         "agent-handoffs/codex-sim-research-20261015.md",
-        "agent-handoffs/codex-sim735-integrate-20261015.md",
-        "agent-handoffs/ring-terrain-20261016.md"
+        "agent-handoffs/ring-terrain-20261016.md",
+        "agent-handoffs/coverage-20261017.md"
       ],
       "last_verified_commit": null,
       "fidelity_level": "partial"

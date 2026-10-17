@@ -88,8 +88,10 @@ def verify(binary, fixtures, assets, mode='acceptance', rules=None, timeout=120,
 def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument('--mode', choices=['diagnostic', 'acceptance'], default='acceptance')
-    p.add_argument('--driver', default='demo',
-                   help='driver axis for the replay binary (human|demo); the solo golden is demo-branch')
+    p.add_argument('--driver', default=None,
+                   help='driver axis for the replay binary (human|demo); default is '
+                        'human for acceptance (which requires a human capture) and '
+                        'demo for diagnostic')
     p.add_argument('--binary', type=Path, default=ROOT / 'build/oracle-sim-test')
     p.add_argument('--assets', type=Path, default=ROOT.parent / 'cdrom/ROADRASH')
     p.add_argument('--fixture', type=Path, action='append')
@@ -97,9 +99,16 @@ def main():
     p.add_argument('--report', type=Path)
     args = p.parse_args()
     directory = Path(os.environ.get('RR_ORACLE_DIR', ROOT / 'analysis/oracle'))
-    fixtures = args.fixture or [directory / ('sim-napa-solo.tsv' if args.mode == 'diagnostic' else 'sim-napa-solo-human.tsv')]
+    if args.mode == 'diagnostic':
+        fixtures = args.fixture or [directory / 'sim-napa-solo.tsv']
+        driver = args.driver or 'demo'
+    else:
+        # Strict acceptance needs a receipted, complete human capture and the
+        # 0x00434660 player-control branch, so it replays as driver=human.
+        fixtures = args.fixture or [directory / 'sched-human-cov2-20261017.tsv']
+        driver = args.driver or 'human'
     rules = json.loads(args.rules.read_text())
-    report, code = verify(args.binary.resolve(), fixtures, args.assets.resolve(), args.mode, rules, driver=args.driver)
+    report, code = verify(args.binary.resolve(), fixtures, args.assets.resolve(), args.mode, rules, driver=driver)
     if args.report:
         atomic_json(args.report, report)
     print(json.dumps(report, indent=2))

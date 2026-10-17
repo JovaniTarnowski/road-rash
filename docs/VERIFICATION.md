@@ -1579,3 +1579,21 @@ pass before it was inspected; the successful rerun is the verified result.
   --coverage`: 1431 identical; 87 golden-only, 70 invariant, 0 uncovered.
 - `sched-human-20261016` 1431 identical; sched600 600; sched900 893;
   terrain-human200 200. ctest 101/101.
+
+## Scheduler node list, parking, pedestrian freeze (October 17, 2026)
+
+- `oracle-sim-test --driver=human analysis/oracle/sched-human-cov2-20261017.tsv`:
+  exit 0, `1431 ticks identical`; the coverage note is gone (0 golden-only,
+  70 invariant, 0 uncovered).
+- `tools/verify_sim.py --mode acceptance --driver=human --fixture
+  analysis/oracle/sched-human-cov2-20261017.tsv`: exit 0, `acceptance_met:
+  true` (receipt, human branch, capability and match all pass).
+- `oracle-sim-test --driver=human ... --coverage`: 1431 identical; 70
+  verified-invariant original words (rider-half own words, the unused human
+  brain window), 0 golden-only, 0 uncovered.
+- `tools/verify_sim.py --mode diagnostic`: `sim-napa-solo.tsv`
+  known-divergence (unchanged pinned output; the node-list comparison is
+  gated on a declared `probe.frozen_words` capture).
+- `sched-human-20261016` 1431 identical; sched600 600 (demo); sched900 893
+  (demo); terrain-human200 200.
+- Gate: full Debug build exit 0; ctest 101/101.

@@ -243,3 +243,26 @@ every frame); `sched-human-20261016` first divergence tick 371
 (`rider.0.velocity` 40 vs 296, RNG in sync), tick 702 (RNG) once the
 race reads ring-built terrain slices, and **all 1431 ticks identical** once
 roadside objects are solid (same day).
+
+## Extended human capture and strict acceptance (plan 10 Task 5/6 exit, October 17)
+
+`sched-human-cov2-20261017` (same recipe as `sched-human-20261016`: course 4,
+seed 1, solo, SIM, `RR_ORACLE_HUMAN=1`, 1431 contiguous ticks, branch human)
+adds the proxy's riding-animation block, stamina (`*(half+0x1e0)+0x38/0x3c`)
+and nitro globals (`DAT_004c5f10`, `DAT_00465a34`, `DAT_00465a28..3c`). Every
+word shared with `sched-human-20261016` is equal on every tick; only the
+wall-clock frame schedule (`+0x44`, and the rpm it gates) differs at ticks
+1197 and 1220.
+
+Replay with `driver=human` is `1431 ticks identical` with **0 uncovered
+native comparisons and 0 golden-only keys**: `node.N.*` now compares as a
+per-frame multiset of (draw callback `+0xdc`, position) over the 0x00437e60
+list minus the player's two slots, and the 70 remaining original words are
+accepted only as verified invariants (constant on every captured tick).
+
+`tools/verify_sim.py --mode acceptance` now defaults to this fixture with
+`driver=human` (diagnostic keeps `sim-napa-solo.tsv`/`driver=demo`) and
+reports `acceptance_met: true`. The node-list comparison is gated on a
+declared `probe.frozen_words` capture: parking is rebuilt from the frozen
+slice flags, which the legacy demo captures do not carry, so their pinned
+diagnostics are unchanged.

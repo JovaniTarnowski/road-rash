@@ -1651,3 +1651,24 @@ Further runtime facts from the same proxy:
   the bike's block is only set at spawn/crash and its `+0x81` mirrors
   `half+0x1e9` while riding (`0x00407a90`). Stamina is in the 0x00463c78
   row `*(half+0x1e0)` (`+0x38` maximum, `+0x3c` current).
+
+- Scheduler node list and parking (October 17, 2026). The 0x00437e60 object
+  list (`S = [0x0046dcc8]`) holds one node per bike (type 4), one per rider
+  half (type 8), pedestrians (type 0x20) and the intersection controller and
+  signals (types 0x40..0x400). `+0xdc` is the **draw** callback and `+0xe0`
+  the **think** (the older note calling `+0xdc` the think callback was
+  wrong); `+0xe4` is move. After the think/move calls, `+0xc = +0x14 + tick`
+  (`0x00438108`..`0x00438113`). When `+0xe4` is NULL the function jumps
+  straight to `0x00438108` (line 17), so a frozen node keeps its `+0x14` and
+  only advances `+0xc` and runs the group test. With `param_3` set, nodes
+  whose `+0xc4 & 0xc` is nonzero (bikes/halves) are parked when
+  `DAT_004b6e50 - pos < 0x1e00` or `pos - DAT_0049f240 < 0x800`; other nodes
+  use 0/0 and unlink. Parking calls `+0xe8 = 0x00406940`, which saves
+  `+0xdc`/`+0xe0` to `+0x31c`/`+0x320`, nulls draw/think, clears `+0x2c` on
+  bike and half and masks `+0xc0` with 0xfc. The activation code at
+  `0x00406700` swaps the saved callbacks back, so `+0x31c/+0x320` is the
+  park/wake state (native `Rider::parked` for frozen solo riders only).
+- The proxy's solo freeze zeroes `+0xe0`/`+0xe4` before each step, so frozen
+  pedestrians neither think nor move; they hold their spawn position and are
+  unlinked on a scheduled run once the ring back passes them (the two behind
+  the player leave at tick 1382 = 2 + 23×60 in `sched-human-cov2-20261017`).
