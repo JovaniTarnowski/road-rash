@@ -132,7 +132,7 @@ void Race::step_pedestrians() {
     // 1 within 4 samples of the ring camera (1 - d when more than 2
     // behind), else (d + 1) / 2. Parked outside the ring window or beyond
     // lateral +-0xc8000.
-    if (!pedestrians_ || freeze_actors_) return;
+    if (!pedestrians_) return;
     const int32_t ring = int32_t(camera_position()) + 0x100;
     const int32_t front = ring + 0x5000, back = ring - 0x3000;
     for (auto& p : pedestrians_->pool()) {
@@ -140,13 +140,22 @@ void Race::step_pedestrians() {
         Bike& b = p.body.bike;
         b.i32(0x18) = ticks_ - p.last_tick;
         p.last_tick = ticks_;
-        think_pedestrian(p);
-        move_pedestrian(p);
-        const int32_t d = sar8(b.i32(0x1c) - ring);
-        const int32_t interval = d < 4 ? (d < -2 ? 1 - d : 1) : (d + 1) / 2;
-        b.i32(0x14) = interval;
+        // Solo oracle freeze (proxy sim_freeze_others runs at the start of
+        // every step from green, before the node's first scheduled run):
+        // 0x00437e60 skips the think when +0xe0 is NULL, so a frozen
+        // pedestrian never thinks, moves, or recomputes +0x14. The scheduler
+        // metadata (+0x18 dt, +0x10 last, +0xc next) and the window test
+        // still run, which is why the frozen nodes stay in place and leave
+        // the list on a scheduled run once the ring passes them.
+        if (!freeze_actors_) {
+            think_pedestrian(p);
+            move_pedestrian(p);
+            const int32_t d = sar8(b.i32(0x1c) - ring);
+            const int32_t interval = d < 4 ? (d < -2 ? 1 - d : 1) : (d + 1) / 2;
+            b.i32(0x14) = interval;
+        }
         if (b.i32(0x28) < -0xc8000 || b.i32(0x28) > 0xc8000) { p.active = false; continue; }
-        p.next_tick = ticks_ + interval;
+        p.next_tick = ticks_ + b.i32(0x14);
         if (front - b.i32(0x1c) < 0 || b.i32(0x1c) - back < 0) p.active = false;
     }
 }

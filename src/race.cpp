@@ -2183,6 +2183,18 @@ void Race::step_frozen_schedule(Rider& r) {
     r.bike.i32(0x18) = ticks_ - r.sched_last;
     r.sched_last = ticks_;
     r.sched_next = ticks_ + r.sched_interval;
+    // 0x00438108..0x00438159: the window test on the scheduled run (ring
+    // cursors as of the previous advance) parks a rider/half outside it:
+    // +0xc4 & 0xc (bikes) uses 0x1e00 front / 0x800 back, else 0/0 (unlink).
+    // 0x00406940 backs up +0xdc/+0xe0 to +0x31c/+0x320 and nulls draw, think,
+    // the +0x2c slices and +0xc0 & 0xfc on both the bike and its half.
+    if (r.frozen && !r.parked && ring_) {
+        const int32_t pos = r.bike.i32(0x1c);
+        if (ring_->front_q8() - pos < 0x1e00 || pos - ring_->back_q8() < 0x800) {
+            r.parked = true;
+            r.bike_slice_present = r.half_slice_present = false;
+        }
+    }
 }
 void Race::step_rider(Rider& r, uint32_t controls, bool player) {
     Bike& b = r.bike;

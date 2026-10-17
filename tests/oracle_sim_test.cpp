@@ -8,6 +8,8 @@
 #include "race.hpp"
 #include "race_setup.hpp"
 #include "traffic.hpp"
+#include "pedestrians.hpp"
+#include <algorithm>
 #include <set>
 #include <cstdio>
 #include <filesystem>
@@ -714,6 +716,10 @@ int main(int argc, char** argv) {
         }
     }
     rider_by_address = rr::golden::rider_node_identities(h, race.riders());
+    // Parking (0x00406940) nulls both slices; frozen riders the capture shows
+    // with NULL bike and half slices were parked before frame 0.
+    for (auto& fr : race.riders())
+        if (fr.frozen && !fr.bike_slice_present && !fr.half_slice_present) fr.parked = true;
     // Spawn-frozen player scheduler (frame 0 is post tick 1): hydrate the
     // slotted rider.0.bike_c/10/14/18 keys when the capture dumps them, so
     // the launch ramp consumes the previous run's dt (tick-2 dt 2) while
@@ -947,6 +953,55 @@ int main(int argc, char** argv) {
                 }
             }
         }
+        // Scheduler node list (node.N.*: every list object except the rider
+        // slots): compared per frame as a multiset of (draw callback +0xdc,
+        // position). Native members: frozen riders' bike and half (draw
+        // 0x00446250 / 0x004463e0, 0 once parked by the 0x00437e60 window),
+        // active pedestrians (0x00440680) and the intersection controller and
+        // signals (no draw). +0x73 (node kind) is the top byte of the +0x70
+        // pointer and is not state.
+        // Gated on a declared probe.frozen_words capture: parking is
+        // reconstructed from its frozen slice flags (apply_frozen_state), so a
+        // legacy demo capture without them cannot rebuild the original list.
+        if (solo && h.find("probe.frozen_words") != h.end()) {
+            std::vector<std::pair<int64_t,int64_t>> want, have;
+            for (const auto& kv : frame) {
+                if (kv.first.rfind("node.", 0) != 0) continue;
+                const size_t dot = kv.first.rfind('.');
+                if (kv.first.compare(dot, std::string::npos, ".think") != 0) continue;
+                const std::string base = kv.first.substr(0, dot);
+                const auto pos = frame.find(base + ".position");
+                if (pos == frame.end()) continue;
+                want.push_back({kv.second, pos->second});
+                g_used_keys.insert(kv.first); g_used_keys.insert(base + ".position");
+            }
+            if (!want.empty()) {
+                const auto& riders = race.riders();
+                for (size_t r = 1; r < riders.size(); ++r) {
+                    const rr::Rider& fr = riders[r];
+                    if (!fr.frozen) continue;
+                    const int64_t half = fr.half_detached ? fr.half_position : fr.bike.i32(0x1c);
+                    have.push_back({fr.parked ? 0 : 0x00446250, fr.bike.i32(0x1c)});
+                    have.push_back({fr.parked ? 0 : 0x004463e0, half});
+                }
+                if (setup.instance.pedestrians)
+                    for (const auto& p : setup.instance.pedestrians->pool())
+                        if (p.active) have.push_back({0x00440680, p.body.bike.i32(0x1c)});
+                if (setup.instance.traffic) {
+                    for (const auto& c : setup.instance.traffic->controllers()) if (c.active) have.push_back({0, c.position_q8});
+                    for (const auto& sg : setup.instance.traffic->signals()) if (sg.active) have.push_back({0, sg.position_q8});
+                }
+                std::sort(want.begin(), want.end()); std::sort(have.begin(), have.end());
+                if (want != have) {
+                    std::cout << "first divergence at frame " << i << " (tick " << tick0 + int64_t(i) << "): node list original";
+                    for (const auto& w : want) std::cout << " (" << w.first << "," << w.second << ")";
+                    std::cout << " native";
+                    for (const auto& w : have) std::cout << " (" << w.first << "," << w.second << ")";
+                    std::cout << '\n';
+                    return 1;
+                }
+            }
+        }
         // Ring cursors and frozen-node scheduler words (sched.<addr>.*,
         // matched to native riders through the frame-0 address identities).
         {
@@ -1008,8 +1063,9 @@ int main(int argc, char** argv) {
                 "probe.player", "player.demo_hold", "player.think", "player.think_count", "grid.bias",
                 "demo.base_speed", "demo.lane"};
             if (exact.count(k)) return true;
-            if (k.rfind("rider.", 0) != 0) return false;
+            if (k.rfind("rider.", 0) != 0 && k.rfind("node.", 0) != 0) return false;
             const std::string suffix = k.substr(k.rfind('.') + 1);
+            if (k.rfind("node.", 0) == 0) return suffix == "kind";
             return suffix == "think" || suffix == "slice_ptr" || suffix == "bike_44" ||
                    suffix == "raw_1a4" || suffix == "raw_1c4" || suffix == "raw_1d8" || suffix == "raw_1e0";
         };

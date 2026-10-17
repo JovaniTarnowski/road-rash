@@ -191,6 +191,11 @@ struct Rider {
     // ordinary riders and legacy captures keep their existing valid slices.
     bool bike_slice_present = true, half_slice_present = true;
     bool half_detached = false;
+    // 0x00437e60 window test (bikes/halves: within 0x1e00 of the ring front
+    // or 0x800 of the ring back on a scheduled run) calls +0xe8 = 0x00406940,
+    // which parks the rider: think/draw callbacks and both slices nulled.
+    // Recorded for frozen solo riders; live AI parking/waking is not ported.
+    bool parked = false;
     int32_t half_lateral = 0, half_position = 0, half_speed = 0;
     // Live rider-half mirror (the +0x2fc object of a stepped rider): after
     // the 0x00438170 scheduler pass and before the 0x004368f0 contacts the
