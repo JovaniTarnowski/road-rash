@@ -1,4 +1,5 @@
 #include "terrain_ground.hpp"
+#include <algorithm>
 #include <cstring>
 #include <stdexcept>
 namespace rr {
@@ -13,20 +14,18 @@ int32_t terrain_height(const TerrainSlice& t,const PathSample& path,const Terrai
     const int32_t x=lateral>>8,left=-path.left,right=path.right;
     if(left<=x && x<=right)return 0;
     if(t.type==1) {
-        // 0x00439b10 case 1 on 0x00454240's wall values: base/top x from the
-        // outer shoulder edges, heights below 1 replaced by -elevation.
-        const int32_t outer_left=left-path.shoulder_left,outer_right=right+path.shoulder_right;
-        auto height=[&](int side){const int32_t h=t.walls[side][2];return h<1?sub(0,path.elevation):h;};
-        const int32_t base_right=add(outer_right,t.walls[1][0]),top_right=add(outer_right,t.walls[1][1]);
+        // 0x00439b10 case 1 on 0x00454240's wall values (wall_profile).
+        const auto w=wall_profile(t,path,false);
+        const int32_t base_right=w.base[1],top_right=w.top[1];
         if(base_right<x) {
-            const int32_t h=height(1);if(!h)return 0;
+            const int32_t h=w.height[1];if(!h)return 0;
             const int32_t span=sub(top_right,base_right);
             if(mul(h<0?sub(0,h):h,2)<span && sub(x,base_right)<add(top_right,offset))return mul(h,sub(x,base_right))/span;
             return h;
         }
-        const int32_t base_left=sub(outer_left,t.walls[0][0]),top_left=sub(outer_left,t.walls[0][1]);
+        const int32_t base_left=w.base[0],top_left=w.top[0];
         if(base_left<=x)return 0;
-        const int32_t h=height(0);if(!h)return 0;
+        const int32_t h=w.height[0];if(!h)return 0;
         const int32_t span=sub(base_left,top_left);
         if(mul(h<0?sub(0,h):h,2)<span && add(top_left,offset)<sub(base_left,x))
             return mul(sub(add(left,offset),sub(base_left,x)),h)/span;
@@ -64,4 +63,21 @@ int32_t terrain_height(const TerrainSlice& t,const PathSample& path,const Terrai
     if(!span)throw std::runtime_error("Degenerate terrain ground segment");
     return add(mul(sub(outer_height,inner_height),sub(x,inner))/span,inner_height);
 }
+WallProfile wall_profile(const TerrainSlice& t,const PathSample& path,bool tunnel) {
+    WallProfile w;
+    const int32_t left=-path.left,right=path.right;
+    std::array<int32_t,2> edge={left-path.shoulder_left,right+path.shoulder_right},height={t.walls[0][2],t.walls[1][2]};
+    w.outer_left=edge[0];w.outer_right=edge[1];
+    if(tunnel) {
+        if(height[1]<1){w.mountain=0;edge[1]=sub(mul(edge[1],2),right);}
+        else {if(height[0]>0)height[0]=0;w.mountain=1;edge[0]=sub(mul(edge[0],2),left);}
+        height[w.mountain]=std::max(height[w.mountain],800);
+        w.outer_left=left-path.shoulder_left/2;w.outer_right=right+path.shoulder_right/2;
+    }
+    w.base={sub(edge[0],t.walls[0][0]),add(edge[1],t.walls[1][0])};
+    w.top={sub(edge[0],t.walls[0][1]),add(edge[1],t.walls[1][1])};
+    for(size_t side=0;side<2;++side)w.height[side]=height[side]<1?sub(0,path.elevation):height[side];
+    return w;
 }
+}
+

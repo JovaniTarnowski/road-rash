@@ -183,6 +183,9 @@ RaceInstance build_race(const RaceAssets& assets, const std::vector<uint8_t>& ex
         race->set_terrain_source([scene](const RouteSample& sample) -> const TerrainSlice& {
             return scene->terrain(sample.section, sample.local);
         });
+        race->set_rail_height_source([scene](const RouteSample& sample) {
+            return scene->rail_height(sample.section, sample.local);
+        });
         // 5b. DZHR roadside solidity (plan 16 Task 2): solid billboards
         // collide through the class-1 hazard path; BORR spans stay test-only
         // until AI avoidance lands (the autopilot cannot dodge in-road spans).

@@ -1114,3 +1114,34 @@ was restored to its pre-session hash after both captures.
   whose +0x24 does not follow their own sub-slice (jump scenario), not a
   terrain-path difference.
 
+### October 16, 2026: walls and rails (0x0043a610), bounds wreck, ring terrain findings
+
+- `Race::walls` now transcribes `0x0043a610` on sub-slice values
+  (`Race::sub_slice`): CESR-event-5 guard rails (left/right bits, offset
+  +0x3a, height from +0x3b bits 2..7, set by `0x0041c200` for strips up to
+  31 ahead of the camera, else 0x40), type 0 buildings (shoulder edge, empty
+  selectors widened by 250·frac/3, angled entry), type 1 mountains (the
+  player is held at the wall bases or, on a cliff side, at the cliff foot;
+  other riders at the outer shoulder edges), type 3 tunnels (angled entry),
+  types 2/4/5 no walls. Outcomes: lateral bounce `+0xf0 *= -100/256`,
+  angled stop and step back (`0x00439270`), reason-3 rail crash with null
+  impulses, reason-6 crash above 0x9c3 lateral speed with event-5 sound.
+  The synthetic-route fixtures keep the old stand-in.
+- `step_crash`: the walking player (animation 38) on a mountain sample is
+  wrecked outside the wall bases (`0x0040a6d5`, outcome 5).
+- `wall_profile()` (terrain_ground) now holds the 0x00454240 wall transform
+  for the scene, the ground and the walls.
+- Ring terrain from the live race stream (plan 10, not wired): CANYN
+  `ring-probe` on the new `canyn-sim-20261016` finds the ring setup K=1137
+  draws before green (125/125 in-race crossings match), i.e. srand(1) +
+  4231 pre-draws, 0 post. Native `TrackRing` seeded there does not
+  reproduce the frame-600 sub-slice wall jitter; the iterator, walker step
+  order (`0x00452e10`) and entry (`0x00452f50`/`0x00452cb0`) match the
+  decompiled code, so the setup draw positions remain open (same family as
+  the Napa human replay's tick-189 terrain draw gap).
+- Scenery: roadside objects are scheduler nodes made at slice build
+  (`0x00438930`, ground from `0x00439b10` at fraction 0x80 then) with their
+  own position fraction; native `SceneryObject` has no fraction and uses
+  the isolated placement stream, so trees match in x but drift in y and
+  posts/signs land elsewhere. Open.
+

@@ -12,8 +12,8 @@
 //   calls 0x00440b80 lazily), so +0x1e0 is set one or more ticks early;
 // - the ground height +0x24 settles on the first move instead of
 //   0x00439b10 at allocation;
-// - 0x0043a610 walls are skipped: the native walls() is a rider stand-in
-//   that would clamp a pedestrian standing past the shoulder;
+// - 0x0043a610 walls are not yet applied to pedestrians (Race::walls now
+//   ports it for riders; pedestrian object types are untested there);
 // - only the camera roadway's DZHR records spawn; the other roadway of a
 //   split (second 0x00454240 call) is not walked yet;
 // - scheduler order: pedestrians think after every rider, not interleaved

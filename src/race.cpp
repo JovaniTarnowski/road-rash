@@ -925,6 +925,10 @@ void Race::crash_car(Rider& r) {
 }
 void Race::crash_reason(Rider& r, int32_t reason, std::array<int32_t,3> rider_impulse,
                         std::array<int32_t,3> bike_impulse) {
+    crash_entry(r, reason, rider_impulse, bike_impulse);
+}
+void Race::crash_entry(Rider& r, int32_t reason, std::optional<std::array<int32_t,3>> rider_impulse,
+                       std::optional<std::array<int32_t,3>> bike_impulse) {
     if (crash_library_) {
         if (r.crash_active) return;
         r.bike.i32(0x2f4) = 0;
@@ -1061,19 +1065,175 @@ void Race::move(Rider& r, bool player) {
     if (b.i32(0xec) > 300) b.i32(0x28) += dt * b.i32(0x10c);
 }
 
-void Race::walls(Rider& r) {
-    // Simplified stand-in for 0x0043a610: stop at the edge of the shoulder, crash when fast.
+Race::SubSliceView Race::sub_slice(const Rider& r, size_t sample) const {
+    const auto& route = route_of(r);
+    const auto& rs = route[std::min(sample, route.size() - 1)];
+    const auto& path = rs.path;
+    SubSliceView v;
+    const TerrainSlice& t = terrain_source_(rs);
+    v.type = t.type;
+    v.flags = path.marking_flags;
+    v.event_type = path.event_type;
+    v.p3a = int8_t(path.event_parameters[1]);
+    v.b3b = path.event_parameters[2];
+    v.sel = {t.selectors[0], t.selectors[1], path.side_flags[0], path.side_flags[1]};
+    v.e0 = rs.offset - path.left; v.e4 = rs.offset + path.right;
+    const WallProfile w = wall_profile(t, path, t.type == 3);
+    v.e8 = rs.offset + (t.type == 3 ? w.outer_left : -path.left - path.shoulder_left);
+    v.ec = rs.offset + (t.type == 3 ? w.outer_right : path.right + path.shoulder_right);
+    for (size_t side = 0; side < 2; ++side) {
+        v.base[side] = rs.offset + w.base[side]; v.top[side] = rs.offset + w.top[side]; v.height[side] = w.height[side];
+    }
+    // 0x0041c200 stores the rail height in bits 2..7 when it draws the strip:
+    // samples up to 31 ahead of the camera strip have been drawn.
+    if (v.event_type == 5 && rail_height_source_ && int64_t(sample) <= int64_t(camera_position() >> 8) + 31) {
+        const int32_t height = rail_height_source_(rs);
+        if (height > 0) v.b3b = uint8_t(((height / 4) << 2) | (v.b3b & 3));
+    }
+    return v;
+}
+
+void Race::walls(Rider& r, const Bike* owner) {
     Bike& b = r.bike;
-    const SliceEdges e = edges(r, r.sample);
-    const int32_t x = b.i32(0x28) >> 8;
-    if (x > e.left_shoulder && x < e.right_shoulder) return;
-    b.i32(0x28) = (x >= e.right_shoulder ? e.right_shoulder - 1 : e.left_shoulder + 1) * 256;
-    b.i32(0x10c) = 0; b.i32(0x104) = 0; b.i32(0xf0) = 0; b.i32(0x288) = 0;
-    if (b.i32(0xec) > 4000) {
-        if (&r == &riders_[0]) sound(SoundEvent::grunt_c, b);   // 0x0043a610
-        if(b.i32(0xc4)==4)crash(r);
-        else b.i32(0xec)=b.i32(0xec)*3/4;
-    } else b.i32(0xec) = b.i32(0xec) * 3 / 4;
+    if (!terrain_source_) {
+        // Standalone physics fixtures keep their synthetic sides: stop at the
+        // shoulder edge, crash when fast.
+        const SliceEdges e = edges(r, r.sample);
+        const int32_t x = b.i32(0x28) >> 8;
+        if (x > e.left_shoulder && x < e.right_shoulder) return;
+        b.i32(0x28) = (x >= e.right_shoulder ? e.right_shoulder - 1 : e.left_shoulder + 1) * 256;
+        b.i32(0x10c) = 0; b.i32(0x104) = 0; b.i32(0xf0) = 0; b.i32(0x288) = 0;
+        if (b.i32(0xec) > 4000) {
+            if (&r == &riders_[0]) sound(SoundEvent::grunt_c, b);
+            if (b.i32(0xc4) == 4) crash(r);
+            else b.i32(0xec) = b.i32(0xec) * 3 / 4;
+        } else b.i32(0xec) = b.i32(0xec) * 3 / 4;
+        return;
+    }
+    // 0x0043a610. Laterals are absolute (sub-slice +0xcc included).
+    auto trunc256 = [](int32_t v) { return (v + ((v >> 31) & 0xff)) >> 8; };
+    auto interpolate = [&](int32_t value, int32_t next, int32_t fraction) {
+        const int32_t d = next - value;
+        return d ? value + trunc256(fraction * d) : value;
+    };
+    const auto& route = route_of(r);
+    const size_t next_sample = std::min(r.sample + 1, route.size() - 1);
+    const size_t previous_next = std::min(r.previous_sample + 1, route.size() - 1);
+    const SubSliceView cur = sub_slice(r, r.sample), nxt = sub_slice(r, next_sample);
+    const SubSliceView prev = sub_slice(r, r.previous_sample), prev_next = sub_slice(r, previous_next);
+    const int32_t hw = b.i32(0x174);
+    int32_t hi = (b.i32(0x28) + hw) >> 8;
+    const int32_t lo = (b.i32(0x28) - hw) >> 8;
+    if (cur.e0 < lo && hi < cur.e4) return;
+    const int32_t c4 = b.i32(0xc4);
+    const bool player = &r == &riders_[0] || owner == &riders_[0].bike;
+    auto rail_height = [](uint8_t b3b) { return (b3b & 0xfc) ? int32_t(b3b & 0xfc) << 8 : 0x40; };
+    uint32_t hit = 0;
+    bool angled = false;
+    int32_t lateral = b.i32(0x28);
+    bool general = true;
+    if (cur.event_type == 5 && (c4 == 4 || (c4 == 8 && owner && owner->i32(0x2f4) == 1))) {
+        if (rail_height(cur.b3b) > b.i32(0x20)) {
+            const int32_t fraction = int32_t(uint32_t(b.i32(0x1c)) & 0xff), previous_fraction = int32_t(uint32_t(b.i32(0x30)) & 0xff);
+            if (cur.b3b & 1) {
+                const int32_t x = interpolate(cur.e8, nxt.e8, fraction) - cur.p3a;
+                if (lo < x && x < hi) {
+                    hit = 1;
+                    const int32_t px = interpolate(prev.e8, prev_next.e8, previous_fraction) - prev.p3a;
+                    lateral = b.i32(0x3c) < px * 0x100 ? (x - 4) * 0x100 - hw : (x + 4) * 0x100 + hw;
+                }
+            }
+            if (!hit && (cur.b3b & 2)) {
+                const int32_t x = interpolate(cur.ec, nxt.ec, fraction) + cur.p3a;
+                if (lo < x && x < hi) {
+                    hit = 1;
+                    const int32_t px = interpolate(prev.ec, prev_next.ec, previous_fraction);
+                    lateral = (px + prev.p3a) * 0x100 < b.i32(0x3c) ? hw + (x + 4) * 0x100 : (x - 4) * 0x100 - hw;
+                }
+            }
+            if (hit) {
+                general = false;
+                if (b.i32(0x160) == 0 && rail_height(cur.b3b) < b.i32(0x17c) + b.i32(0x20)) {
+                    if (c4 == 4) { if (b.i32(0x2f4) == 0) hit = 3; }
+                    else if (c4 == 8) hit = 0;
+                }
+            }
+        }
+    }
+    if (general) {
+        const int32_t widen = int32_t(((uint32_t(b.i32(0x1c)) & 0xff) * 0xfa) / 3) >> 8;
+        int32_t depth = 0;
+        switch (cur.type) {
+        case 0: {
+            if (cur.flags & 0x38) return;
+            size_t side = 0;
+            int32_t right = cur.ec;
+            if (cur.sel[1] == 0xff) right += widen;
+            if (right < hi) { hit = 1; lateral = right * 0x100 - hw; depth = hi - right; side = 1; }
+            else {
+                int32_t left = cur.e8;
+                if (cur.sel[0] == 0xff) left -= widen;
+                if (lo < left) { hit = 1; lateral = hw + left * 0x100; depth = left - lo; side = 0; }
+            }
+            if (!hit) return;
+            // The comma in the original sets the angle flag before the last test.
+            if (((prev.flags & 0x18) || (cur.sel[side] != 0xff && prev.sel[side] == 0xff)) && ((hw + hw / 2) >> 8) < depth) {
+                angled = true;
+                if (depth < (hw * 2) >> 8) hit = 2;
+            }
+            break;
+        }
+        case 1:
+            if (player) {
+                if (hi <= cur.base[1]) {
+                    int32_t left = cur.base[0];
+                    if (lo < left) {
+                        if (cur.height[0] < 1) left = cur.top[0];
+                        if (lo < left) { hit = 1; lateral = hw + left * 0x100; }
+                    }
+                } else if (cur.height[1] < 1) {
+                    if (hi > cur.top[1]) { hit = 1; lateral = cur.top[1] * 0x100 - hw; }
+                } else { hit = 1; lateral = cur.base[1] * 0x100 - hw; }
+            } else if (cur.ec < hi) { hit = 1; lateral = cur.ec * 0x100 - hw; }
+            else if (lo < cur.e8) { hit = 1; lateral = hw + cur.e8 * 0x100; }
+            break;
+        case 3: {
+            if (cur.ec < hi) { hit = 1; lateral = cur.ec * 0x100 - hw; depth = hi - cur.ec; }
+            else if (lo < cur.e8) { hit = 1; lateral = hw + cur.e8 * 0x100; depth = cur.e8 - lo; }
+            if (!hit) return;
+            if (!(prev.flags & 0x40) && ((hw / 2) >> 8) < depth) {
+                angled = true;
+                if (depth < (hw / 2 + hw) >> 8) hit = 2;
+            }
+            break;
+        }
+        default:
+            return;
+        }
+    }
+    if (!hit) return;
+    if (angled) {
+        if (std::abs(b.i32(0xec)) < 0x9c4) angled = false;
+        else if (hit != 2) { b.i32(0xec) = 0; move_along(r, b.i32(0x30) - b.i32(0x1c), false); }
+    } else {
+        if (hit < 3) b.i32(0xf0) = trunc256(b.i32(0xf0) * -100);
+        else if (hit == 3 && c4 == 4) {
+            crash_entry(r, 3, std::nullopt, std::nullopt);
+            if (b.i32(0x17c) + b.i32(0x20) < rail_height(cur.b3b)) b.i32(0xf0) = trunc256(b.i32(0xf0) * -100);
+            else lateral = b.i32(0x28);
+        }
+        b.i32(0x60) = 0;
+        if (c4 == 4) {
+            if ((b.i32(0xf0) > 0 && b.i32(0x288) > 0) || (b.i32(0xf0) < 0 && b.i32(0x288) < 0)) b.i32(0x288) = 0;
+            b.i32(0x5c) = 0;
+        } else if (c4 == 8) b.i32(0x5c) = b.i32(0x108) >= 0 ? 0 : 0x800000;
+        else b.i32(0x5c) = 0;
+    }
+    if ((angled || (std::abs(b.i32(0xf0)) > 0x9c3 && hit != 3)) && c4 == 4) {
+        if (angled && &r == &riders_[0]) sound(SoundEvent::grunt_c, b);   // 0x00436830(5), local rider
+        crash_reason(r, 6, std::array<int32_t,3>{0, 0, 0x50}, std::array<int32_t,3>{0, 0, 0x10});
+    }
+    b.i32(0x28) = lateral;
 }
 
 void Race::vertical(Rider& r) {
@@ -1170,7 +1330,7 @@ void Race::step_crash(Rider& r,bool player,uint32_t controls) {
         const int surface=surface_class(edges(actor,actor.sample),b.i32(0x28));
         integrate_speed(b,tables_,surface);
         advance_actor_motion(b,tables_,[&](int32_t distance){move_along(actor,distance);});
-        walls(actor);vertical(actor);
+        walls(actor,&r.bike);vertical(actor);
     };
     motion(r);
     Rider detached;detached.bike=body.motion;detached.route=body.route;detached.sample=body.sample;detached.previous_sample=body.previous_sample;
@@ -1182,8 +1342,22 @@ void Race::step_crash(Rider& r,bool player,uint32_t controls) {
         if(controls&control_left)recovery.walk_controls|=0x4000;
         if(controls&control_right)recovery.walk_controls|=0x2000;
     }
-    const auto action=recover_crash_actor(bike,body,library.playback[0],library.fallback,uint32_t(ticks_),recovery);
-    r.crash_timer=recovery.state_elapsed;
+    // 0x0040a6d5: the walking player (rider animation 38, rider +0xc0 bit 0x10
+    // clear) on a mountain sample (bike sub-slice type 1) is wrecked once the
+    // bike or the rider lateral leaves [+0x14c, +0x158], the wall bases
+    // (0x00416010(5, 0xb4), +0x2f0 = 0), and the walk is not stepped.
+    bool bounds_wreck=false;
+    if(player && terrain_source_ && body.animation.animation==38 && !(body.motion.u8(0xc0)&0x10)) {
+        const SubSliceView own=sub_slice(r,r.sample);
+        if(own.type==1) {
+            Rider walker;walker.route=body.route;walker.sample=body.sample;walker.previous_sample=body.previous_sample;
+            const SubSliceView rider_slice=sub_slice(walker,body.sample);
+            const int32_t bx=bike.i32(0x28)>>8,rx=body.motion.i32(0x28)>>8;
+            bounds_wreck=own.base[0]>bx || own.base[1]<bx || rider_slice.base[0]>rx || rider_slice.base[1]<rx;
+        }
+    }
+    const auto action=bounds_wreck?CrashRecoveryAction::wrecked:recover_crash_actor(bike,body,library.playback[0],library.fallback,uint32_t(ticks_),recovery);
+    if(!bounds_wreck)r.crash_timer=recovery.state_elapsed;
     if(action==CrashRecoveryAction::remount) {
         remount_crash_actor(bike,r.crash_bike_animation,body,crash_config_,library.playback[0],library.fallback,uint32_t(ticks_));
         r.stamina.current=r.stamina.max;r.crash_active=false;return;

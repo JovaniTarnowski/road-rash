@@ -2,6 +2,7 @@
 #include "assets.hpp"
 #include "race_setup.hpp"
 #include "scenery.hpp"
+#include "terrain_ground.hpp"
 #include <filesystem>
 #include <iostream>
 
@@ -764,6 +765,39 @@ int main() {
             std::cout << "Napa AI " << i << " pos " << rider.bike.i32(0x1c)
                       << " last-ten-seconds " << rider.bike.i32(0x1c) - halfway[i] << "\n";
             check(rider.bike.i32(0x1c) - halfway[i] > 0x100, "Napa opponent continues driving after replans");
+        }
+        // 0x0043a610 on CANYN's first (mountain) section: the player is held
+        // at the cliff foot on the open side, an AI rider at the outer
+        // shoulder edge (non-player riders never use the wall values).
+        {
+            rr::RaceConfig canyn; canyn.course = "CANYN"; canyn.opponents = 7;
+            auto pch = rr::make_race_setup(assets, exe, canyn);
+            auto& race = *pch.instance.race;
+            for (int tick = 0; tick < 400; ++tick) race.step(rr::control_accelerate);
+            auto& player = race.riders()[0];
+            auto& ai = race.riders()[1];
+            const auto& route = race.route();
+            const auto& ps = route[player.sample];
+            const auto& as = race.route_of(ai)[ai.sample];
+            const auto& pt = pch.assets.scene->terrain(ps.section, ps.local);
+            check(pt.type == 1, "CANYN start is a mountain sample");
+            const auto pw = rr::wall_profile(pt, ps.path, false);
+            const int32_t hw = player.bike.i32(0x174);
+            player.bike.i32(0x28) = (ps.offset + pw.top[1] + 400) * 256;
+            player.bike.i32(0xf0) = 0;
+            ai.bike.i32(0x28) = (as.offset - as.path.left - as.path.shoulder_left - 400) * 256;
+            ai.bike.i32(0xf0) = 0;
+            const size_t player_sample = player.sample, ai_sample = ai.sample;
+            race.step(rr::control_accelerate);
+            if (player.sample == player_sample && player.bike.i32(0x2f4) == 0)
+                check(player.bike.i32(0x28) == (ps.offset + pw.top[1]) * 256 - hw, "player held at the cliff foot (+0x15c)");
+            if (ai.sample == ai_sample && ai.bike.i32(0x2f4) == 0)
+                check(ai.bike.i32(0x28) == ai.bike.i32(0x174) + (as.offset - as.path.left - as.path.shoulder_left) * 256, "AI held at the outer shoulder edge (+0xe8)");
+            const bool player_checked = player.sample == player_sample && player.bike.i32(0x2f4) == 0;
+            const bool ai_checked = ai.sample == ai_sample && ai.bike.i32(0x2f4) == 0;
+            std::cout << "CANYN walls: player " << player.bike.i32(0x28) << " (want " << (ps.offset + pw.top[1]) * 256 - hw << ", checked " << player_checked
+                      << ") ai " << ai.bike.i32(0x28) << " (checked " << ai_checked << ")\n";
+            check(player_checked || ai_checked, "a CANYN wall case was exercised");
         }
         auto field0 = rr::original_opponents(exe, specs, 0, 7);
         check(field0.size() == 7 && field0[0].slot == 1 && field0[6].slot == 7, "seven opponents in slots 1..7");

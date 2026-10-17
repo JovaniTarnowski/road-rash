@@ -238,6 +238,9 @@ public:
          const std::vector<Personality>& personalities = {},
          const std::vector<uint8_t>& exe_image = {});   // level 0..4 (0x004b8a12)
     void set_terrain_source(std::function<const TerrainSlice&(const RouteSample&)> source) { terrain_source_=std::move(source); attach_terrain_type(); }
+    // Guard-rail height 0x0041c200 writes into sub-slice +0x3b when it draws a
+    // CESR event-5 strip (category-6 group header); 0 when it has no group.
+    void set_rail_height_source(std::function<int32_t(const RouteSample&)> source) { rail_height_source_=std::move(source); }
     // Free traffic steps with the race on the player's route (0x0044b3b0 calls
     // 0x0044dd90 with the per-step camera advance). The random-call
     // interleaving against the original's scheduler is not verified.
@@ -352,7 +355,15 @@ private:
     void accumulate(Rider&, uint32_t from, uint32_t to, size_t from_sample, size_t to_sample);
     void move(Rider&, bool player);
     void vertical(Rider&);
-    void walls(Rider&);
+    // 0x0043a610 on the sub-slice values of a route sample (absolute laterals).
+    struct SubSliceView {
+        int32_t e0=0,e4=0,e8=0,ec=0;
+        uint8_t type=0xff,flags=0,event_type=0,b3b=0;int8_t p3a=0;
+        std::array<uint8_t,4> sel{255,255,0,0};   // +0x148..+0x14b
+        std::array<int32_t,2> base{},top{},height{};
+    };
+    SubSliceView sub_slice(const Rider&, size_t sample) const;
+    void walls(Rider&, const Bike* owner = nullptr);
     void crash(Rider&);
     void step_crash(Rider&,bool player,uint32_t controls);
     void step_rider(Rider&, uint32_t controls, bool player);
@@ -402,7 +413,10 @@ private:
     void contact_car(Rider&, TrafficCar&);
     void crash_car(Rider&);   // 0x00403d60 reason 2 (car contact, animation 29)
     void crash_reason(Rider&, int32_t reason, std::array<int32_t,3> rider_impulse,
-                      std::array<int32_t,3> bike_impulse);   // reason-tagged crash entry
+                      std::array<int32_t,3> bike_impulse);
+    // 0x00403d60 with null impulse pointers (0x0043a610 reason 3).
+    void crash_entry(Rider&, int32_t reason, std::optional<std::array<int32_t,3>> rider_impulse,
+                     std::optional<std::array<int32_t,3>> bike_impulse);   // reason-tagged crash entry
     void contact(Rider& self, Rider& other);
     void update_camera();
     // In-road BORR hazard pass (plan 16 Task 2): 0x00454240 instantiates only
@@ -442,6 +456,7 @@ private:
     uint32_t random();
 
     std::function<const TerrainSlice&(const RouteSample&)> terrain_source_;
+    std::function<int32_t(const RouteSample&)> rail_height_source_;
     TrafficSystem* traffic_ = nullptr;
     PedestrianSystem* pedestrians_ = nullptr;
     mutable std::vector<ScanObject> scan_;  // reused by build_scan_list (no tick allocation after warm-up)

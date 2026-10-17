@@ -1479,3 +1479,18 @@ pass before it was inspected; the successful rerun is the verified result.
 - Full build exit 0; ctest 100/100 before adding the new test, both
   oracle-terrain tests pass after (52 s for MEDLY).
 
+## Walls and rails (October 16, 2026)
+
+- `race-test`: CANYN live setup, 400 ticks, then the player placed 400
+  units past the cliff foot and AI rider 1 past the outer left shoulder;
+  after one step both laterals equal the `0x0043a610` values exactly
+  (player 322304 = cliff foot·256 − half-width; AI at +0xe8·256 + width).
+- No original wall-hit comparison yet: the Napa human replay
+  (`sched-human-20261016`) still diverges first at tick 189 (terrain RNG),
+  before any wall contact; the CANYN SIM replay (`canyn-sim-20261016`,
+  pre 4231 / post 0) anchors but diverges at tick 2 (demo start-hold
+  calibration). `oracle-sim` pinned diagnostics unchanged.
+- rr-game `--course 3/2 --autopilot --ticks 4000` 16:10: both races run,
+  player not wrecked.
+- Gate: full build exit 0; ctest 101/101.
+

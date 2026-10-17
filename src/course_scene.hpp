@@ -56,6 +56,9 @@ public:
     const PedestrianLook* pedestrian_look(uint32_t section,uint32_t local,uint8_t selector) const;
     // Marking flag 0x40 on a mountain sample: drawn as a tunnel (type 3).
     bool tunnel(uint32_t section,uint32_t local) const;
+    // 0x0041c200 rail height ((1<<+0x1b)<<+0x19)*4 of the sample's CESR
+    // selector's category-6 group; 0 when there is none.
+    int32_t rail_height(uint32_t section,uint32_t local) const;
 private:
     const CelTexture* tunnel_material(uint32_t section,uint32_t local,uint8_t selector,uint32_t lit,uint8_t kind,int32_t width,int32_t height) const;
     int32_t sine(int32_t angle) const;
@@ -63,6 +66,7 @@ private:
     const CelGroup* building_group(uint32_t section,uint32_t local,uint8_t selector) const;
     static int32_t approximate_angle(int32_t x,int32_t y);
     std::vector<std::vector<bool>> tunnels_;
+    std::vector<std::vector<uint8_t>> event_selectors_;   // CESR parameter 0 per sample
     uint8_t side_street_run_=2;                  // 0x00465a40[0]
     std::array<int32_t,8> arch_{};               // 0x00465a54 tunnel heights / fractions
     std::array<int32_t,257> sine_words_{};       // 0x004766f0

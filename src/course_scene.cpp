@@ -63,7 +63,7 @@ CourseScene::CourseScene(const Assets& assets,const std::vector<uint8_t>& exe,
     for(int i=0;i<16;++i) {auto word=[&](int p){uint32_t v=0;for(int b=0;b<4;++b)v|=uint32_t(joins[p+b])<<(b*8);return bits(v);};joins_[i]={word(i*8),word(i*8+4)};}
     std::set<uint32_t> needed;
     for(const auto& section:course.sections) {
-        terrain_.emplace_back();family_slots_.emplace_back();tunnels_.emplace_back();
+        terrain_.emplace_back();family_slots_.emplace_back();tunnels_.emplace_back();event_selectors_.emplace_back();
         // The original terrain helpers consume CRT rand values. This isolated
         // deterministic stream has the same recurrence; full race random-call
         // interleaving is still a separate integration requirement.
@@ -80,6 +80,7 @@ CourseScene::CourseScene(const Assets& assets,const std::vector<uint8_t>& exe,
             // tunnel; drawn as one only on mountain samples (all disc cases),
             // whose wall values the tunnel geometry needs.
             tunnels_.back().push_back(t.type==1 && (path.marking_flags&0x40));
+            event_selectors_.back().push_back(path.event_parameters[0]);
             // 0x00454240 makes the sub-slice type 3 for flag 0x40. The race
             // reads this slice too (0x00439b10 sidewalk heights, surface class).
             if(path.marking_flags&0x40)terrain_.back().back().type=3;
@@ -126,6 +127,10 @@ CourseScene::CourseScene(const Assets& assets,const std::vector<uint8_t>& exe,
 }
 const TerrainSlice& CourseScene::terrain(uint32_t section,uint32_t local) const {return terrain_.at(section).at(local);}
 bool CourseScene::tunnel(uint32_t section,uint32_t local) const {return tunnels_.at(section).at(local);}
+int32_t CourseScene::rail_height(uint32_t section,uint32_t local) const {
+    const auto* group=rail_group(section,local,event_selectors_.at(section).at(local));
+    return group?((1<<(group->row_shift&31))<<(group->last_row&31))*4:0;
+}
 const CelGroup* CourseScene::building_group(uint32_t section,uint32_t local,uint8_t selector) const {
     const uint16_t id=family_slots_.at(section).at(local)[selector>>6];
     const auto family=families_.find(id);if(family==families_.end())return nullptr;
@@ -304,18 +309,17 @@ std::vector<DrawNode> CourseScene::draw_nodes(const std::vector<RouteSample>& ro
             }
             road.offset=own?sample.offset:sample.other_offset;
             const auto& s=slice.road[r];const int32_t world_x=s.road_x+camera.x;
-            // 0x00454240 for a tunnel: the side whose height is at least 1 is the
-            // mountain (right wins), its height at least 800; the other side's
-            // wall edge sits a second shoulder width out; shoulders are halved;
-            // empty pair-B heights become 16 (a raised sidewalk).
-            std::array<int32_t,2> wall_edge={s.shoulder_left,s.shoulder_right},outer_edge=wall_edge,heights{};
+            // 0x00454240 wall values (wall_profile): a tunnel halves the
+            // shoulders and its empty pair-B heights become 16 (a sidewalk).
+            WallProfile profile;
+            std::array<int32_t,2> outer_edge={s.shoulder_left,s.shoulder_right};
             road.mountain=0;road.curb_height={0,0};
-            if(road.kind==1 || road.kind==3)for(int side=0;side<2;++side)heights[size_t(side)]=road.terrain->walls[side][2];
+            if(road.kind==1 || road.kind==3) {
+                profile=wall_profile(*road.terrain,*road.path,road.kind==3);
+                road.mountain=profile.mountain;
+            }
             if(road.kind==3) {
-                if(heights[1]<1){road.mountain=0;wall_edge[1]=2*s.shoulder_right-s.right;}
-                else {if(heights[0]>0)heights[0]=0;road.mountain=1;wall_edge[0]=2*s.shoulder_left-s.left;}
-                heights[road.mountain]=std::max(heights[road.mountain],800);
-                outer_edge={s.left-road.path->shoulder_left/2,s.right+road.path->shoulder_right/2};
+                outer_edge={profile.outer_left,profile.outer_right};
                 road.curb_height=road.path->height_left==0?std::array<int32_t,2>{16,16}:std::array<int32_t,2>{road.path->height_left,road.path->height_right};
             }
             int32_t max_row=s.screen_y;
@@ -348,13 +352,9 @@ std::vector<DrawNode> CourseScene::draw_nodes(const std::vector<RouteSample>& ro
                 }
                 road.wall_height[side]=0;
                 if(road.kind==1 || road.kind==3) {
-                    // 0x00454240: wall base/top x are the outer shoulder edge
-                    // minus (left) / plus (right) the exported offsets; a height
-                    // below 1 becomes -elevation. 0x00444630 projects base at
-                    // the road row and top height*scale above it (+0x70/+0x80).
-                    const auto& wall=road.terrain->walls[side];const int32_t edge=wall_edge[size_t(side)];
-                    const int32_t base=side?edge+wall[0]:edge-wall[0],top=side?edge+wall[1]:edge-wall[1];
-                    const int32_t height=heights[size_t(side)]<1?-road.path->elevation:heights[size_t(side)];
+                    // 0x00444630 projects the base at the road row and the top
+                    // height*scale above it (+0x70/+0x80).
+                    const int32_t base=profile.base[size_t(side)],top=profile.top[size_t(side)],height=profile.height[size_t(side)];
                     road.wall_height[side]=height;
                     h.world[1]={world_x+base,s.world_y};h.world[2]=h.world[3]={world_x+top,s.world_y+height};
                     h.projected[1]={wrap(slice.screen_x(r,base)),s.screen_y};
