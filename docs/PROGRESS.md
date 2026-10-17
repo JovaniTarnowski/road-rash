@@ -1095,3 +1095,22 @@ was restored to its pre-session hash after both captures.
   camera (36 nodes, 7 grounds in `medly-jump`) differ, unchanged since before
   this session. [Handoff](agent-handoffs/pch-terrain-parity-20261016.md).
 
+### October 16, 2026: side streets and building ends (Peninsula)
+
+- Ported `0x0040ba10` (side-street pavement tiles stepping out from the
+  transition point; flag 16 curb faces, flag 8 colour-0x4d gap fill to the
+  nearer strip), `0x0040bde0`'s flag-16 curb face and `0x0040c450`
+  (side-street facades; `0x00441730` always returns 0, so runs are
+  `max(4, 0x00465a40[0])` then 2, alternating selector and entry 0, with
+  `0x004ba180` choosing 8 or 16). `0x0040cbb0` end faces and the side
+  facades draw the group's first cell: `0x0040c3f0` -> `0x0044a9b0` resets
+  the selected template. `0x004504f0` copies drop the flip bytes.
+- Comparator: textures are now identified by the dump's mip-0 hash, not by
+  name (several disc resources share pixels under other names). This
+  exposed and fixed the City end-face cell choice (26 nodes).
+- Result: every terrain node in `medly-jump` (6456), `city-moving` (1006),
+  `city-scene`, `napa-drive` and the CANYN tunnel capture matches. New ctest
+  `oracle-terrain-medly`. The 7 MEDLY rider grounds that differ are riders
+  whose +0x24 does not follow their own sub-slice (jump scenario), not a
+  terrain-path difference.
+

@@ -159,6 +159,9 @@ else()
         # Native terrain construction vs the original CANYN tunnel capture (skips without it).
         add_test(NAME oracle-terrain COMMAND oracle-scene-test --native-terrain ${CMAKE_SOURCE_DIR}/analysis/oracle/pch-tunnel-20261016.tsv)
         set_tests_properties(oracle-terrain PROPERTIES SKIP_RETURN_CODE 77)
+        # MEDLY side streets and building ends (0x0040ba10, 0x0040c450, 0x0040cbb0).
+        add_test(NAME oracle-terrain-medly COMMAND oracle-scene-test --native-terrain --nodes-only ${CMAKE_SOURCE_DIR}/analysis/oracle/medly-jump.tsv)
+        set_tests_properties(oracle-terrain-medly PROPERTIES SKIP_RETURN_CODE 77)
         add_executable(oracle-raster-test tests/oracle_raster_test.cpp)
         target_link_libraries(oracle-raster-test PRIVATE rr-resource)
         if(EMSCRIPTEN)
@@ -284,9 +287,9 @@ else()
         # Plan 30 Task 1: labels for targeted runs. `slow` = minutes-long;
         # `sim` = simulation coverage; `disc` = reads the disc (77 without it);
         # everything else gets `unit` from the loop below (Review Focus 1).
-        set(RR_SLOW_TESTS hires-render race-soak course_scene race_setup raster-rgb widescreen oracle-scene oracle-terrain)
+        set(RR_SLOW_TESTS hires-render race-soak course_scene race_setup raster-rgb widescreen oracle-scene oracle-terrain oracle-terrain-medly)
         set(RR_SIM_TESTS oracle-sim race car_contact frozen_state race-soak race_setup bike crash traffic actor_traffic pedestrian police sim_fields track_ring)
-        set(RR_DISC_TESTS oracle-road oracle-scene oracle-terrain oracle-raster hires-render raster-rgb widescreen polygon text frontend
+        set(RR_DISC_TESTS oracle-road oracle-scene oracle-terrain oracle-terrain-medly oracle-raster hires-render raster-rgb widescreen polygon text frontend
             native_screens sound music pe-strings-corpus career-corpus wav-corpus race-soak race_setup course_scene)
         foreach(t ${RR_SLOW_TESTS})
             set_property(TEST ${t} APPEND PROPERTY LABELS slow)

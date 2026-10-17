@@ -292,7 +292,7 @@ int native_actors(const std::string& tsv, const rr::Assets& assets) {
 // flips. The dump holds only the post-flush tail, so native nodes without an
 // original counterpart are expected. Scenery and actors are reported only.
 // Riders' ground (+0x24) is checked against 0x00439b10 on the same values.
-int native_terrain(const std::string& tsv, const rr::Assets& assets) {
+int native_terrain(const std::string& tsv, const rr::Assets& assets, bool check_ground) {
     const auto golden = rr::golden::load(tsv);
     const std::string stem = tsv.substr(0, tsv.size() - 4);
     const int course = int(golden.frames.at(0).at("course"));
@@ -315,7 +315,9 @@ int native_terrain(const std::string& tsv, const rr::Assets& assets) {
             for (const uint32_t category : {1u, 3u, 5u, 6u})
                 if (category < root->second.children.size()) walk(root->second.children[category], 1);
     }
-    using Key = std::tuple<std::string, std::array<int32_t, 8>, bool, bool>;
+    // Native nodes keyed by points and flips; textures compare by the dump's
+    // mip-0 hash (several disc resources share pixels under other names).
+    using Key = std::tuple<std::array<int32_t, 8>, bool, bool>;
     size_t frames = 0, matched = 0, missing = 0, others = 0, grounds = 0, ground_failures = 0;
     for (const auto& f : golden.frames) {
         if (!f.count("scene.file")) continue;
@@ -355,11 +357,11 @@ int native_terrain(const std::string& tsv, const rr::Assets& assets) {
         }
         const uint32_t position = uint32_t(f.at("camera.position"));
         const rr::Camera camera{int32_t(f.at("camera.x")) - route[position >> 8].offset, int32_t(f.at("camera.height"))};
-        std::multiset<Key> native;
+        std::multimap<Key, rr::DrawNode> native;
         for (const auto& n : scene.draw_nodes(route, rr::project_road(route, position, camera, depths), camera, depths)) {
             std::array<int32_t, 8> v{};
             for (size_t k = 0; k < 4; ++k) { v[2 * k] = n.view_points[k].x; v[2 * k + 1] = n.view_points[k].y; }
-            native.insert({n.texture ? n.texture->name : "flat" + std::to_string(n.flat_index ? int(*n.flat_index) : -1), v, n.flip_u, n.flip_v});
+            native.insert({{v, n.flip_u, n.flip_v}, n});
         }
         size_t frame_missing = 0;
         for (const auto& s : dump.nodes) {
@@ -369,8 +371,24 @@ int native_terrain(const std::string& tsv, const rr::Assets& assets) {
             if (!terrain.count(name) && name != "flat253") { ++others; continue; }
             std::array<int32_t, 8> v{};
             for (size_t k = 0; k < 4; ++k) { v[2 * k] = int32_t(s.u32(0x44 + 8 * k)); v[2 * k + 1] = int32_t(s.u32(0x48 + 8 * k)); }
-            const auto it = native.find({name, v, s.bytes[0x64] != 0, s.bytes[0x65] != 0});
-            if (it == native.end()) { ++frame_missing; continue; }
+            const auto range = native.equal_range({v, s.bytes[0x64] != 0, s.bytes[0x65] != 0});
+            auto it = range.first;
+            for (; it != range.second; ++it) {
+                const auto& n = it->second;
+                if (s.bytes[0x66] ? (!n.texture && n.flat_index && *n.flat_index == s.bytes[0x67])
+                                  : (n.texture && !n.texture->mips.empty() && s.size && n.texture->mips[0].pixels.size() >= s.size &&
+                                     rr::testlib::fnv(n.texture->mips[0].pixels.data(), s.size) == s.hash)) break;
+            }
+            if (it == range.second) {
+                ++frame_missing;
+                if (std::getenv("RR_TERRAIN_VERBOSE")) {
+                    std::cout << "  missing " << name << " hash " << s.hash << " size " << s.size << " at";
+                    for (auto value : v) std::cout << ' ' << value;
+                    for (auto j = range.first; j != range.second; ++j) std::cout << " | native " << (j->second.texture ? j->second.texture->name : "flat");
+                    std::cout << '\n';
+                }
+                continue;
+            }
             native.erase(it); ++matched;
         }
         // Riders' ground: 0x0043a190 -> 0x00439b10(+0x140 sub-slice, +0x28, +0x138).
@@ -392,12 +410,12 @@ int native_terrain(const std::string& tsv, const rr::Assets& assets) {
     if (!frames) { std::cout << "skip: capture has no scene frames\n"; return rr::golden::skip; }
     std::cout << frames << " frames: " << matched << " terrain nodes match, " << missing << " missing, " << others
               << " scenery/actor nodes not compared; " << grounds << " rider grounds, " << ground_failures << " differ\n";
-    return missing || ground_failures ? 1 : 0;
+    return missing || (check_ground && ground_failures) ? 1 : 0;
 }
 }   // namespace
 
 int main(int argc, char** argv) {
-    bool actors_mode = false, terrain_mode = false;
+    bool actors_mode = false, terrain_mode = false, check_ground = true;
     const std::string dir = rr::golden::oracle_dir();
     std::string tsv = dir + "/city-scene.tsv";
     std::string assets_root = RR_SOURCE_DIR "/../cdrom/ROADRASH";
@@ -405,6 +423,7 @@ int main(int argc, char** argv) {
         const std::string a = argv[i];
         if (a == "--native-actors") actors_mode = true;
         else if (a == "--native-terrain") terrain_mode = true;
+        else if (a == "--nodes-only") check_ground = false;   // report rider grounds without gating
         else if (a == "--assets" && i + 1 < argc) assets_root = argv[++i];
         else if (a[0] != '-') tsv = a;
     }
@@ -412,7 +431,7 @@ int main(int argc, char** argv) {
     std::ifstream probe(tsv);
     if (!probe || !assets.exists("DATA/GLOBAL.RSC")) { std::cout << "skip: no scene capture or disc\n"; return rr::golden::skip; }
     if (actors_mode) return native_actors(tsv, assets);
-    if (terrain_mode) return native_terrain(tsv, assets);
+    if (terrain_mode) return native_terrain(tsv, assets, check_ground);
     const auto golden = rr::golden::load(tsv);
     const std::string stem = tsv.substr(0, tsv.size() - 4);
     const int course = int(golden.frames.at(0).at("course"));

@@ -54,6 +54,7 @@ CourseScene::CourseScene(const Assets& assets,const std::vector<uint8_t>& exe,
     }
     {
         auto word=[](const std::vector<uint8_t>& b,size_t p){uint32_t v=0;for(int k=0;k<4;++k)v|=uint32_t(b[p+size_t(k)])<<(k*8);return bits(v);};
+        side_street_run_=read_exe_data(exe,0x00465a40,1).at(0);
         const auto table=read_exe_data(exe,0x00465a54,32);for(size_t i=0;i<8;++i)arch_[i]=word(table,i*4);
         const auto words=read_exe_data(exe,0x004766f0,257*4);for(size_t i=0;i<257;++i)sine_words_[i]=word(words,i*4);
         const auto bytes=read_exe_data(exe,0x00476870,128);std::copy(bytes.begin(),bytes.end(),sine_bytes_.begin());
@@ -125,6 +126,13 @@ CourseScene::CourseScene(const Assets& assets,const std::vector<uint8_t>& exe,
 }
 const TerrainSlice& CourseScene::terrain(uint32_t section,uint32_t local) const {return terrain_.at(section).at(local);}
 bool CourseScene::tunnel(uint32_t section,uint32_t local) const {return tunnels_.at(section).at(local);}
+const CelGroup* CourseScene::building_group(uint32_t section,uint32_t local,uint8_t selector) const {
+    const uint16_t id=family_slots_.at(section).at(local)[selector>>6];
+    const auto family=families_.find(id);if(family==families_.end())return nullptr;
+    const auto offset=family->second.resolve(1,selector&63);if(!offset)return nullptr;
+    const auto it=family->second.groups.find(*offset);
+    return it==family->second.groups.end()?nullptr:&it->second;
+}
 const CelGroup* CourseScene::rail_group(uint32_t section,uint32_t local,uint8_t selector) const {
     // 0x0044ac00(selector, 6): category 6 entry, a cel group without frames.
     const uint16_t id=family_slots_.at(section).at(local)[selector>>6];
@@ -277,6 +285,11 @@ std::vector<DrawNode> CourseScene::draw_nodes(const std::vector<RouteSample>& ro
     // Plan 19 Task 4: the ceiling stays logical (240 Q16 view rows); only
     // ViewMode::map converts it to surface rows at render time.
     int32_t ceiling=240*65536;
+    // 0x004ba180, reset to -1 per frame (0x00443a00) and updated by
+    // 0x00444630 near to far: a hill strip makes it 0, then a plain building
+    // strip 1 or a flag-16 building strip its sample. 0x0040c450 draws 16
+    // side-street facades up to that sample, else 8.
+    int64_t side_street_mark=-1;
     for(size_t n=0;n<slices.size();++n) {
         const auto& slice=slices[n];const auto& sample=route.at(slice.sample);
         for(int r=0;r<slice.count;++r) {
@@ -284,6 +297,11 @@ std::vector<DrawNode> CourseScene::draw_nodes(const std::vector<RouteSample>& ro
             road.section=own?sample.section:sample.other_section;road.local=own?sample.local:sample.other_local;
             road.path=own?&sample.path:&sample.other;road.terrain=&terrain(road.section,road.local);
             road.kind=tunnel(road.section,road.local)?3:road.terrain->type;
+            if(road.terrain->type==4 && side_street_mark<0)side_street_mark=0;
+            else if(road.terrain->type==0 && side_street_mark==0) {
+                if(road.path->marking_flags==0)side_street_mark=1;
+                else if(road.path->marking_flags&0x10)side_street_mark=slice.sample;
+            }
             road.offset=own?sample.offset:sample.other_offset;
             const auto& s=slice.road[r];const int32_t world_x=s.road_x+camera.x;
             // 0x00454240 for a tunnel: the side whose height is at least 1 is the
@@ -504,15 +522,46 @@ std::vector<DrawNode> CourseScene::draw_nodes(const std::vector<RouteSample>& ro
                     return material(road.section,road.local,selector,3,part==1?5u:4u,w,h);}));
             }
             if(!(path.marking_flags&32) && road.terrain->type==0)for(int side=0;side<2;++side) {
+                // 0x0043bef0 type 0: 0x0040bde0, then 0x0040ba10 for flags 8/16,
+                // the facade 0x0040c770, and 0x0040c450 for flag 16.
                 BuildingShoulderInput shoulder;shoulder.near_depth=near.depth;shoulder.far_base_y=a.screen_y;shoulder.near_base_y=b.screen_y;shoulder.far_world_base_y=a.world_y;shoulder.near_world_base_y=b.world_y;shoulder.logical_width=logical_width;
                 shoulder.top.side=uint8_t(side);shoulder.top.far_depth=far.depth;shoulder.top.occlusion_row=road.ceiling;
                 const int32_t fy=side?old.path->height_right:old.path->height_left,ny=side?path.height_right:path.height_left;
                 shoulder.top.projected={{{wrap(far.screen_x(r,side?a.right:a.left)),old.hill[side].projected[0].y},old.hill[side].projected[0],road.hill[side].projected[0],{wrap(near.screen_x(r,side?b.right:b.left)),road.hill[side].projected[0].y}}};
                 shoulder.top.world={{{a.road_x+camera.x+(side?a.right:a.left),a.world_y+fy},{old.hill[side].world[0].x,a.world_y+fy},{road.hill[side].world[0].x,b.world_y+ny},{b.road_x+camera.x+(side?b.right:b.left),b.world_y+ny}}};
-                append(building_shoulder_nodes(shoulder,camera,depths,[&](uint8_t frame,int32_t w,int32_t h){return material(road.section,road.local,path.side_flags[side],5,frame,w,h);}));
+                const auto side_material=[&](uint8_t frame,int32_t w,int32_t h){return material(road.section,road.local,path.side_flags[side],5,frame,w,h);};
+                append(building_shoulder_nodes(shoulder,camera,depths,side_material));
+                if(path.marking_flags&0x10)
+                    append(side_street_curb_nodes(uint8_t(side),wrap(near.screen_x(r,side?b.right:b.left)),road.hill[side].projected[0].y,road.hill[side].projected[0].x,b.screen_y,road.ceiling,side_material));
+                const int32_t shoulder_width=std::abs(side?path.shoulder_right:path.shoulder_left);
+                if(path.marking_flags&24) {
+                    SideStreetInput street;street.side=uint8_t(side);street.marking_flags=path.marking_flags;street.transition=road.building[side].transition;
+                    street.near_shoulder_x=road.hill[side].projected[0].x;street.near_curb_y=road.hill[side].projected[0].y;street.near_row=b.screen_y;
+                    street.far_shoulder_x=old.hill[side].projected[0].x;street.far_curb_y=old.hill[side].projected[0].y;
+                    street.near_scale=depth_scale(depths,near.depth);street.near_shoulder_scale=depth_scale(depths,near.depth+shoulder_width);
+                    street.far_scale=depth_scale(depths,far.depth);street.far_shoulder_scale=depth_scale(depths,std::max(0,far.depth-shoulder_width));
+                    if(n>=2){street.nearer=true;street.nearer_curb_y=roads[n-2][r].hill[side].projected[0].y;}
+                    street.logical_width=logical_width;
+                    append(side_street_nodes(street,side_material));
+                }
                 BuildingPanelInput building{road.building[side],old.building[side],uint8_t(side)};
                 building.near_depth_q8=near.depth;building.far_depth_q8=far.depth;building.logical_width=logical_width;
-                append(building_draw_nodes(building,[&](bool use_far,int32_t w,int32_t h){const auto& source=use_far?old:road;return material(source.section,source.local,source.terrain->selectors[side],1,std::nullopt,w,h);}));
+                // The end face (0x0040cbb0) passes quality 6 to 0x0040c3f0, which resets
+                // the template to the group's first cell (0x0044a9b0).
+                append(building_draw_nodes(building,[&](bool use_far,int32_t w,int32_t h)->const CelTexture*{
+                    if(!use_far)return material(road.section,road.local,road.terrain->selectors[side],1,std::nullopt,w,h);
+                    const auto* group=building_group(old.section,old.local,old.terrain->selectors[side]);
+                    return group && !group->cells.empty()?&group->cells.front().texture:nullptr;}));
+                if(path.marking_flags&0x10) {
+                    SideFacadeInput facade;facade.side=uint8_t(side);facade.selector=road.terrain->selectors[side];facade.has_building=road.building[side].height!=0;
+                    facade.transition=road.building[side].transition;facade.scale=depth_scale(depths,near.depth+shoulder_width);
+                    facade.count=int64_t(near.sample)<=side_street_mark?16:8;facade.run_length=side_street_run_;facade.logical_width=logical_width;
+                    append(side_facade_nodes(facade,[&](uint32_t index)->const CelGroup*{
+                        const uint16_t id=family_slots_.at(road.section).at(road.local)[(facade.selector&0xc0)>>6];
+                        const auto family=families_.find(id);if(family==families_.end())return nullptr;
+                        const auto offset=family->second.resolve(1,index);if(!offset)return nullptr;
+                        const auto it=family->second.groups.find(*offset);return it==family->second.groups.end()?nullptr:&it->second;},logarithms_));
+                }
             }
             // 0x00443af0 draws a strip's scenery (0x00443b40) after the next
             // nearer strip's terrain: the previous pair's guard rails go here.

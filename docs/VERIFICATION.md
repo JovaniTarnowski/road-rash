@@ -1466,3 +1466,16 @@ pass before it was inspected; the successful rerun is the verified result.
   `oracle-sim` passed). rr-game `--course 3 --autopilot` 16:10 screenshots at
   600/2700/2900 ticks show the guard rail along the water.
 
+## Side streets and building ends (October 16, 2026)
+
+- `oracle-scene-test --native-terrain` with mip-0 hash identity:
+  `medly-jump` 78 frames, 6456/6456 terrain nodes (was 6407 by name, 49
+  missing; all MEDLY differences reproduced at baseline 9a77854 before the
+  fix); `city-moving` 1006/1006 (26 end faces were a different cell before
+  `0x0044a9b0`); `city-scene` 517/517; `napa-drive` 123/123;
+  `pch-tunnel-20261016` 3347/3347 with 2096 rider grounds equal.
+- New ctest `oracle-terrain-medly` (`--nodes-only`: grounds reported, not
+  gated; 7 of 3244 differ in the jump capture).
+- Full build exit 0; ctest 100/100 before adding the new test, both
+  oracle-terrain tests pass after (52 s for MEDLY).
+

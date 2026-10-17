@@ -60,8 +60,10 @@ private:
     const CelTexture* tunnel_material(uint32_t section,uint32_t local,uint8_t selector,uint32_t lit,uint8_t kind,int32_t width,int32_t height) const;
     int32_t sine(int32_t angle) const;
     const CelGroup* rail_group(uint32_t section,uint32_t local,uint8_t selector) const;
+    const CelGroup* building_group(uint32_t section,uint32_t local,uint8_t selector) const;
     static int32_t approximate_angle(int32_t x,int32_t y);
     std::vector<std::vector<bool>> tunnels_;
+    uint8_t side_street_run_=2;                  // 0x00465a40[0]
     std::array<int32_t,8> arch_{};               // 0x00465a54 tunnel heights / fractions
     std::array<int32_t,257> sine_words_{};       // 0x004766f0
     std::array<uint8_t,128> sine_bytes_{};       // 0x00476870
