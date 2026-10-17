@@ -1,6 +1,6 @@
 # Road Rash native port: plan index
 
-These plans take the port from its current state to a complete native game on macOS ARM64 and Android ARM64. Read this file first. It holds the current status, the review findings, the order of the remaining plans, and the conventions every plan assumes.
+These plans take the port from its current state to a **100% complete, feature-complete native game**: macOS ARM64 first, then Android ARM64, Linux and Windows. Each plan is implemented in full; do not defer tasks to later. Read this file first. It holds the current status, the review findings, the order of the remaining plans, and the conventions every plan assumes.
 
 Last reviewed: **October 14, 2026**: plans 25–31 landed (review fixes, one factory, field proxy, race shell, render performance, test/build tooling, this docs pass); plans 21–22 added October 12; plan 21 gained Task 10 (wide menus). See [../PROGRESS.md](../PROGRESS.md) for the per-session timeline.
 
@@ -122,6 +122,7 @@ The owner also asked for plans covering pedestrians, oil slicks, police and the 
 | **30** | [Test and build infrastructure](30-test-and-build-infrastructure.md) | **Done** (Tasks 1–5): labels/fast targets/guard, Checks, strict clean, ByteReader/ISO parser, build pruner | — |
 | **31** | [Docs and status hygiene](31-docs-and-status-hygiene.md) | **Done**: header/index refresh, handoff archive, doc checks in agent-tooling | — |
 | **32** | [Completion review follow-through](32-completion-review-next-steps.md) | New (October 14 review, [report](../agent-review/REVIEW-2026-10-14-COMPLETION.md)): R1 restart latch, R2/R3 interpolation, R4 pause texture, R5 side panels | Slice C is the active SIM work (this plan); A/B after it; D–G sequenced after parity/device evidence |
+| **33** | [Linux and Windows ports](33-linux-windows-ports.md) | New (October 17). Linux and Windows builds, packaging, CI and acceptance after macOS/Android; portability rules apply now | — |
 
 ### Order and dependencies
 
@@ -145,6 +146,7 @@ The owner also asked for plans covering pedestrians, oil slicks, police and the 
 - **Plan 22** (toolchain hardening) is independent and can run now; its ThreadSanitizer task should land before plan 19's threaded rasteriser.
 - **Plan 14 Task 1 (first device run and performance baseline) runs as soon as a device is attached.** It does not wait for the other plans.
 - **Plan 13** is independent of 10–12 except for its race-MIDI hook, which uses the race-start point that plan 11 touches.
+- **Plan 33** (Linux, Windows) starts once macOS is feature complete.
 - **Plan 15** runs last.
 
 ## How these plans handle reverse engineering
@@ -221,6 +223,8 @@ Never commit `analysis/frontend`, `analysis/oracle`, screenshots of original art
 5. Controls work with keyboard, gamepad (including the MANGMI AIR X built-in controls) and touch. Plan 14's hardware checklist has been run on the device.
 6. Every original options screen works, and the native Display, Sound and Pause screens (plan 18) are usable with a controller only. The game renders at up to 2560×1920 (plan 19), with optional upscaled textures and artwork generated locally (plan 20).
 7. The docs describe every recovered format and every known deviation from the original.
+
+8. Linux and Windows builds pass the same gates (plan 33).
 
 Plan 09 (multiplayer) is outside the definition of done unless the owner decides otherwise (plan 15 Task 4).
 

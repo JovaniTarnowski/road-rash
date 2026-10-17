@@ -8,7 +8,9 @@ and gate receipts when assessing completion.
 
 Progress summary, timeline and next steps: [docs/PROGRESS.md](docs/PROGRESS.md). Binary evidence: [docs/REVERSE_ENGINEERING.md](docs/REVERSE_ENGINEERING.md). Test log: [docs/VERIFICATION.md](docs/VERIFICATION.md). Plans to completion: [docs/plans/00-INDEX.md](docs/plans/00-INDEX.md).
 
-Native C++17 / SDL3 work targeting macOS ARM64 and Android ARM64. `rr-game` is a **playable race against seven AI opponents** with the original bike physics and combat; `rr-viewer` is the asset research viewer. It does not execute the Windows binary, use Wine, or emulate x86.
+**Goal: a 100% complete, feature-complete native port of Road Rash for modern systems.** macOS ARM64 comes first, then Android ARM64 and Linux, then Windows ([plan 33](docs/plans/33-linux-windows-ports.md)). Plans are implemented in full, not partially; remaining gaps are listed in [docs/CURRENT_STATUS.md](docs/CURRENT_STATUS.md).
+
+Native C++17 / SDL3 code targeting macOS ARM64 and Android ARM64 today. `rr-game` is a **playable race against seven AI opponents** with the original bike physics and combat; `rr-viewer` is the asset research viewer. It does not execute the Windows binary, use Wine, or emulate x86.
 
 C++ formatting and static analysis: `make format FILES='src/foo.cpp src/foo.hpp'`,
 `make format-check FILES='src/foo.cpp src/foo.hpp'`, and
@@ -48,7 +50,7 @@ P/Esc, gamepad Start or Android Back opens the pause menu (RESUME, SOUND, DISPLA
 
 Graphics Options holds Display, Sound (master + six channels, mute, swap), Configure Input (nine rebindable keys plus gamepad/touch pages) and the FPS counter. See `docs/USER_GUIDE.md` for the Settings section.
 
-The race uses the original 60 Hz bike physics ported from the executable (throttle, brakes, 7-gear shifting, drag, traction, steering, curve drift, crests and jumps) on the original course geometry. You race seven original AI opponents with punches, kicks and weapons, drawn with the original rider sprites. Road shading is a placeholder; traffic, police, race audio and gameplay menus are not done yet. See `docs/PROGRESS.md` for what is simplified.
+The race uses the original 60 Hz bike physics ported from the executable (throttle, brakes, 7-gear shifting, drag, traction, steering, curve drift, crests and jumps) on the original course geometry. You race seven original AI opponents with punches, kicks and weapons, drawn with the original rider sprites. Road shading is a placeholder; some traffic, police, race audio and gameplay menus are still being completed; the port is not finished until they are. See `docs/PROGRESS.md` for what is simplified.
 
 ## Import your disc
 

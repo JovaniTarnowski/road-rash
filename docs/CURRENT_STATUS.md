@@ -12,6 +12,7 @@ Generated from `agent-status.json`. Historical entries describe their own checkp
 | Android | Native asset-free APK build | Hardware validation remains unverified; Device import/render/input/lifecycle/performance | [14-android-port.md](plans/14-android-port.md), [VERIFICATION.md](VERIFICATION.md) |
 | Packaging | Source/commit/config/compiler stamp and manifest check | Current package receipt below if run; Owner signing/release acceptance | [USER_GUIDE.md](USER_GUIDE.md), [15-release-and-acceptance.md](plans/15-release-and-acceptance.md) |
 | Agent tooling | Canonical instructions, claims, gates, capture validation, evidence index | Tooling regression suite; receipts below; Clients must honor claims; direct unmanaged commands bypass them | [AGENT_TOOLING.md](AGENT_TOOLING.md), [REVIEW.md](agent-review/REVIEW.md) |
+| Linux/Windows | Not started | No builds yet; Builds, packaging, CI and acceptance on both | [33-linux-windows-ports.md](plans/33-linux-windows-ports.md) |
 
 ## Latest gate receipts
 

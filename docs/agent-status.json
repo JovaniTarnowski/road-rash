@@ -102,6 +102,17 @@
       ],
       "last_verified_commit": null,
       "fidelity_level": "not-claimed"
+    },
+    {
+      "area": "Linux/Windows",
+      "implementation": "Not started",
+      "verification": "No builds yet",
+      "remaining": "Builds, packaging, CI and acceptance on both",
+      "evidence": [
+        "plans/33-linux-windows-ports.md"
+      ],
+      "last_verified_commit": null,
+      "fidelity_level": "not-claimed"
     }
   ],
   "gates": {

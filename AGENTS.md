@@ -1,14 +1,34 @@
 # Road Rash native port — agent instructions
 
+## Goal and working policy
+
+The goal is a **100% complete, feature-complete port of Road Rash for modern
+systems**: every course, level, mode, bike, opponent, weapon, hazard, cutscene,
+sound, menu, option and save behaving like the original. Platform order: macOS
+ARM64 first, then Android ARM64 and Linux, then Windows (plan 33). The port is
+not done while any placeholder, stand-in or approximation remains.
+
+- **Implement plans completely.** When you take a plan or task, finish all of
+  it: code, tests, oracle evidence and docs. Do not defer parts to "later", leave
+  TODO stand-ins, or mark a task done with known gaps. If the work is large,
+  split it into sub-steps and keep going until it is finished. Open items belong
+  in a plan only when blocked by an external fact (for example no device attached),
+  and then you advance an independent slice.
+- **Work autonomously.** Do not ask the owner whether to do something the port
+  needs. Decide, do it, and record the decision in the docs. Ask only when
+  a choice is genuinely the owner's, such as licensing or credentials.
+- **Commit and push** finished work to `main` with explicit paths, without asking.
+- Fidelity rules below still apply: never claim a match that was not measured.
+
 ## Scope and entry points
 
 This Git repository is `native-port/`; its parent `rr/` is a workspace containing
 the owner's disc, a legacy Wine install and a separate Wine-on-Android setup.
 Run Git and native build commands from this repository.
 
-The deliverable is native C++/SDL3 on macOS ARM64 and Android ARM64. Wine is
+The deliverable is native C++/SDL3 on macOS ARM64 and Android ARM64, then Linux and Windows (plan 33). Wine is
 used only to inspect/capture the original for this port. The opening Napa race
-is the current fidelity milestone; consult `docs/plans/00-INDEX.md` for current
+is the current fidelity milestone, followed by all courses and the whole game; consult `docs/plans/00-INDEX.md` for current
 dependencies before implementation or planning. Read `docs/CURRENT_STATUS.md` for the
 latest evidence; dated plan overviews are historical snapshots. Match plans to the actual
 interfaces before using their snippets. Plans 02–07 describe older architecture;
