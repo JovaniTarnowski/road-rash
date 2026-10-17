@@ -22,6 +22,7 @@ struct PhysicsTables {
     std::array<int32_t,32> curve{};           // 0x0046dd28: [surface + 4*((position>>8)&7)]
     std::array<int32_t,1024> sine{};          // 0x00475768: quarter wave, Q15
     std::array<int32_t,26> bike_object{};     // 0x00463ba8: bike behaviour/constant table
+    std::array<int32_t,26> half_object{};     // 0x00463c10: rider-half table (0x00405600 -> 0x00405990 param_2)
     std::array<int32_t,20> rubber_band{};     // 0x004659d4 + d*4 for d = -9..10 (percent, 0x004082f0)
     std::array<uint8_t,257> atan{};           // 0x00476768: atan(x/256) in 1/256 of 90 degrees (0x0044f720)
     static PhysicsTables synthetic();          // simple values for unit tests; not original data
@@ -54,6 +55,11 @@ struct Bike {
 };
 
 void init_bike_object(Bike&, const PhysicsTables&);            // 0x00438930/0x004387a0 table copy
+// The same object build from any 26-word behaviour table (the rider half
+// uses 0x00463c10). Words the build does not write keep the pool slot's
+// previous contents in the original (0x00438a80 does not clear); the native
+// image starts zeroed, as a slot's first use in a fresh process does.
+void init_object(Bike&, const std::array<int32_t,26>& table);
 void apply_spec(Bike&, const BikeSpec&, int32_t rider_value);  // 0x00405ea0
 void throttle(Bike&, int32_t target);                          // 0x0040adb0
 void brake(Bike&, int32_t target);                             // 0x0040aea0

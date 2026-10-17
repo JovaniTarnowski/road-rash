@@ -1625,3 +1625,26 @@ pass before it was inspected; the successful rerun is the verified result.
   sched-human-cov2-20261017 bare `1431 ticks identical`; verify_sim
   acceptance exit 0; ctest 101/101 with race-cache re-recorded (tick-300
   frame: one pedestrian pose differs, checked against a clean HEAD build).
+
+## Rider build, no verified invariants (October 17, 2026)
+
+- Build `build-agent-ring-terrain-20261016` (Debug): full build exit 0,
+  `ctest` 101/101.
+- `oracle-sim-test --driver=human --coverage
+  analysis/oracle/sched-human-cov2-20261017.tsv`: `ring setup closes on
+  the green anchor (+0 draws)`, bare `1431 ticks identical`, no invariant,
+  golden-only or uncovered lines (before: 70 verified invariants).
+- `tools/verify_sim.py --mode acceptance`: exit 0, acceptance_met true.
+- sched600 `--driver=demo` 600 identical; sched900 tick 893 RNG
+  (unchanged); sched-human-20261016 1431 identical, 0 golden-only;
+  terrain-human200 200 identical.
+- `tools/verify_sim.py --mode diagnostic`: sim-napa-solo.tsv re-pinned
+  (tick 222 lateral → tick 210 RNG, identical to sim-napa-solo-human.tsv);
+  sched600 shares its RNG at ticks 209/210/222 and passes them with frozen
+  words hydrated. sim-napa-solo-human.tsv: hash re-pinned, only the closure
+  line changed (+16 → +0).
+- race-cache: all 12 hashes re-recorded. Tick-300 frames from HEAD (e00b508,
+  isolated worktree) and this build compared by eye: same scene, player on
+  its spawn target and opponents in their drawn lanes, none off the road.
+- New `race-test` checks: lane draw order and name roll, spawn state/target
+  placement/replan/base speed/wreck timers, half object image.

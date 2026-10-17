@@ -63,16 +63,18 @@ PhysicsTables read_physics_tables(const std::vector<uint8_t>& exe) {
     for (int i = 0; i < 32; ++i) t.curve[size_t(i)] = word(0x0046dd28 + 4u*i);
     for (int i = 0; i < 1024; ++i) t.sine[size_t(i)] = word(0x00475768 + 4u*i);
     for (int i = 0; i < 26; ++i) t.bike_object[size_t(i)] = word(0x00463ba8 + 4u*i);
+    for (int i = 0; i < 26; ++i) t.half_object[size_t(i)] = word(0x00463c10 + 4u*i);
     for (int i = 0; i < 257; ++i) t.atan[size_t(i)] = uint8_t(byte(0x00476768 + uint32_t(i)));
     for (int i = 0; i < 20; ++i) t.rubber_band[size_t(i)] = word(0x004659d4 + 4u*uint32_t(i - 9));
     // Corroborate: grip table and quarter-wave sine of the reference build.
-    if (t.contact_base != 74 || t.grip[0] != 256 || t.sine[0] != 0 || t.sine[512] != 23170 || t.bike_object[1] != 4)
+    if (t.contact_base != 74 || t.grip[0] != 256 || t.sine[0] != 0 || t.sine[512] != 23170 || t.bike_object[1] != 4 || t.half_object[1] != 8)
         throw std::runtime_error("Unrecognised physics tables");
     return t;
 }
 
-void init_bike_object(Bike& b, const PhysicsTables& t) {
-    const auto& w = t.bike_object;
+void init_bike_object(Bike& b, const PhysicsTables& t) { init_object(b, t.bike_object); }
+
+void init_object(Bike& b, const std::array<int32_t,26>& w) {
     b.u8(0xc0) = uint8_t(uint8_t(w[0] & ~0x08) | 0x04);   // 0x00437bb0: bit 2 set, bit 3 cleared at scheduler insert
     b.i32(0xc4) = w[1];
     // 0x004387a0: object constants from the behaviour table words 7..
@@ -80,6 +82,7 @@ void init_bike_object(Bike& b, const PhysicsTables& t) {
     b.i32(0x160) = w[11]; b.i32(0x168) = w[12]; b.i32(0x16c) = w[13]; b.i32(0x1b4) = w[14];
     b.i32(0x1b8) = w[15]; b.i32(0x170) = w[16]; b.i32(0x174) = w[17]; b.i32(0x178) = w[18];
     b.i32(0x17c) = w[19]; b.i32(0x180) = w[20]; b.i32(0x194) = w[21];
+    b.i32(0x1a4) = w[22]; b.i32(0x1a8) = w[23]; b.i32(0x1ac) = w[24];
     b.i32(0x11c) = -0x25;
 }
 

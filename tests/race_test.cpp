@@ -882,6 +882,44 @@ int main() {
         check(full.riders()[14].slot == 14, "last opponent in slot 14");
     }
 
+    // Rider build (0x00405600/0x00405990/0x00405c80): one lane draw per
+    // rider in build order, then the rand()%100 name roll; the brain spawns
+    // at state 0 on its straight target with the bike moved onto it, and
+    // the replan of the player (built first) sees no neighbours.
+    {
+        auto tt = t;
+        tt.half_object = {0, 8, 1, 0, 0, 0, 0, 300, 256, 130, 70, 37, -2560, 256, 74, 0, 24, 6400, 16, 7680, 192, 25, 0, 1, 1, 0};
+        std::vector<rr::Opponent> two;
+        for (int k = 1; k <= 2; ++k) {
+            rr::Opponent o{spec, 90, 100, 90, 0, k};
+            two.push_back(o);
+        }
+        rr::Race r(straight(2000), straight(2000), tt, spec, 90, two);
+        const uint32_t seed = 12345;
+        r.set_rng_state(seed);
+        for (auto& q : r.riders()) { q.brain.spd_b[0] = 87; q.brain.spd_a[0] = 70; q.brain.state = 1; }
+        r.build_draws();
+        uint32_t x = seed;
+        auto draw = [&] { x = x * 0x343fdu + 0x269ec3u; return (x >> 16) & 0x7fff; };
+        bool lanes = true;
+        for (const auto& q : r.riders()) lanes &= q.brain.lane == int(draw() % 3);
+        check(lanes, "0x00405990 draws each rider's lane rand()%3 in build order");
+        check(r.name_roll() == int(draw() % 100) && r.rng_state() == x, "0x00405600 tail draws rand()%100 last");
+        const auto& p = r.riders()[0];
+        check(p.brain.state == 0, "0x00405c80 spawns the brain at state 0");
+        check(p.bike.i32(0x28) == p.brain.target_x && p.brain.target_position == p.bike.i32(0x1c) + 0x3c0,
+              "bike placed on the 0x004091f0 straight target");
+        check(p.brain.target_speed == 0, "spawn target speed reads the record's current speed 0");
+        check(p.brain.nbr_ahead == -1 && p.brain.nbr_behind == -1 && p.brain.current_speed == 87 + 87 / 4,
+              "player replan at build sees no neighbours (case 0: v + v/4)");
+        check(p.brain.base_speed == 87, "base speed is the record's level word");
+        check(p.bike.i32(0x30c) == 600 && p.bike.i32(0x310) == ((45 * 200) >> 8) * 600, "0x00405c80 wreck timers");
+        // Rider-half image from its own table (0x004387a0 from 0x00463c10).
+        check(p.half_object.u8(0xc0) == 4 && p.half_object.i32(0x160) == 37 && p.half_object.i32(0x180) == 192 &&
+              p.half_object.i32(0x194) == 25 && p.half_object.i32(0x1a8) == 1 && p.half_object.i32(0x1ac) == 1 &&
+              p.half_object.i32(0x1b4) == 74 && p.half_object.i32(0x11c) == -0x25, "half object built from its table");
+    }
+
     std::cout << failures << " failures\n";
     return failures ? 1 : 0;
 }

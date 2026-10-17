@@ -72,7 +72,11 @@ int main(int argc, char** argv) {
             // Re-recorded 2026-10-17: ring-setup objects start on the setup
             // tick (2) and pedestrians run during the hold, as both solo
             // captures measure; one pedestrian pose differs at tick 300.
-            static constexpr uint64_t rgb_baseline[]={387927748625765407ULL,16950369914752520773ULL,10619927192660364897ULL,8116068768840064418ULL,15565404957971759949ULL,8340985524461300919ULL};
+            // Re-recorded 2026-10-17 (spawn-20261017): the rider build is
+            // ported after the ring (0x00405600 lane draws, 0x00405c80 brain
+            // spawn and straight-target placement), so riders stand on their
+            // original spawn laterals and opponents use their drawn lanes.
+            static constexpr uint64_t rgb_baseline[]={5580241488231030766ULL,16911564171020350757ULL,3308161946899320515ULL,10663341369971034264ULL,6386746752969507927ULL,13565506552256797168ULL};
             if(rgb)check(checksum==rgb_baseline[(row-1)/2],"RGB canvas output changed from pre-optimization baseline");
             // Dashboard overlays the scene; every opaque dashboard sample and
             // the full Hor+ margins must survive composition.
@@ -97,8 +101,9 @@ int main(int argc, char** argv) {
             canvas.draw(renderer.get(),game,slices,scale,1);
             const uint64_t no_hud=hash_bytes(canvas.frame.row(0),size_t(canvas.scale_w)*canvas.scale_h);
             // Wide entries (1, 3, 5) re-recorded 2026-10-15 after the Hor+ centring fix;
-            // all entries 2026-10-16 for ring-built terrain (owner-approved).
-            static constexpr uint64_t original_scene[]={12661375431986602373ULL,7263761804897724973ULL,13933945606597204134ULL,5956047106008011393ULL,17799582848718289314ULL,10030506204738663430ULL};
+            // all entries 2026-10-16 for ring-built terrain (owner-approved);
+            // all entries 2026-10-17 for the ported rider spawn placement.
+            static constexpr uint64_t original_scene[]={16522315210060068270ULL,14663097353646083664ULL,4755825462613422509ULL,12251435499718520722ULL,16840421449827770034ULL,5193932132851053461ULL};
             std::cout<<"  original_scene="<<no_hud<<'\n';
             check(no_hud==original_scene[(row-1)/2],"Original scene output changed");
             game.assets.hud=std::move(hud);

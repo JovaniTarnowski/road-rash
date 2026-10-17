@@ -410,7 +410,7 @@ int main(int argc, char** argv) {
     // stream, srand(seed) + ring.pre_draws (9 on the Napa solo captures:
     // the 9,098 ring-probe measured before 0x00453b60's window walks were
     // ported held 9,089 of their terrain draws), then 0x00405600 and the countdown
-    // consume ring.post_draws (11) before green. The factory loads this
+    // the rider build (0x00405600) draw before green. The factory loads this
     // state just before ring setup (0x004552e0).
     {
         const int64_t pre = ring_pre_cli >= 0 ? ring_pre_cli : h.count("ring.pre_draws") ? h.at("ring.pre_draws") : 0;
@@ -479,10 +479,11 @@ int main(int argc, char** argv) {
     // Solo captures null the car pool, but 0x0044dd90 still draws a lane
     // at gated timer expiries. Keep the timers attached and skip placement.
     if (solo && setup.instance.traffic) setup.instance.traffic->set_spawn_enabled(false);
-    // The factory's last RNG draw is the ring setup's end (0x004552e0);
-    // the countdown then consumes ring.post_draws (11) before green.
+    // The factory's last RNG draw is the rider build's tail (0x00405600
+    // after the 0x004552e0 ring setup); ring.post_draws (default 0) would
+    // count any further draws before green.
     const std::optional<uint32_t> ring_end_state = race.rng_state();
-    const int64_t ring_post = h.count("ring.post_draws") ? h.at("ring.post_draws") : 16;
+    const int64_t ring_post = h.count("ring.post_draws") ? h.at("ring.post_draws") : 0;
     // The golden rng is the live CRT state AFTER each tick's step (the hook
     // dumps after 0x0044b3b0). The race-setup stream (menu entry through grid
     // build, 11,461 calls) is not reproduced: a single anchor at green covers
@@ -698,6 +699,50 @@ int main(int argc, char** argv) {
         if (latched != -2 && latched != mine) return "brain_180 original position " + std::to_string(latched) + " native " + std::to_string(mine);
         return {};
     };
+    // Whole player brain window (rider.0.brain_138..1c4) against the native
+    // AiState: every word, pointers through rider identity / node position.
+    // Records each consumed key in the coverage ledger.
+    auto brain_window_diff = [&](const std::map<std::string, int64_t>& f) -> std::string {
+        const auto& br = race.riders()[0].brain;
+        for (uint32_t off = 0x138; off <= 0x1c4; off += 4) {
+            char key[32]; std::snprintf(key, sizeof key, "rider.0.brain_%x", off);
+            const auto it = f.find(key);
+            if (it == f.end()) continue;
+            g_used_keys.insert(key);
+            if (off == 0x168 || off == 0x16c || off == 0x170) {
+                const int want = golden_rider(f, key);
+                const int mine = off == 0x168 ? br.target_rider : off == 0x16c ? br.nbr_ahead : br.nbr_behind;
+                if (want != mine) return std::string(key + 8) + " original rider " + std::to_string(want) + " native " + std::to_string(mine);
+                continue;
+            }
+            if (off == 0x180) {
+                const int64_t latched = gpos(f, key);
+                const int64_t mine = br.overtake_type ? br.overtake_position : -1;
+                if (latched != mine) return std::string(key + 8) + " original position " + std::to_string(latched) + " native " + std::to_string(mine);
+                continue;
+            }
+            int64_t mine;
+            if (off < 0x160) mine = br.state_ticks[size_t((off - 0x138) / 4)];
+            else if (off == 0x160) mine = br.state;
+            else if (off == 0x164) mine = int64_t(br.state_flag) | int64_t(uint8_t(br.overtake_index)) << 8;
+            else if (off == 0x174) mine = br.target_step;
+            else if (off == 0x178) mine = br.ov_ahead;
+            else if (off == 0x17c) mine = br.ov_behind;
+            else if (off == 0x184) mine = br.word_184;
+            else if (off == 0x188) mine = br.replan_ticks;
+            else if (off == 0x18c) mine = br.lane;
+            else if (off == 0x190) mine = br.bias;
+            else if (off == 0x194) mine = br.target_x;
+            else if (off == 0x198) mine = br.target_position;
+            else if (off == 0x19c) mine = br.target_speed;
+            else if (off == 0x1a0) mine = br.current2;
+            else if (off == 0x1a4) mine = br.current_speed;
+            else if (off < 0x1bc) mine = br.spd_a[(off - 0x1a8) / 4];
+            else mine = br.spd_b[(off - 0x1bc) / 4];
+            if (mine != it->second) return std::string(key + 8) + " original " + std::to_string(it->second) + " native " + std::to_string(mine);
+        }
+        return {};
+    };
     // Countdown (plan 10 Task 5): the original thinks through the hold frames.
     // Captures with a brain window seed the frozen field and the demo brain
     // from frame 0 (post tick 1: the global brain copy carries words from its
@@ -708,6 +753,28 @@ int main(int argc, char** argv) {
     const bool brain_window = h.find("rider.0.brain_160") != h.end();
     // Declared frozen words hydrate human and demo solo captures once.
     // Older captures retain their existing demo-only lateral fallback.
+    // Spawn placement check (declared frozen-word captures): 0x00405c80
+    // puts every bike on its 0x004091f0 straight target from the drawn lane,
+    // so the native spawn laterals must equal the captured node laterals
+    // before hydration copies them.
+    if (solo && h.count("probe.frozen_words")) {
+        std::map<int64_t, int64_t> captured;
+        for (const auto& [key, value] : h) {
+            if (key.rfind("nodeaddr.", 0) != 0 || key.find('.', 9) != std::string::npos) continue;
+            const auto t = h.find(key + ".type"), p = h.find(key + ".position"), l = h.find(key + ".lateral");
+            if (t != h.end() && p != h.end() && l != h.end() && t->second == 4) captured[p->second] = l->second;
+        }
+        for (const auto& r : race.riders()) {
+            if (!r.frozen) continue;
+            const auto c = captured.find(r.bike.i32(0x1c));
+            if (c == captured.end() || c->second != r.bike.i32(0x28)) {
+                std::cout << "first divergence at spawn: rider at " << r.bike.i32(0x1c) << " lateral original "
+                          << (c == captured.end() ? std::string("missing") : std::to_string(c->second))
+                          << " native " << r.bike.i32(0x28) << '\n';
+                return 1;
+            }
+        }
+    }
     if (solo) {
         try { rr::golden::apply_frozen_state(h, race.riders(), demo); }
         catch (const std::runtime_error& error) {
@@ -750,14 +817,15 @@ int main(int argc, char** argv) {
     // Frame 0 is post tick 1, which the replay does not re-run: take the
     // player half's standings words from it (the countdown computes them
     // natively from tick 1 in a live game).
-    // The rider half's riding-animation block (+0x80..+0x88) enters the
-    // race with a pending queue (measured 2; its spawn writer is not in the
-    // exported code), so take the whole block from frame 0 when dumped.
+    // The rider half's riding-animation block (+0x80..+0x88): the queue
+    // (2) is the native spawn value (0x00405990 -> 0x00446060 ->
+    // 0x0043ae60) and is compared from frame 0 on; the selection, frame,
+    // loops and deadline are tick 1's think (0x00407f30), which the replay
+    // does not re-run, so those come from frame 0.
     if (solo && h.count("rider.0.anim_queued")) {
         auto& st = race.riders()[0].ride_animation;
         st.animation = int8_t(h.at("rider.0.anim"));
         st.frame = int8_t(h.at("rider.0.anim_frame"));
-        st.queued = int8_t(h.at("rider.0.anim_queued"));
         st.loops = uint8_t(h.at("rider.0.anim_loops"));
         st.deadline = uint32_t(h.at("rider.0.anim_deadline"));
     }
@@ -767,10 +835,11 @@ int main(int argc, char** argv) {
         p.place_refresh = int32_t(h.at("rider.0.raw_1f4"));
     }
     // Measured spawn-frozen brain snapshot (frame 0 is post tick 1): hydrate
-    // once for any solo capture with a brain window. The human path never
-    // touches these words (0x00405c80 spawn init stays frozen), so the same
-    // snapshot covers demo and human; demo keeps its countdown below.
-    if (solo && brain_window) {
+    // once for a demo solo capture with a brain window (its tick-1 think
+    // stepped the brain). A human run never steps the player brain after
+    // the 0x00405990/0x00405c80 build, so its window is the native spawn
+    // state, compared on every frame.
+    if (solo && brain_window && demo) {
         auto& br = race.riders()[0].brain;
         auto w = [&](const char* k) { return int32_t(gval(h, std::string("rider.0.brain_") + k)); };
         br.state = w("160"); br.target_step = w("174"); br.ov_ahead = w("178"); br.ov_behind = w("17c");
@@ -876,6 +945,12 @@ int main(int argc, char** argv) {
             std::cout << '\n';
             return 1;
         }
+        if (solo && !demo && brain_window) {
+            if (const std::string d = brain_window_diff(frame); !d.empty()) {
+                std::cout << "first divergence at frame " << i << " (tick " << tick0 + int64_t(i) << "): " << d << " (player brain)\n";
+                return 1;
+            }
+        }
         if (const std::string d = brain_diff(frame); !d.empty() && h.find("rider.0.brain_160") != h.end() && demo && solo) {
             std::cout << "first divergence at frame " << i << " (tick " << tick0 + int64_t(i) << "): " << d << '\n';
             return 1;
@@ -912,6 +987,15 @@ int main(int argc, char** argv) {
                 else if (k.rfind("rider.0.bike_", 0) == 0) native = pr.bike.i32(uint32_t(std::stoul(k.substr(13), nullptr, 16)));
                 else if (k.rfind("rider.0.lat1", 0) == 0) native = pr.bike.i32(uint32_t(std::stoul(k.substr(11), nullptr, 16)));
                 else if (k == "rider.0.yaw60") native = pr.bike.i32(0x60);
+                // Rider-half raw window (+0x180..+0x1fc of *(bike+0x2fc)):
+                // the half's own words come from its object image; weapon
+                // (+0x1c8..+0x1d4) and standings words compare elsewhere,
+                // +0x1a4/+0x1c4/+0x1d8/+0x1e0 are pointers (non-state).
+                else if (k.rfind("rider.0.raw_", 0) == 0) {
+                    const uint32_t off = uint32_t(std::stoul(k.substr(12), nullptr, 16));
+                    if ((off >= 0x1c4 && off <= 0x1d8) || off == 0x1a4 || off == 0x1e0) continue;
+                    native = pr.half_object.i32(int(off));
+                }
                 else continue;
                 g_used_keys.insert(k);
                 if (native != kv.second) {
@@ -944,6 +1028,17 @@ int main(int argc, char** argv) {
                 else if (f == "bike_10") native = pr.sched_last;
                 else if (f == "bike_14") native = pr.sched_interval;
                 else if (f == "bike_18") native = pr.bike.i32(0x18);
+                // The half's own object words (0x004387a0 from 0x00463c10)
+                // at the bike-layout offsets the proxy dumps for every slot.
+                else if (f == "flags") native = pr.half_object.u8(0xc0);
+                else if (f == "ground") native = pr.half_object.i32(0x160);
+                else if (f == "gear") native = pr.half_object.i32(0x23c);
+                else if (f == "condition") native = pr.half_object.i32(0x2f0);
+                else if (f == "crash") native = pr.half_object.i32(0x2f4);
+                else if (f == "steer") native = pr.half_object.i32(0x288);
+                else if (f == "lat104") native = pr.half_object.i32(0x104);
+                else if (f == "bike_44") continue;   // 0x00438450 render-prep copy (non-state)
+                else if (f.rfind("bike_", 0) == 0) native = pr.half_object.i32(int(std::stoul(f.substr(5), nullptr, 16)));
                 else continue;
                 g_used_keys.insert(k);
                 if (native != kv.second) {
@@ -1070,23 +1165,10 @@ int main(int argc, char** argv) {
                    suffix == "raw_1a4" || suffix == "raw_1c4" || suffix == "raw_1d8" || suffix == "raw_1e0";
         };
         g_used_keys.insert("rng");   // compared every tick before the fields
-        // Verified invariants: original object words the port does not model
-        // (rider-half own words, the AI brain window on a human run) are
-        // accepted only while the capture shows them constant on every tick;
-        // a single change makes them uncovered again.
-        size_t invariants = 0;
-        auto invariant = [&](const std::string& k) {
-            if (k.rfind("rider.0.raw_", 0) != 0 && k.rfind("rider.0.brain_", 0) != 0 && k.rfind("rider.1.", 0) != 0) return false;
-            const auto first = g.frames.front().find(k);
-            if (first == g.frames.front().end()) return false;
-            for (const auto& fr : g.frames) { const auto it = fr.find(k); if (it == fr.end() || it->second != first->second) return false; }
-            return true;
-        };
         std::map<std::string, size_t> fam;
         size_t extras = 0;
         for (const auto& kv : g.frames.back()) {
             if (g_used_keys.count(kv.first) || non_state(kv.first)) continue;
-            if (invariant(kv.first)) { ++invariants; if (coverage) std::cout << "invariant " << kv.first << ' ' << kv.second << '\n'; continue; }
             ++extras;
             ++fam[fold_digits(kv.first)];
         }
@@ -1100,7 +1182,7 @@ int main(int argc, char** argv) {
             for (const auto& kv : fam) std::cout << "golden-only " << kv.first << ' ' << kv.second << '\n';
         }
         if (uncovered == 0 && extras == 0) std::cout << g.frames.size() << " ticks identical\n";
-        else std::cout << g.frames.size() << " ticks identical (" << extras << " golden-only fields not compared; " << invariants << " verified invariant; "
+        else std::cout << g.frames.size() << " ticks identical (" << extras << " golden-only fields not compared; "
                        << uncovered << " field-comparisons uncovered: " << uncovered_names << ")\n";
     }
     return 0;

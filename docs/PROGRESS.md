@@ -1329,3 +1329,45 @@ was restored to its pre-session hash after both captures.
 - Result: sched600 600 identical, sched900 tick 893 (as before),
   sched-human-cov2 strict pass, sched-human-20261016 and terrain-human200
   identical. race-cache hashes re-recorded (one pedestrian pose at tick 300).
+
+### October 17, 2026: rider build ported; no verified-invariant fields left (plan 10)
+
+- Rider build after the ring setup (`Race::build_draws`, `spawn_brain`):
+  0x00405600 builds the player and then each opponent through 0x00405990,
+  which draws the brain lane `rand()%3` for **every** rider (the player
+  too). 0x00405c80 then clears the brain (state 0), places the bike on the
+  0x004091f0 straight target (`+0x28 = target x`), sets the wreck timers
+  +0x30c/+0x310/+0x314 and replans (0x004082f0) against the riders built so
+  far. The tail draws `rand()%100` for 0x00402e10's rider-name set (42 and
+  69 pick the alternates; kept as `Race::name_roll`). These are exactly the
+  16 draws the harness used to skip as `ring.post_draws`: every capture now
+  closes with +0 post draws.
+- Evidence: all 15 spawn laterals (player and 14 opponents on their drawn
+  lanes) equal the captured node laterals on sched-human-cov2-20261017,
+  now checked before frozen-state hydration. The player brain is no longer
+  copied from frame 0 on human runs; its whole window (+0x138..+0x1c4)
+  compares against native spawn state on every tick.
+- `0x004082f0` reads the player half's place word (+0x1fc), not a computed
+  place; native `ai_replan` now does the same. The brain speed words
+  +0x1a0/+0x1a4 start at the record value 0 at spawn (the 0x004c6b40
+  copies persist across races in the original; only an unstepped human
+  brain keeps that difference).
+- Rider-half object image (`Rider::half_object`): 0x004387a0 from table
+  0x00463c10 (`PhysicsTables::half_object`); the generic `init_object` also
+  writes +0x1a4/+0x1a8/+0x1ac, which the bike build skipped. Parking masks
+  +0xc0 on bike and half (0x00406940). Brain +0x184 has no writer in the
+  EXE and keeps the record word (`AiState::word_184`).
+- Riding-animation queue: 0x00405990 calls 0x00446060 on both blocks
+  (0x0043ae10 animation 2, 0x0043ae60 queue 2, one 0x0043ae90 advance);
+  ported in `Race::set_ride_library`, so the queued 2 is native, not
+  hydrated.
+- `oracle-sim-test`: the "verified invariant" category is removed. All 70
+  words it waved through now compare against native state; sched-human-cov2
+  prints the bare `1431 ticks identical`.
+- Correction: the Oct 12 rider-build audit said the player path skips the
+  lane draw; the capture shows it draws (first post-ring draw %3 = 1 = the
+  player brain lane).
+- Remaining: live-AI parking/waking (next slice); the legacy
+  sim-napa-solo.tsv stops at tick 210, which is the same native-only contact
+  as its sibling capture. Its frozen-word coverage is missing, and sched600,
+  which runs the same stream, passes it.

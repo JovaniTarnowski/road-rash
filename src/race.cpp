@@ -61,6 +61,7 @@ std::vector<Personality> read_personalities(const std::vector<uint8_t>& exe) {
         constexpr uint32_t data_va = 0x00463000, data_raw = 0x61600;
         p.overtake_index = int(exe[data_raw + (b165 - data_va)]);
         p.reach = exe_word(exe, base + 0x1d4);
+        p.word_184 = exe_word(exe, base + 0x184);
         out.push_back(p);
     }
     return out;
@@ -138,11 +139,13 @@ Race::Race(std::vector<RouteSample> a, std::vector<RouteSample> b, const Physics
         for (int i = 0; i < 3; ++i) ai.ease[i] = p.ease[i];
         ai.overtake_index = p.overtake_index;
         ai.reach = p.reach;
+        ai.word_184 = p.word_184;
     };
     auto place_rider = [&](const BikeSpec& s, int32_t value, int slot, int32_t grid_pos, int32_t grid_lat) {
         Rider r;
         r.slot = slot;
         init_bike_object(r.bike, tables_);
+        init_object(r.half_object, tables_.half_object);
         apply_spec(r.bike, s, value);
         r.bike.i32(0x18) = 1;                                   // updated every tick
         // Table grid (0x00464088/0x00464108): position equals the selector;
@@ -1603,7 +1606,7 @@ void Race::build_scan_list() const {
     // build order (player first, 0x00405600). Pedestrians carry their own
     // creation order: ring-setup spawns precede the riders.
     scan_.clear();
-    for (size_t i = 0; i < riders_.size(); ++i) {
+    for (size_t i = 0; i < std::min(riders_.size(), built_riders_); ++i) {
         const Rider& r = riders_[i];
         ScanObject bike;
         bike.position = r.bike.i32(0x1c);
@@ -1744,7 +1747,9 @@ void Race::ai_replan(Rider& r) {
     ai.nbr_behind = behind;
     // Player half +0x1fc is the player's 1-based place; inside the top three
     // the overtake thresholds drop.
-    const int place = this->place(0);
+    // 0x004082f0 reads the player half's place word +0x1fc (0x00407550
+    // refreshes it on its own cadence; 0 from the build until then).
+    const int place = riders_[0].place;
     const int32_t near = place < 4 ? 4 - place : 0;
     auto rate = [&](int nbr) -> int {
         if (nbr < 0) return 0;
@@ -2194,6 +2199,8 @@ void Race::step_frozen_schedule(Rider& r) {
         if (ring_->front_q8() - pos < 0x1e00 || pos - ring_->back_q8() < 0x800) {
             r.parked = true;
             r.bike_slice_present = r.half_slice_present = false;
+            r.bike.u8(0xc0) &= 0xfc;
+            r.half_object.u8(0xc0) &= 0xfc;
         }
     }
 }
@@ -2266,6 +2273,49 @@ void Race::step_rider(Rider& r, uint32_t controls, bool player) {
 
 void Race::sound(SoundEvent e, const Bike& b) {
     if (sound_events_.size() < 16) sound_events_.push_back({e, b.i32(0x28), b.i32(0x20), b.i32(0x1c), b.i32(0xec), 0});
+}
+
+void Race::build_draws() {
+    // Player first, then each opponent: 0x00405990 draws the lane, then its
+    // 0x00405c80 resets the brain, places the bike on the straight target
+    // and replans against the riders built so far.
+    for (size_t i = 0; i < riders_.size(); ++i) {
+        Rider& r = riders_[i];
+        r.brain.lane = int(random() % 3);
+        spawn_brain(r, i + 1);
+    }
+    name_roll_ = int(random() % 100);
+}
+
+// 0x00405c80 (brain and placement part): state/target words cleared, the
+// 0x004091f0 straight target, bike lateral = target x, the wreck timers
+// +0x30c/+0x310/+0x314, place word 0, then 0x004082f0. Stamina, weapon,
+// condition and the standings words are set by the Race constructor.
+void Race::spawn_brain(Rider& r, size_t built) {
+    AiState& ai = r.brain;
+    // The brain is a 0x004c6b40 personality copy (0x00407990): its speed
+    // words +0x1a0/+0x1a4 are 0 in every record, so 0x004091f0 below sees
+    // current 0 until 0x004082f0 resets it. The copies persist across races
+    // in one process, so a later race starts from the previous race's words;
+    // the next think recomputes the target, so only an unstepped (human)
+    // brain keeps that difference, and the native rebuilds brains per race.
+    ai.current_speed = 0; ai.current2 = 0;
+    ai.state = 0; ai.state_flag = 0;
+    ai.target_rider = ai.nbr_ahead = ai.nbr_behind = -1;
+    ai.target_step = ai.ov_ahead = ai.ov_behind = 0;
+    ai.overtake_latched = -1; ai.overtake_type = 0; ai.overtake_position = 0;
+    // Base speed is the record's level word (+0x1bc + level*4), which the
+    // copied personality already holds for the player as for opponents.
+    if (level_ >= 0 && level_ < 5) ai.base_speed = ai.spd_b[size_t(level_)];
+    ai_straight_target(r);
+    r.bike.i32(0x28) = ai.target_x;
+    r.bike.i32(0x30c) = 600;
+    r.bike.i32(0x310) = (((level_ * 5 + 0x2d) * 200) >> 8) * 600;
+    r.bike.i32(0x314) = 0;
+    r.place = 0;
+    built_riders_ = built;
+    ai_replan(r);
+    built_riders_ = SIZE_MAX;
 }
 
 uint32_t Race::random() {
@@ -2514,6 +2564,25 @@ int32_t Race::nitro_throttle_force(Rider&, int32_t force) {
 // bank there is nothing to advance; the render owner (Game::tick) keeps its
 // own states. Contact animation 9 (knock_off reason 4) and attack swing
 // codes (fight start) select here; crash states are owned by step_crash.
+// Rider build 0x00405990 calls 0x00446060 on the bike and the half block:
+// 0x0043ae10 selects animation 2, 0x0043ae60 queues 2, +0xc is cleared and
+// 0x0043ae90 advances once. The riding selection in later thinks uses
+// 0x0043ae10 only, so the queued 2 survives into the race (measured on
+// sched-human-cov2-20261017: queued 2 on every frame). Nothing touches the
+// block between the build and the attached bank, so it runs here.
+void Race::set_ride_library(const ActorAnimationLibrary* library,
+                            const std::array<std::array<std::array<int8_t,4>,2>,2>* attacks) {
+    ride_library_ = library; attack_codes_ = attacks;
+    if (!ride_library_) return;
+    const auto& bank = ride_library_->playback[0];
+    for (auto& r : riders_) {
+        auto& st = r.ride_animation;
+        set_animation(st, bank, 2, uint32_t(ticks_));
+        queue_animation(st, bank, 2);
+        st.selected.reset();
+        advance_animation(st, bank, uint32_t(ticks_));
+    }
+}
 void Race::advance_ride_animation(Rider& r, bool player) {
     if (r.frozen) return;
     // The pending contact selection (knock_off reason 4 -> animation 9) is

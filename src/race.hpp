@@ -132,6 +132,7 @@ struct Personality {
     int32_t ease[3] = {};           // +0x12c/+0x130/+0x134: replan easing steps
     int overtake_index = 0;         // +0x165: rating-table index used by 0x004092e0
     int32_t reach = 0;              // +0x1d4: overtake distance scale (0x004092e0)
+    int32_t word_184 = 0;           // +0x184: no instruction writes it; the copy keeps the record word
 };
 std::vector<Personality> read_personalities(const std::vector<uint8_t>& exe);
 
@@ -145,7 +146,7 @@ struct AiState {
     int32_t replan_ticks = 0;    // +0x188
     int lane = 0;                // +0x18c
     int32_t bias = 0;            // +0x190
-    int state = 1;               // +0x160: dispatch via 0x00465980 (1 = racing)
+    int state = 0;               // +0x160: dispatch via 0x00465980 (1 = racing); 0x00405c80 spawns at 0, the first 0x00408ad0 moves it
     int target_rider = -1;       // +0x168: riders_ index, -1 null
     int target_step = 0;         // +0x174: rated overtake step of the target
     int nbr_ahead = -1;          // +0x16c: replan scan pick, -1 null
@@ -164,6 +165,7 @@ struct AiState {
     int32_t reach = 0;           // brain +0x1d4: overtake distance scale
     std::array<int32_t,10> state_ticks{}; // brain +0x138 + 4*state: ticks in each state (0x00407bd0)
     uint8_t state_flag = 0;      // brain +0x164: cleared on a state change (0x00408df0)
+    int32_t word_184 = 0;        // brain +0x184: personality record word, never written
 };
 
 struct Rider {
@@ -204,6 +206,11 @@ struct Rider {
     struct HalfMirror { int32_t position = 0, lateral = 0, height = 0, velocity = 0, speed = 0,
                         steer_rate = 0, lat_vel = 0, lat108 = 0, yaw = 0; size_t sample = 0; };
     HalfMirror half_mirror;
+    // Rider-half object image (0x00405990: 0x004387a0 from table 0x00463c10).
+    // Holds the half's own words; its motion words are in half_mirror, and
+    // its weapon/standings words (+0x1c8..+0x1d4, +0x1f4..+0x1fc) are kept on
+    // the Rider fields below, which the original writes in place.
+    Bike half_object;
     // Rider-half standings words (0x004060b0 after the bike physics):
     // +0x1f8 Q8 distance still to the finish (0x00407410; finish minus
     // position once the finish is known), +0x1fc place and +0x1f4 the
@@ -277,13 +284,19 @@ public:
     // pedestrian walk. Attach pedestrians first: their pool takes the
     // 0x004409e0 spawns. The ring must outlive the race.
     void set_track_ring(TrackRing* ring);
+    // 0x00405600 rider build draws, in the original order after the ring
+    // setup (0x004552e0): 0x00405990 draws each pair's brain lane rand()%3
+    // (+0x18c via 0x00407990) for the player and then every opponent in slot
+    // order, offline; the tail draws rand()%100 for 0x00402e10, which picks
+    // the rider-name set (42 and 69 select the two alternate sets).
+    void build_draws();
+    int name_roll() const { return name_roll_; }
     // Oracle solo captures (RR_ORACLE_SOLO) freeze every scheduler node but
     // the player's: pedestrians spawn from the ring but never think.
     void set_freeze_actors(bool v) { freeze_actors_ = v; }
     void set_crash_library(const ActorAnimationLibrary&,const CrashConfig&);
     void set_ride_library(const ActorAnimationLibrary* library,
-                          const std::array<std::array<std::array<int8_t,4>,2>,2>* attacks) {
-        ride_library_ = library; attack_codes_ = attacks; }
+                          const std::array<std::array<std::array<int8_t,4>,2>,2>* attacks);
     // Nitro setup 0x0040b0e0: copy six words from the player spec at +0x14c
     // and start the accumulator at maximum<<8. Call once after construction
     // (the game calls it from 0x00405600 right after the player build).
@@ -486,6 +499,9 @@ private:
     int32_t nitro_throttle_force(Rider&, int32_t target);      // 0x0040adb0 boost branch
     void advance_ride_animation(Rider&, bool player);          // riding block in Race::step (0x00407a90/0x00407f30/0x0043ae90)
     uint32_t random();
+    int name_roll_ = -1;
+    size_t built_riders_ = SIZE_MAX;   // build_draws: riders 0x00405600 has built so far (scan limit)
+    void spawn_brain(Rider& r, size_t built);
 
     std::function<const TerrainSlice&(const RouteSample&)> terrain_source_;
     std::function<int32_t(const RouteSample&)> rail_height_source_;
