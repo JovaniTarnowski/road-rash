@@ -126,6 +126,23 @@ int main(int argc,char** argv) {
             const auto& state=rider.animation;if(state.animation!=get("animation") || state.frame!=get("frame") || state.queued!=get("queued") || state.loops!=get("loops") || state.deadline!=get("deadline"))throw std::runtime_error(root+"entry animation mismatch");
         }
         std::cout<<values.at("crash.entry.count")<<" original local crash entries match across 49 motion fields per actor\n";
+        // 0x004049c0 local_18 at 0x404eeb (class-1 bike/bike and class-2
+        // bike/car big-speed-gap crash): begin_crash must add the rider
+        // impulse to the half's +0xf4 (vertical velocity) and the bike impulse
+        // to the bike's +0xf4, never to +0xf0 (steer rate). This pins the
+        // component order the contact handler depends on.
+        {
+            rr::Bike bike; rr::CrashActor rider; rider.animation.animation=2; rider.animation.deadline=UINT32_MAX;
+            bike.i32(0xec)=1000; bike.i32(0xf0)=7; bike.i32(0xf4)=11;
+            if(!rr::begin_crash(bike,rider,config,library.playback[0],library.fallback,0,1,
+                    rr::kContactCrashRiderImpulse,rr::kContactCrashBikeImpulse))
+                throw std::runtime_error("contact impulse crash did not start");
+            if(rider.motion.i32(0xec)!=1000 || bike.i32(0xec)!=1000)throw std::runtime_error("contact impulse moved speed");
+            if(rider.motion.i32(0xf0)!=7 || bike.i32(0xf0)!=7)throw std::runtime_error("contact impulse leaked onto the steer rate");
+            if(rider.motion.i32(0xf4)!=11+0x200)throw std::runtime_error("rider impulse did not land on +0xf4");
+            if(bike.i32(0xf4)!=11+0x100)throw std::runtime_error("bike impulse did not land on +0xf4");
+        }
+        std::cout<<"contact crash impulse pair lands on the vertical velocity (+0xf4)\n";
         test_knock_off_reasons();
         return 0;
     }catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}

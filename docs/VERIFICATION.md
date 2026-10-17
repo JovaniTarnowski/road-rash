@@ -1597,3 +1597,22 @@ pass before it was inspected; the successful rerun is the verified result.
 - `sched-human-20261016` 1431 identical; sched600 600 (demo); sched900 893
   (demo); terrain-human200 200.
 - Gate: full Debug build exit 0; ctest 101/101.
+
+## Contact crash-vector axis fix (October 17, 2026)
+
+- `cmake -S . -B build-agent-crashvec-20261017 -DCMAKE_BUILD_TYPE=Debug`;
+  full build exit 0; `ctest --test-dir build-agent-crashvec-20261017 -j 8`:
+  100% tests passed, 0 failed out of 101.
+- `race-test` exit 0, `0 failures`; the new check
+  `contact crash impulse pair is the traced 0x404eeb local_18` passes. It was
+  verified to fail with the pre-fix pair `{0,0x200,0}` (`1` FAIL line), then
+  re-run green with the fix.
+- `crash-test` exit 0; the new check prints `contact crash impulse pair
+  lands on the vertical velocity (+0xf4)`. It was verified to fail with the
+  pre-fix pair (`contact impulse leaked onto the steer rate`), then re-run
+  green.
+- `BUILD_DIR=build-agent-crashvec-20261017 make verify-sim`: exit 0,
+  `acceptance_met: true`, `1431 ticks identical` on the human capture (the
+  fix only touches the class-1/2 big-gap crash, which the solo replay never
+  reaches). Gate receipt
+  `analysis/agent-gates/oracle-12060ac09aff4f2093f2f84ec47d9bb5/receipt.json`.

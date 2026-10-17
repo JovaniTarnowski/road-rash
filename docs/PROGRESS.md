@@ -1295,3 +1295,23 @@ was restored to its pre-session hash after both captures.
 - Open: live-AI packing/waking scheduling (the `0x00438108` window for
   stepped opponents, plan 10 Task 6) is still unported; only frozen solo
   riders park. [Handoff](agent-handoffs/coverage-20261017.md).
+
+### October 17, 2026: contact crash-vector axis fixed; full 0x00403d60 audit (plans 10, 16)
+
+- The class-1 (bike/bike) and class-2 (bike/car) big-speed-gap crash handed
+  `Race::crash_entry` the rider impulse `{0,0x200,0}`; the original's
+  `0x404eeb` local_18 is `{0,0,0x200}` (rider) and `{0,0,0x100}` (bike). The
+  components add in `+0xec`/`+0xf0`/`+0xf4` order, so the port was putting
+  the whole 0x200 on the half's steer rate instead of its vertical velocity.
+  `Race::contact_static` already had the correct axis; `contact_car`
+  (`crash_car`) and `contact` did not.
+- The pair is now one traced constant,
+  `rr::kContactCrashRiderImpulse`/`kContactCrashBikeImpulse` (`src/crash.hpp`),
+  used by all three sites, and pinned by `race-test` and `crash-test`.
+- Every call to `0x00403d60` was re-read from the disassembly; the table and
+  the remaining unmodeled sites (`0x434825`, `0x438e34`, the `0x0043a190`
+  high-jump wreck `0x43a50b`) are recorded in
+  [REVERSE_ENGINEERING.md](REVERSE_ENGINEERING.md).
+- This does not change the strict acceptance replay: `sched-human-cov2`
+  remains 1431/1431 identical. New test log and gate receipt in
+  [VERIFICATION.md](VERIFICATION.md). [Handoff](agent-handoffs/crash-vector-20261017.md).

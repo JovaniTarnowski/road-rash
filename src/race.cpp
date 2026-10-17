@@ -835,7 +835,7 @@ void Race::contact_static(Rider& self, Rider& other) {
                 } else if (s.i32(0xec) - o.i32(0x108) < 0x1771) {
                     s.i32(0xec) += s.i32(0x184);
                 } else {
-                    crash_reason(self, iclass, {0, 0, 0x200}, {0, 0, 0x100});   // 0x404eeb immediates
+                    crash_reason(self, iclass, kContactCrashRiderImpulse, kContactCrashBikeImpulse);   // 0x404eeb immediates
                 }
             } else if (down) {
                 s.i32(0xf4) += div256(std::abs(s.i32(0x184)));
@@ -1114,10 +1114,11 @@ void Race::contact_car(Rider& self, TrafficCar& car) {
 
 // Crash entries for contact 0x00403d60. crash_car keeps the reason-2 car path;
 // the impulse pair is the handler's own local_18 (rider {0,0,0x200}, bike
-// {0,0,0x100}), not the knock_off defaults. crash_reason carries any reason
+// {0,0,0x100} == kContactCrashRiderImpulse/kContactCrashBikeImpulse in
+// crash.hpp), not the knock_off defaults. crash_reason carries any reason
 // with the pair in the assembly's argument order (rider impulse, then bike).
 void Race::crash_car(Rider& r) {
-    crash_reason(r, 2, {0, 0x200, 0}, {0, 0, 0x100});
+    crash_reason(r, 2, kContactCrashRiderImpulse, kContactCrashBikeImpulse);
 }
 void Race::crash_reason(Rider& r, int32_t reason, std::array<int32_t,3> rider_impulse,
                         std::array<int32_t,3> bike_impulse) {
@@ -1191,7 +1192,7 @@ void Race::contact(Rider& self, Rider& other) {
         } else if (!down) {
             // Class 1, big speed gap: the handler's own local_18 pair, then
             // the nudge and tail below (no kick: the steer rate is untouched).
-            crash_reason(self, 1, {0, 0x200, 0}, {0, 0, 0x100});
+            crash_reason(self, 1, kContactCrashRiderImpulse, kContactCrashBikeImpulse);
         }
         // Class 1 and down: speed is untouched (only class 2 transfers it).
     } else {

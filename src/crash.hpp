@@ -29,6 +29,16 @@ CrashRecoveryAction recover_crash_actor(Bike&,CrashActor&,const ActorAnimationBa
 // Local motion portion of 0x00439920. The callback applies road-relative
 // longitudinal movement (0x00439270) before lateral velocity is added.
 void advance_actor_motion(Bike&,const PhysicsTables&,const std::function<void(int32_t)>& advance_route);
+// Impulse pair 0x004049c0 passes to 0x00403d60 at 0x404eeb, used by the
+// class-1 (bike/bike) and class-2 (bike/car) big-speed-gap crash branches.
+// 0x00403d60 applies param_2 to the rider half (bike+0x2fc) and param_3 to the
+// bike, each component in {+0xec speed, +0xf0 steer rate, +0xf4 vertical
+// velocity} order (0x00403d60 lines 99-106 in the decompilation). Measured from
+// the instruction stores at 0x404ee7/0x404eec/0x404ef8/0x404efe/0x404f02/0x404f0a:
+// the rider struct at [esp+0x1c] is {0,0,0x200} and the bike struct at
+// [esp+0x28] is {0,0,0x100}. Do not reorder these axes.
+inline constexpr std::array<int32_t,3> kContactCrashRiderImpulse{0,0,0x200};
+inline constexpr std::array<int32_t,3> kContactCrashBikeImpulse{0,0,0x100};
 // Local, offline branch of 0x00403d60. Route bookkeeping and contact ownership
 // are supplied by Race; this routine applies the independent motion states.
 bool begin_crash(Bike& bike,CrashActor& rider,const CrashConfig&,const ActorAnimationBank&,

@@ -371,6 +371,15 @@ int main() {
         int crashes = (ko.riders()[0].bike.i32(0x2f4) != 0) + (ko.riders()[1].bike.i32(0x2f4) != 0);
         check(crashes <= 1, "at most one crash starts from double contact");
     }
+    // 0x004049c0 hands 0x00403d60 its own local_18 vector pair at 0x404eeb for
+    // the class-1 (bike/bike) and class-2 (bike/car) big-speed-gap crash: rider
+    // {0,0,0x200}, bike {0,0,0x100}. The components are added in
+    // +0xec/+0xf0/+0xf4 order, so 0x200 lands on the half's vertical velocity,
+    // never on its steer rate. Pin the traced pair (a class-1 regression once
+    // carried {0,0x200,0}).
+    check(rr::kContactCrashRiderImpulse == std::array<int32_t, 3>{0, 0, 0x200} &&
+          rr::kContactCrashBikeImpulse == std::array<int32_t, 3>{0, 0, 0x100},
+          "contact crash impulse pair is the traced 0x404eeb local_18");
     // Steering kick tail of bike contact (0x004049c0 LAB_00404f93): a glancing
     // (class-3) hit that moves the steer rate kicks +0x288 by
     // +0x2d8*(new_f0-old_f0)*2>>8 clamped to +-+0x29c; an unchanged rate kicks nothing.
