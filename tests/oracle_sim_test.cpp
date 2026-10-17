@@ -405,6 +405,8 @@ int main(int argc, char** argv) {
             config.player_rider = int((base - row_base) / row_stride);
     }
     config.solo = solo;
+    // Offline 0x00405600 always builds 14 opponents (DAT_004642d4 = 0x10).
+    config.opponents = 14;
     config.road_base_q8 = road_base;
     // Track ring (plan 10 Task 5): the original builds it inside the setup
     // stream, srand(seed) + ring.pre_draws (9 on the Napa solo captures:

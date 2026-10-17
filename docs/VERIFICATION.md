@@ -1648,3 +1648,22 @@ pass before it was inspected; the successful rerun is the verified result.
   its spawn target and opponents in their drawn lanes, none off the road.
 - New `race-test` checks: lane draw order and name roll, spawn state/target
   placement/replan/base speed/wreck timers, half object image.
+
+## Live-field capture napa-field-l1-20261017 (October 17, 2026; plan 10 Task 6 Step 1)
+
+- Capture: `RR_ORACLE_COURSE=4 RR_ORACLE_SEED=1 RR_ORACLE_SIM=1
+  RR_ORACLE_DRIVE=2 RR_ORACLE_FRAMES=2400 tools/oracle_capture.py capture
+  napa-field-l1-20261017` (no `RR_ORACLE_SOLO`): exit 0, `validate
+  --simulation` complete, 2400 contiguous ticks, control branch demo, trace
+  `99e20344…`; receipt under `analysis/oracle/napa-field-l1-20261017.captures/`
+  (git-ignored). Live opponents, traffic and pedestrians.
+- `oracle-sim-test --driver=demo`: with the offline field of 14 opponents
+  (harness now sets `config.opponents = 14`, `DAT_004642d4 = 0x10`) the ring
+  plus rider build closes on the green anchor with **+0 draws**, so the
+  ported 0x00405600 draws hold for a live field (7 opponents left it 7 draws
+  short). The replay then stops at frame 5 (`rider.0.speed`) on harness
+  assumptions, not simulation: in a field capture `rider.N` slots follow the
+  scheduler list order (rider.0 is the frontmost bike, the player half is
+  rider.12), and the hold is 5 frames. Non-solo slot identity mapping is the
+  first Task 6 harness step.
+
