@@ -94,3 +94,21 @@ what was missing was the cop-only AI branches and the live integration.
 - DAT_004c5d7c == 4 and the network branches (+0x324 == 1, 0x004c4fb0).
 - Cop rider-half name (0x00446bf0 index 9 reads outside the table, left blank).
 - Playtest of arrest -> BUSTED video in `rr-game`.
+
+## Follow-up 3: first original cop capture (clean worktree, 2026-10-18)
+
+- Proxy: `RR_ORACLE_LEVEL=1..5` runs the original level setter 0x004453f0 at menu
+  entry (identical call to the uncommitted sim-l5 main-tree edit, so that edit
+  is the one to commit; the capture ran from the clean worktree commit e494e17,
+  not landed to avoid a conflicting duplicate). DLL installed in `prefix/.../RoadRashOracle`.
+- Capture: `RR_ORACLE_COURSE=4 RR_ORACLE_LEVEL=3 RR_ORACLE_SEED=1 RR_ORACLE_SIM=1
+  RR_ORACLE_FRAMES=4700 tools/oracle_capture.py capture napa-cops-l3-20261018`
+  (95 s, validated, 4700 contiguous frames, git-ignored local fixture
+  `analysis/oracle/napa-cops-l3-20261018.tsv` + receipt). AI drives the player
+  (no human input), so this is original-list evidence, not player-control parity.
+- Observed: the rider count rises 11 -> 12 exactly at tick 4096 (the
+  `(tick & 0xfff) == 0` periodic spawn, no level guard in 0x00407f30), matching
+  the native `police_test` spawn tick.
+- Still open: per-tick cop field dumps are not in the proxy (the cop is only an
+  extra rider in the generic rider dump), so cop movement/arrest parity is not
+  yet compared; `napa-cops-crashed` and `city-cops` not run.
