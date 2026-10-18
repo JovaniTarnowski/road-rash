@@ -1516,3 +1516,23 @@ Added `.github/workflows/release.yml`. Pushing a `v*` tag builds and verifies
 the standalone macOS ARM64 app with `tools/build_macos_app.sh`, then attaches
 the ZIP and generated notes to a GitHub Release. No branch-push or manual
 workflow trigger is configured. The workflow itself has not been run in GitHub.
+
+## 2026-10-18: police half latch, post-arrest replan, on-foot arrest parity
+
+- The schedule sort keys a crashed rider's half node by the crash body's
+  +0x1c (0x004383e0 sorts the live list). The half then stays ahead of its
+  bike after the remount, and the cop's overtake scan (0x00449e90) latches it
+  as in the original. This resolves the "4865 follow target" item.
+- After the arrest (DAT_004c5d7c = 4) the cop's replan drops the human player
+  as its target (0x004082f0).
+- `police-test` anchors the RNG at the end of tick 4095 from each capture (the
+  cop lane draw), asserts the arrest tick, and adds `napa-cops-order2`,
+  `-foot2` and `-foot3`. Parked Napa is exact through the race end (4730),
+  with the arrest at 4552. The on-foot arrest (4616) is exact in two original
+  runs.
+- The oracle proxy has `RR_ORACLE_ORDER=1` diagnostics (node order, half
+  words, race-end timer and outcome).
+- Remaining: traffic/pedestrian parity. The original's pre-cop RNG stream
+  varies between runs, so its traffic does too (City, `napa-cops-crashed`
+  from 4831, `napa-cops-foot` from 4462). The arrest-to-BUSTED video playtest
+  in `rr-game` is also still open.

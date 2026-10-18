@@ -83,6 +83,7 @@ Plan 11 Task 6 (Napa) and plan 16 Task 1 (cop contact) own the pieces. This task
   - Napa level 1 has NO cops (level-gated census: 42 ped / 0 cops; `072c7d0`). `napa-cops` must use level 3+ (2 records). CITY L1 has 6.
   - Earlier notes called pool `0x004c1274` the cop pool. That was wrong: it is the pedestrian pool (Task 4).
 - [ ] **Step 2: Capture** `napa-cops` (a level with cops), `napa-cops-crashed` (arrest while on foot) and `city-cops`. Each must reach the busted outcome `0x00416010` reason and its video choice.
+  - Status 2026-10-18: captured `napa-cops-parked` (arrest 4552), `napa-cops-foot2/3` (on-foot arrest 4616) and `city-cops-parked` (arrest 4552). The two Napa scenarios match natively, cop and arrest tick (VERIFICATION.md). The City arrest is not reached at parity (traffic), and the video choice is not yet compared.
 - [ ] **Step 3: Port** the spawn, think and move, rider–cop contact (`0x004049c0` type `0x20` branch; plan 16 Task 1) and sirens (slots 30/31, event 19 via `0x00435ae0`). Busted feeds results and the cutscene (plan 13 Task 4). Cops count toward the HUD "nearest opponent" only if `0x00438550`'s slot list includes them (slot 14 is `DAT_004642dc`); check this.
 - [ ] **Step 4: Accept** the three scenarios with a single anchor. A cop frame must match pixels. Commit `sim: live police, sirens and arrests`.
 

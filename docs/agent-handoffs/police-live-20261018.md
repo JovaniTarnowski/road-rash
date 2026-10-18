@@ -128,3 +128,24 @@ what was missing was the cop-only AI branches and the live integration.
   `camera_position`). Proxy: `RR_ORACLE_KNOCK`, crash body/half dumps.
 - Open: follow target `want` from tick 4865 of the crashed capture (original 24, native
   falls); City traffic parity; native on-foot arrest vs an original capture.
+
+## Follow-up 5: half latch, post-arrest replan, on-foot arrest (2026-10-18)
+
+- Baseline 5e48dae (clean worktree `.police-capture-20261018`). Changed:
+  `src/race_schedule.cpp` (`node_position`: a crashed half sorts by the crash
+  body), `src/race.cpp` (`ai_replan`: the cop drops the player once busted),
+  `tests/police_test.cpp` (RNG anchor at 4095, arrest-tick assertions, new
+  captures), `oracle/aweman_proxy.c` (`RR_ORACLE_ORDER`). Evidence and commands:
+  `docs/VERIFICATION.md` entry "half latch, post-arrest replan, on-foot arrest".
+- Resolved: the 4865 follow target (it was the half latch, not a stale read);
+  the on-foot arrest vs the original (`napa-cops-foot2/3`, arrest 4616, exact);
+  parked Napa through the race end (arrest 4552); the DAT_004c5d7c == 4 replan
+  branch.
+- Open: traffic parity. The original's RNG stream before the cop differs from
+  run to run, so City (from 4359), `napa-cops-crashed` (from 4831) and
+  `napa-cops-foot` (from 4462) diverge on traffic that native cannot reproduce
+  from seed 1. The next step is `RR_ORACLE_RANDCOUNT=1 RR_ORACLE_RANDLOG=1`
+  on two runs, to find the run-varying draw sites from tick 245. Also open:
+  the BUSTED video playtest, and the City arrest at parity.
+- Shared resources: the oracle install now holds proxy `6d5f1b746138…` (this
+  commit's proxy). No processes left running.

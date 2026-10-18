@@ -102,7 +102,10 @@ std::vector<Race::ScheduleNode> Race::schedule_order() const {
 
 int32_t Race::node_position(const ScheduleNode& n) const {
     const Rider& r = riders_[size_t(n.rider)];
-    return n.type == 8 ? r.half_mirror.position : r.bike.i32(0x1c);
+    if (n.type != 8) return r.bike.i32(0x1c);
+    // A crashed rider's half node is the body (0x00403d60): the 0x004383e0
+    // sort keys it by the body's own +0x1c.
+    return r.crash_active ? r.crash_actor.motion.i32(0x1c) : r.half_mirror.position;
 }
 
 void Race::sort_schedule() {

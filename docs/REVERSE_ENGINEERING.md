@@ -1955,3 +1955,26 @@ the older SIM_SCENARIOS claim that differing captures prove animation pacing.
 Measured: unchanged `99e20344…` legacy capture and `294343d5…` schema2 capture
 both match all2400 ticks and shared RNG. The latter has no golden-only state
 keys. Scope is this captured Napa level1 demo field, not all levels or races.
+
+## Police: overtake latch, lane draw, post-arrest replan (2026-10-18)
+
+- 0x00405990 draws the brain lane byte +0x18c as `rand() % 3` (offline). For
+  the periodic cop at tick 4096 that is the only draw of the tick, measured on
+  five captures. 0x004091f0 reads it for the straight target.
+- 0x00449e90 (called by 0x00408e40 with 0x3f/0/0x96/0x960/0xc000) keeps the
+  first candidate on equal time-to-meet. Order on the live list therefore
+  decides between a bike and its half at the same position. The half node
+  carries the crash body's +0x1c while crashed, and 0x004383e0 (strict <) never
+  swaps equal keys, so after a remount the half stays first. A wholly-left
+  object met before the target ends the walk with no latch (an oncoming car
+  between the cop and the player).
+- 0x00408e40 with a latch and gap <= 0x24 leaves +0x19c unchanged unless the
+  heading is within 0xf. A latched cop therefore holds its last target speed,
+  and the 0x00409ca0 downed-target caps are skipped.
+- 0x00416010(4, 0xb4) (the arrest) sets DAT_004c5d7c = 4 and DAT_004753c4 =
+  0xb4. At the next 0x004082f0 replan the cop drops a target whose +0x324 is
+  0 (the human player). It is measured (`napa-cops-parked`: target 0 at 4572)
+  and supersedes the earlier "two-player pursuit rule, not offline" note in
+  `race.cpp`.
+- The original's RNG stream before the cop varies between otherwise identical
+  captures (first difference at tick 245). Traffic and the cop lane follow it.

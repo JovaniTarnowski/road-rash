@@ -88,19 +88,47 @@ int main() {
             require(arrested>=0,"Cop arrests the stopped player");
             require(sirens>0,"Cop posts siren events with its position");
         }
-        for(const auto& scenario:{std::make_tuple("NAPA","napa-cops-parked-20261018",4551,0,4551),std::make_tuple("CITY","city-cops-parked-20261018",4501,0,4551),std::make_tuple("NAPA","napa-cops-crashed-20261018",4864,4400,5030)}) {
-            // Original-capture comparison (`<course>-cops-parked-20261018`, git-ignored):
-            // Napa and City, level byte 2, seed 1, the human player parked on the grid
-            // (zero controls), original cop spawned by 0x00407f30 at tick 4096.
-            // The cop's position and speed must match the original on every
-            // tick from spawn to the arrest window. Covers the cop's own
-            // pursuit (state 4) against a stopped player only: the other two
-            // riders are not compared and the capture is not a free-running
-            // field replay, so this does not establish full-field parity.
-            std::ifstream capture(std::string(RR_SOURCE_DIR "/analysis/oracle/")+std::get<1>(scenario)+".tsv");
+        struct CopCapture { const char* course; const char* name; int asserted_end, knock, end, arrest; };
+        // Original-capture comparisons (git-ignored `analysis/oracle/<name>.tsv`): level byte
+        // 2, seed 1, the human player parked on the grid (zero controls), the original cop
+        // spawned by 0x00407f30 at tick 4096. The cop's position and speed (and, with a
+        // knock-off, the player's crash state) must match on every tick from the spawn to
+        // `asserted_end`; later ticks are reported. `arrest` is the original arrest tick
+        // (first tick of the 0xb4 race-end timer, read from `race.end_timer` when the
+        // capture has it, else from the camera pull-back 0x00437c30), -1 for none before
+        // `end`, 0 when it falls after the asserted span. Covers the cop against a stopped
+        // or knocked-off player only, not the other riders (not a free-running field replay).
+        //
+        // The RNG is anchored once, at the end of tick 4095 from the capture: tick 4096
+        // draws exactly one rand() there, the cop lane +0x18c (0x00405990, rand() % 3),
+        // and the original's RNG stream before it differs from run to run, so traffic and
+        // the lane do too (napa-cops-crashed/-order/-order2 diverge from tick 245).
+        //
+        // napa-cops-crashed (knock 4400, lane 1): exact to 4835. From 4831 an oncoming car
+        // (lane -2, lateral -88000) lies between the cop and the player; 0x00449e90 stops at
+        // it, so the cop drops its latch on the player's half until it passes (4862). Native
+        // traffic has no such car there (traffic not at parity), so the cop keeps the latch.
+        // napa-cops-order2 (same knock, lane 0, no car in the way): exact on every tick to
+        // 5030, including the remount and the half latch (no arrest before 5030).
+        // CITY is exact until 4501: from 4359 the native cop avoids traffic car 14 where the
+        // original's nearest object is at 9227 (City traffic not at parity).
+        // napa-cops-foot (knock 4460, original on-foot arrest at 4544): exact to 4461, then
+        // the original cop is latched on traffic car 11393 (lane 0) that native lacks.
+        // napa-cops-foot2 (lane 1) and -foot3 (lane 0), same knock, no traffic in the cop's
+        // way: exact to 4700 through the on-foot arrest at 4616 (crash state 2) and after.
+        for(const CopCapture& scenario:{CopCapture{"NAPA","napa-cops-parked-20261018",4730,0,4730,4552},
+                                         CopCapture{"CITY","city-cops-parked-20261018",4501,0,4551,0},
+                                         CopCapture{"NAPA","napa-cops-crashed-20261018",4835,4400,5030,0},
+                                         CopCapture{"NAPA","napa-cops-order2-20261018",5030,4400,5030,-1},
+                                         CopCapture{"NAPA","napa-cops-foot-20261018",4461,4460,4700,0},
+                                         CopCapture{"NAPA","napa-cops-foot2-20261018",4700,4460,4700,4616},
+                                         CopCapture{"NAPA","napa-cops-foot3-20261018",4700,4460,4700,4616}}) {
+            std::ifstream capture(std::string(RR_SOURCE_DIR "/analysis/oracle/")+scenario.name+".tsv");
             if(capture) {
                 std::map<int,std::pair<int,int>> original;   // tick -> cop (position, speed)
                 std::map<int,int> player_crash;int crash0=0;
+                long long rng_4095=-1;     // end-of-tick-4095 RNG: the anchor before the cop spawn
+                int arrest_tick=-1;        // first tick of the race-end timer (race.end_timer)
                 std::map<int,std::pair<int,int>> pos_speed;  // rider slot -> (position, speed) of the current frame
                 std::string line;int tick=0,slot=-1;
                 while(std::getline(capture,line)) {
@@ -109,6 +137,8 @@ int main() {
                     const std::string key=line.substr(0,tab);const long long value=tab==std::string::npos?0:std::atoll(line.c_str()+tab+1);
                     if(key=="frame" || key=="end"){if(slot>=0 && tick>=4096){original[tick]=pos_speed[slot];player_crash[tick]=crash0;}pos_speed.clear();slot=-1;}
                     else if(key=="tick")tick=int(value);
+                    else if(key=="rng" && tick==4095)rng_4095=value;
+                    else if(key=="race.end_timer" && value>0 && arrest_tick<0)arrest_tick=tick;
                     else if(key=="police.slot")slot=int(value);
                     else if(key.rfind("rider.",0)==0) {
                         const size_t dot=key.find('.',6);const int who=std::atoi(key.c_str()+6);const std::string field=key.substr(dot+1);
@@ -117,42 +147,31 @@ int main() {
                 }
                 require(original.count(4096) && original.count(4600),"Cop capture covers the spawn and the arrest window");
                 const auto exe=assets.read("ROADRASH.EXE");
-                rr::RaceConfig config;config.course=std::get<0>(scenario);config.level=2;config.character=1;config.bike_from_table=true;config.career=false;
+                rr::RaceConfig config;config.course=scenario.course;config.level=2;config.character=1;config.bike_from_table=true;config.career=false;
                 rr::RaceSetup setup=rr::make_race_setup(assets,exe,config);
                 auto& race=*setup.instance.race;
-                // CRASHED (player knocked off at tick 4400 through the original
-                // crash entry 0x00403d60): exact through the stop-and-go while the
-                // player is down and walking (crash states 1..3) and the remount,
-                // until tick 4864; then the cop's follow target `want`
-                // (0x00449a80, braking behind the remounted player) holds 24
-                // in the original while native keeps falling with the gap, i.e.
-                // the original reads a slightly stale cop-half position/speed
-                // there. Reported, not asserted. See VERIFICATION.md.
-                // CITY is exact only until tick 4359, when the native cop starts
-                // avoiding traffic car 14 (ai_overtake, position 8724) while the
-                // original's nearest object is at 9227: the City traffic
-                // population/RNG is not at parity (the ring bends the curve limit
-                // reads are identical, checked at tick 4502). Cop logic is not the
-                // cause; the target-speed gap at 4502 follows from it. The
-                // asserted span ends at the last tick the original and native
-                // cop agree exactly (4501); the rest is reported. See VERIFICATION.md.
-                int compared=0,reported=0;
-                const int knock=std::get<3>(scenario),end=std::get<4>(scenario);
+                int compared=0,reported=0,busted_at=-1;
+                const int knock=scenario.knock,end=scenario.end;
                 while(race.ticks()<end) {
                     if(knock && race.ticks()==knock-1)race.crash_now(race.riders()[0]);
+                    if(race.ticks()==4095 && rng_4095>=0)race.set_rng_state(uint32_t(rng_4095));
                     race.step(0);
+                    if(busted_at<0 && race.busted())busted_at=int(race.ticks());
                     if(race.ticks()<4096 || race.cop_index()<0 || !original.count(int(race.ticks())))continue;
                     const auto& cop=race.riders()[size_t(race.cop_index())];
                     const auto want=original.at(int(race.ticks()));
                     const bool differs=cop.bike.i32(0x1c)!=want.first || cop.bike.i32(0xec)!=want.second || (knock && race.bike().i32(0x2f4)!=player_crash.at(int(race.ticks())));
-                    if(differs && race.ticks()>std::get<2>(scenario)){if(!reported++)std::cout<<std::get<0>(scenario)<<" known divergence from tick "<<race.ticks()<<" (reported, not asserted)\n";continue;}
+                    if(differs && race.ticks()>scenario.asserted_end){if(!reported++)std::cout<<scenario.course<<" known divergence from tick "<<race.ticks()<<" (reported, not asserted)\n";continue;}
                     if(differs)
                         throw std::runtime_error("cop differs from the original at tick "+std::to_string(race.ticks())+": position "+std::to_string(cop.bike.i32(0x1c))+" vs "+std::to_string(want.first)+", speed "+std::to_string(cop.bike.i32(0xec))+" vs "+std::to_string(want.second)+", player crash "+std::to_string(race.bike().i32(0x2f4)));
                     ++compared;
                 }
                 require(compared>=400 || (knock && compared>=150),"Cop compared over the pursuit");
-                std::cout<<std::get<0>(scenario)<<" cop matches the original on "<<compared<<" ticks (position, speed)\n";
-            } else std::cout<<"skipped: "<<std::get<1>(scenario)<<" fixture absent\n";
+                const int arrest=arrest_tick>=0?arrest_tick:scenario.arrest;
+                if(arrest>0 && arrest<=scenario.asserted_end){require(busted_at==arrest,"Native arrest on the original tick");std::cout<<scenario.course<<" arrest on tick "<<busted_at<<" as the original\n";}
+                if(arrest<0)require(busted_at<0,"No arrest where the original has none");
+                std::cout<<scenario.course<<" cop matches the original on "<<compared<<" ticks (position, speed)\n";
+            } else std::cout<<"skipped: "<<scenario.name<<" fixture absent\n";
         }
         {
             // Arrest while the rider walks (crash state 2, 0x00407f30): the half is the

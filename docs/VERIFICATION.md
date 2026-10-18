@@ -1910,3 +1910,59 @@ unmeasured. No Android/device or full-course simulation claim is made here.
   `sched-human-cov2-20261017`).
 - Not done: the native on-foot arrest vs an original capture (now step 1073 in the
   synthetic test, not compared), City traffic parity, the 4865 follow target.
+
+## 2026-10-18 police: half latch, post-arrest replan, on-foot arrest (napa-cops-order2/-foot2/-foot3)
+
+- Captures (git-ignored `analysis/oracle/`, all validated and complete; Napa
+  `RR_ORACLE_COURSE=4 RR_ORACLE_LEVEL=3 RR_ORACLE_SEED=1 RR_ORACLE_SIM=1
+  RR_ORACLE_HUMAN=1 RR_ORACLE_INPUT='C:\napa-parked.controls' RR_ORACLE_ORDER=1`):
+  `napa-cops-order-20261018` (knock 4400, 5030 frames, trace `e5ecd8af0727…`),
+  `napa-cops-order2-20261018` (knock 4400, 5030, `c87fe1e97a77…`),
+  `napa-cops-foot-20261018` / `-foot2` / `-foot3` (knock 4460, 4700 frames,
+  `61900580be8b…` / `1f8b234220ef…` / `8ff244ddc513…`). `RR_ORACLE_ORDER=1`
+  (new proxy keys) dumps the scheduler-ring order of every node within 0x1000 of
+  the player (`ord.<k>` address/type/position/lateral/slice/+0x108), the player
+  half's address, +0x108 and +0x2c, and `race.end_timer` (DAT_004753c4) /
+  `race.outcome` (DAT_004c5d7c).
+- The 4865 "follow target" item is resolved; it was not a stale read. In the
+  original the cop latches the player's half (type 8) as its 0x00408e40 overtake
+  object (brain +0x180 = the half) from 4765. That path leaves +0x19c untouched
+  below a gap of 0x24, so the target holds. The half is met before the bike
+  because it re-sorted below the bike while it was the crash body (12799..12722)
+  and keeps that order at equal positions after the remount. Native keyed the
+  half node by the stale mirror, so the bike came first and the latch never
+  happened. Fix: `node_position` keys a crashed rider's half by
+  `crash_actor.motion` +0x1c. Reverting it fails `napa-cops-order2` at 4836.
+- The original is not run-to-run deterministic before the cop. The RNG stream
+  differs from tick 245 between `napa-cops-crashed`, `-order` and `-order2`, so
+  traffic and the cop lane differ too. Tick 4096 draws exactly one rand() from the
+  end-of-4095 state, the cop lane +0x18c = rand() % 3 (0x00405990), checked on
+  all five Napa/City captures. `police-test` anchors the RNG once there from
+  each capture.
+- `napa-cops-crashed` (lane 1): exact to 4835. From 4831 an oncoming car (lane
+  -2, lateral ≈ -88000) sits between the cop and the player, and 0x00449e90 stops
+  at it, so the latch drops until the cop passes it (4862). Native traffic has
+  no car there. Reported, not asserted. `napa-cops-order2` (lane 0, no car):
+  exact on all 935 ticks 4096..5030 (cop position/speed and player crash
+  state), no arrest in either.
+- Post-arrest replan: the arrest sets DAT_004c5d7c = 4 (0x00416010(4, 0xb4)).
+  0x004082f0 then drops a +0x324 == 0 target (the human player) for the cop, so
+  the cop races in state 1. Native kept following, which diverged at 4653.
+  Fixed in `ai_replan`. `napa-cops-parked` is now asserted over the whole
+  capture, 4096..4730 (635 ticks), and the native arrest falls on tick 4552.
+  That matches the original: the camera pull-back starts at 4552, so the
+  earlier "4551" note was a tick early.
+- On-foot arrest vs the original: `napa-cops-foot2` and `-foot3` (lanes 1 and 0)
+  both arrest at 4616 in crash state 2 (`race.end_timer` 180). Native is exact
+  on 605 ticks (4096..4700) in both, and `busted()` falls on 4616.
+  `napa-cops-foot` (the first run) is exact only to 4461; from there the
+  original cop is latched on traffic car 11393 (lane 0), which native lacks
+  (arrest 4544). Reported, not asserted.
+- Gate (clean worktree at 5e48dae + these changes): `cmake --build build
+  --parallel` OK; `ctest --test-dir build -j4` exit 0, with the 9 disc/fixture
+  tests skipped as before (oracle-road/scene/terrain/terrain-medly/raster,
+  hires-render, raster-rgb, widescreen, polygon); `make verify-sim` passed
+  (receipt `analysis/agent-gates/oracle-d7c4c9a1690e4f4c869269e87ad6131d`).
+- Still open: traffic/pedestrian parity, which depends on the original's
+  run-varying RNG stream (City from 4359, and `napa-cops-crashed`/`-foot`
+  above); City arrest (original 4552) is not reached at parity.

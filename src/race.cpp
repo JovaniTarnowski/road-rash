@@ -1917,8 +1917,10 @@ void Race::ai_replan(Rider& r) {
             }
         }
     }
-    // The cop only ever chases a live bike (0x00432500: +0xe4 callback set);
-    // DAT_004c5d7c == 4 (two-player pursuit rules) is not an offline state.
+    // The cop only ever chases a live bike (0x00432500: +0xe4 callback set),
+    // and drops the human player (+0x324 == 0) once the race outcome
+    // DAT_004c5d7c is 4, which the arrest sets (0x00416010(4, 0xb4)).
+    if (r.cop && pick == 0 && busted_) { pick = -1; step = 0; }
     ai.target_rider = pick;
     ai.target_step = step;
     if (r.cop) return;   // 0x004082f0: the cop keeps its pursuit speed words

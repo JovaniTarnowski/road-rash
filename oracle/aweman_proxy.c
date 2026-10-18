@@ -54,6 +54,12 @@ static int g_human;
 /* RR_ORACLE_KNOCK=<tick>: knock the player off through the original crash
  * entry 0x00403d60 (reason 1, default vectors) before that tick runs. */
 static int g_knock_tick;
+/* RR_ORACLE_ORDER=1: per tick, the scheduler-ring order of nodes
+ * within 0x1000 of the player (ord.<k> address, .t type, .p position, .l
+ * lateral, .s slice, .v +0x108) and the
+ * player half's address, +0x108 and +0x2c: the 0x00449e90 walk order; also
+ * the race-end timer DAT_004753c4 and outcome DAT_004c5d7c (4 = arrest). */
+static int g_order;
 static int g_police_probe;
 static int g_terrain_seeded;
 static int g_terrain_trace;
@@ -321,6 +327,10 @@ static void dump_sim_tick(void) {
     rr_log("nitro.charges", (long long)(int32_t)RD32(0x00465a34));
     rr_log("ring.back", (long long)(int32_t)RD32(0x0049f240));
     rr_log("ring.camera", (long long)(int32_t)RD32(0x004b6e5c));
+    if (g_order) {   /* race-end timer (0x00416010/0x00442e10) and outcome code; 4 = arrest */
+        rr_log("race.end_timer", (long long)(int32_t)RD32(0x004753c4));
+        rr_log("race.outcome", (long long)(int32_t)RD32(0x004c5d7c));
+    }
     if (g_terrain_trace) {
         dump_terrain_walker("back",0x0049ea20);
         dump_terrain_walker("front",0x0049ee30);
@@ -346,6 +356,26 @@ static void dump_sim_tick(void) {
         int addr_index = 0;
         for (int guard = 0; node && node != end && guard < 512; ++guard) {
             if (!readable(node, 0xe4)) break;
+            if (g_order && g_sim_frames > 0 && player && readable(player, 0x300)) {
+                const uint32_t type = (uint32_t)sim_field_value(node, 0xc4, 4, 0);
+                const int32_t d = (int32_t)RD32(node + 0x1c) - (int32_t)RD32(player + 0x1c);
+                if (d > -0x1000 && d < 0x1000) {
+                    snprintf(key, sizeof key, "ord.%d", guard); rr_log(key, (long long)node);
+                    snprintf(key, sizeof key, "ord.%d.t", guard); rr_log(key, type);
+                    snprintf(key, sizeof key, "ord.%d.p", guard); rr_log(key, (int32_t)RD32(node + 0x1c));
+                    snprintf(key, sizeof key, "ord.%d.l", guard); rr_log(key, (int32_t)RD32(node + 0x28));
+                    snprintf(key, sizeof key, "ord.%d.s", guard); rr_log(key, (long long)(uint32_t)RD32(node + 0x2c));
+                    snprintf(key, sizeof key, "ord.%d.v", guard); rr_log(key, (int32_t)RD32(node + 0x108));
+                }
+                if (node == player) {
+                    const uintptr_t h = (uint32_t)RD32(player + 0x2fc);
+                    rr_log("rider.0.half_addr", (long long)h);
+                    if (h && readable(h, 0x110)) {
+                        rr_log("rider.0.half_108", (int32_t)RD32(h + 0x108));
+                        rr_log("rider.0.half_2c", (long long)(uint32_t)RD32(h + 0x2c));
+                    }
+                }
+            }
             if (g_sim_frames == 0) {
                 snprintf(key, sizeof key, "nodeaddr.%d", addr_index);
                 rr_log(key, (long long)node);
@@ -2323,6 +2353,7 @@ static int rr_install_hooks(void) {
     if (GetEnvironmentVariableA("RR_ORACLE_SOLO",buf,sizeof buf)) g_solo = atoi(buf)!=0;
     if (GetEnvironmentVariableA("RR_ORACLE_HUMAN",buf,sizeof buf)) g_human = atoi(buf)!=0;
     if (GetEnvironmentVariableA("RR_ORACLE_KNOCK",buf,sizeof buf)) g_knock_tick = atoi(buf);
+    if (GetEnvironmentVariableA("RR_ORACLE_ORDER",buf,sizeof buf)) g_order = atoi(buf)!=0;
     if (GetEnvironmentVariableA("RR_ORACLE_PALETTE",buf,sizeof buf)) g_palette = atoi(buf)!=0;
     if (GetEnvironmentVariableA("RR_ORACLE_EXIT_FADEOUT",buf,sizeof buf)) g_palette_exit_fadeout = atoi(buf)!=0;
     if (GetEnvironmentVariableA("RR_ORACLE_KEYS",path,sizeof path)) {
