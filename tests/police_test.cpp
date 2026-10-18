@@ -119,11 +119,14 @@ int main() {
                 rr::RaceConfig config;config.course=std::get<0>(scenario);config.level=2;config.character=1;config.bike_from_table=true;config.career=false;
                 rr::RaceSetup setup=rr::make_race_setup(assets,exe,config);
                 auto& race=*setup.instance.race;
-                // CITY is exact only until the cop meets curvature (tick 4502:
-                // the pursuit target speed 0x19c is 94 native vs 98 original,
-                // i.e. the City route bend input to 0x00409020 is ~7% off;
-                // course geometry, not cop logic - see VERIFICATION.md). The
-                // strict span ends before that tick; the rest is reported.
+                // CITY is exact only until tick 4359, when the native cop starts
+                // avoiding traffic car 14 (ai_overtake, position 8724) while the
+                // original's nearest object is at 9227: the City traffic
+                // population/RNG is not at parity (the ring bends the curve limit
+                // reads are identical, checked at tick 4502). Cop logic is not the
+                // cause; the target-speed gap at 4502 follows from it. The
+                // asserted span ends at the last tick the original and native
+                // cop agree exactly (4501); the rest is reported. See VERIFICATION.md.
                 int compared=0,reported=0;
                 for(int t=0;t<4551;++t) {
                     race.step(0);

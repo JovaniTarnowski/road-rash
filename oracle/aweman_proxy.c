@@ -461,6 +461,17 @@ static void dump_sim_tick(void) {
                     rr_log(key, 1);
                     rr_log("police.slot", slot);
                     rr_log("police.cycle", RD8(0x004642e0));
+                    /* Ring bend words (+0xb4 = atan(bend)<<14, 0x00454240) of the
+                     * cop's slice and the next 15 (+0x10 links): the input of
+                     * the curve limit 0x00409020 via 0x00449b40. */
+                    {
+                        uintptr_t sl = (uint32_t)sim_field_value(node, 0x140, 4, 0);
+                        for (int k = 0; k < 16 && sl && readable(sl, 0xb8); ++k) {
+                            snprintf(key, sizeof key, "police.bend.%d", k);
+                            rr_log(key, RD32(sl + 0xb4));
+                            sl = (uint32_t)RD32(sl + 0x10);
+                        }
+                    }
                 }
                 for (unsigned f = 0; f < RR_SIM_RIDER_FIELD_COUNT; ++f) {
                     const uint32_t off = rr_sim_rider_fields[f].offset;

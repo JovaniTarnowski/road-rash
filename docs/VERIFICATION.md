@@ -1879,11 +1879,14 @@ unmeasured. No Android/device or full-course simulation claim is made here.
 - City: `RR_ORACLE_COURSE=1` with the same level/seed/controls and
   `RR_ORACLE_FRAMES=4730` -> `city-cops-parked-20261018` (4730 frames, same
   arrest window 4551/4730). `police-test` asserts the City cop is exact for the
-  406 ticks 4096..4501 and then reports (does not assert) a divergence from tick
-  4502: the cop's pursuit target speed `+0x19c` is 94 native vs 98/99 original
-  while `+0x1a4` (134) and the throttle ramp are equal, so the curve limit
-  `0x00409020` sees a City route bend ~7% off (curvature 0x72000 vs ~0x6a000
-  over samples 51..54). This is a City route/bend fidelity gap exposed by the
-  cop, not cop logic; Napa has no such curve in the window. Open until the City
-  ring bend source is compared.
-- Not done: `napa-cops-crashed`, the on-foot arrest vs original, the City bend gap.
+  406 ticks 4096..4501 and then reports (does not assert) the divergence.
+  Cause (measured): not cop logic and not the route bends. The proxy now dumps
+  the original ring bend words (`police.bend.0..15`, `city-cops-bend-20261018`);
+  the native `atan(route.bend)<<14` list at tick 4502 is identical (7x 32768,
+  3x 49152, 4x 65536, 81920, 98304; curvature 0xe000). The cop's target
+  (`+0x194/+0x198/+0x19c`) first differs at tick 4359 because the native cop
+  latches traffic car 14 (type 16, position 8724) in `ai_overtake` while the
+  original's nearest object is a node at 9227 (think 0x4470b0): the City traffic
+  population/positions at that tick are not at parity. The 4502 speed gap
+  follows from the different target. Open: City traffic/pedestrian parity.
+- Not done: `napa-cops-crashed`, the on-foot arrest vs original, City traffic parity.
