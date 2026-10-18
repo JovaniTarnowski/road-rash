@@ -120,6 +120,10 @@ what was missing was the cop-only AI branches and the live integration.
   sim-l5's uncommitted copy of the level hunk; keep one when merging.
 - Fix: `Race::schedule_pass` visits nodes inserted mid-pass.
 - Evidence and commands: `docs/VERIFICATION.md` entry "napa-cops-parked".
+- `city-cops-parked-20261018` captured: exact to tick 4501, then the City bend
+  input to the curve limit diverges (see VERIFICATION.md). Next action: dump
+  the original ring bend (`+0xb4`) for the cop's samples in the proxy and compare
+  with `route[].path.bend`.
 - Open: `napa-cops-crashed` (needs a controls file that wrecks the player; the
   parked file only covers the stopped-bike arrest), `city-cops` (course 1), and
   an original on-foot arrest to compare the 1099-step native result against.

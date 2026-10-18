@@ -1876,4 +1876,14 @@ unmeasured. No Android/device or full-course simulation claim is made here.
 - Gate: clean worktree, `ctest -j4` 104/104 with 9 disc-fixture tests skipped
   (the git-ignored sim fixtures copied in). Level numbering: `RR_ORACLE_LEVEL=n`
   is level byte n-1, i.e. native `config.level = n-1`.
-- Not done: `napa-cops-crashed`, `city-cops`, the on-foot arrest vs original.
+- City: `RR_ORACLE_COURSE=1` with the same level/seed/controls and
+  `RR_ORACLE_FRAMES=4730` -> `city-cops-parked-20261018` (4730 frames, same
+  arrest window 4551/4730). `police-test` asserts the City cop is exact for the
+  406 ticks 4096..4501 and then reports (does not assert) a divergence from tick
+  4502: the cop's pursuit target speed `+0x19c` is 94 native vs 98/99 original
+  while `+0x1a4` (134) and the throttle ramp are equal, so the curve limit
+  `0x00409020` sees a City route bend ~7% off (curvature 0x72000 vs ~0x6a000
+  over samples 51..54). This is a City route/bend fidelity gap exposed by the
+  cop, not cop logic; Napa has no such curve in the window. Open until the City
+  ring bend source is compared.
+- Not done: `napa-cops-crashed`, the on-foot arrest vs original, the City bend gap.
