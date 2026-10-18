@@ -1631,6 +1631,10 @@ void Race::step_crash(Rider& r,bool player,uint32_t controls) {
         advance_actor_motion(b,tables_,[&](int32_t distance){move_along(actor,distance);});
         walls(actor,&r.bike);vertical(actor);
     };
+    // The rider animation reads the body's height and speed from before this
+    // tick's motion (measured against napa-cops-crashed: the original lands
+    // into animation 34 one tick after the height first drops under 0xfff).
+    const int32_t height_before=body.motion.i32(0x20),speed_before=body.motion.i32(0xec);
     motion(r);
     Rider detached;detached.bike=body.motion;detached.route=body.route;detached.sample=body.sample;detached.previous_sample=body.previous_sample;
     motion(detached);body.motion=detached.bike;body.route=detached.route;body.sample=detached.sample;body.previous_sample=detached.previous_sample;
@@ -1663,7 +1667,7 @@ void Race::step_crash(Rider& r,bool player,uint32_t controls) {
     }
     if(action==CrashRecoveryAction::wrecked)bike.i32(0x2f0)=0;
     advance_crash_bike_animation(r.crash_bike_animation,library.playback[0],library.fallback,bike.i32(0xec),uint32_t(ticks_),[&]{return random();});
-    CrashRiderAnimationInput input;input.crash=bike.i32(0x2f4);input.speed=body.motion.i32(0xec);input.height_q8=body.motion.i32(0x20);
+    CrashRiderAnimationInput input;input.crash=bike.i32(0x2f4);input.speed=speed_before;input.height_q8=height_before;
     advance_crash_rider_animation(body.animation,library.playback[0],library.fallback,input,uint32_t(ticks_),[&]{return random();});
     if(bike.i32(0x2f4)!=input.crash)r.crash_timer=0;
     bike.i32(0x2f4)=input.crash;if(input.crash==2)++r.crash_timer;
@@ -3060,7 +3064,11 @@ void Race::update_camera() {
     int32_t off = d - div_pow2(d, 2);
     if (d - off >= 0xc9) off = d - 200;
     else if (d - off < -200) off = d + 200;
-    if (crashed()) {
+    // 0x00437c30: the lift and pull-back ramp only while the player's bike
+    // carries the 0x10 latch (finished/wrecked) or DAT_004753c4 is set (the arrest
+    // sets it: the ring camera pulls back 3 per tick from the tick after it); a
+    // plain crash (state 1..3) leaves the camera on the body.
+    if ((p.bike.u8(0xc0) & 0x10) != 0 || busted_) {   // DAT_004753c4 is set by the arrest (0x00416010(4, 0xb4))
         if (camera_lift_ < 300) ++camera_lift_;
         if (camera_back_ < 900) camera_back_ += 3;
     } else {
@@ -3073,7 +3081,12 @@ void Race::update_camera() {
 }
 
 uint32_t Race::camera_position() const {
-    const int32_t p = bike().i32(0x138) - camera_back_ - 0x100;
+    // 0x00437c30 reads the player's half (`*(player + 0x2fc) + 0x138`): while the
+    // rider is down that half is the crash body, which the camera follows
+    // (measured against napa-cops-crashed: ring camera == body +0x1c).
+    const Rider& p0 = riders_[0];
+    const int32_t follow = p0.crash_active ? p0.crash_actor.motion.i32(0x138) : bike().i32(0x138);
+    const int32_t p = follow - camera_back_ - 0x100;
     return uint32_t(p < 0 ? 0 : p);
 }
 

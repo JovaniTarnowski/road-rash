@@ -1889,4 +1889,24 @@ unmeasured. No Android/device or full-course simulation claim is made here.
   original's nearest object is a node at 9227 (think 0x4470b0): the City traffic
   population/positions at that tick are not at parity. The 4502 speed gap
   follows from the different target. Open: City traffic/pedestrian parity.
-- Not done: `napa-cops-crashed`, the on-foot arrest vs original, City traffic parity.
+- Crashed: `RR_ORACLE_KNOCK=4400` (proxy calls the original crash entry 0x00403d60,
+  reason 1, default vectors, before tick 4400) with the parked controls, Napa
+  level byte 2, `RR_ORACLE_FRAMES=5030` -> `napa-cops-crashed-20261018` (arrest
+  at 4851, race end 4851+180; the proxy also dumps the player crash body
+  `rider.0.body_*` and half `rider.0.half_*`). `police-test` asserts the cop's
+  position and speed and the player's crash state on 769 ticks (4096..4864),
+  covering the knock-off, slide, on-foot (state 2), recovery (3) and remount.
+  Two native defects fixed on the way: (1) the crash rider animation read the
+  body height/speed after that tick's motion, the original before (33 -> 34
+  landing one tick later); (2) the camera pulled back for any crash, but the
+  original camera (0x00437c30) follows the crash body and only ramps the lift and
+  pull-back with the bike 0x10 latch or DAT_004753c4 (set by the arrest). The
+  cop's ring-camera-based scheduling interval depends on it.
+  From tick 4865 the cop's follow target (`0x00449a80` want) is 24 in the
+  original and falls with the gap natively (reported, not asserted): suspected
+  stale cop-half position/speed in the original follow state. Open.
+- Gate after these changes (clean worktree): `ctest -j4` 104/104 (9 disc-fixture
+  tests skipped), `make verify-sim` passed (human capture
+  `sched-human-cov2-20261017`).
+- Not done: the native on-foot arrest vs an original capture (now step 1073 in the
+  synthetic test, not compared), City traffic parity, the 4865 follow target.

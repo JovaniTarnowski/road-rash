@@ -88,7 +88,7 @@ int main() {
             require(arrested>=0,"Cop arrests the stopped player");
             require(sirens>0,"Cop posts siren events with its position");
         }
-        for(const auto& scenario:{std::make_tuple("NAPA","napa-cops-parked-20261018",4551),std::make_tuple("CITY","city-cops-parked-20261018",4501)}) {
+        for(const auto& scenario:{std::make_tuple("NAPA","napa-cops-parked-20261018",4551,0,4551),std::make_tuple("CITY","city-cops-parked-20261018",4501,0,4551),std::make_tuple("NAPA","napa-cops-crashed-20261018",4864,4400,5030)}) {
             // Original-capture comparison (`<course>-cops-parked-20261018`, git-ignored):
             // Napa and City, level byte 2, seed 1, the human player parked on the grid
             // (zero controls), original cop spawned by 0x00407f30 at tick 4096.
@@ -100,18 +100,19 @@ int main() {
             std::ifstream capture(std::string(RR_SOURCE_DIR "/analysis/oracle/")+std::get<1>(scenario)+".tsv");
             if(capture) {
                 std::map<int,std::pair<int,int>> original;   // tick -> cop (position, speed)
+                std::map<int,int> player_crash;int crash0=0;
                 std::map<int,std::pair<int,int>> pos_speed;  // rider slot -> (position, speed) of the current frame
                 std::string line;int tick=0,slot=-1;
                 while(std::getline(capture,line)) {
                     if(!line.empty() && line.back()=='\r')line.pop_back();
                     const size_t tab=line.find('\t');
                     const std::string key=line.substr(0,tab);const long long value=tab==std::string::npos?0:std::atoll(line.c_str()+tab+1);
-                    if(key=="frame" || key=="end"){if(slot>=0 && tick>=4096)original[tick]=pos_speed[slot];pos_speed.clear();slot=-1;}
+                    if(key=="frame" || key=="end"){if(slot>=0 && tick>=4096){original[tick]=pos_speed[slot];player_crash[tick]=crash0;}pos_speed.clear();slot=-1;}
                     else if(key=="tick")tick=int(value);
                     else if(key=="police.slot")slot=int(value);
                     else if(key.rfind("rider.",0)==0) {
                         const size_t dot=key.find('.',6);const int who=std::atoi(key.c_str()+6);const std::string field=key.substr(dot+1);
-                        if(field=="position")pos_speed[who].first=int(value);else if(field=="speed")pos_speed[who].second=int(value);
+                        if(field=="position")pos_speed[who].first=int(value);else if(field=="speed")pos_speed[who].second=int(value);else if(field=="crash" && who==0)crash0=int(value);
                     }
                 }
                 require(original.count(4096) && original.count(4600),"Cop capture covers the spawn and the arrest window");
@@ -119,6 +120,14 @@ int main() {
                 rr::RaceConfig config;config.course=std::get<0>(scenario);config.level=2;config.character=1;config.bike_from_table=true;config.career=false;
                 rr::RaceSetup setup=rr::make_race_setup(assets,exe,config);
                 auto& race=*setup.instance.race;
+                // CRASHED (player knocked off at tick 4400 through the original
+                // crash entry 0x00403d60): exact through the stop-and-go while the
+                // player is down and walking (crash states 1..3) and the remount,
+                // until tick 4864; then the cop's follow target `want`
+                // (0x00449a80, braking behind the remounted player) holds 24
+                // in the original while native keeps falling with the gap, i.e.
+                // the original reads a slightly stale cop-half position/speed
+                // there. Reported, not asserted. See VERIFICATION.md.
                 // CITY is exact only until tick 4359, when the native cop starts
                 // avoiding traffic car 14 (ai_overtake, position 8724) while the
                 // original's nearest object is at 9227: the City traffic
@@ -128,18 +137,20 @@ int main() {
                 // asserted span ends at the last tick the original and native
                 // cop agree exactly (4501); the rest is reported. See VERIFICATION.md.
                 int compared=0,reported=0;
-                for(int t=0;t<4551;++t) {
+                const int knock=std::get<3>(scenario),end=std::get<4>(scenario);
+                while(race.ticks()<end) {
+                    if(knock && race.ticks()==knock-1)race.crash_now(race.riders()[0]);
                     race.step(0);
                     if(race.ticks()<4096 || race.cop_index()<0 || !original.count(int(race.ticks())))continue;
                     const auto& cop=race.riders()[size_t(race.cop_index())];
                     const auto want=original.at(int(race.ticks()));
-                    const bool differs=cop.bike.i32(0x1c)!=want.first || cop.bike.i32(0xec)!=want.second;
+                    const bool differs=cop.bike.i32(0x1c)!=want.first || cop.bike.i32(0xec)!=want.second || (knock && race.bike().i32(0x2f4)!=player_crash.at(int(race.ticks())));
                     if(differs && race.ticks()>std::get<2>(scenario)){if(!reported++)std::cout<<std::get<0>(scenario)<<" known divergence from tick "<<race.ticks()<<" (reported, not asserted)\n";continue;}
                     if(differs)
-                        throw std::runtime_error("cop differs from the original at tick "+std::to_string(race.ticks())+": position "+std::to_string(cop.bike.i32(0x1c))+" vs "+std::to_string(want.first)+", speed "+std::to_string(cop.bike.i32(0xec))+" vs "+std::to_string(want.second));
+                        throw std::runtime_error("cop differs from the original at tick "+std::to_string(race.ticks())+": position "+std::to_string(cop.bike.i32(0x1c))+" vs "+std::to_string(want.first)+", speed "+std::to_string(cop.bike.i32(0xec))+" vs "+std::to_string(want.second)+", player crash "+std::to_string(race.bike().i32(0x2f4)));
                     ++compared;
                 }
-                require(compared>=400,"Cop compared over the pursuit");
+                require(compared>=400 || (knock && compared>=150),"Cop compared over the pursuit");
                 std::cout<<std::get<0>(scenario)<<" cop matches the original on "<<compared<<" ticks (position, speed)\n";
             } else std::cout<<"skipped: "<<std::get<1>(scenario)<<" fixture absent\n";
         }

@@ -455,6 +455,12 @@ public:
                    int32_t reason, bool owner_local = true, int32_t owner_flag = 0,
                    std::optional<std::array<int32_t,3>> rider_impulse = {},
                    std::optional<std::array<int32_t,3>> bike_impulse = {});
+    // Scenario entry for the oracle `RR_ORACLE_KNOCK`: the original crash entry
+    // 0x00403d60 with reason 1 and the default vectors, without the damage
+    // bookkeeping of 0x004052c0 (the proxy calls 0x00403d60 directly).
+    // The proxy hook runs after the tick counter has incremented, so the entry
+    // sees the next tick: ticks_ + 1 is used for the animation deadlines.
+    void crash_now(Rider& victim) { ++ticks_; crash_reason(victim, 1, {-256, 0, 1792}, {0, 0, 1024}); --ticks_; }
 private:
     SliceEdges edges(const Rider&, size_t sample) const;
     void move_along(Rider&, int32_t distance, bool accumulate_sweep = true);

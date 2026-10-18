@@ -122,6 +122,9 @@ what was missing was the cop-only AI branches and the live integration.
 - Evidence and commands: `docs/VERIFICATION.md` entry "napa-cops-parked".
 - `city-cops-parked-20261018` captured: exact to tick 4501; the divergence is City
   traffic positions (native cop avoids car 14), bends verified equal. See VERIFICATION.md.
-- Open: `napa-cops-crashed` (needs a controls file that wrecks the player; the
-  parked file only covers the stopped-bike arrest), `city-cops` (course 1), and
-  an original on-foot arrest to compare the 1099-step native result against.
+- `napa-cops-crashed-20261018` captured and matched on 769 ticks (see VERIFICATION.md);
+  fixes: rider crash animation input timing (`step_crash`), camera follows the crash
+  body and pulls back only on the 0x10 latch / arrest (`update_camera`,
+  `camera_position`). Proxy: `RR_ORACLE_KNOCK`, crash body/half dumps.
+- Open: follow target `want` from tick 4865 of the crashed capture (original 24, native
+  falls); City traffic parity; native on-foot arrest vs an original capture.

@@ -51,6 +51,9 @@ static int g_quit_after = -1;
 static int32_t g_first_tick = -1;
 static int g_solo;
 static int g_human;
+/* RR_ORACLE_KNOCK=<tick>: knock the player off through the original crash
+ * entry 0x00403d60 (reason 1, default vectors) before that tick runs. */
+static int g_knock_tick;
 static int g_police_probe;
 static int g_terrain_seeded;
 static int g_terrain_trace;
@@ -453,6 +456,25 @@ static void dump_sim_tick(void) {
             if (slot >= 0) {
                 snprintf(key, sizeof key, "rider.%d.think", slot);
                 rr_log(key, sim_field_value(node, 0xe0, 4, 0));
+                /* Player crash body (the rider half, +0x2fc): motion words while
+                 * the bike is crashed (+0x2f4 != 0); napa-cops-crashed. */
+                if (slot == 0) {   /* the half's position word every tick: the cop reads it (0x00407f30/0x00409ca0 target) */
+                    const uintptr_t half0 = (uint32_t)sim_field_value(node, 0x2fc, 4, 0);
+                    if (half0 && readable(half0, 0x300)) {
+                        rr_log("rider.0.half_1c", RD32(half0 + 0x1c));
+                        rr_log("rider.0.half_28", RD32(half0 + 0x28));
+                        rr_log("rider.0.half_ec", RD32(half0 + 0xec));
+                    }
+                }
+                if (slot == 0 && sim_field_value(node, 0x2f4, 4, 1) != 0) {
+                    const uintptr_t half = (uint32_t)sim_field_value(node, 0x2fc, 4, 0);
+                    static const int offs[] = {0x1c,0x20,0x24,0x28,0xc0,0xec,0xf0,0xf4,0x108,0x10c,0x110,0x114,0x118,0x2f4};
+                    if (half && readable(half, 0x300))
+                        for (unsigned k = 0; k < sizeof offs / sizeof offs[0]; ++k) {
+                            snprintf(key, sizeof key, "rider.0.body_%x", offs[k]);
+                            rr_log(key, RD32(half + offs[k]));
+                        }
+                }
                 /* Police marker: DAT_004642dc holds the single live cop bike
                  * (0x00406b80), so the cop is a rider slot whose node it names.
                  * Keyed only once a cop exists; absent keys read as no cop. */
@@ -669,6 +691,13 @@ static void __cdecl hook_step(void) {
             RD32(0x004b7ed0) = 0;
             if (g_input_exhausted_tick < 0) g_input_exhausted_tick = RD32(0x004b7ecc);
         }
+    }
+    if (g_knock_tick && g_sim && g_race_started && RD32(0x004b7ecc) == g_knock_tick) {
+        static int32_t rider_impulse[3] = {-256, 0, 1792}, bike_impulse[3] = {0, 0, 1024};
+        const uintptr_t player = (uint32_t)RD32(0x004642d8);
+        if (readable(player, 0x32c))
+            ((void (__fastcall*)(uintptr_t, int32_t*, int32_t*, int))0x00403d60)(player, rider_impulse, bike_impulse, 1);
+        g_knock_tick = 0;
     }
     if(g_police_probe && g_race_started && g_out)capture_police_spawn();
     ((void(__cdecl*)(void))0x0044b3b0)();
@@ -2293,6 +2322,7 @@ static int rr_install_hooks(void) {
     if (GetEnvironmentVariableA("RR_ORACLE_TERRAIN_TRACE",buf,sizeof buf)) g_terrain_trace=atoi(buf)!=0;
     if (GetEnvironmentVariableA("RR_ORACLE_SOLO",buf,sizeof buf)) g_solo = atoi(buf)!=0;
     if (GetEnvironmentVariableA("RR_ORACLE_HUMAN",buf,sizeof buf)) g_human = atoi(buf)!=0;
+    if (GetEnvironmentVariableA("RR_ORACLE_KNOCK",buf,sizeof buf)) g_knock_tick = atoi(buf);
     if (GetEnvironmentVariableA("RR_ORACLE_PALETTE",buf,sizeof buf)) g_palette = atoi(buf)!=0;
     if (GetEnvironmentVariableA("RR_ORACLE_EXIT_FADEOUT",buf,sizeof buf)) g_palette_exit_fadeout = atoi(buf)!=0;
     if (GetEnvironmentVariableA("RR_ORACLE_KEYS",path,sizeof path)) {
