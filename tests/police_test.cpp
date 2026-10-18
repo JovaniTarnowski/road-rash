@@ -87,6 +87,26 @@ int main() {
             require(arrested>=0,"Cop arrests the stopped player");
             require(sirens>0,"Cop posts siren events with its position");
         }
+        {
+            // Arrest while the rider walks (crash state 2, 0x00407f30): the half is the
+            // walking body, so the cop must come within 512 of it.
+            const auto exe=assets.read("ROADRASH.EXE");
+            rr::RaceConfig config;config.course="NAPA";config.level=3;config.character=1;config.bike_from_table=true;config.career=false;
+            rr::RaceSetup setup=rr::make_race_setup(assets,exe,config);
+            auto& race=*setup.instance.race;
+            while(race.ticks()<4096)race.step(0);
+            require(race.cop_index()>0,"On-foot scenario cop spawned");
+            race.knock_off(race.riders()[0],5000,5000,1);
+            bool on_foot=false;int arrested=-1;
+            for(int t=0;t<6000 && arrested<0;++t) {
+                race.step(0);on_foot|=race.bike().i32(0x2f4)==2;
+                if(race.busted())arrested=t;
+                if(std::getenv("RR_COP_TRACE")&&t%60==0)std::cout<<"foot "<<t<<" crash "<<race.bike().i32(0x2f4)<<" body "<<race.riders()[0].crash_actor.motion.i32(0x1c)<<" bflags "<<int(race.bike().u8(0xc0))<<" hflags "<<int(race.riders()[0].half_object.u8(0xc0))<<" bspd "<<race.bike().i32(0xec)<<" cspd "<<(race.cop_index()>=0?race.riders()[size_t(race.cop_index())].bike.i32(0xec):-1)<<" cop "<<(race.cop_index()>=0?race.riders()[size_t(race.cop_index())].bike.i32(0x1c):-1)<<"\n";
+            }
+            std::cout<<"on_foot="<<on_foot<<" arrested_after="<<arrested<<"\n";
+            require(on_foot,"Rider reaches the on-foot state");
+            require(arrested>=0,"Cop arrests the rider walking beside the wreck");
+        }
         std::cout<<"Police spawn/arrest boundary tests passed\n";return 0;
     }catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}
 }

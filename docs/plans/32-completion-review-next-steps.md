@@ -79,9 +79,9 @@ divergence later is progress, not final acceptance.
   the rider list by the periodic 0x00407f30 spawn and the DZHR cop records,
   pursuit through the AI think/move with the cop-only branches, cop-find
   0x00407860, arrest -> `Race::busted()` -> `RaceOutcome::busted`, cop drawn
-  from bank 1. Open: siren audio (event 19, 0x00435ae0), original-capture
-  comparison (`napa-cops`, `city-cops`), cop crash/on-foot semantics, and a
-  playtest through the BUSTED video.
+  from bank 1, siren (event 19), arrest while on foot. Open: original-capture
+  comparison (`napa-cops`, `city-cops`; blocked on the shared oracle proxy) and
+  a playtest through the BUSTED video.
 - [ ] Replace `Race::walls` with the recovered behavior; finish crash/on-foot
   traffic and police-owner recovery semantics. Preserve original integer/RNG
   behavior with scenario captures first.

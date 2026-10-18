@@ -2,6 +2,12 @@
 
 ## Live police (October 18, 2026, plan 32 D)
 
+- Follow-up (siren, on-foot arrest): isolated worktree at the committed content (no other
+  session's edits), `SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy ctest -j4`: 104 of 104 pass,
+  including `oracle-sim-field`, `oracle-sim-field-schema2`, `police` (new on-foot arrest),
+  `sound` (new siren cases) and `race-soak`. The shared tree does not build `oracle-sim-test`
+  right now (another session's uncommitted `tests/field_replay.hpp`).
+
 - Baseline at 919c339 plus the police slice: `cmake --build build --parallel` exit 0;
   `SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy ctest --test-dir build -j4`: 104 of 105
   pass. The sandbox has no display, so `first-run-smoke` and `game-race-wiring` need the

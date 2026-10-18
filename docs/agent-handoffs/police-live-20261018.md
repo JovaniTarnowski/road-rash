@@ -36,15 +36,37 @@ what was missing was the cop-only AI branches and the live integration.
   That is native behavior, not a comparison with an original run.
 - Receipt for the full suite: see `docs/VERIFICATION.md` entry of the same date.
 
+## Follow-up (same day)
+
+- Siren: `SoundSystem::siren` ports 0x00435ae0 (slots 30/31, SIREN loops 0x259
+  updates then SIRENFST 0x79, each let finish its pass before the other starts;
+  volume = linear^2 * 0x4fff >> 16 scaled by the siren channel, cap 0x4000, own
+  mute gate). `Mixer::set_loop` stands for DirectSound `Play` on a playing buffer;
+  `play_loop` now turns a playing one-shot into a loop as 0x004141c0 does. The cop
+  posts event 19 from its think (0x00407bd0 head), a null record when it has no
+  target (0x00409ca0) or is removed (0x004073a0). `sound_test` covers audibility,
+  the alternation and silencing.
+- Arrest while on foot: 0x00407f30 runs for the crashed player too
+  (`police_think` called from the crash early-returns); a crashed rider's half is
+  the body, so the arrest position and the scan list use `crash_actor.motion`;
+  the 1,200-tick walk timer exemption (0x0040a9e0) applies to the cop itself
+  (`police_owner = r.cop`). `police_test`: a knocked-off player is arrested while
+  walking.
+- Regression note: the first commit of this slice left `src/race.cpp` broken at
+  HEAD 0e9e79d (zero-context hunk staging misplaced three blocks); 074e3bc fixed
+  it. Verified in an isolated worktree at the fixed content (build + oracle-sim,
+  field, schema2, police).
+
 ## Open
 
-- Siren audio: event 19 is still `default: break` in `src/sound.cpp:349`
-  (0x00435ae0/0x00435840 dual-buffer siren, no RNG).
-- No original-capture comparison of cop movement yet (`napa-cops`, `city-cops`,
-  `napa-cops-crashed` in `police-spawn-20261016d.md`); until then cop pursuit is
-  a port of the decompiled branches checked by the native test only.
-- DAT_004c5d7c == 4 (cop drops a player target) is treated as never true offline;
-  network branches (+0x324 == 1, 0x004c4fb0) are not ported.
-- Cop on-foot/crash recovery (0x0040a600 exemption already in `crash.cpp`),
-  cop rider-half name string (0x00446bf0 index 9 reads outside the table, left blank).
-- Playtest of the arrest -> BUSTED video flow in `rr-game`.
+- Original-capture comparison (`napa-cops`, `city-cops`, `napa-cops-crashed`):
+  blocked on the shared oracle proxy. `oracle/aweman_proxy.c` is claimed by
+  terrain-fixtures-20261015, codex-human-terrain-setup-20261015 and
+  sim-l5-20261018 (`tools/agent_workspace.py list`) and has uncommitted edits;
+  a capture also needs a >4096-tick Wine run and new proxy field dumps. Until
+  then cop movement is checked by the native tests and the recovered pseudocode
+  only. Capture spec: `police-spawn-20261016d.md`.
+- 0x00434f40 height term in the siren for a cop on the other branch of a split.
+- DAT_004c5d7c == 4 and the network branches (+0x324 == 1, 0x004c4fb0).
+- Cop rider-half name (0x00446bf0 index 9 reads outside the table, left blank).
+- Playtest of arrest -> BUSTED video in `rr-game`.

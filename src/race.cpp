@@ -1634,7 +1634,7 @@ void Race::step_crash(Rider& r,bool player,uint32_t controls) {
     motion(r);
     Rider detached;detached.bike=body.motion;detached.route=body.route;detached.sample=body.sample;detached.previous_sample=body.previous_sample;
     motion(detached);body.motion=detached.bike;body.route=detached.route;body.sample=detached.sample;body.previous_sample=detached.previous_sample;
-    CrashRecoveryInput recovery;recovery.player=player;recovery.state_elapsed=r.crash_timer;
+    CrashRecoveryInput recovery;recovery.player=player;recovery.police_owner=r.cop;recovery.state_elapsed=r.crash_timer;
     if(player) {
         if(controls&control_accelerate)recovery.walk_controls|=0x800;
         if(controls&control_brake)recovery.walk_controls|=0x1000;
@@ -1730,6 +1730,16 @@ void Race::build_scan_list() const {
             half.position = r.half_position;
             half.speed = r.half_speed;
             const auto& road = route_of(r);
+            half.sample = &road[std::min(size_t(std::max(half.position, 0) >> 8), road.size() - 1)];
+        }
+        if (r.crash_active) {
+            // A crashed rider's half object is the body (0x00403d60 detaches it
+            // from the bike): it carries its own position, lateral and speed.
+            const Bike& m = r.crash_actor.motion;
+            const auto& road = routes_[r.crash_actor.route];
+            half.position = m.i32(0x1c);
+            half.lateral = m.i32(0x28);
+            half.speed = m.i32(0x108);
             half.sample = &road[std::min(size_t(std::max(half.position, 0) >> 8), road.size() - 1)];
         }
         if (!r.half_slice_present) half.sample = nullptr;
@@ -2435,7 +2445,7 @@ void Race::step_rider(Rider& r, uint32_t controls, bool player) {
         integrate_speed(b, tables_, 0);
         return;
     }
-    if(crash_library_ && b.i32(0x2f4)) {if(!r.crash_active)crash(r);step_crash(r,player,controls);return;}
+    if(crash_library_ && b.i32(0x2f4)) {if(!r.crash_active)crash(r);step_crash(r,player,controls);if(player)police_think(r);return;}
     // 0x00434660 head: demo hold (or race-not-started) takes the AI branch;
     // the control word is ignored. fight() with zero controls is exactly the
     // branch's stamina regen with no attacks started.
@@ -2676,7 +2686,9 @@ void Race::police_think(Rider& player) {
     in.rider_flags = half_flags;
     in.found_cop = cop >= 0;
     in.bike_speed = b.i32(0xec);
-    in.rider_position = live_schedule_ ? player.half_mirror.position : b.i32(0x1c);
+    // The walking rider (crash states 1/2) is the half object itself.
+    in.rider_position = player.crash_active ? player.crash_actor.motion.i32(0x1c)
+                      : live_schedule_ ? player.half_mirror.position : b.i32(0x1c);
     if (cop >= 0) {
         in.cop_speed = riders_[size_t(cop)].bike.i32(0xec);
         in.cop_position = riders_[size_t(cop)].bike.i32(0x1c);

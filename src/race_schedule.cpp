@@ -235,7 +235,10 @@ void Race::think_half(Rider& r, uint32_t controls, bool countdown) {
     // The countdown ticks run the whole think (0x00407f30 advances the
     // riding animation from tick 1 on napa-field-l1-20261017).
     (void)countdown;
-    if (crash_library_ && r.bike.i32(0x2f4)) return;   // the crash path runs in the bike's move slot
+    if (crash_library_ && r.bike.i32(0x2f4)) {   // the crash path runs in the bike's move slot
+        if (player) police_think(r);              // 0x00407f30 still runs: a rider on foot can be arrested
+        return;
+    }
     const bool demo_player = demo_hold_ && player;
     fight(r, demo_player ? 0 : controls, size_t(&r - riders_.data()));
     rider_think(r, controls, player);
