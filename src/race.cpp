@@ -60,6 +60,9 @@ std::vector<Personality> read_personalities(const std::vector<uint8_t>& exe) {
         const uint32_t b165 = base + 0x165;
         constexpr uint32_t data_va = 0x00463000, data_raw = 0x61600;
         p.overtake_index = int(exe[data_raw + (b165 - data_va)]);
+        p.kick_roll = int8_t(exe[data_raw + base + 0x1d0 - data_va]);
+        p.backhand_roll = int8_t(exe[data_raw + base + 0x1d1 - data_va]);
+        for (int i = 0; i < 15; ++i) p.reaction[i] = exe_word(exe, base + 0xf0 + 4u * uint32_t(i));
         p.reach = exe_word(exe, base + 0x1d4);
         p.word_184 = exe_word(exe, base + 0x184);
         out.push_back(p);
@@ -131,6 +134,9 @@ Race::Race(std::vector<RouteSample> a, std::vector<RouteSample> b, const Physics
         std::array<int32_t,5> eager{};
         for (uint32_t i = 0; i < 5; ++i) eager[i] = exe_word(exe_image, 0x00465a10 + 4u * i);
         overtake_eagerness_ = eager;
+        std::array<int8_t,8> steal{};
+        for (uint32_t i = 0; i < 8; ++i) steal[i] = int8_t(exe_word(exe_image, 0x00464538 + 4u * i));
+        steal_codes_ = steal;
     }
     if (routes_[0].size() < 64 || routes_[1].size() < 64) throw std::runtime_error("Route too short for a race");
     auto brain_from = [&](AiState& ai, const Personality& p) {
@@ -138,6 +144,8 @@ Race::Race(std::vector<RouteSample> a, std::vector<RouteSample> b, const Physics
         for (int i = 0; i < 30; ++i) { ai.rating[i] = p.rating[i]; ai.rating_tgt[i] = p.rating_tgt[i]; }
         for (int i = 0; i < 3; ++i) ai.ease[i] = p.ease[i];
         ai.overtake_index = p.overtake_index;
+        ai.kick_roll = p.kick_roll; ai.backhand_roll = p.backhand_roll;
+        std::copy_n(p.reaction, 15, ai.reaction);
         ai.reach = p.reach;
         ai.word_184 = p.word_184;
     };
@@ -581,10 +589,22 @@ void Race::collide_traffic(Rider& r) {
             q.i32(0x1c)=car.position;q.i32(0x28)=car.lateral;q.i32(0xec)=car.speed;
             q.i32(0x174)=car_half_width;q.i32(0x178)=car_half_length;
             q.i32(0x17c)=car_half_height;q.i32(0x194)=1800;
-            if(position<=car.position)separate(r,4,other,0x10);
+            const bool rider_outer = position <= car.position;
+            if(rider_outer)separate(r,4,other,0x10);
             else separate(other,0x10,r,4);
             car.motion=q;car.position=q.i32(0x1c);car.lateral=q.i32(0x28);car.speed=q.i32(0xec);
+            // 0x0044efa0: the second object's contact callback follows
+            // the first on the ascending pair walk, including the horn draw.
+            auto car_response = [&] {
+                if (&r == &riders_[0] && random() % 10 == 1 && car.kind != 0)
+                    sound(SoundEvent::horn, car.motion);
+                car.motion.u8(0x1f4) = 1;
+                if ((car.kind & 1) && car.motion.i32(0x1f8) == 0)
+                    car.motion.i32(0x1f8) = 0xf0; // partner is a bike (type &0xc)
+            };
+            if (!rider_outer) car_response();
             contact_car(r,car);
+            if (rider_outer) car_response();
             if(s.i32(0x2f4)!=0)return;
             continue;
         }
@@ -756,9 +776,19 @@ void Race::ring_statics(int32_t sample, uint32_t section, uint32_t local, const 
         out.billboards = in.billboards;
         for (size_t i = 0; i < in.billboards && i < 2; ++i) {
             const auto& b = in.billboard[i];
-            out.billboard[i] = {b.type, rs.offset + b.offset, static_frames_(section, local, b.selector, true)};
+            out.billboard[i] = {b.type, rs.offset + b.offset, static_frames_(section, local, b.selector, true), b.selector};
         }
     }
+}
+
+void Race::prepare_static_boxes() {
+    // 0x00443a00 projects33 slices; 0x00438610 -> 0x0044b630 loads the
+    // collision boxes on their first draw. Preserve that lifetime in fixed
+    // simulation preparation so render frequency cannot change contacts.
+    const size_t first = camera_position() >> 8;
+    for (auto& road : statics_)
+        for (size_t i = first; i < road.size() && i < first + view_slices; ++i)
+            if (road[i].built) road[i].boxes_ready = true;
 }
 
 bool Race::sweep_statics(Rider& r) {
@@ -768,6 +798,7 @@ bool Race::sweep_statics(Rider& r) {
     const auto& table = statics_[r.route];
     if (r.sample >= table.size() || !table[r.sample].built) return false;
     const StaticSlice& slice = table[r.sample];
+    if (live_schedule_ && !slice.boxes_ready) return false;
     Bike& s = r.bike;
     const int32_t lo = s.i32(0x28) - s.i32(0x174), hi = s.i32(0x174) + s.i32(0x28);
     const int32_t bottom = s.i32(0x20) - s.i32(0x17c), top = s.i32(0x17c) + s.i32(0x20);
@@ -797,13 +828,33 @@ bool Race::sweep_statics(Rider& r) {
         for (const auto& box : bb.frame->boxes) {
             if (!overlaps(box, base)) continue;
             // 0x00437750: types 0..2 build the static; 1 and 2 lower its
-            // bottom to 0x2000 / 0x3fff under the top. Types 3+ take the
-            // marking branch of the contact handler (not ported).
+            // bottom to 0x2000 / 0x3fff under the top. Types 3+ dispatch
+            // the type-2 marking object directly, without separation.
             std::array<int32_t,4> b{box[0] + base, box[1], box[2] + base, box[3]};
             if (bb.type < 3) {
                 if (bb.type == 1) b[1] = b[3] - 0x2000;
                 else if (bb.type == 2) b[1] = b[3] - 0x3fff;
                 hit_static(r, bb.lateral, b);
+            } else {
+                // 0x00437750 -> 0x004049c0 type2: decal/terrain marking.
+                Bike& bike = r.bike;
+                if (bike.i32(0x2f4) == 0 && int32_t(r.sample) != r.half_object.i32(0x1ec)) {
+                    if (bb.type < 12) bike.i32(0x298) = (1 + (bb.type - 3) % 3) * 0x3c;
+                    if (bike.i32(0xec) > 1000) {
+                        r.half_object.u8(0x1e8) = bb.selector;
+                        r.half_object.u8(0x1e9) = 1;
+                        r.half_object.i32(0x1f0) = ticks_;
+                        r.half_object.i32(0x1ec) = int32_t(r.sample);
+                        bike.u8(0x80) = bb.selector;
+                        bike.u8(0x81) = 1;
+                    }
+                    bike.i32(0xf0) = 0;
+                    bike.i32(0x288) += bike.i32(0x288) / 2;
+                }
+                bike.i32(0x184) = bike.i32(0x188) = bike.i32(0x18c) = 0;
+                bike.u8(0x19c) = 0;
+                bike.i32(0xec) = std::clamp(int32_t(bike.i32(0xec)), -1000, 30000);
+                bike.i32(0xf4) = std::clamp(int32_t(bike.i32(0xf4)), -10000, 0x600);
             }
             return true;
         }
@@ -1033,7 +1084,11 @@ bool Race::knock_off(Rider& victim, int32_t stamina_damage, int32_t bike_damage,
                                        : std::array<int32_t,3>{0, 0, 1024};
         crash_reason(victim, reason, *rider_impulse, *bike_impulse);
     }
-    if (reason == 4 && victim.bike.i32(0x2f4) == 0) victim.contact_animation = 9;
+    if (reason == 4 && victim.bike.i32(0x2f4) == 0) {
+        if (live_schedule_ && ride_library_)
+            set_animation_with_fallback(victim.ride_animation, ride_library_->playback[0], 9, uint32_t(ticks_), ride_library_->fallback);
+        else victim.contact_animation = 9;
+    }
     else if (reason == 5) {
         // 0x004052c0: original-width 32-bit wraparound product.
         const uint32_t prod = uint32_t(victim.bike.i32(0x188)) * uint32_t(p);
@@ -1708,7 +1763,7 @@ void Race::build_scan_list() const {
             ScanObject o;
             o.position = c.position;
             o.lateral = c.lateral;
-            o.speed = c.speed;
+            o.speed = c.motion.i32(0x108); // signed road velocity, including oncoming cars
             o.type = 0x10;   // +0xc4 of the free-car template 0x00475698
             o.order = 0x80000000u + c.serial;
             o.car = int(i);
@@ -1719,7 +1774,8 @@ void Race::build_scan_list() const {
     // Live scheduler: rider nodes keep the list order of the last
     // 0x004383e0 sort (the scans walk links, which a pass does not reorder),
     // keyed by their position at that sort; other objects by position.
-    for (auto& o : scan_) o.key = o.position;
+    for (auto& o : scan_) o.key = live_schedule_ && o.car >= 0 && size_t(o.car) < car_scan_keys_.size()
+        ? car_scan_keys_[size_t(o.car)] : o.position;
     if (live_schedule_) {
         (void)schedule_order();
         const int count = int(schedule_.size());
@@ -1878,12 +1934,46 @@ void Race::ai_replan(Rider& r) {
     }
 }
 
-// 0x00409510: nonzero while the rider plays an attack animation (weapon and
-// variant tables 0x004644f8/0x00464508/0x00464518/0x00464528 against the anim
-// code at rider_half+0x80). Native tracks attacks by timer: exact while no
-// attack runs, which covers the verified solo path.
+// 0x00409510: compare the current animation with all four weapon variants.
 int Race::ai_attack_anim(const Rider& r) const {
-    return r.attack.timer != 0 ? 1 : 0;
+    if (!attack_codes_) return r.attack.timer != 0;
+    for (const auto& side : *attack_codes_)
+        for (const auto& variant : side)
+            if (variant[size_t(r.attack.weapon & 3)] == r.ride_animation.animation) return 1;
+    return 0;
+}
+
+// 0x00408d50: relationship reaction, saturated independently per axis.
+void Race::ai_relationship(Rider& self, const Rider& other, int event) {
+    const int k = other.brain.overtake_index;
+    if (std::getenv("RR_COMBAT_TRACE")) std::fprintf(stderr, "reaction %d self %td other %td k %d event %d\n", ticks_, &self-riders_.data(), &other-riders_.data(), k, event);
+    if (k < 0 || k >= 10) return;
+    for (int j = 0; j < 3; ++j)
+        self.brain.rating[k * 3 + j] = std::clamp(
+            self.brain.rating[k * 3 + j] + self.brain.reaction[event * 3 + j], -0x100000, 0x100000);
+}
+
+// 0x004095d0: side from the target half, notify both brains, select animation.
+void Race::ai_start_attack(Rider& r, bool backhand) {
+    Rider* t = r.brain.target_rider < 0 ? nullptr : &riders_[size_t(r.brain.target_rider)];
+    r.attack.backhand = backhand;
+    r.attack.right = t ? r.bike.i32(0x28) < (live_schedule_ ? t->half_mirror.lateral : half_x(*t))
+                       : r.bike.i32(0x60) >= 0;
+    if (!ride_library_ || !attack_codes_) { r.attack.timer = 1; r.attack.fired = false; return; }
+    const int8_t code = (*attack_codes_)[r.attack.right][backhand][r.attack.weapon & 3];
+    if (t && r.ride_animation.animation != code) {
+        const int k = r.brain.overtake_index;
+        if (k >= 0 && k < 10) {
+            const int i = k * 3;
+            if (t->brain.rating_tgt[i+1] - t->brain.rating_tgt[i] + t->brain.rating_tgt[i+2] ==
+                t->brain.rating[i+1] - t->brain.rating[i] + t->brain.rating[i+2])
+                ai_relationship(*t, r, 1);
+        }
+        ai_relationship(*t, r, 0);
+        ai_relationship(r, *t, 3);
+    }
+    set_animation_with_fallback(r.ride_animation, ride_library_->playback[0], code, uint32_t(ticks_), ride_library_->fallback);
+    r.attack.fired = false;
 }
 
 // 0x004092b0: true while the rider is fully behind its target.
@@ -1954,8 +2044,8 @@ void Race::ai_transition(Rider& r) {
     AiState& ai = r.brain;
     const int32_t crash = r.bike.i32(0x2f4);
     if (crash == 0) {
-        if (ai.target_rider < 0) {
-            ai_set_state(ai, 1, ai.target_rider);
+        if (ai.target_rider < 0 || !riders_[size_t(ai.target_rider)].bike_slice_present) {
+            ai_set_state(ai, 1, -1);
             return;
         }
         if (ai_attack_anim(r) != 0) return;
@@ -2067,6 +2157,8 @@ int Race::ai_scan_overtake(const Rider& r, int32_t& gap) const {
     const int start = scan_find(me, 4);
     if (start < 0) return -1;
     const ScanObject self = scan_[size_t(start)];
+    if (std::getenv("RR_SCAN_TRACE") && ticks_ == std::atoi(std::getenv("RR_SCAN_TRACE")))
+        for (const auto& o : scan_) std::fprintf(stderr, "scan tick %d rider %d type %u rider %d car %d pos %d key %d lat %d spd %d self %d/%d/%d\n", ticks_, me, o.type, o.rider, o.car, o.position, o.key, o.lateral, o.speed, self.position, self.lateral, self.speed);
     const int32_t lo = self.lateral - 0xc000 / 2;
     int best = -1;
     int32_t best_t = 0x96 + 1;
@@ -2142,12 +2234,26 @@ void Race::ai_think(Rider& r) {
     // 0x00407bd0: transitions (0x00408ad0), state dispatch through 0x00465980,
     // the state's tick counter, then the replan accumulator (0x004082f0 once
     // it passes 0x3b). The 0x0040a410 lookahead is not ported.
+    if (std::getenv("RR_SIM_TRACE_TICK") && ticks_ == std::atoi(std::getenv("RR_SIM_TRACE_TICK"))) {
+        std::fprintf(stderr, "ai %td state %d target %d anim %d frame %d queued %d deadline %u weapon %d until %d pos %d lat %d spd %d\n", &r-riders_.data(), r.brain.state, r.brain.target_rider, r.ride_animation.animation, r.ride_animation.frame, r.ride_animation.queued, r.ride_animation.deadline, r.attack.weapon, r.hit_until, int32_t(r.bike.i32(0x1c)),int32_t(r.bike.i32(0x28)),int32_t(r.bike.i32(0xec)));
+    }
     ai_transition(r);
     switch (r.brain.state) {
     case 1: case 2: ai_state_racing(r); break;   // 0x00409000 (2: thunk 0x004092d0)
-    // 0x00409460 starts with 0x00409ca0; its attack rolls (brain +0x1d0/
-    // +0x1d1) and 0x004095d0 are not ported: fight() keeps the stand-in.
-    case 3: ai_state_follow(r); break;
+    case 3: { // 0x00409460: follow, attack selection/hit, then steer again.
+        ai_state_follow(r);
+        if (!ai_attack_anim(r)) {
+            if (int(random()) % r.brain.kick_roll == 0) {
+                r.attack.weapon = 3;
+                ai_start_attack(r, false);
+            } else {
+                r.attack.weapon = r.weapon;
+                ai_start_attack(r, int(random()) % r.brain.backhand_roll == 0);
+            }
+        } else if (fight_hit_frame(r)) resolve_hit(r, size_t(&r - riders_.data()));
+        ai_speed_steer(r);
+        break;
+    }
     case 4: ai_state_follow(r); break;           // 0x00409ca0
     case 5: ai_state_fight(r); break;            // 0x0040a4f0
     case 6: ai_state_shadow(r); break;           // 0x0040a560
@@ -2161,6 +2267,14 @@ void Race::ai_think(Rider& r) {
     if (ai.state >= 0 && ai.state < int(ai.state_ticks.size())) ai.state_ticks[size_t(ai.state)] += dt;
     ai.replan_ticks += dt;
     if (ai.replan_ticks > 0x3b) ai_replan(r);
+    // 0x00407bd0 regenerates after dispatch. The demo player's outer
+    // 0x00434660 wrapper also regenerates before entering this function.
+    if (ride_library_) {
+        const int crash = r.bike.i32(0x2f4);
+        const int passes = crash == 1 ? 0 : crash == 0 ? 1 : 2;
+        for (int i = 0; i < passes; ++i)
+            r.stamina.current = std::min(r.stamina.max, r.stamina.current + r.bike.i32(0x18));
+    }
 }
 
 // Racing states 1 and 2 (0x00409000): overtake gate, then the inside-curve or
@@ -2470,6 +2584,7 @@ RaceSnapshot Race::snapshot() const {
 
 void Race::fight(Rider& r, uint32_t controls, size_t index) {
     Bike& b = r.bike;
+    if (r.ai && ride_library_) return; // AI combat and regeneration belong to 0x00407bd0.
     if (b.i32(0x2f4) != 0) { r.attack.timer = 0; return; }
     if (r.stamina.current < r.stamina.max)
         r.stamina.current = std::min(r.stamina.max, r.stamina.current + b.i32(0x18));
@@ -2509,28 +2624,30 @@ void Race::fight(Rider& r, uint32_t controls, size_t index) {
     if (r.attack.timer > attack_ticks) { r.attack.timer = 0; r.attack.fired = false; }
 }
 
-// 0x004096f0 head: the selected runtime descriptor's flags (0x600000)
-// must allow combat, and animation frame byte +0x81 == 2 is the hit event.
-// The flags word lives on the runtime descriptor selected via rider+0x7c,
-// which no native bank carries (ActorGraphicsDescriptor has no flags word),
-// so the native gate is the frame event only: ride_animation.frame == 2
-// fires once per swing (attack.fired). Without a ride bank (no animation
-// advance) the legacy tick-7 stand-in fires once instead. Flag-gating the
-// hit is open until the runtime descriptor word is traced to a native bank.
+// 0x004096f0: descriptor combat bits OR frame byte 2. The selected
+// descriptor is the frame retained before the preceding animation advance.
 bool Race::fight_hit_frame(const Rider& r) const {
-    if (r.attack.fired) return false;
-    if (ride_library_) return r.ride_animation.frame == 2;
-    return r.attack.timer == attack_legacy_hit_tick;
+    if (!ride_library_) return !r.attack.fired && r.attack.timer == attack_legacy_hit_tick;
+    uint32_t flags = 0;
+    const auto& selected = r.ride_animation.selected;
+    if (selected) {
+        const auto& seq = ride_library_->playback[0].at(size_t((*selected)[0]));
+        if (seq) flags = seq->at(size_t((*selected)[1])).flags;
+    }
+    return (flags & 0x600000) || r.ride_animation.frame == 2;
 }
 
 // 0x00409c10: side match ((attacker_lateral < target_lateral) == side), then
 // |dpos| < 0x40, lateral reach by attack weapon (5/7/8 fists/club/chain,
 // kick 5), and |dheight| < 0x3000.
 bool Race::fight_reach(const Rider& self, const Rider& other, bool side) const {
-    if ((self.bike.i32(0x28) < other.bike.i32(0x28)) != side) return false;
-    if (std::abs(self.bike.i32(0x1c) - other.bike.i32(0x1c)) >= 0x40) return false;
-    if (std::abs(self.bike.i32(0x28) - other.bike.i32(0x28)) >= weapon_reach[self.attack.weapon] * 0x1000) return false;
-    if (std::abs(self.bike.i32(0x20) - other.bike.i32(0x20)) >= 0x3000) return false;
+    const int32_t lat = live_schedule_ ? other.half_mirror.lateral : other.bike.i32(0x28);
+    const int32_t pos = live_schedule_ ? other.half_mirror.position : other.bike.i32(0x1c);
+    const int32_t height = live_schedule_ ? other.half_mirror.height : other.bike.i32(0x20);
+    if ((self.bike.i32(0x28) < lat) != side) return false;
+    if (std::abs(self.bike.i32(0x1c) - pos) >= 0x40) return false;
+    if (std::abs(self.bike.i32(0x28) - lat) >= weapon_reach[self.attack.weapon] * 0x1000) return false;
+    if (std::abs(self.bike.i32(0x20) - height) >= 0x3000) return false;
     return true;
 }
 
@@ -2550,7 +2667,28 @@ void Race::resolve_hit(Rider& r, size_t index) {
     r.attack.fired = true;
     Bike& b = r.bike;
     Rider* target = nullptr;
-    for (auto& o : riders_) {
+    if (live_schedule_) {
+        // 0x00409400 / 0x00449c80: nearest half along the road, backward
+        // wins equal gaps. It becomes the brain target before the reach test.
+        build_scan_list();
+        const int self = scan_find(int(index), 8);
+        if (self >= 0) {
+            const int back = scan_next(self, 8, false, 0x1e0);
+            const int ahead = scan_next(self, 8, true, 0x1e0);
+            int at = ahead;
+            if (back >= 0 && (ahead < 0 || std::abs(scan_[size_t(back)].position - scan_[size_t(self)].position) <=
+                                          std::abs(scan_[size_t(ahead)].position - scan_[size_t(self)].position))) at = back;
+            r.brain.target_rider = at < 0 ? -1 : scan_[size_t(at)].rider;
+            if (r.brain.target_rider >= 0) target = &riders_[size_t(r.brain.target_rider)];
+        }
+        if (attack_codes_) {
+            const auto& codes = *attack_codes_;
+            r.attack.right = r.ride_animation.animation == codes[1][0][r.attack.weapon & 3] ||
+                             r.ride_animation.animation == codes[1][1][r.attack.weapon & 3];
+            r.attack.backhand = r.ride_animation.animation == codes[0][1][r.attack.weapon & 3] ||
+                                r.ride_animation.animation == codes[1][1][r.attack.weapon & 3];
+        }
+    } else for (auto& o : riders_) {
         if (&o == &r || o.bike.i32(0x2f4) != 0) continue;
         if (!fight_reach(r, o, r.attack.right)) continue;
         if (!target || std::abs(o.bike.i32(0x28) - b.i32(0x28)) < std::abs(target->bike.i32(0x28) - b.i32(0x28))) target = &o;
@@ -2562,44 +2700,63 @@ void Race::resolve_hit(Rider& r, size_t index) {
         if (w == 1) sound(SoundEvent::swish_club, b);
         else if (w == 2) sound(SoundEvent::swish_chain, b);
     }
-    if (!target) return;
+    if (!target || target->ride_animation.animation == 9 || !fight_reach(r, *target, r.attack.right)) return;
     if (index == 0) last_target_ = int(target - riders_.data());
     // Steal: every gate above, then exactly one rand() draw.
     if (uint32_t(target->steal_until) < uint32_t(ticks_) && target->ride_animation.frame < 2 &&
         r.attack.weapon == 0 && target->attack.weapon != 0 && target->attack.weapon != 3 &&
-        target->attack.timer != 0 && (random() & 3) == 3) {
+        ai_attack_anim(*target) != 0 && (random() & 3) == 3) {
         r.weapon = target->weapon;
         r.attack.weapon = target->weapon;
         target->weapon = 0;
         target->attack.weapon = 0;
         r.steal_until = ticks_ + 300;
+        if (ride_library_ && steal_codes_ && attack_codes_) {
+            const auto& codes = *attack_codes_;
+            const bool left = target->ride_animation.animation == codes[0][0][0] || target->ride_animation.animation == codes[0][1][0];
+            const auto& bank = ride_library_->playback[0];
+            const auto& fallback = ride_library_->fallback;
+            set_animation_with_fallback(r.ride_animation, bank, (*steal_codes_)[size_t(r.attack.weapon + left * 4)], uint32_t(ticks_), fallback);
+            queue_animation_with_fallback(r.ride_animation, bank, 2, fallback);
+            set_animation_with_fallback(target->ride_animation, bank, 2, uint32_t(ticks_), fallback);
+            queue_animation_with_fallback(target->ride_animation, bank, 2, fallback);
+        }
         return;
     }
-    if (!(uint32_t(ticks_) > uint32_t(target->hit_until))) return;
-    // 0x00409ad0: impact sound by weapon (kick alternates kick/punch on the tick parity).
-    if (involves_player) {
-        static constexpr SoundEvent impact[3] = {SoundEvent::impact_punch, SoundEvent::impact_club, SoundEvent::impact_chain};
-        sound(w == 3 ? SoundEvent(10 + (ticks_ & 1)) : impact[w], b);
+    const bool landed = uint32_t(ticks_) > uint32_t(target->hit_until);
+    if (landed) {
+        // 0x00409ad0: impact sound by weapon (kick alternates kick/punch on the tick parity).
+        if (involves_player) {
+            static constexpr SoundEvent impact[3] = {SoundEvent::impact_punch, SoundEvent::impact_club, SoundEvent::impact_chain};
+            sound(w == 3 ? SoundEvent(10 + (ticks_ & 1)) : impact[w], b);
+        }
+        const RiderStats& s = r.stamina;
+        int32_t damage = int32_t((int64_t((s.max << 8) / s.base) * s.strength) >> 8);
+        if (damage < s.strength / 2) damage = s.strength / 2;
+        damage = (int32_t(weapon_damage[w]) * damage + ((int32_t(weapon_damage[w]) * damage >> 31) & 0xff)) >> 8;
+        const int32_t bike_damage = w == 3 ? (damage + ((damage >> 31) & 3)) / 4 + 1 : 0;
+        const bool down = knock_off(*target, damage, bike_damage, bike_damage == 0 ? 4 : 5);
+        (void)down;
+        ai_relationship(*target, r, 2);
+        ai_relationship(r, *target, 4);
+        target->hit_until = ticks_ + (5 - level_) * 6;
+        int8_t queued = -1;
+        if ((random() % (6 - level_)) == 0) queued = r.ride_animation.animation;
+        else if (index != 0 && (random() & 3) == 2) queued = 6;
+        if (queued >= 0 && ride_library_)
+            queue_animation_with_fallback(r.ride_animation, ride_library_->playback[0], queued, ride_library_->fallback);
     }
-    const RiderStats& s = r.stamina;
-    int32_t damage = int32_t((int64_t((s.max << 8) / s.base) * s.strength) >> 8);
-    if (damage < s.strength / 2) damage = s.strength / 2;
-    damage = (int32_t(weapon_damage[w]) * damage + ((int32_t(weapon_damage[w]) * damage >> 31) & 0xff)) >> 8;
-    const int32_t bike_damage = w == 3 ? (damage + ((damage >> 31) & 3)) / 4 + 1 : 0;
-    const bool down = knock_off(*target, damage, bike_damage, bike_damage == 0 ? 4 : 5);
-    (void)down;
-    target->hit_until = ticks_ + (5 - level_) * 6;
-    if ((random() % (6 - level_)) == 0) { /* repeat-attack decision: requeue handled by the anim tail */ }
-    else if (index != 0 && (random() & 3) == 2) { /* queue animation 6 on the attacker: render-side */ }
     Bike& tb = target->bike;
-    if (r.attack.backhand) { tb.i32(0xec) -= 300; b.i32(0xec) += 300; }   // 0x00409bd0 shove
+    if (landed) {
+        if (r.attack.backhand) { tb.i32(0xec) -= 300; b.i32(0xec) += 300; }   // 0x00409bd0 shove
+        tb.i32(0x288) += r.attack.right ? 3000 : -3000;
+        b.i32(0x288) += r.attack.right ? -1000 : 1000;
+    }
+    if (w == 3) tb.i32(0x288) += r.attack.right ? 8000 : -8000;
     auto clamp_steer = [](Bike& k) {
         const int32_t lim = k.i32(0x29c);
-        k.i32(0x288) = std::max(-lim, std::min(lim, int32_t(k.i32(0x288))));
+        k.i32(0x288) = std::clamp(int32_t(k.i32(0x288)), -lim, lim);
     };
-    tb.i32(0x288) += r.attack.right ? 3000 : -3000;
-    b.i32(0x288) += r.attack.right ? -1000 : 1000;
-    if (w == 3) tb.i32(0x288) += r.attack.right ? 8000 : -8000;
     clamp_steer(tb); clamp_steer(b);
 }
 
@@ -2702,7 +2859,8 @@ void Race::advance_ride_animation(Rider& r, bool player) {
     input.lateral_speed = r.bike.i32(0x100); input.boost = r.bike.i32(0xf4);
     input.flags = r.bike.u8(0x278); input.player = player;
     input.wrecked = (r.bike.u8(0xc0) & 0x10) != 0;
-    input.camera_distance = std::abs(r.bike.i32(0x1c) - int32_t(camera_position()));
+    // 0x00407f30 reads DAT_004b7ef4 before the driver updates the camera.
+    input.camera_distance = std::abs(r.bike.i32(0x1c) - int32_t(live_schedule_ ? previous_camera_position_ : camera_position()));
     advance_riding_animation(st, bank, fallback, input, uint32_t(ticks_));
 }
 
@@ -2796,6 +2954,7 @@ void Race::countdown_step() {
         sort_schedule();
         parked_pace_band();
         step_pedestrians();
+        prepare_static_boxes();
         if (traffic_ && !riders_.empty())
             traffic_->countdown_step(route_of(riders_[0]), int32_t(camera_position()) + 0x5100,
                                      [this] { return random(); }, uint32_t(ticks_));
@@ -2900,6 +3059,9 @@ void Race::prepare_traffic_obstacles() {
 void Race::step(uint32_t controls) {
     if (riders_[0].finished && std::all_of(riders_.begin(), riders_.end(), [](const Rider& r) { return r.finished; })) return;
     ++ticks_;
+    const bool trace = std::getenv("RR_SIM_TRACE_TICK") && ticks_ == std::atoi(std::getenv("RR_SIM_TRACE_TICK"));
+    auto phase = [&](const char* label) { if (trace) std::fprintf(stderr, "phase %d %s rng %u\n", ticks_, label, seed_); };
+    phase("start");
 
     if (live_schedule_) {
         schedule_pass(controls, false);   // 0x00438170(0): bikes and halves on their own cadences
@@ -2912,8 +3074,10 @@ void Race::step(uint32_t controls) {
         // the fresh one. Hydrated riders only; legacy/live keep prior behavior.
         for (size_t i = 0; i < riders_.size(); ++i) step_frozen_schedule(riders_[i]);
     }
+    phase("schedule");
     step_pedestrians();   // same scheduler pass (0x00438170) as the riders
     if (!live_schedule_) update_halves();   // rider halves mirror their bikes before contacts
+    phase("pedestrians");
     collide_riders();
     for (size_t i = 0; i < riders_.size(); ++i) collide_traffic(riders_[i]);
     collide_pedestrians();   // pedestrians against cars
@@ -2922,12 +3086,14 @@ void Race::step(uint32_t controls) {
         parked_pace_band();    // 0x00407610 closes 0x00438170
     }
     // Riding animations advance inside each rider's think (step_rider).
+    phase("contacts");
     update_camera();
     const auto& player=riders_[0];const auto& road=route_of(player);
     camera_heading_=advance_heading(camera_heading_,previous_camera_position_,camera_position(),road[player.previous_sample].path.bend,road[player.sample].path.bend,(player.bike.u8(0xc0)&16)!=0);
     // 0x00454120 ring advance (terrain/BORR/DZHR draws) before 0x0044dd90.
     if (ring_) ring_->advance(int32_t(camera_position()) - int32_t(previous_camera_position_), ring_random_, ring_sink_);
     else build_pedestrian_slices();
+    phase("ring");
     if (traffic_) {
         if(!live_schedule_)prepare_traffic_obstacles();
         // 0x0044b3b0: distance moved this step feeds the spawn timers; the
@@ -2937,6 +3103,8 @@ void Race::step(uint32_t controls) {
         traffic_->step(road,camera+0x100,camera+0x5100,camera-int32_t(previous_camera_position_),
             player.bike.i32(0x1c),player.bike.i32(0x28),[this]{return random();},uint32_t(ticks_),player.bike.i32(0x108));
     }
+    phase("traffic");
+    prepare_static_boxes();
     previous_camera_position_=camera_position();
 }
 }

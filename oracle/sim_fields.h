@@ -48,13 +48,13 @@ static const rr_sim_field rr_sim_rider_fields[] = {
 
 static const rr_sim_field rr_sim_car_fields[] = {
     {"active", 0xffffffffu, 1, 0},
-    {"kind", 0x73, 1, 0},
-    {"vehicle", 0x7f, 1, 0},
-    {"lane", 0x7a, 1, 1},
+    {"kind", 0x1cc, 1, 0},
+    {"vehicle", 0x1fc, 1, 0},
+    {"lane", 0x1e8, 1, 1},
     {"position", 0x1c, 4, 1},
     {"lateral", 0x28, 4, 1},
     {"speed", 0xec, 4, 1},
-    {"phase", 0x71, 4, 1}
+    {"phase", 0x1c4, 4, 1}
 };
 
 #define RR_SIM_RIDER_FIELD_COUNT (sizeof rr_sim_rider_fields / sizeof rr_sim_rider_fields[0])

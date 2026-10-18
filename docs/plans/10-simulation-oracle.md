@@ -581,3 +581,26 @@ rider-12 steering), consistent with the still-omitted `0x00409460` /
 pedestrian/controller node interleaving, full mixed contact-list ordering,
 car lane/split/wall behavior and combat scenarios are not established by
 this prefix. See [handoff](../agent-handoffs/ped308-20261017.md).
+
+
+### Full live-field case passes (October 18, Tasks 6/7)
+
+`napa-field-l1-20261017` now free-runs all2400 ticks with every reliable
+captured state and RNG equal. Corrected-schema companion
+`napa-field-l1-schema2-20261018` additionally compares valid car metadata,
+every AI animation and the complete relationship table; it also passes2400.
+Both CTest regressions now require a complete match when their local captures
+are present; the former field known-divergence rule is removed.
+
+Recovered fixes:409460/409510/4095d0 attack branch;4096f0 descriptor OR frame
+hit event and408d50 relationships; original queues and stamina regeneration;
+pre-sort car scan keys and signed108 velocity;44efa0 car response/RNG;
+37c10 deferred car teardown;437750 marking callbacks and33-slice lazy box
+preparation;408ad0 parked-target clearing;407f30 pre-driver animation camera.
+See SIM_SCENARIOS for hashes, recipe and the legacy metadata schema defect,
+and VERIFICATION for final gates. No accepted golden was changed.
+
+This completes the requested full live-field capture. The task checkboxes
+above remain open for the other specified scenarios (level5, dedicated fights,
+steals and isolated traffic) and unmeasured police/split/mixed-actor branches.
+Do not infer all-game or all-course parity from this single captured route.

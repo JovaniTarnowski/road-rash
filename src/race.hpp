@@ -132,6 +132,8 @@ struct Personality {
     int32_t ease[3] = {};           // +0x12c/+0x130/+0x134: replan easing steps
     int overtake_index = 0;         // +0x165: rating-table index used by 0x004092e0
     int32_t reach = 0;              // +0x1d4: overtake distance scale (0x004092e0)
+    int8_t kick_roll = 1, backhand_roll = 1; // personality +0x1d0/+0x1d1
+    int32_t reaction[15] = {}; // +0xf0: five relationship events, three ratings each
     int32_t word_184 = 0;           // +0x184: no instruction writes it; the copy keeps the record word
 };
 std::vector<Personality> read_personalities(const std::vector<uint8_t>& exe);
@@ -165,6 +167,8 @@ struct AiState {
     int32_t reach = 0;           // brain +0x1d4: overtake distance scale
     std::array<int32_t,10> state_ticks{}; // brain +0x138 + 4*state: ticks in each state (0x00407bd0)
     uint8_t state_flag = 0;      // brain +0x164: cleared on a state change (0x00408df0)
+    int8_t kick_roll = 1, backhand_roll = 1; // personality +0x1d0/+0x1d1
+    int32_t reaction[15] = {}; // +0xf0: five relationship events, three ratings each
     int32_t word_184 = 0;        // brain +0x184: personality record word, never written
 };
 
@@ -510,6 +514,8 @@ private:
     void ai_curve_target(Rider&);       // 0x004090a0: inside of the curve
     void ai_straight_target(Rider&);    // 0x004091f0
     void ai_speed_steer(Rider&);        // 0x00409f70: steering + speed control
+    void ai_start_attack(Rider&, bool backhand);
+    void ai_relationship(Rider&, const Rider&, int event);
     int ai_attack_anim(const Rider&) const;  // 0x00409510: nonzero while attacking
     bool ai_behind_target(const Rider&) const;  // 0x004092b0
     bool ai_can_overtake(Rider&);   // 0x004092e0 (consumes rand on reach)
@@ -554,6 +560,7 @@ private:
     void contact_pedestrian(Rider&, Pedestrian&);                     // 0x004049c0 short-object branch for the rider
     void pedestrian_voice(Pedestrian&, int which);                    // 0x00436830(0x16) with the MROF voice
     void contact_hazard(Rider&, int32_t hazard_lo_q8, int32_t hazard_hi_q8);
+    void prepare_static_boxes(); // original 33-slice draw preparation, no simulation RNG
     bool sweep_statics(Rider&);                                       // 0x004373f0 against the live ring slice
     void hit_static(Rider&, int32_t lateral_units, const std::array<int32_t,4>& box);   // 0x00437660
     void contact_static(Rider& self, Rider& other);                   // 0x004049c0 against a type-1 static
@@ -576,6 +583,7 @@ private:
     std::function<int32_t(const RouteSample&)> rail_height_source_;
     TrafficSystem* traffic_ = nullptr;
     PedestrianSystem* pedestrians_ = nullptr;
+    std::vector<int32_t> car_scan_keys_; // list positions retained across this scheduler pass
     mutable std::vector<ScanObject> scan_;  // reused by build_scan_list (no tick allocation after warm-up)
     uint32_t spawn_order_ = 0;              // creation counter for pedestrians
     bool countdown_started_ = false;        // first countdown tick seen (player dt 2)
@@ -587,6 +595,7 @@ private:
     std::function<void(const RingActor&, uint32_t)> ring_sink_;
     const ActorAnimationLibrary* crash_library_ = nullptr;
     const ActorAnimationLibrary* ride_library_ = nullptr;
+    std::optional<std::array<int8_t,8>> steal_codes_; // 0x00464538
     const std::array<std::array<std::array<int8_t,4>,2>,2>* attack_codes_ = nullptr;
     CrashConfig crash_config_;
     NitroConfig nitro_;
@@ -597,12 +606,12 @@ private:
     std::vector<std::vector<RoadHazard>> hazards_[2];   // BORR spans per route sample per road
     DzhrTable dzhr_[2];   // DZHR solid billboards per route sample per road
     struct StaticSlice {
-        bool built = false;
+        bool built = false, boxes_ready = false;
         uint8_t borr_count = 0;
         std::array<int32_t,8> borr{};              // absolute laterals, units (+0x6c)
         const AnimationFrame* borr_frame = nullptr;
         uint8_t billboards = 0;
-        struct Billboard { uint8_t type = 0; int32_t lateral = 0; const AnimationFrame* frame = nullptr; };
+        struct Billboard { uint8_t type = 0; int32_t lateral = 0; const AnimationFrame* frame = nullptr; uint8_t selector = 0; };
         std::array<Billboard,2> billboard{};
     };
     std::vector<StaticSlice> statics_[2];

@@ -1,32 +1,30 @@
 {
-  "reviewed_on": "2026-10-15",
+  "reviewed_on": "2026-10-18",
   "timezone": "America/Los_Angeles",
   "areas": [
     {
       "area": "Native build",
       "implementation": "Playable native game + research viewer",
-      "verification": "Strict Debug full build and99/99 CTests (October15 screen/canvas and NULL-slice integration); historical gate receipts below remain separate",
+      "verification": "Strict Debug full build and104/104 CTests, zero skips; viewer smoke and all-course sweep (October18 full-field source); ASan/UBSan10/10",
       "remaining": "Simulation acceptance separate",
       "evidence": [
         "VERIFICATION.md",
         "RUN_NATIVE.md",
-        "agent-handoffs/codex-sim735-integrate-20261015.md"
+        "agent-handoffs/field-parity-20261018.md"
       ],
       "last_verified_commit": null,
       "fidelity_level": "not-claimed"
     },
     {
       "area": "Simulation parity",
-      "implementation": "Tick replay, frozen scheduler/half/slice state, countdown timers, measured player row, human-branch probe and scheduler node list",
-      "verification": "Demo600 compared fields match; sched900 first divergence893 RNG; human terrain200 trace identical (ring setup window walks, srand+0 pre draws); sched-human-cov2 1431/1431 identical with 0 golden-only and 0 uncovered native comparisons (strict acceptance met)",
-      "remaining": "Live-AI parking/waking, 70 unmodeled-but-constant original words (rider-half object, human brain window), billboard marking branch, contact eligibility, split/merge ring walking, traffic-field scenarios and full human parity",
+      "implementation": "Original live rider/car scheduler, native countdown, scene construction, AI combat/relationships, car callbacks, marking lifetimes and single-anchor replay",
+      "verification": "Napa L1 full live field2400/2400 ticks identical with RNG; corrected schema2 also2400/2400 including valid car metadata and all AI animation/relationship fields; strict human1431/1431 identical",
+      "remaining": "Other levels/courses, dedicated fight/steal/isolated traffic cases, police, split/merge ring walking, complete mixed pedestrian/controller order and human paths outside the captured1431 ticks",
       "evidence": [
         "SIM_SCENARIOS.md",
         "plans/10-simulation-oracle.md",
-        "agent-handoffs/countdown-timers-20261015.md",
-        "agent-handoffs/codex-sim-research-20261015.md",
-        "agent-handoffs/ring-terrain-20261016.md",
-        "agent-handoffs/coverage-20261017.md"
+        "VERIFICATION.md",
+        "agent-handoffs/field-parity-20261018.md"
       ],
       "last_verified_commit": null,
       "fidelity_level": "partial"
@@ -119,15 +117,15 @@
     "native": {
       "status": "passed",
       "source": {
-        "commit": "25daed6d1f41832ef182b743d72470c902720404",
-        "source_sha256": "c231b349b122a14f1c21e0a6dadb31189b89966d863f27ac0aa7131b9a8806db",
+        "commit": "992106d9ee748d0af3405572a8f7d6b7fcf9c590",
+        "source_sha256": "8718e6d4f13bd5dcfb35df9bd5a9009657dc25e8950e519d35ee53bc5e5d4117",
         "dirty": true,
-        "input_count": 257
+        "input_count": 348
       },
       "coverage": {
         "imported_assets": "viewer smoke and course sweep",
         "ctest": {
-          "passed": 69,
+          "passed": 104,
           "skipped": 0,
           "failed": 0
         },
@@ -155,30 +153,30 @@
               "trace_sha256": "3ab614a032666d75d6cf241efd9c0dd7148c958fc969c95579a531ffaec7e2a6",
               "complete": true,
               "exit_code": 1,
-              "output": "road_base: 1792 (golden lat 18176 - route[50].offset*256 - grid 16384)\n[single-anchor] start-hold: 59 frozen frames, green at tick 60 driver=demo (cli override) think=0xffffffffffffffff count=-1 rider.0.think=4225680 rider.1.think=4408928 (0x00434660=4408928)\nfirst divergence at frame 74 (tick 75): rider.0.lateral original 18173 native 18053\nrng history (last 8 ticks, golden vs native): (1133891140,1133891140) (1133891140,1133891140) (1133891140,1133891140) (1133891140,1133891140) (1133891140,1133891140) (1133891140,1133891140) (1133891140,1133891140) (1133891140,1133891140)\n",
+              "output": "road_base: 1792 (golden lat 18176 - route[50].offset*256 - grid 16384)\nring setup closes on the green anchor (+0 draws)\n[single-anchor] start-hold: 59 frozen frames, green at tick 60 driver=demo (cli override) think=0xffffffffffffffff count=-1 rider.0.think=4225680 rider.1.think=4408928 (0x00434660=4408928)\ncountdown: 58 native ticks, brain equal\nfirst divergence at frame 209 (tick 210): rng original 849046096 native 2140064586\nrng history (last 8 ticks, golden vs native): (1793882572,1793882572) (1793882572,1793882572) (1793882572,1793882572) (1793882572,1793882572) (1793882572,1793882572) (2193798822,2193798822) (849046096,849046096) (849046096,2140064586)\n",
               "status": "known-divergence"
             }
           ]
         }
       },
-      "receipt": "/Users/archit/Dev/rr/native-port/analysis/agent-gates/playtest-audio-ai-loading-final/receipt.json"
+      "receipt": "/Users/archit/Dev/rr/native-port/analysis/agent-gates/field-parity-20261018-native/receipt.json"
     },
     "sanitizers": {
       "status": "passed",
       "source": {
-        "commit": "25daed6d1f41832ef182b743d72470c902720404",
-        "source_sha256": "c231b349b122a14f1c21e0a6dadb31189b89966d863f27ac0aa7131b9a8806db",
+        "commit": "992106d9ee748d0af3405572a8f7d6b7fcf9c590",
+        "source_sha256": "8718e6d4f13bd5dcfb35df9bd5a9009657dc25e8950e519d35ee53bc5e5d4117",
         "dirty": true,
-        "input_count": 257
+        "input_count": 348
       },
       "coverage": {
         "ctest": {
-          "passed": 5,
+          "passed": 10,
           "skipped": 0,
           "failed": 0
         }
       },
-      "receipt": "/Users/archit/Dev/rr/native-port/analysis/agent-gates/playtest-audio-ai-loading-asan-final/receipt.json"
+      "receipt": "/Users/archit/Dev/rr/native-port/analysis/agent-gates/field-parity-20261018-sanitizers/receipt.json"
     },
     "package": {
       "status": "passed",

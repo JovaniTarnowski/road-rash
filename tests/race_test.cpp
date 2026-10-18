@@ -590,6 +590,48 @@ int main() {
         const auto narrow = run(-1000, -1000 * 256 - 30000, &tree);
         check(narrow[0] > 3500, "near slot keeps its one-times width");
     }
+    // 0x00437750 type3+: marking selectors and timing belong to the half;
+    // repeated contact with the same sample does not restart the animation.
+    for (int type : {3, 4, 5}) for (int speed : {1000, 4000}) {
+        rr::Race mark(straight(4000), straight(4000), t, spec, 90);
+        auto& rider = mark.riders()[0]; auto& bike = rider.bike;
+        rr::Race plain(straight(4000), straight(4000), t, spec, 90);
+        for (auto* world : {&mark, &plain}) {
+            auto& b = world->riders()[0].bike;
+            b.i32(0x1c) += 0x80;
+            b.i32(0xec) = speed; b.i32(0x288) = 5000; b.i32(0xf0) = 200;
+        }
+        rr::AnimationFrame decal; decal.boxes = {{-20000, -10000, 20000, 10000}};
+        mark.set_static_frames([&](uint32_t, uint32_t, uint8_t, bool) { return &decal; });
+        rr::RingStatics slice; slice.billboards = 1;
+        slice.billboard[0] = {uint8_t(type), 128, 64};
+        const auto& rs = mark.route()[rider.sample];
+        mark.ring_statics(int32_t(rider.sample), rs.section, rs.local, slice);
+        plain.step(0);
+        mark.step(0);
+        check(bike.i32(0x298) == (type - 2) * 60, "marking type sets its traction timer");
+        check(bike.i32(0x288) == plain.bike().i32(0x288) + plain.bike().i32(0x288) / 2 && bike.i32(0xf0) == 0, "marking scales steering and stops its rate");
+        check(rider.half_object.i32(0x1e8) == (speed > 1000 ? 384 : 0), "marking animation requires speed above1000");
+        if (speed > 1000) {
+            check(rider.half_object.i32(0x1ec) == int32_t(rider.sample) && rider.half_object.i32(0x1f0) == 1,
+                  "marking records sample and contact tick");
+            mark.step(0);
+            check(rider.half_object.i32(0x1f0) == 1, "same-sample marking does not restart");
+        }
+    }
+    // 0x00408ad0: a parked target's missing bike slice clears the target
+    // when the rider changes back from overtaking to racing.
+    {
+        rr::Opponent opponent{spec, 90, 95, 90, 1, 1};
+        rr::Race follow(straight(4000), straight(4000), t, spec, 90, {opponent});
+        follow.riders()[0].frozen = true;
+        follow.riders()[0].bike_slice_present = false;
+        auto& ai = follow.riders()[1].brain;
+        ai.state = 2; ai.target_rider = 0; ai.target_step = 1; ai.state_ticks[2] = 17;
+        follow.step(0);
+        check(ai.state == 1 && ai.target_rider == -1 && ai.state_ticks[2] == 17,
+              "parked target leaves overtaking without resetting the old state clock");
+    }
     // Span builder keeps only strictly-inside BORR slots (0x00454240): slots
     // at right-96/right+32 keep the first and drop the second here; pictured
     // trees are not all solid.
@@ -800,6 +842,32 @@ int main() {
     if (std::filesystem::exists(game + "/ROADRASH.EXE")) {
         rr::Assets assets(game);
         const auto exe = assets.read("ROADRASH.EXE");
+        // The original combat gate is descriptor flags OR frame2. Exercise
+        // both event sources independently, including the relationship write.
+        for (int event = 0; event < 3; ++event) {
+            rr::ActorAnimationLibrary bank(exe, assets.read("DATA/GLOBAL.RSC"));
+            const auto codes = rr::read_attack_codes(exe);
+            rr::Opponent opponent{spec, 90, 95, 90, 1, 1};
+            rr::Race duel(straight(4000), straight(4000), t, spec, 90, {opponent});
+            duel.set_ride_library(&bank, &codes);
+            auto& victim = duel.riders()[0]; auto& attacker = duel.riders()[1];
+            victim.frozen = true;
+            victim.bike.i32(0x28) = 0; attacker.bike.i32(0x28) = 2000;
+            attacker.bike.i32(0x1c) = victim.bike.i32(0x1c);
+            attacker.bike.i32(0xec) = victim.bike.i32(0xec) = 6000;
+            attacker.brain.state = 3; attacker.brain.target_rider = 0;
+            attacker.brain.reaction[12] = 123;
+            attacker.attack.weapon = 1;
+            const int8_t code = codes[0][1][1];
+            bank.playback[0].at(size_t(code))->at(0).flags = event == 1 ? 0x600000 : 0;
+            attacker.ride_animation.animation = code;
+            attacker.ride_animation.frame = event == 2 ? 2 : 0;
+            attacker.ride_animation.selected = std::array<int8_t,2>{code,0};
+            const int32_t stamina = victim.stamina.current;
+            duel.step(0);
+            check((victim.stamina.current < stamina) == (event != 0), "combat hit accepts descriptor flags or frame2");
+            check(attacker.brain.rating[0] == (event != 0 ? 123 : 0), "landed combat hit applies relationship event4");
+        }
         const auto specs = rr::read_bike_specs(assets.read("DATA/BIKESPEC.RSC"));
         // Napa live setup: all seven racers must continue advancing after
         // their first replans, rather than parking at an obsolete target.

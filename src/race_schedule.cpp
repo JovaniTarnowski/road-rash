@@ -159,8 +159,10 @@ void Race::schedule_pass(uint32_t controls, bool countdown) {
     const std::vector<ScheduleNode> order = schedule_order();
     const int32_t camera=ring_?ring_->front_q8()-0x5000:int32_t(previous_camera_position_)+0x100;
     std::vector<std::pair<int32_t,size_t>> cars;
+    car_scan_keys_.clear();
     if(traffic_ && traffic_->begin_schedule(route_of(riders_[0]),camera+0x5000,[this]{return random();},uint32_t(ticks_))) {
         const auto& pool=traffic_->cars();
+        for (const auto& c : pool) car_scan_keys_.push_back(c.position);
         for(size_t i=0;i<pool.size();++i)if(pool[i].active)cars.push_back({pool[i].position,i});
         std::stable_sort(cars.begin(),cars.end(),[](const auto& a,const auto& b){return a.first>b.first;});
     }
@@ -232,6 +234,16 @@ void Race::run_bike_node(Rider& r, uint32_t controls, bool countdown) {
     const bool slice = r.bike_slice_present;
     b.i32(0x18) = ticks_ - r.sched_last;
     r.sched_last = ticks_;
+    // 0x00407a90: scenery-mark animation on the bike mirrors the half's
+    // +0x1e9, advances once per four absolute ticks and expires after12.
+    if (!r.parked && b.i32(0x2f4) != 1 && b.i32(0x2f4) != 2) {
+        auto& half = r.half_object;
+        if (half.u8(0x1e9)) {
+            const uint32_t elapsed = uint32_t(ticks_) - uint32_t(half.i32(0x1f0));
+            half.u8(0x1e9) = int32_t(r.sample) == half.i32(0x1ec) && elapsed < 12 ? uint8_t((elapsed >> 2) + 1) : 0;
+        }
+        b.u8(0x81) = half.u8(0x1e9);
+    }
     // Think 0x00407a90 (nulled while parked): the player's nitro charge
     // 0x0040b1a0; its animation mirror is part of the native riding block.
     if (!r.parked && &r == &riders_[0] && !countdown) nitro_charge_tick(r);

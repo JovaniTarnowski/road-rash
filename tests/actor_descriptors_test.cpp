@@ -19,6 +19,13 @@ int main(int argc,char** argv) {
             if(library.playback[type].size()!=52)throw std::runtime_error("Actor bank code count");
             for(size_t code=0;code<52;++code)if(library.playback[type][code]){++sequences;frames+=library.playback[type][code]->size();}
         }
+        for (int type = 0; type < 2; ++type)
+            for (const auto& sequence : library.descriptors[type]) if (sequence)
+                for (const auto& frame : *sequence) {
+                    const auto& views = library.views[type].at(frame.source_frame);
+                    if (views.empty() || frame.playback.flags != views.front().flags)
+                        throw std::runtime_error("Playback descriptor must retain its original graphics flags");
+                }
         std::cout<<sequences<<" imported actor sequences, "<<frames<<" playback frames\n";
         const auto source=rr::read_exe_data(exe,0x4746c0,8);
         const auto first=rr::read_actor_sequence(cans[0],source);

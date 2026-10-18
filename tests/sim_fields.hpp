@@ -59,13 +59,13 @@ inline constexpr SimField rider_fields[] = {
 // TrafficCar members; "active" has no original offset (pool slot state).
 inline constexpr SimField car_fields[] = {
     {"active", 0xffffffffu, 1, false},
-    {"kind", 0x73, 1, false},
-    {"vehicle", 0x7f, 1, false},
-    {"lane", 0x7a, 1, true},
+    {"kind", 0x1cc, 1, false},
+    {"vehicle", 0x1fc, 1, false},
+    {"lane", 0x1e8, 1, true},
     {"position", 0x1c, 4, true},
     {"lateral", 0x28, 4, true},
     {"speed", 0xec, 4, true},
-    {"phase", 0x71, 4, true},
+    {"phase", 0x1c4, 4, true},
 };
 
 }  // namespace sim

@@ -108,6 +108,29 @@ static std::vector<uint8_t> synthetic_exe() {
     return exe;
 }
 
+static void test_deferred_car_teardown() {
+    rr::VehicleLibrary library(synthetic_container(0));
+    rr::TrafficSystem traffic(library, synthetic_exe());
+    traffic.set_spawn_enabled(false);
+    std::vector<rr::RouteSample> road(800);
+    for (auto& s : road) { s.path.left = s.path.right = 500; s.path.left_q8 = s.path.right_q8 = 0x200; }
+    auto random = [] { return 1u; };
+    const int32_t back = 0x10000, front = back + 0x8000, camera = front - 0x5000;
+    traffic.begin_schedule(road, front, random, 1);
+    auto& car = traffic.cars_mut()[0];
+    car = rr::TrafficCar{}; car.active = true; car.kind = 2; car.phase = 0x100;
+    car.position = back - 1; car.lateral = -32000; car.speed = 1000;
+    car.motion.u8(0xc0) = 7; car.last_tick = 0; car.next_tick = 1;
+    traffic.run_car(0, road, camera, front, camera, 0, random, 1, 8000);
+    if (!car.active || !car.pending_remove || car.last_tick != 101 || car.next_tick != 101 ||
+        (car.motion.u8(0xc0) & 12) != 8)
+        throw std::runtime_error("car retirement must mark the live node until next prepass");
+    if (traffic.begin_schedule(road, front, random, 1) || !car.active)
+        throw std::runtime_error("same-tick scheduler wrapper must retain marked car");
+    traffic.begin_schedule(road, front, random, 2);
+    if (car.active || car.pending_remove) throw std::runtime_error("next prepass must return retired car to pool");
+}
+
 static void test_library_choose() {
     rr::VehicleLibrary library(synthetic_container(0x100000));
     if(library.vehicles().size()!=2)throw std::runtime_error("synthetic vehicle count");
@@ -707,6 +730,7 @@ int main() {
         test_configure();
         test_lane_count();
         test_library_choose();
+        test_deferred_car_teardown();
         test_countdown_timers();
         test_countdown_initial_fill();
         test_countdown_disabled_spawn_expiry();

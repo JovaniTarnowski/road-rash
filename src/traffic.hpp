@@ -64,18 +64,18 @@ int traffic_lane_count(int32_t lanes_q8);
 // One car object. Field comments name the original object offsets
 // (0x004387a0 template copies and 0x0044df60 writes).
 struct TrafficCar {
-    uint8_t kind = 0;          // +0x73
-    uint8_t vehicle = 0;       // +0x7f
-    int8_t lane = 0;           // +0x7a
+    uint8_t kind = 0;          // +0x1cc
+    uint8_t vehicle = 0;       // +0x1fc
+    int8_t lane = 0;           // +0x1e8
     int32_t position = 0;      // +0x1c: Q8 samples along the route
     int32_t lateral = 0;       // +0x28: Q8 world lateral
     int32_t speed = 0;         // +0xec
-    int32_t phase = 0;           // +0x71: (rand & 0x7f) + 0xc0, 192..319
-    uint8_t jitter_a = 0;      // +0x72
+    int32_t phase = 0;           // +0x1c4: (rand & 0x7f) + 0xc0, 192..319
+    uint8_t jitter_a = 0;      // +0x1c8
     uint8_t jitter_b = 0;      // +0x1c9
     uint8_t jitter_c = 0;      // +0x1ca
-    uint32_t serial = 0;       // +0x82 (DAT_004b7e98)
-    bool active = false;
+    uint32_t serial = 0;       // +0x208 (DAT_004b7e98)
+    bool active = false, pending_remove = false; // marked now, returned by next scheduler prepass
     int32_t last_tick = 0, next_tick = 0, interval = 10, dt = 0; // +0x10/+0xc/+0x14/+0x18
     Bike motion;              // 0x0043adc0 physics words, persistent per pool slot
     int32_t heading = 0;       // +0x5c: 0 ahead, -0x800000 oncoming, +-0x400000 crossing (0x00449880)

@@ -12,6 +12,7 @@ struct ActorAnimationFrame {
     int8_t duration=0;
     uint8_t control=0; // low nibble action, high nibble loop frame
     bool drawable=true; // original descriptor +16 is nonzero
+    uint32_t flags=0; // original graphics descriptor +4 (combat bits 0x600000)
 };
 using ActorSequence=std::vector<ActorAnimationFrame>;
 using ActorAnimationBank=std::vector<std::optional<ActorSequence>>;

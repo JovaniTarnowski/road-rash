@@ -117,6 +117,26 @@ static void __fastcall hook_menu_enter(int screen) {
         if (st) *st = (uint32_t)g_seed;
         g_seed_applied = 1;
     }
+    /* Diagnostic startup fixture only: reproduce recorded pre-race speed
+     * jitter without changing any live step or RNG anchor. Six extra brains,
+     * first three level speeds each. Never enabled by normal captures. */
+    if (!g_race_started) {
+        const char* speed_text = getenv("RR_ORACLE_EXTRA_SPEEDS");
+        if (speed_text) {
+            int values[18], count = 0;
+            char* end;
+            while (count < 18) {
+                values[count++] = (int)strtol(speed_text, &end, 10);
+                if (end == speed_text) { count = 0; break; }
+                speed_text = end;
+                if (*speed_text == ',') ++speed_text;
+                else break;
+            }
+            if (count == 18 && *speed_text == 0)
+                for (int i = 0; i < 18; ++i)
+                    RD32(0x004c5f20 + (i / 3) * 0x204 + 0x1bc + (i % 3) * 4) = values[i];
+        }
+    }
     g_race_started = 1;
     palette_hook_install();
 }
@@ -258,6 +278,7 @@ static void dump_sim_tick(void) {
         rr_log("character", -1);
         rr_log("seed", g_seed);
         rr_log("solo", g_solo);
+        rr_log("ring.car_schema", 2); // byte offsets corrected from decompiler element indices
         if (g_terrain_trace) rr_log("ring.terrain.schema",1);
         if (g_tick1_caller) rr_log("tick1_caller", (long long)g_tick1_caller);
     } else {
@@ -453,7 +474,7 @@ static void dump_sim_tick(void) {
                  * +0x80 animation, +0x81 frame, +0x82 queued, +0x84
                  * deadline, +0x88 loops). The riding bike's own block only
                  * mirrors +0x81 from half+0x1e9 (0x00407a90). */
-                if (node == player && rh && readable(rh + 0x80, 12)) {
+                if ((node == player || getenv("RR_ORACLE_RATINGS")) && rh && readable(rh + 0x80, 12)) {
                     for (unsigned f = 0; f < RR_SIM_RIDER_FIELD_COUNT; ++f) {
                         const uint32_t off = rr_sim_rider_fields[f].offset;
                         if (off != 0x80 && off != 0x81 && off != 0x82 && off != 0x84 && off != 0x88) continue;
@@ -481,6 +502,12 @@ static void dump_sim_tick(void) {
                  * +0x1dc..+0x200). This is what 0x00407bd0 steps. */
                 if (rh && readable(rh + 0x1d8, 4)) {
                     const uintptr_t brain = (uint32_t)*(uint32_t*)(rh + 0x1d8);
+                    if (getenv("RR_ORACLE_RATINGS")) {
+                        for (unsigned w = 0; w < 30; ++w) {
+                            snprintf(key, sizeof key, "rider.%d.rating_%x", slot, 4 * w);
+                            rr_log(key, sim_field_value(brain, 4 * w, 4, 1));
+                        }
+                    }
                     for (unsigned w = 0; w < 36; ++w) {
                         snprintf(key, sizeof key, "rider.%d.brain_%x", slot, 0x138 + 4 * w);
                         rr_log(key, sim_field_value(brain, 0x138 + 4 * w, 4, 1));

@@ -8,10 +8,13 @@ Control streams (`.controls`, one hex word per line) replay with
 
 `RR_ORACLE_SOLO=1` freezes every scheduler node except the player bike and
 player rider-half and nulls the traffic pool, isolating player physics.
-Full-field captures are deterministic through setup (seeded at menu entry)
-but diverge mid-race: attack outcomes land on animation frames that advance
-with frame pacing, so landing ticks vary run to run with no rng change.
-Field scenarios are plan 10 task 6 input; acceptance goldens are solo.
+Full-field replay now matches the complete 2400-tick Napa level-1 capture.
+Race setup is seeded at menu entry, but the six extra personalities receive
+speed-table jitter earlier in startup. New captures can therefore have
+different field trajectories despite the same race seed. The older
+attribution to animation frame pacing is superseded: the expanded capture
+compares every AI animation against absolute simulation ticks. Human branch
+acceptance and demo-driven live-field evidence remain distinct.
 
 ## napa-solo
 
@@ -298,3 +301,35 @@ reports `acceptance_met: true`. The node-list comparison is gated on a
 declared `probe.frozen_words` capture: parking is rebuilt from the frozen
 slice flags, which the legacy demo captures do not carry, so their pinned
 diagnostics are unchanged.
+
+
+## Complete Napa live field, October 18, 2026
+
+- `napa-field-l1-20261017.tsv`: 2400 contiguous ticks, course 4, level 0
+  (display level 1), seed 1, demo driver, solo 0, 14 opponents, traffic and
+  pedestrians. SHA-256 `99e2034496086990d67d130defd3fbea5af6708498d791feb524f5cafab68fe5` unchanged.
+  All reliable captured rider/brain/half/scheduler/node/car-motion fields and
+  RNG match. Its four legacy car metadata aliases have invalid byte offsets;
+  the replay reports that capture defect separately.
+- `napa-field-l1-schema2-20261018.tsv`: same full 2400-tick scenario,
+  `ring.car_schema=2`, valid car kind/vehicle/lane/phase offsets and optional
+  complete AI animation/relationship probes. SHA-256
+  `294343d533ae73fa1fea78678bb57fd0ea3901e23f2a09f248ff9bec66d275de`.
+  Every compared field and RNG match, with zero golden-only state keys.
+  Original EXE SHA-256 remains `73d7f9744b5b1a9482b3909950cdf3fe34119fe13d023b031e9c6739a60f18a2`.
+
+Capture recipe for schema2 (the extra values select recorded pre-race speed
+configuration only; no live step is modified):
+
+```sh
+RR_ORACLE_COURSE=4 RR_ORACLE_SEED=1 RR_ORACLE_SIM=1 RR_ORACLE_DRIVE=2 \
+RR_ORACLE_FRAMES=2400 RR_ORACLE_RATINGS=1 \
+RR_ORACLE_EXTRA_SPEEDS=89,101,120,81,105,117,93,112,117,82,109,125,90,107,116,90,112,122 \
+python3 tools/oracle_capture.py capture napa-field-l1-schema2-20261018 --workspace ..
+```
+
+Replay either with `oracle-sim-test --driver=demo <trace>`. Both run the
+countdown natively, prove ring/build closure and anchor RNG once at green.
+`oracle-sim-field` and `oracle-sim-field-schema2` register these regressions;
+the disc-derived traces and receipts stay local. The schema2 capture also
+supersedes the legacy metadata probe, not the original golden file.

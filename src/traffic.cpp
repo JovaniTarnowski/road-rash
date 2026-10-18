@@ -135,8 +135,8 @@ bool TrafficSystem::place(uint8_t kind,int8_t lane,const RouteSample& at,int32_t
         car.position=spawn_q8&~0xff;
         car.kind=kind;car.vehicle=uint8_t(vehicle);car.lane=lane;car.speed=0;
         car.heading=kind==2?-0x800000:0;
-        car.phase=(random()&0x7f)+0xc0;    // +0x71: full int slot, 192..319
-        car.jitter_a=int8_t(random());              // +0x72
+        car.phase=(random()&0x7f)+0xc0;    // +0x1c4: full int slot, 192..319
+        car.jitter_a=int8_t(random());              // +0x1c8
         car.jitter_b=int8_t(random());              // +0x1c9
         car.jitter_c=int8_t(random());              // +0x1ca
         car.serial=++serial_;                       // DAT_004b7e98
@@ -202,6 +202,8 @@ int32_t TrafficSystem::schedule_interval(const TrafficCar& car,int32_t camera_q8
 
 std::pair<int32_t,int32_t> TrafficSystem::plan_speed(TrafficCar& car,const std::vector<RouteSample>& route) {
     // 0x0044e710: scheduler dt participates in the stop-line lookahead.
+    if (car.motion.i32(0x1f8) != 0)
+        car.motion.i32(0x1f8) = std::max(0, int32_t(car.motion.i32(0x1f8)) - car.dt);
     const int kind=car.kind&3;
     const int32_t cruise=(timers_.cruise*car.phase)>>8;   // iVar8
     const int32_t current=speed_units(car.speed);           // iVar9
@@ -307,6 +309,7 @@ std::pair<int32_t,int32_t> TrafficSystem::plan_speed(TrafficCar& car,const std::
             }
         }
     }
+    if (car.motion.i32(0x1f8) > 0) target = 0; // 0x0044e710 contact pause
     if(target<0)target=0;
     if(hurry)target*=2;
     const int32_t rate=(car.phase*((current<target/2 || hurry)?0x24:0x12))>>8;
@@ -315,14 +318,13 @@ std::pair<int32_t,int32_t> TrafficSystem::plan_speed(TrafficCar& car,const std::
 
 void TrafficSystem::move(TrafficCar& car,const std::vector<RouteSample>& route,int32_t camera_q8,int32_t front_q8,
                         int32_t back_q8,int32_t player_q8,int32_t player_lateral,const std::function<uint32_t()>& random) {
-    // Despawn outside the ring window [back, front): 0x00437e60 parks the
-    // object, which returns it to the free pool.
-    if(car.position>=front_q8 || car.position<back_q8) {car.active=false;return;}
+    // 0x00437e60 checks the window after the move, then defers unlinking
+    // until the next prepass. A due object outside it still moves once.
     const size_t sample=size_t(std::clamp(car.position,int32_t(0),int32_t((route.size()-1)*256))>>8);
     const RouteSample& at=route.at(sample);
     if(car.kind&1) {
         // 0x0044dc10: crossing cars require an intersection slice and zone.
-        if((at.path.marking_flags&0x20)==0 || car.zone_end==0 || car.zone_lanes==0) {car.active=false;return;}
+        if((at.path.marking_flags&0x20)==0 || car.zone_end==0 || car.zone_lanes==0) {car.pending_remove=true;return;}
         car.collides=uint32_t(car.position-camera_q8+0x400)<0x2801;
     }
     const auto [target,rate]=plan_speed(car,route);
@@ -346,7 +348,7 @@ void TrafficSystem::move(TrafficCar& car,const std::vector<RouteSample>& route,i
     integrate_speed(body,physics_,surface_class(edges,car.lateral));
     advance_actor_motion(body,physics_,[&](int32_t distance){body.i32(0x1c)+=distance;});
     car.speed=body.i32(0xec);car.position=body.i32(0x1c);car.lateral=body.i32(0x28);
-    if(car.position>=front_q8 || car.position<back_q8 || car.lateral< -0xc8000 || car.lateral>0xc8000)car.active=false;
+    if(car.position>=front_q8 || car.position<back_q8 || car.lateral< -0xc8000 || car.lateral>0xc8000)car.pending_remove=true;
     if(car.kind&1)return;
     // 0x0044efa0 is a contact callback, not a movement/proximity RNG tap.
     (void)player_q8;(void)player_lateral;(void)random;
@@ -546,6 +548,7 @@ bool TrafficSystem::begin_schedule(const std::vector<RouteSample>& route,int32_t
                                    const std::function<uint32_t()>& random,uint32_t tick) {
     if(scheduled_tick_ && *scheduled_tick_==tick)return false;
     scheduled_tick_=tick;tick_=tick;
+    for (auto& car : cars_) if (car.pending_remove) { car.active = false; car.pending_remove = false; }
     if(!filled_)build_slices(route,front_q8,0,tick);
     think_intersections(front_q8-0x8000,front_q8,tick,route,random);
     return true;
@@ -560,6 +563,10 @@ void TrafficSystem::run_car(size_t index,const std::vector<RouteSample>& route,i
     move(car,route,camera_q8,front_q8,front_q8-0x8000,player_q8,player_lateral,random);
     car.interval=schedule_interval(car,camera_q8,player_velocity);
     car.next_tick=int32_t(tick)+car.interval;
+    if (car.pending_remove) {
+        car.motion.u8(0xc0) = uint8_t((car.motion.u8(0xc0) & ~4) | 8);
+        car.last_tick = car.next_tick = int32_t(tick) + 100;
+    }
 }
 
 void TrafficSystem::schedule(const std::vector<RouteSample>& route,int32_t camera_q8,int32_t front_q8,

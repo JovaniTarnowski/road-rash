@@ -108,10 +108,13 @@ int main() {
             auto& car=traffic.cars_mut()[0];car.active=true;car.lateral=0;
             car.position=b.i32(0x1c)+(scenario==1?64:-64);
             car.last_tick=0;car.next_tick=scenario==2?1:100;
+            if (scenario == 1) car.kind = 1; // sleeping crossing car, callback still runs
             car.motion.u8(0xc0)=7;car.motion.i32(0xc4)=16;
             const int32_t before=b.i32(0x28);
             race.step(0);
             check((b.i32(0x28)!=before)==(scenario!=0),"car contact must gate the ascending outer node's due tick");
+            check((car.motion.u8(0x1f4) != 0) == (scenario != 0), "car response marks only eligible contacts");
+            if (scenario == 1) check(car.motion.i32(0x1f8) == 240, "crossing car contact with bike starts240 tick pause");
         }
         std::cout<<"car contact crash tails pass\n";
     } catch(const std::exception& e) {std::cerr<<e.what()<<'\n';return 1;}

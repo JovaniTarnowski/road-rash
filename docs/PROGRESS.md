@@ -3,7 +3,7 @@
 The opening inventory below is historical. See [CURRENT_STATUS.md](CURRENT_STATUS.md)
 for the current evidence matrix and the dated continuation entries for updates.
 
-Status of the native macOS ARM64 / Android ARM64 port of Road Rash (1996 Windows rerelease). The port is C++20 with SDL3 and uses no Wine or x86 emulation. It is a **playable game** (`rr-game`). The original front end (menus, Thrash and Big Game, characters, bike shop, Schmooze, restroom options, results, saves and credits) leads into races against seven AI opponents on the original courses. Races use the ported bike physics, AI driving, rider contact, combat and free traffic; none of these has yet been compared with the original tick by tick (plan 10 is building that oracle). All five courses draw with the original scene pipeline (road, hills, buildings, shoulders, scenery, horizon scroll and full dashboard) through the shared race factory (plan 26); the 640×480 output stays bit-identical at render scale 1. There are no police. Effects, engines, the RRA soundtrack and all videos play; race MIDI is not done. Remaining work is planned in [plans/00-INDEX.md](plans/00-INDEX.md) (plans 10–11, 13–31).
+Status of the native macOS ARM64 / Android ARM64 port of Road Rash (1996 Windows rerelease). The port is C++20 with SDL3 and uses no Wine or x86 emulation. It is a **playable game** (`rr-game`). The original front end (menus, Thrash and Big Game, characters, bike shop, Schmooze, restroom options, results, saves and credits) leads into races against seven AI opponents on the original courses. Races use the ported bike physics, AI driving, rider contact, combat and free traffic; the full 2400-tick Napa level-1 field and a 1431-tick human capture now match the original tick by tick, while other scenarios remain open in plan 10. All five courses draw with the original scene pipeline (road, hills, buildings, shoulders, scenery, horizon scroll and full dashboard) through the shared race factory (plan 26); the 640×480 output stays bit-identical at render scale 1. There are no police. Effects, engines, the RRA soundtrack and all videos play; race MIDI is not done. Remaining work is planned in [plans/00-INDEX.md](plans/00-INDEX.md) (plans 10–11, 13–31).
 
 Detailed evidence is in [REVERSE_ENGINEERING.md](REVERSE_ENGINEERING.md) and test results in [VERIFICATION.md](VERIFICATION.md). Build and run instructions are in [../README.md](../README.md).
 
@@ -31,7 +31,7 @@ Detailed evidence is in [REVERSE_ENGINEERING.md](REVERSE_ENGINEERING.md) and tes
 | Rider sprites (`BIKERS/*.DAT`, colour remaps) | Decoded; drawn in the game; frame choice by inspection | `src/bob.cpp`, `src/game_main.cpp` |
 | AI opponents | Racing state ported (targets, curve speed, steering/speed control, re-plan, rubber band); overtaking and fight states not ported | `src/race.cpp` |
 | Rider contact | Detection and separation ported; contact response is the bike branch only | `src/race.cpp` |
-| Combat | Hit test, damage, stamina, bike condition, knock-offs, steering knocks, weapon grabs; attack timing and AI attack rule are stand-ins | `src/race.cpp` |
+| Combat | Original live AI attack selection, descriptor/frame hit gates, relationship reactions and animation queues; measured in the 2400-tick Napa field replay; separate weapon-steal capture remains open | `src/race.cpp` |
 | Language strings (`TEXT/*.DLL`) | All five languages, original table assembly and continuations | `src/pe_strings.cpp` |
 | Menu text | Disc TrueType fonts (Badloc, Futura); GDI hinting not reproduced | `src/text.cpp` |
 | Front end (menus, Thrash/Big Game flow, shop, Schmooze, restroom, results, credits) | Ported from the EXE screen tables and handlers; mano-a-mano, jukebox, sound mix and controls screens not ported; not pixel-compared. Native Display/Sound/Pause/Enhancements screens, visual-style presets, single widescreen setting (October 13) | `src/frontend.cpp` |
@@ -325,7 +325,7 @@ Sessions 1–6: September 28, 2026. Later dates are listed per session.
 - **Collapse onto half 1:** the next bend comes from the kept road; the original reads a stale ring sub-slice.
 - **Merge snapshot:** lane alignment uses the last sample's width instead of the terminal `NALR` record.
 - **Camera:** fixed at height 150 on the centre of the route's own road. The original follows the bike.
-- **Not oracle-verified:** the physics was ported from decompiled code and disassembly without an oracle comparison.
+- **Oracle scope:** all captured state and RNG match the complete 2400-tick Napa level-1 live field and the receipted 1431-tick human input capture. Other levels, courses and human sequences need their own comparisons.
 - **Walls and crashes:** the wall collision (`0x0043a610`) and the crash/remount sequence (`0x00403d60`) are simplified stand-ins: the rider is clamped at the shoulder edge, crashes above speed 4000, and remounts one second after stopping.
 - **Terrain:** terrain type and flags are treated as 0 (building-style sides), because the terrain chunks are not decoded yet.
 - **Not ported yet:** nitro (`0x0040b110`), attacks, the joystick analog path, and the original key bindings (`0x0040e5f0`). The defaults are Up/Down/Left/Right = accelerate/brake/`0x4`/`0x200`.
@@ -334,9 +334,9 @@ Sessions 1–6: September 28, 2026. Later dates are listed per session.
 - **Race field:** seven opponents (personalities 1..7) regardless of the player's character; the original standings hold 15 rows (`0x004642d4` = 16) and the field composition is plan 05 work.
 - **Sprite frames** are chosen by inspection: lean frames 3–11 by steering; attack wind-up/strike frames per weapon (fists 44/45 and 51/52, kick 60/66, club 140–143, chain 101/102 and 105/106); crash frame 21. The original picks frames through the `RRAN`/`RRFD` animation system (`0x00445a60`, `0x0043ae90`), which is not ported.
 - **Sprite scale:** opponents scale by depth relative to depth 512, capped at the player's size and baseline. The original sprite scale law and raster are not ported.
-- **AI:** overtaking/avoidance (`0x00408e40`) and fight states 2–5 are not ported. AI riders attack the player when alongside, every 45 ticks (a stand-in rule).
-- **Attack timing:** an attack lasts 18 ticks and connects at tick 7 (a stand-in for animation-driven hit frames).
-- **Weapon grabs** follow the traced `0x004096f0` rule (`resolve_hit`: victim immunity expired, victim frame < 2 and mid-attack, attacker fists vs armed non-kick victim, `(rand&3)==3`, atomic transfer, attacker immune 300 ticks, no damage). No weapons drop to the road or carry in career (weapon trace, October 15, 2026). Remaining: animation-gated swish timing and capture confirmation (`napa-weapon-steal`).
+- **AI:** original replan, avoidance, follow and state-3 attack dispatch now free-run through the full 2400-tick Napa field capture. The 45-tick attack rule remains only in bank-less synthetic component fixtures; police, other levels and additional combat scenarios remain open.
+- **Attack timing:** live bank-backed AI uses original animation-table predicates and descriptor flags `0x600000` OR frame byte 2, with cooldown and repeat/taunt queues. The 18/tick-7 fallback remains only for bank-less fixtures. Human attack-control sequences need their separate captures.
+- **Weapon grabs** follow the traced `0x004096f0` rule (`resolve_hit`: victim immunity expired, victim frame < 2 and mid-attack, attacker fists vs armed non-kick victim, `(rand&3)==3`, atomic transfer, attacker immune 300 ticks, no damage). No weapons drop to the road or carry in career (weapon trace, October 15, 2026). The attack predicate and steal animation queues are ported; dedicated capture confirmation (`napa-weapon-steal`) remains open.
 - **Contact response:** the bike-against-bike and bike-against-car branches of `0x004049c0` are ported with the `0x004052c0` knock-off decision applied on contact. Remaining: ped/static branches, wall/crash-sequence stand-ins (plan 11 Task 4, plan 16 Task 1, plan 24).
 - **Shading:** sky, verge, shoulder, road and lane-marking colours and the 4-sample stripe are placeholders. Painter's back-to-front drawing replaces the original's occlusion row (`0x4c10c8`).
 
@@ -1479,3 +1479,33 @@ this prefix. See [handoff](agent-handoffs/ped308-20261017.md).
 Final gates for this continuation: full native build, 103/103 CTests (no
 skips), viewer smoke and course sweep passed; focused ASan/UBSan 5/5; strict
 human acceptance 1431/1431 identical. Receipts are recorded in VERIFICATION.
+
+
+### Full live-field replay — October 18, 2026
+
+Continued from `992106d` through every remaining divergence. The unchanged
+`napa-field-l1-20261017` now matches **all 2400 ticks**, including shared RNG,
+riders/brains/halves, scheduler/node lists and car motion. The old first-fail
+rule is removed. Legacy car kind/vehicle/lane/phase probe offsets were invalid;
+the replay prints that schema defect explicitly instead of treating those
+aliases as native state.
+
+A separate corrected-schema capture, `napa-field-l1-schema2-20261018`, also
+matches **2400 ticks**, adding valid car metadata, every AI animation block
+and all 30 relationship words. It configures the six extra riders' recorded
+pre-race speed jitters before original race construction; the receipt records
+those startup inputs. Native replay still anchors once and free-runs, without
+live hydration, per-tick reanchoring or state exclusions.
+
+The fixes port state-3 attack selection/hits and relationship reactions,
+car scan list keys and signed closing velocities, car contact horn/response
+and deferred retirement, demo-wrapper/AI stamina regeneration, marking
+billboards and their first-draw collision-box lifetime, parked-target clearing
+and pre-driver camera timing for AI animation LOD. Tests cover combat event
+gates, reactions, marking gates/lifetime, target parking and car callbacks.
+
+This establishes the full captured Napa level-1 live field. Tasks 6/7 retain
+other scenarios: level 5, isolated traffic/fights/steals, police, splits and
+mixed pedestrian/controller ordering. It does not establish an entire race,
+all courses, or full human-input parity outside the 1431-tick human capture.
+Final gate receipts are recorded in VERIFICATION and the session handoff.

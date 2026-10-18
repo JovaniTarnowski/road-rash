@@ -1779,3 +1779,51 @@ Baseline `f987c86`; [handoff](agent-handoffs/ped308-20261017.md).
 The first native/sanitizer receipts precede the frozen-lifetime correction
 and are superseded by final receipts. No Android, device, packaging, Wine
 capture or Ghidra writes in this slice.
+
+
+## Full Napa live-field parity (October 18, 2026)
+
+Baseline `992106d`; final source fingerprint
+`8718e6d4f13bd5dcfb35df9bd5a9009657dc25e8950e519d35ee53bc5e5d4117`.
+All gates used the frozen source below; documentation changes are outside
+source identity. Disc EXE hash rechecked against inventory.
+
+- **Full native gate:**
+  `CTEST_PARALLEL_LEVEL=4 python3 tools/agent_gate.py native --build-dir build-agent-ped308-20261017 --output analysis/agent-gates/field-parity-20261018-native --jobs 8 --session field-parity-20261018-native`.
+  Passed **104/104**, zero skips/failures, five steps exit0; viewer imported
+  asset smoke and all-course sweep passed. Receipt:
+  `analysis/agent-gates/field-parity-20261018-native/receipt.json`.
+- **ASan/UBSan:**
+  `CTEST_PARALLEL_LEVEL=2 python3 tools/agent_gate.py sanitizers --build-dir build-agent-car-cadence-asan-20261017 --output analysis/agent-gates/field-parity-20261018-sanitizers --jobs 8 --tests '^(race|race_schedule|car_contact|traffic|pedestrian|actor_animation|actor_descriptors|sim_fields|oracle-sim-field|oracle-sim-field-schema2)$' --session field-parity-20261018-sanitizers`.
+  Passed **10/10**, zero skips/failures, all three steps exit0. Receipt:
+  `analysis/agent-gates/field-parity-20261018-sanitizers/receipt.json`.
+- **Strict human acceptance:**
+  `python3 tools/verify_sim.py --mode acceptance --binary build-agent-ped308-20261017/oracle-sim-test --report analysis/agent-gates/field-parity-20261018-human-final.json`.
+  **1431 identical**, acceptance_met true, no skips or known divergences.
+- **Complete live field:** both `oracle-sim-field` and new
+  `oracle-sim-field-schema2` pass **2400 ticks identical** in Debug and
+  sanitizers, RNG anchored once after the native countdown. Reports:
+  `build-agent-ped308-20261017/oracle-field-diagnostic.json` and
+  `build-agent-ped308-20261017/oracle-field-schema2-diagnostic.json`.
+  The legacy capture explicitly reports its four invalid car metadata
+  aliases; schema2 compares their proper fields plus every AI animation and
+  all30 relationship words, with no golden-only state keys. Hashes/recipe:
+  SIM_SCENARIOS. No accepted golden edit, reanchoring or live hydration.
+- **Focused regressions:** race, car_contact, traffic, actor_descriptors,
+  sim_fields passed5/5 before integration. New cases cover descriptor-only /
+  frame2 / no-event combat hits, relationship event4, original descriptor
+  flags, parked-target clearing, type3/4/5 marking with speed gate and
+  same-sample lifetime, car response flags/crossing pause and deferred car
+  unlinking including duplicate same-tick scheduler calls.
+- **C++ tooling:** client LSP unavailable. `agent_lsp.py` compile-database
+  preflight healthy187 entries. LLVM clangd full AST checks passed0 errors
+  for race.cpp, race_schedule.cpp, traffic.cpp, actor_descriptors.cpp and
+  oracle_sim_test.cpp using `--check-lines=1-1` to avoid the unrelated full
+  feature-check ExtractFunction failure. Logs:
+  `analysis/agent-gates/field-parity-20261018-evidence/*-clangd.log`.
+
+Known diagnostics remain separate: the older `sim-napa-solo.tsv` fixture
+still has its pinned tick210 divergence (missing frozen-word coverage). It
+is not field acceptance. Other levels, dedicated fight/steal/isolated traffic,
+police, splits and human-input paths outside the receipted capture remain
+unmeasured. No Android/device or full-course simulation claim is made here.

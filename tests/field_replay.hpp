@@ -206,13 +206,19 @@ struct FieldReplay {
             else native = r.half_object.i32(int(off));
             check(f, key, native);
         }
+        if (f.count(p + "rating_0")) for (unsigned i = 0; i < 30; ++i) {
+            char key[32]; std::snprintf(key, sizeof key, "rating_%x", i * 4);
+            check(f, p + key, r.brain.rating[i]);
+        }
         brain(f, p, r);
-        if (player) {
+        if (player || f.count(p + "anim")) {
             check(f, p + "anim", r.ride_animation.animation);
             check(f, p + "anim_frame", r.ride_animation.frame);
             check(f, p + "anim_queued", r.ride_animation.queued);
             check(f, p + "anim_loops", r.ride_animation.loops);
-            check(f, p + "anim_deadline", r.ride_animation.deadline);
+            check(f, p + "anim_deadline", int32_t(r.ride_animation.deadline));
+        }
+        if (player) {
             check(f, p + "stamina_max", r.stamina.max);
             check(f, p + "stamina_current", r.stamina.current);
             check(f, "nitro.charge", r.nitro_charge);
@@ -273,6 +279,18 @@ struct FieldReplay {
             check(f,p+"position",active[i]->position);
             check(f,p+"lateral",active[i]->lateral);
             check(f,p+"speed",active[i]->speed);
+            if (g.frames[0].count("ring.car_schema") && g.frames[0].at("ring.car_schema") == 2) {
+                check(f,p+"kind",active[i]->kind);
+                check(f,p+"vehicle",active[i]->vehicle);
+                check(f,p+"lane",active[i]->lane);
+                check(f,p+"phase",active[i]->phase);
+            } else {
+                // Legacy probe used decompiler int-pointer element indices
+                // as byte offsets. These four aliases are capture defects,
+                // not observations of the named car state. Keep a visible
+                // schema ledger; never hydrate or compare their junk values.
+                for (const char* alias : {"kind", "vehicle", "lane", "phase"}) used.insert(p+alias);
+            }
         }
     }
     void nodes(const std::map<std::string,int64_t>& f) {
@@ -460,7 +478,7 @@ struct FieldReplay {
         // Coverage: every golden key is compared or listed as non-state.
         static const std::set<std::string> exact = {"tick", "rng", "rng_calls", "controls", "riders", "course", "level",
             "bike", "character", "seed", "solo", "probe.S", "probe.end", "probe.player", "probe.frozen_words",
-            "player.demo_hold"};
+            "player.demo_hold", "ring.car_schema"};
         std::map<std::string,size_t> extras;
         for (const auto& [key, value] : g.frames.back()) {
             if (used.count(key) || exact.count(key)) continue;
@@ -474,6 +492,8 @@ struct FieldReplay {
         }
         size_t total = 0;
         for (const auto& [name, n] : extras) { total += n; if (coverage) std::cout << "golden-only " << name << ' ' << n << '\n'; }
+        if (!g.frames[0].count("ring.car_schema"))
+            std::cout << "legacy car probe: kind/vehicle/lane/phase have invalid offsets; motion triples compared\n";
         if (ignore_cars) std::cout << g.frames.size() << " ticks compared without free cars (diagnostic)\n";
         else if (total == 0) std::cout << g.frames.size() << " ticks identical\n";
         else std::cout << g.frames.size() << " ticks identical (" << total << " golden-only fields not compared)\n";

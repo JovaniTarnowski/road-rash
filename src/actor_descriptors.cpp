@@ -82,7 +82,7 @@ std::optional<std::vector<ActorGraphicsDescriptor>> read_actor_sequence(const st
             if(l.flags[size_t(start[1])]&4){std::swap(start[1],start[2]);std::swap(end[1],end[2]);}
         }
         const uint32_t middle=uint32_t(start[1]),flags=l.flags.at(middle);const auto info=l.info.at(middle);
-        ActorGraphicsDescriptor result;result.source_frame=middle;auto& frame=result.playback;
+        ActorGraphicsDescriptor result;result.source_frame=middle;auto& frame=result.playback;frame.flags=flags;
         for(int i=0;i<4;++i)frame.render[i]=uint8_t(middle>>(i*8));frame.render[4]=source[p+4];
         if(!(flags&0xf800)){frame.render[9]=0;frame.render[5]=0;frame.render[6]=uint8_t(info[0]);}
         else {frame.render[9]=1;frame.render[5]=uint8_t(info[0]);frame.render[6]=uint8_t(end[1]-start[1]);}

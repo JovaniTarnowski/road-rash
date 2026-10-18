@@ -1889,3 +1889,69 @@ brain state 3, steer -537 / -1181, steer rate -240 / -480. The two omitted
 arm are consistent with this failure; this is static attribution plus a
 runtime mismatch, not a captured call-stack proof. Next combat work must
 port the complete branch and measure it, not add two dummy draws.
+
+
+## Full Napa live field: combat, car response and marking lifetime (October 18, 2026)
+
+Baseline `992106d`; original disc hash rechecked against inventory. Existing
+address-keyed exports were used; no Ghidra import or patched executable.
+
+- `0x00409460` follows its target, tests `0x00409510`, rolls signed personality
+  bytes `+0x1d0/+0x1d1` for kick/backhand, starts `0x004095d0` or resolves
+  `0x004096f0`, then calls speed/steer again. `0x00409510` compares the half's
+  current animation against all four weapon variants. Starting/hitting an
+  attack applies `0x00408d50` events 0/1/3 and 2/4 respectively, each with
+  three saturated relationship axes from brain `+0xf0`.
+- The hit gate is **descriptor flags `&0x600000` OR half frame byte 2**.
+  Preserve graphics flags on playback descriptors and the selected previous
+  descriptor. The hit at812 lacked its relationship reaction in native, causing the
+  visible836 replan rating error while RNG still matched. Descriptor-only
+  hits are independently covered by regression; native now ports both event
+  sources and the relationship writes.
+  Victim selection409400 is nearest half along the road, backward wins ties;
+  reach reads half motion. Repeat/taunt and steal animation queues are real
+  selections, rather than discarded random decisions.
+- `0x00434660` regenerates stamina before calling407bd0 for the demo player;
+  `0x00407bd0` regenerates again after AI dispatch. The missing second pass
+  surfaced at1232 after the first measured player car contact.
+- Scheduler scans preserve list-sort keys even after a car moves (953).
+  Time-to-meet uses signed object `+0x108`, including oncoming cars, rather
+  than positive speed `+0xec` (1001). `0x00408ad0` handles a non-null target
+  whose bike slice is null by returning to racing and clearing the target
+  when changing state (1553).
+- At1231 the separate startup-configured original call trace records45 draws:
+  `0x00404b8c`, `0x00404bb1` (player contact sound), `0x0044efc6` (car callback),
+  then14 triples `0x004513f3/0x00451479/0x004514e7` (terrain). Thus the missing
+  draw was `0x0044efa0`, not terrain. It rolls rand%10 for a player-contact
+  horn, sets car `+0x1f4=1`, and starts crossing-car `+0x1f8` at240 for a bike
+  partner (60 for a non-bike). The timer decays by car dt and forces target
+  speed0 while positive. Contact callback order follows outer then inner.
+- `0x00437e60` moves an already-outside due car before its window teardown;
+  `0x00437c10` clears live bit4, sets8 and last/next=tick+100. It remains in
+  the list until next prepass. Immediate native removal first failed1803.
+- `0x00437750` billboard types3+ dispatch a type2 marking object without
+  separation. `0x004049c0` sets traction timer60/120/180 by type modulo3,
+  records selector/frame in half1e8/1e9 plus sample1ec and tick1f0 above
+  speed1000, zeros steering rate and adds half the steering. `0x00407a90`
+  advances the mark frame every4 ticks, clearing it on sample change or12
+  elapsed ticks. Collision boxes are loaded on first draw (44b630/44b980),
+  not ring construction; native simulation prepares the original33-slice
+  range independently of rendering frequency. This rejects a premature1129
+  mark on the far-ahead rider and matches the original1293 contact.
+- AI riding animation LOD407f30 reads pre-driver `DAT_004b7ef4`; using the
+  moved player's view camera crossed the near/distant boundary early at1402.
+  The expanded animation capture measures this independently of bike motion.
+
+The old car probe used decompiler element indices as byte offsets. Correct:
+kind1cc (not73), vehicle1fc (not7f), lane1e8 (not7a), phase1c4 (not71).
+Proxy schema2 records the corrected offsets. Legacy aliases are explicitly
+reported as malformed capture metadata, never compared as named car state.
+Schema2 adds every AI animation and30 relationship words. The optional
+RR_ORACLE_EXTRA_SPEEDS fixture sets six extra personalities' recorded three
+level-speed values before race construction; it reproduces startup jitter
+that precedes the race seed, without modifying a live step. This supersedes
+the older SIM_SCENARIOS claim that differing captures prove animation pacing.
+
+Measured: unchanged `99e20344…` legacy capture and `294343d5…` schema2 capture
+both match all2400 ticks and shared RNG. The latter has no golden-only state
+keys. Scope is this captured Napa level1 demo field, not all levels or races.
