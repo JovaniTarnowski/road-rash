@@ -2,6 +2,14 @@
 
 ## Live police (October 18, 2026, plan 32 D)
 
+- Follow-up 2 (arrest -> screen outcome): clean worktree at 2dcd4e6, build +
+  `SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy ctest -j4`: 104 of 104 pass.
+  `race-screen` now also drives a live Napa level-3 arrest through
+  `Game`/`RaceScreen` and checks `RaceOutcome::busted` through the run-on
+  and fade-out. The git-ignored `sim-napa-solo.tsv` fixture was copied into
+  the worktree for `oracle-sim`; without it that test fails on the missing
+  file only. No original-capture comparison of cop movement yet (see the
+  police handoff's Open section).
 - Follow-up (siren, on-foot arrest): isolated worktree at the committed content (no other
   session's edits), `SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy ctest -j4`: 104 of 104 pass,
   including `oracle-sim-field`, `oracle-sim-field-schema2`, `police` (new on-foot arrest),

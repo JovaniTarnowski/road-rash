@@ -57,15 +57,31 @@ what was missing was the cop-only AI branches and the live integration.
   it. Verified in an isolated worktree at the fixed content (build + oracle-sim,
   field, schema2, police).
 
+## Follow-up 2 (same day, clean worktree at 2dcd4e6)
+
+- Arrest -> BUSTED screen link: `tests/race_screen_test.cpp` now drives the
+  police_test scenario through `Game`/`RaceScreen` (Napa level 3, parked
+  player, live cop arrest) and checks the career screen surfaces
+  `RaceOutcome::busted`, keeps it through the 0xb4-tick run-on and fade-out,
+  and ends. `frontend_test` already covers the last hop (`race_finished`
+  queues the BUSTED video) with a synthetic outcome; a visual playtest of
+  the video in `rr-game` is still not done.
+- Clean-worktree gate: build + `ctest -j4` 104/104 (the git-ignored
+  `analysis/oracle/sim-napa-solo.tsv` fixture copied in for `oracle-sim`;
+  without it that one test fails on the missing file only).
+
 ## Open
 
 - Original-capture comparison (`napa-cops`, `city-cops`, `napa-cops-crashed`):
-  blocked on the shared oracle proxy. `oracle/aweman_proxy.c` is claimed by
-  terrain-fixtures-20261015, codex-human-terrain-setup-20261015 and
-  sim-l5-20261018 (`tools/agent_workspace.py list`) and has uncommitted edits;
-  a capture also needs a >4096-tick Wine run and new proxy field dumps. Until
-  then cop movement is checked by the native tests and the recovered pseudocode
-  only. Capture spec: `police-spawn-20261016d.md`.
+  blocked on the shared oracle proxy. `tools/agent_workspace.py list` still
+  shows three claims, but two name proxy copies in other worktrees; the
+  main-tree claim is sim-l5-20261018, whose uncommitted proxy change
+  (`RR_ORACLE_LEVEL`, calling the original level setter 0x004453f0) is in
+  fact a prerequisite for a level-3 `napa-cops` run. No peer session is
+  live. Do not overwrite that change or install a new DLL until sim-l5
+  lands; a capture also needs a >4096-tick Wine run and new proxy field
+  dumps for the cop. Until then cop movement is checked by the native tests
+  and the recovered pseudocode only. Capture spec: `police-spawn-20261016d.md`.
 - 0x00434f40 height term in the siren for a cop on the other branch of a split.
 - DAT_004c5d7c == 4 and the network branches (+0x324 == 1, 0x004c4fb0).
 - Cop rider-half name (0x00446bf0 index 9 reads outside the table, left blank).

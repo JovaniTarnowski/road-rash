@@ -130,6 +130,35 @@ int main() {
             check(screen.result().outcome == rr::RaceOutcome::wrecked, "quit counts as wrecked");
             game.career = false;
         }
+        // Live arrest -> screen outcome (plan 32 D): a parked player on Napa
+        // level 3 is arrested by the periodic cop (police_test scenario), and
+        // the career screen must surface that as RaceOutcome::busted after
+        // the 0xb4-tick run-on, which Frontend queues as the BUSTED video
+        // (frontend_test covers that last hop with a synthetic outcome).
+        {
+            rr::Game cop_game;
+            cop_game.depth = game.depth;
+            cop_game.config.level = 3;
+            cop_game.config.character = 1;
+            cop_game.config.bike_from_table = true;
+            cop_game.config.career = false;
+            cop_game.load_course(assets, exe);
+            cop_game.restart();
+            cop_game.countdown = 0;
+            cop_game.career = true;
+            check(cop_game.race().police_enabled(), "busted fixture race has police enabled");
+            for (int i = 0; i < 12000 && !cop_game.race().busted(); ++i) cop_game.tick(0);
+            check(cop_game.race().busted(), "cop arrests the parked player in the screen fixture");
+            rr::RaceScreen screen(cop_game, renderer, options, display);
+            uint64_t now = 1000000000ull;
+            screen.iterate(now);
+            screen.iterate(now += 17000000);
+            check(screen.result().outcome == rr::RaceOutcome::busted, "live arrest surfaces as busted outcome");
+            bool ended = false;
+            for (int i = 0; i < 2000 && !ended; ++i) ended = !screen.iterate(now += 17000000);
+            check(ended, "busted race ends after the run-on and fade-out");
+            check(screen.result().outcome == rr::RaceOutcome::busted, "busted outcome survives the fade-out");
+        }
         const rr::TextRenderer text(assets);
         auto frontend_data = rr::read_frontend_data(exe);
         rr::add_native_screens(frontend_data, false);
