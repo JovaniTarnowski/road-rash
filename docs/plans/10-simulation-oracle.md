@@ -532,3 +532,31 @@ compare to frame 623 (tick 624) and first diverge at tick 625
 interleaved walk of pedestrian/car nodes, tracker split/merge hand-over,
 the crashed-bike move slot, and the `napa-field-l5`/`napa-fight`/
 `napa-contact` scenarios.
+
+### Car scheduler cadence and dt motion — October 17, 2026
+
+Plan 10 Task 7 continuation from `70a8c04`: cars now retain the original
+scheduler last/next/interval/dt words (template interval 10) and choose the
+`0x00437e60` type-0x10 distance/relative-velocity LOD after moving. The race
+passes the player's forward velocity, and scheduling uses the ring window
+before the driver's camera advance. Timer-spawned cars first run on the
+following tick. Think `0x0044e710` / `0x00449880` / `0x004498c0` uses dt for
+acceleration and stop-line lookahead; move reuses `integrate_speed`
+(`0x004390c0`) and `advance_actor_motion` (`0x00439920`) with the car template,
+surface drag and sine table. The proximity-based per-move horn RNG draw was
+removed: `0x0044efa0` is a contact callback. The drift table is four signed
+bytes, corrected from the former word indexing.
+
+On the unchanged `napa-field-l1-20261017` trace, countdown (5) and ticks
+6..307 match every compared rider/brain/half/scheduler/node-list word and RNG.
+The harness additionally compares captured free-car position/lateral/speed
+triples as a multiset, without hydrating cars or excluding fields. Tick 227
+now matches: dt 11, think speed 341, post-drag speed 231, position 34828
+(+12). Tick 308 first differs on a pedestrian node, original 13604/native
+13605; car position 35240, lateral 32000, speed 1431 still match.
+
+This completes the requested tick-227 unblock, not Task 7 or live-field
+acceptance. Interleaved car/pedestrian scheduler nodes, the pedestrian
+boundary, car lane changes, split-road teardown, curved-route heading
+transport, wall/contact response, and later scenarios remain open. No new
+capture or golden edit. See [handoff](../agent-handoffs/car-cadence-20261017.md).

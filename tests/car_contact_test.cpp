@@ -8,13 +8,13 @@ static void word(std::vector<uint8_t>& b, size_t p, uint32_t value) {
     for (int i=0;i<4;++i) b[p+i]=uint8_t(value>>(i*8));
 }
 static std::vector<uint8_t> executable() {
-    std::vector<uint8_t> b(0x75200);
+    std::vector<uint8_t> b(0x78200);
     word(b,0,0x5a4d); word(b,60,0x80); word(b,0x80,0x4550);
     word(b,0x84,0x0001014c); word(b,0x94,0xe0); word(b,0x98,0x10b);
     word(b,0x98+28,0x400000);
     const size_t s=0x178;
-    word(b,s+8,0x75000); word(b,s+12,0x1000);
-    word(b,s+16,0x75000); word(b,s+20,0x200);
+    word(b,s+8,0x78000); word(b,s+12,0x1000);
+    word(b,s+16,0x78000); word(b,s+20,0x200);
     return b;
 }
 static std::vector<uint8_t> synthetic_container(uint32_t cel_flags) {

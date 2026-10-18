@@ -190,12 +190,16 @@ RR_ORACLE_COURSE=4 RR_ORACLE_SEED=1 RR_ORACLE_SIM=1 RR_ORACLE_DRIVE=2 RR_ORACLE_
 receipt in its `.captures/` dir). It is not an acceptance golden: it is the
 `oracle-sim-field` ctest known-divergence diagnostic, skipped when the
 capture is absent. It pins the live rider scheduler replay (`0x00438170`
-cadences, tick-1/337 parking, virtual advance): countdown and ticks 6..226
-compare identical on rider, brain, half, sched and node-list fields; the
-first divergence is the tick-226 free car's scheduled move (task 7).
+cadences, parking, virtual advance), extended by the Task 7 car cadence:
+countdown and ticks 6..307 compare identical on rider, brain, half, sched,
+node-list and car motion triples with RNG in sync. First divergence is
+tick 308: pedestrian position 13604 original / 13605 native. Tick 227
+now matches (dt 11, speed 231, position +12), with no car hydration or
+comparison exclusions. This is diagnostic progress, not live-field acceptance.
 `RR_FIELD_IGNORE_CARS=1 RR_FIELD_IGNORE_PEDS=1 RR_FIELD_CARS_FROM_GOLDEN=1`
-compares to frame 623 (tick 624) and first diverges at tick 625
-(`rider.1.lateral`) for scheduler debugging.
+historically compared to frame 623 (tick 624) and first diverged at tick 625
+(`rider.1.lateral`) for scheduler debugging; that hydrated run does not
+establish native traffic parity.
 
 ## Planned (tasks 5–7)
 

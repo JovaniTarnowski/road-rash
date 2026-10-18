@@ -1707,3 +1707,41 @@ pass before it was inspected; the successful rerun is the verified result.
   steps to its scheduled move (parked bikes are not contact candidates);
   0 failures. `oracle-sim` diagnostic on `sim-napa-solo.tsv`: unchanged.
 
+
+
+### Car cadence / live-field continuation — October 17, 2026
+
+Baseline `70a8c04`; see [handoff](agent-handoffs/car-cadence-20261017.md).
+Final source validation (no capture mutation):
+
+- Native gate: exit 0, 103/103 CTests passed, no skips; viewer smoke and
+  all-course sweep passed; `CTEST_PARALLEL_LEVEL=4 python3 tools/agent_gate.py
+  native --build-dir build-agent-car-cadence-20261017 --output
+  analysis/agent-gates/car-cadence-20261017-final-v4 --jobs 8`.
+- ASan/UBSan focused gate: exit 0, 4/4 passed, no skips; regex
+  `^(traffic|car_contact|race_schedule|oracle-sim-field)$`,
+  `analysis/agent-gates/car-cadence-20261017-sanitizers-v2/receipt.json`.
+- `python3 tools/verify_sim.py --mode acceptance --binary
+  build-agent-car-cadence-20261017/oracle-sim-test --report
+  analysis/agent-gates/car-cadence-20261017-final-v4/human-acceptance.json`: exit 0,
+  `acceptance_met true`, `1431 ticks identical` (human, one anchor).
+- Field diagnostic compares countdown + ticks through 307 with RNG and car
+  position/lateral/speed equal. Tick 227 fixed (dt 11, post-drag speed 231,
+  position +12); first remaining mismatch at 308 is pedestrian 13604/13605.
+  Unchanged trace `99e20344…`; no hydration or exclusions. Known-divergence
+  diagnostic only, not full field acceptance.
+- Owned compilation DB healthy; clangd 22.1.4 full AST parse, token feature
+  range `--check-lines=1-1`: exit 0, 0 errors. Full token-feature sweep has
+  tool ExtractFunction tweak failures; no client LSP channel available.
+
+Earlier iteration failures and the interrupted source-changing gate are
+superseded by final native v4 / sanitizer v2 receipts, not counted as passing
+checks. Native v2 passed 102 runtime tests and failed one documentation-link
+check; the plan-relative handoff link is corrected for v3. Android,
+device and standalone packaging were not run for this simulation slice.
+
+The v3 native run passed all simulation checks but the unchanged
+`render-threads-alloc` test transiently counted 4 steady-state allocations.
+Ten isolated repetitions then passed with its original zero-allocation
+threshold. The final v4 native run uses `CTEST_PARALLEL_LEVEL=4`; no renderer
+or allocation-test source was changed.

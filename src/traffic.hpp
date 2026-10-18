@@ -75,6 +75,8 @@ struct TrafficCar {
     uint8_t jitter_c = 0;      // +0x1ca
     uint32_t serial = 0;       // +0x82 (DAT_004b7e98)
     bool active = false;
+    int32_t last_tick = 0, next_tick = 0, interval = 10, dt = 0; // +0x10/+0xc/+0x14/+0x18
+    Bike motion;              // 0x0043adc0 physics words, persistent per pool slot
     int32_t heading = 0;       // +0x5c: 0 ahead, -0x800000 oncoming, +-0x400000 crossing (0x00449880)
     int signal = -1;           // +0x1ec: latched signal (signals() index), -1 none
     int32_t zone_start = 0, zone_end = 0;   // +0x1d0/+0x1d4: controller +0x108/+0x10c (crossing cars)
@@ -143,8 +145,8 @@ public:
     // fill (0x004552e0, back to front over 128 samples).
     // 0x0041eca0 crossing traffic at intersections: controllers are placed
     // from type-1..3 zone ends in build_slice; think_intersections advances
-    // phases and spawns crossing cars (kinds 1/3) before the car move pass,
-    // as the 0x00438170 scheduler runs after 0x0044dd90. Signal heads are
+    // phases and spawns crossing cars (kinds 1/3) before the car move pass.
+    // 0x00438170 precedes the driver's ring advance and 0x0044dd90. Signal heads are
     // never drawn: DAT_00468ee8/ef0 have no writer anywhere in the
     // executable (REA xrefs: only the 0x0041f220 reads), so 0x0041f220's
     // draws are skipped and the port draws nothing, matching the original.
@@ -154,7 +156,7 @@ public:
     // shared CRT rand stream; the original call order is preserved.
     void step(const std::vector<RouteSample>& route, int32_t camera_q8, int32_t front_q8,
               int32_t distance_moved, int32_t player_q8, int32_t player_lateral, const std::function<uint32_t()>& random,
-              uint32_t tick);
+              uint32_t tick, int32_t player_velocity = 0);
     // Hold tick: initialize ring zone events, then run 0x0044dd90 with
     // zero camera delta. Do not move cars or think intersection controllers.
     void countdown_step(const std::vector<RouteSample>& route, int32_t front_q8,
@@ -182,6 +184,8 @@ public:
     // short-phase test; without it the long table is always used.
     void set_terrain_type(std::function<int(const RouteSample&)> source) { terrain_type_ = std::move(source); }
     const VehicleLibrary& library() const { return library_; }
+    // 0x00437e60 car LOD after the move, using the pre-driver ring camera.
+    static int32_t schedule_interval(const TrafficCar&, int32_t camera_q8, int32_t player_velocity);
     // Contact half-width +0x174 by kind (0x00475700: 0x4000, crossing 0xa000).
     static int32_t car_half_width(const TrafficCar&);
     std::vector<SoundEventRecord> take_sound_events() { auto e = std::move(events_); events_.clear(); return e; }
@@ -204,9 +208,11 @@ private:
     // acceleration.
     std::pair<int32_t,int32_t> plan_speed(TrafficCar&, const std::vector<RouteSample>& route);
     const VehicleLibrary& library_;
+    PhysicsTables physics_;
+    std::array<int32_t,26> car_template_{};
+    uint32_t tick_ = 0;
     TrafficTimers timers_;
-    std::array<int32_t, 4> drift_rates_{};      // 0x00475694[kind] low byte * 800
-    std::array<int32_t, 4> lookahead_{};        // 0x00468f00[kind], Q8 samples
+    std::array<int32_t, 4> drift_rates_{};      // 0x00475694[kind] signed byte * 800
     std::vector<TrafficCar> cars_{pool_size};
     std::vector<SoundEventRecord> events_;
     uint32_t serial_ = 0;                       // DAT_004b7e98

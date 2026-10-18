@@ -1799,3 +1799,36 @@ ported in `src/race_schedule.cpp` (`Race::set_live_schedule`).
   contacts.
 - Free-car spawns (`0x0044df60` -> `0x004387a0`): position is the spawn
   slice's sample * 256 with fraction 0 (kinds 0/2) or 0x80 (crossing kinds).
+
+### Car cadence / think-to-move correction (2026-10-17)
+
+`0x00438930` initializes car next = spawn tick, last = tick - template
+interval (10), dt = 0. Since the driver spawns after the scheduler, the
+first timer car runs next tick with dt 11. `0x00437e60`'s exact type-0x10
+branch uses signed division by 256 for camera distance, relative forward
+velocity < 2000 for kind 0 near the camera, a slow-speed increment below
+2000, a near-band cap 6, and far-band factor four/cap 60; odd kinds take
+the separate crossing branch.
+
+`0x004498c0` first adds dt * rate and caps to target, then `0x004390c0`
+applies drag; do not cap again after the mover. The car template at
+`0x00475698` has +0x150 = 50, +0x154 = 10, +0x160 = 111. Cars skip
+`0x0043a190` (type 0x10), so ground stays nonzero. `0x00439920` uses
+((forward_velocity*2 - acceleration*dt)*dt)>>9, including when speed
+clamps to zero: large dt can produce a small forward creep from drag's
+negative acceleration. The synthetic red-light fixture now exercises the
+near-camera cadence; it must not assume per-tick scheduling in the far LOD.
+
+Supersedes the drift-table interpretation in `car-think-20261016l.md`:
+assembly `0x0044ee02` is `MOVSX ECX, byte ptr [EAX + 0x475694]`, with no
+index scale. Original bytes `01 00 ff 00` give +800, 0, -800, 0. The old
+word indexing accidentally read the car template for kinds 1..3. Evidence:
+existing `analysis/oracle/rea-44e710-carthink.md` assembly and the disc EXE
+SHA-256 `73d7f9744b5b1a9482b3909950cdf3fe34119fe13d023b031e9c6739a60f18a2`
+(rechecked against `analysis/inventory.json`). No Ghidra writes or Wine run.
+
+The live-field capture's `ring.<car-address>.position/lateral/speed` words
+are reliable; its legacy kind/phase offsets are not the car dword offsets
+(e.g. tick 227 reports nonsensical phase). Compare only the measured motion
+triples and state that limitation. At tick 308 they equal 35240/32000/1431,
+while the first pedestrian node differs by one position unit.

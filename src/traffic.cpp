@@ -1,6 +1,7 @@
 #include "traffic.hpp"
 #include "actor_render.hpp"
 #include "exe_tables.hpp"
+#include "crash.hpp"
 #include <algorithm>
 #include <cstring>
 #include <stdexcept>
@@ -107,11 +108,14 @@ int traffic_lane_count(int32_t lanes_q8) {
 
 TrafficSystem::TrafficSystem(const VehicleLibrary& library,std::vector<uint8_t> exe)
     :library_(library) {
-    const auto drift=read_exe_data(exe,0x00475694,16);
-    for(int k=0;k<4;++k)drift_rates_[k]=int8_t(word(drift,size_t(k)*4))*800;    // 0x0044e710: +0x1e0
-    const auto look=read_exe_data(exe,0x00468f00,16);
-    for(int k=0;k<4;++k)lookahead_[k]=int32_t(word(look,size_t(k)*4))*256;      // 0x00449e60 window
-    const auto car_template=read_exe_data(exe,0x00475698,0x64);
+    const auto drift=read_exe_data(exe,0x00475694,4);
+    for(int k=0;k<4;++k)drift_rates_[k]=int8_t(drift[size_t(k)])*800;    // 0x0044e710: +0x1e0
+    const auto car_template=read_exe_data(exe,0x00475698,26*4);
+    for(size_t i=0;i<26;++i)car_template_[i]=bits(word(car_template,i*4));
+    const auto drag=read_exe_data(exe,0x0046dce4,4);
+    for(size_t i=0;i<4;++i)physics_.surface_drag[i]=int8_t(drag[i]);
+    const auto wave=read_exe_data(exe,0x00475768,4096);
+    for(size_t i=0;i<1024;++i)physics_.sine[i]=bits(word(wave,i*4));
     sprite_size_=car_template[0x28];    // car template size class (+0x160 copy)
 }
 
@@ -122,6 +126,9 @@ bool TrafficSystem::place(uint8_t kind,int8_t lane,const RouteSample& at,int32_t
         if(car.active)continue;
         // 0x0044df60 (kind bit 0 clear): lateral from the road centre.
         car=TrafficCar{};
+        init_object(car.motion,car_template_);
+        car.interval=car_template_[2];
+        car.next_tick=int32_t(tick_);car.last_tick=int32_t(tick_)-car.interval;
         car.lateral=wrap(int64_t(at.offset+lane*250+125)*256);
         // 0x004387a0 -> 0x00438930: +0x1c = the spawn slice's sample * 0x100
         // plus the fraction 0 kinds 0/2 pass.
@@ -176,8 +183,25 @@ constexpr int32_t car_half_length=0x40;         // +0x178 from the same table
 
 int32_t TrafficSystem::car_half_width(const TrafficCar& car) { return (car.kind&1)?crossing_half_width:0x4000; }
 
+// Type 0x10 branch of 0x00437e60 (signed divisions truncate to zero).
+int32_t TrafficSystem::schedule_interval(const TrafficCar& car,int32_t camera_q8,int32_t player_velocity) {
+    const int32_t d=div256(wrap(int64_t(car.position)-camera_q8));
+    if(car.kind&1)return d>=4?(d+1)/4+2:d<=-2?(-1-d)/2+2:2;
+    int32_t interval=2;
+    if(car.kind==0) {
+        if(d>=4)interval=(d-3)/4+2;
+        else if(d<=-3)interval=(-2-d)/2+2;
+        else if(std::abs(int64_t(player_velocity)-car.motion.i32(0x108))<2000)interval=1;
+    } else {
+        if(d>8)interval=(d+1)/4+2;
+        else if(d< -4)interval=(-4-d)/2+2;
+    }
+    if(car.speed<2000)++interval;
+    return d<0x26 && d> -3?std::min(interval,6):std::min(interval*4,60);
+}
+
 std::pair<int32_t,int32_t> TrafficSystem::plan_speed(TrafficCar& car,const std::vector<RouteSample>& route) {
-    // 0x0044e710 with dt 1 (the port steps cars every tick).
+    // 0x0044e710: scheduler dt participates in the stop-line lookahead.
     const int kind=car.kind&3;
     const int32_t cruise=(timers_.cruise*car.phase)>>8;   // iVar8
     const int32_t current=speed_units(car.speed);           // iVar9
@@ -260,7 +284,7 @@ std::pair<int32_t,int32_t> TrafficSystem::plan_speed(TrafficCar& car,const std::
                 offset=(crossing_half_width>>8)-(s.lateral_q8>>8)+edge;
                 line=(car.lateral-edge*256-crossing_half_width)>>12;
             }
-            if(!(kind&1) && line*0x1000<target*200) {
+            if(!(kind&1) && line*0x1000<car.dt*target*200) {
                 const size_t ss=size_t(std::clamp(s.position_q8,int32_t(0),int32_t((route.size()-1)*256))>>8);
                 if(traffic_lane_count(kind==0?route[ss].path.right_q8:route[ss].path.left_q8)<1)target=0;
             }
@@ -275,7 +299,7 @@ std::pair<int32_t,int32_t> TrafficSystem::plan_speed(TrafficCar& car,const std::
                             target=0;
                             if(line>0) {
                                 target=follow_speed(kind,car.position,car.lateral,current,cruise,0,s.position_q8,s.lateral_q8,0,300,window,-offset);
-                                while(line*0x1000<target*100)target/=2;
+                                while(line*0x1000<car.dt*target*100)target/=2;
                             }
                         }
                     } else if(!following)hurry=true;
@@ -297,44 +321,36 @@ void TrafficSystem::move(TrafficCar& car,const std::vector<RouteSample>& route,i
     const size_t sample=size_t(std::clamp(car.position,int32_t(0),int32_t((route.size()-1)*256))>>8);
     const RouteSample& at=route.at(sample);
     if(car.kind&1) {
-        // 0x0044dc10: a crossing car lives only on intersection slices
-        // (marking 0x20..0x22) with its zone data; the split-roadway parks
-        // past the other roadway's edge are not ported.
+        // 0x0044dc10: crossing cars require an intersection slice and zone.
         if((at.path.marking_flags&0x20)==0 || car.zone_end==0 || car.zone_lanes==0) {car.active=false;return;}
-        // 0x0044e710: collisions only within [-0x400, 0x2400] of the ring camera.
         car.collides=uint32_t(car.position-camera_q8+0x400)<0x2801;
-        const auto [target,rate]=plan_speed(car,route);
-        // 0x00449880 toward (+-0x32000, 0): heading +-0x400000, speed by
-        // 0x004498c0. The car moves straight across (drag neglected as for
-        // the other kinds), lateral += speed per tick at 90 degrees.
-        car.heading=car.kind==1?0x400000:-0x400000;
-        car.speed+=rate;if(target<car.speed)car.speed=target;
-        car.lateral=wrap(int64_t(car.lateral)+(car.kind==1?car.speed:-car.speed));
-        if(car.lateral< -0xc8000 || car.lateral>0xc8000)car.active=false;   // 0x00437e60 lateral bound
-        return;
     }
-    // 0x0044e710 for kinds 0/2: the speed target follows obstacles in the
-    // lane and stops at red signals; reached at the phase-scaled rate.
     const auto [target,rate]=plan_speed(car,route);
-    car.speed+=rate;
-    if(target<car.speed)car.speed=target;
-    // Position advance from the movement form ((v*2 - a*dt)*dt) >> 9 with the
-    // car's surface drag neglected; oncoming cars (kind 2) drive backward.
-    car.position=wrap(int64_t(car.position)+int64_t(car.speed>>8)*(car.kind==2?-1:1));
-    // Lateral steering toward the lane centre of the car's current sample
-    // (0x0044e710 +0x1dc target, drift rate from 0x00475694[kind] * 800).
-    const size_t moved=size_t(std::clamp(car.position,int32_t(0),int32_t((route.size()-1)*256))>>8);
-    const RouteSample& now=route.at(moved);
-    const int32_t lane_target=wrap(int64_t(now.offset+car.lane*250+125)*256);
-    const int32_t error=wrap(int64_t(lane_target)-car.lateral);
-    const int32_t drift=drift_rates_[car.kind&3];
-    car.lateral=wrap(int64_t(car.lateral)+std::clamp(error,-drift,drift));
-    // 0x0044efa0 horn: the player is the car's nearest object ahead.
-    const int32_t ahead=(car.kind==2)?wrap(int64_t(car.position)-player_q8):wrap(int64_t(player_q8)-car.position);
-    if(ahead>0 && ahead<lookahead_[car.kind&3] && std::abs(player_lateral-car.lateral)<600*256) {
-        if(random()%10==1)
-            events_.push_back({SoundEvent::horn,car.lateral>>8,0,car.position>>8,car.speed,0});
-    }
+    // 0x0044e710 -> 0x00449880/0x004498c0: set heading and approach the
+    // target BEFORE the mover applies drag. The target is not a post-move cap.
+    int32_t error=wrap(int64_t(at.offset+car.lane*250+125)*256-car.lateral);
+    int32_t drift=drift_rates_[car.kind&3];
+    if(car.kind&1) {error=car.kind==1?0x32000:-0x32000;drift=0;}
+    car.heading=approx_atan2(drift,error>>8)*0x10000;
+    if(car.heading>0x7fffff)car.heading-=0x1000000;
+    car.speed=std::min(target,wrap(int64_t(car.speed)+int64_t(car.dt)*rate));
+    Bike& body=car.motion;
+    body.i32(0x18)=car.dt;body.i32(0x1c)=car.position;body.i32(0x28)=car.lateral;
+    body.i32(0xec)=car.speed;body.i32(0x128)=car.heading;
+    // 0x0043adc0: cars retain the template ground word and skip vertical
+    // settling (type 0x10). Reuse the recovered 0x004390c0/0x00439920 laws.
+    if(body.i32(0x160)==0) {body.i32(0x114)=0;body.i32(0x118)=0;body.u8(0x164)=0;}
+    const SliceEdges edges{at.offset-at.path.left,at.offset+at.path.right,
+        at.offset-at.path.left-at.path.shoulder_left,at.offset+at.path.right+at.path.shoulder_right,
+        at.path.marking_flags,uint8_t(terrain_type_?terrain_type_(at):0)};
+    integrate_speed(body,physics_,surface_class(edges,car.lateral));
+    advance_actor_motion(body,physics_,[&](int32_t distance){body.i32(0x1c)+=distance;});
+    car.speed=body.i32(0xec);car.position=body.i32(0x1c);car.lateral=body.i32(0x28);
+    if(car.position>=front_q8 || car.position<back_q8 || car.lateral< -0xc8000 || car.lateral>0xc8000)car.active=false;
+    if(car.kind&1)return;
+    // 0x0044efa0 is a contact callback, not a movement/proximity RNG tap.
+    (void)player_q8;(void)player_lateral;(void)random;
+
 }
 
 void TrafficSystem::build_slice(const std::vector<RouteSample>& route,int32_t sample,int32_t back_q8,int32_t front_q8,uint32_t tick) {
@@ -478,6 +494,9 @@ void TrafficSystem::place_crossing(const IntersectionController& c,int signal,in
     for(auto& car:cars_) {
         if(car.active)continue;
         car=TrafficCar{};
+        init_object(car.motion,car_template_);
+        car.interval=car_template_[2];
+        car.next_tick=int32_t(tick_);car.last_tick=int32_t(tick_)-car.interval;
         car.lateral=(kind==3?0x78000:-0x78000)+at.offset;
         car.position=s*256+0x80;
         car.kind=uint8_t(kind);car.vehicle=uint8_t(vehicle);car.lane=int8_t(lane);
@@ -514,6 +533,7 @@ void TrafficSystem::countdown_step(const std::vector<RouteSample>& route, int32_
                                     const std::function<uint32_t()>& random, uint32_t tick) {
     // 0x004552e0 applies the initial ring's zones before the first tick.
     // Reuse the lazy fill without advancing any cursor during the hold.
+    tick_=tick;
     build_slices(route,front_q8,0,tick);
     step_timers(route,front_q8,front_q8-0x8000,0,random);
     // The 0x00438170 scheduler runs during the hold too: controllers keep
@@ -524,14 +544,22 @@ void TrafficSystem::countdown_step(const std::vector<RouteSample>& route, int32_
 
 void TrafficSystem::step(const std::vector<RouteSample>& route,int32_t camera_q8,int32_t front_q8,
                         int32_t distance_moved,int32_t player_q8,int32_t player_lateral,const std::function<uint32_t()>& random,
-                        uint32_t tick) {
+                        uint32_t tick,int32_t player_velocity) {
     const int32_t back_q8=front_q8-0x8000;
+    tick_=tick;
+    if(!filled_)build_slices(route,front_q8-distance_moved,0,tick);
+    think_intersections(back_q8-distance_moved,front_q8-distance_moved,tick,route,random);
+    // The scheduler precedes the driver's ring advance and spawn timers.
+    // New timer cars first run on the following tick, with template dt+1.
+    for(auto& car:cars_)if(car.active && car.next_tick<=int32_t(tick)) {
+        car.dt=int32_t(tick)-car.last_tick;car.last_tick=int32_t(tick);
+        move(car,route,camera_q8-distance_moved,front_q8-distance_moved,back_q8-distance_moved,player_q8,player_lateral,random);
+        car.interval=schedule_interval(car,camera_q8-distance_moved,player_velocity);
+        car.next_tick=int32_t(tick)+car.interval;
+    }
     build_slices(route,front_q8,distance_moved,tick);
     step_timers(route,front_q8,back_q8,distance_moved,random);
-    // 0x0041f040 intersection think runs in the 0x00438170 scheduler pass,
-    // after the 0x0044dd90 spawns and before the 0x0044e710 car moves.
-    think_intersections(back_q8,front_q8,tick,route,random);
-    for(auto& car:cars_)if(car.active)move(car,route,camera_q8,front_q8,back_q8,player_q8,player_lateral,random);
+
 }
 // 0x0044dd90 spawn timers, extracted so the countdown hold can bank them
 // with distance 0 (the original steps them every hold tick). Order, gates,

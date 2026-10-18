@@ -4,6 +4,7 @@
 #include "course.hpp"
 #include "course_scene.hpp"
 #include <filesystem>
+#include <algorithm>
 #include <iostream>
 #include <map>
 
@@ -87,7 +88,7 @@ static std::vector<uint8_t> synthetic_container(uint32_t cel_flags) {
 // Minimal i386 PE image with one section so read_exe_data can serve the
 // traffic tables at their original virtual addresses.
 static std::vector<uint8_t> synthetic_exe() {
-    std::vector<uint8_t> exe(0x200+0x75000,0);
+    std::vector<uint8_t> exe(0x200+0x78000,0);
     auto w16=[&](size_t p,uint16_t v){exe[p]=uint8_t(v);exe[p+1]=uint8_t(v>>8);};
     auto w32=[&](size_t p,uint32_t v){for(int b=0;b<4;++b)exe[p+b]=uint8_t(v>>(b*8));};
     w16(0,0x5a4d);w32(60,0x80);                       // MZ, PE header at 0x80
@@ -95,12 +96,15 @@ static std::vector<uint8_t> synthetic_exe() {
     w16(0x80+20,0xe0);w16(0x80+24,0x10b);             // optional header size/magic
     w32(0x80+24+28,0x400000);                         // image base
     const size_t table=0x80+24+0xe0;
-    w32(table+8,0x75000);w32(table+12,0x1000);        // virtual size/address
-    w32(table+16,0x75000);w32(table+20,0x200);        // raw size/pointer
+    w32(table+8,0x78000);w32(table+12,0x1000);        // virtual size/address
+    w32(table+16,0x78000);w32(table+20,0x200);        // raw size/pointer
     auto data=[&](uint32_t va)->size_t{return 0x200+va-0x1000;};
-    for(int k=0;k<4;++k)w32(data(0x75694+4*k),uint32_t(k+1));          // drift words
+    for(int k=0;k<4;++k)exe[data(0x75694+k)]=uint8_t(k==2?-1:k==0?1:0); // signed drift bytes
+    w32(data(0x75698+4),16);w32(data(0x75698+8),10);
+    w32(data(0x75698+0x24),50);w32(data(0x75698+0x2c),111);
     exe[data(0x75698+0x28)]=10;                                        // template size
     for(int k=0;k<4;++k)w32(data(0x68f00+4*k),0x40u<<k);               // lookahead windows
+    for(int i=0;i<1024;++i)w32(data(0x75768+4*i),uint32_t(i*32));
     return exe;
 }
 
@@ -207,11 +211,44 @@ static void test_countdown_disabled_spawn_expiry() {
         throw std::runtime_error("countdown disabled pool placed a car");
 }
 
+static void test_car_schedule_motion() {
+    rr::VehicleLibrary library(synthetic_container(0));
+    rr::TrafficSystem system(library,synthetic_exe());system.configure(6);system.set_spawn_enabled(false);
+    std::vector<rr::RouteSample> route(300);
+    for(auto& s:route) {s=lane_sample(0x200,0x300);s.offset=0;}
+    auto& c=system.cars_mut()[0];
+    c.active=true;c.position=34816;c.lateral=32000;c.phase=224;
+    c.last_tick=216;c.next_tick=226;
+    c.motion.i32(0xc4)=16;c.motion.i32(0x160)=111;c.motion.i32(0x150)=50;c.motion.i32(0x154)=10;
+    unsigned draws=0;auto random=[&](){++draws;return 0u;};
+    system.step(route,0x4000,0x9000,0,0,0,random,227);
+    if(c.dt!=11 || c.speed!=231 || c.position!=34828 || c.lateral!=32000 || c.next_tick!=287)
+        throw std::runtime_error("car first scheduled think/drag/move (dt 11)");
+    system.step(route,0x4000,0x9000,0,0,0,random,228);
+    if(c.last_tick!=227 || c.speed!=231 || c.position!=34828 || draws!=0)
+        throw std::runtime_error("car must sleep between due ticks without drawing RNG");
+    // 0x00437e60 type-0x10 boundaries: relative velocity, slow speed,
+    // near-camera cap, far-camera factor four and crossing-car branch.
+    struct Case {int kind,d,speed,velocity,player,want;};
+    const Case cases[]={{0,0,2500,2500,4499,1},{0,0,2500,2500,4500,2},
+        {0,0,1999,1999,1999,2},{0,-3,2500,2500,2500,8},
+        {0,37,2500,2500,2500,6},{0,38,2500,2500,2500,40},
+        {0,79,0,0,0,60},{2,-5,2500,0,0,8},{2,9,1999,0,0,5},
+        {1,-2,0,0,0,2},{1,-3,0,0,0,3},{3,4,0,0,0,3}};
+    for(const auto& x:cases) {
+        rr::TrafficCar car;car.kind=uint8_t(x.kind);car.position=x.d*256;
+        car.speed=x.speed;car.motion.i32(0x108)=x.velocity;
+        if(rr::TrafficSystem::schedule_interval(car,0,x.player)!=x.want)
+            throw std::runtime_error("car scheduler LOD boundary");
+    }
+}
+
 static void test_spawn_and_move() {
     rr::VehicleLibrary library(synthetic_container(0));
     std::vector<uint8_t> exe=synthetic_exe();
     rr::TrafficSystem system(library,exe);
     system.configure(6);
+    if(system.drift_rate(0)!=800 || system.drift_rate(2)!=-800)throw std::runtime_error("signed-byte drift table");
     std::vector<rr::RouteSample> route(300);
     for(auto& s:route)s=lane_sample(0x200,0x300);   // 2 left, 3 right lanes
     const int32_t camera=64*256,front=camera+0x5000;
@@ -244,7 +281,7 @@ static void test_spawn_and_move() {
     // window and parks at the back cursor.
     int horns=0;
     for(int i=0;i<6000;++i) {
-        system.step(route,camera,front,0,camera,lane_centre,random,uint32_t(i));
+        system.step(route,camera,front,0,camera,lane_centre,random,uint32_t(steps+i));
         for(const auto& e:system.take_sound_events()) {
             if(e.code!=rr::SoundEvent::horn)throw std::runtime_error("unexpected traffic event");
             ++horns;
@@ -252,7 +289,7 @@ static void test_spawn_and_move() {
     }
     for(const auto& car:system.cars())
         if(car.active&&car.serial==serial)throw std::runtime_error("oncoming despawn at back cursor");
-    if(horns==0)throw std::runtime_error("no horn while the player blocks the lane");
+    if(horns!=0)throw std::runtime_error("movement must not invoke the contact horn callback");
     // Pool limit is the original 0x00438b70(0x210,0x10) allocation.
     if(rr::TrafficSystem::pool_size!=16)throw std::runtime_error("pool size");
 }
@@ -314,14 +351,19 @@ static void test_corpus() {
     uint32_t seed=1;
     auto random=[&]()->uint32_t{seed=seed*214013u+2531011u;return (seed>>16)&0x7fffu;};
     const int32_t camera=12544,front=camera+0x5000;
-    for(int i=0;i<2000;++i)system.step(route,camera,front,i<100?300:0,camera,0,random,uint32_t(i));
+    for(int i=0;i<2000;++i) {
+        system.step(route,camera,front,i<100?300:0,camera,0,random,uint32_t(i));
+        if(std::any_of(system.cars().begin(),system.cars().end(),[](const auto& c){return c.active;}))break;
+    }
     size_t active=0;
     for(const auto& car:system.cars())if(car.active)++active;
     if(active==0)throw std::runtime_error("no corpus traffic spawned");
     rr::DepthTable depths=rr::read_depth_table(exe);
     rr::Camera cam{0,150};
-    const auto slices=rr::project_road(route,uint32_t(camera),cam,depths);
-    const auto nodes=rr::traffic_draw_nodes(system,route,slices,cam,depths,camera,300);
+    const auto first=std::find_if(system.cars().begin(),system.cars().end(),[](const auto& c){return c.active;});
+    const int32_t render_camera=first->position-0x1000;
+    const auto slices=rr::project_road(route,uint32_t(render_camera),cam,depths);
+    const auto nodes=rr::traffic_draw_nodes(system,route,slices,cam,depths,render_camera,300);
     if(nodes.empty())throw std::runtime_error("no corpus traffic nodes");
     for(const auto& node:nodes)if(!node.texture)throw std::runtime_error("traffic node without texture");
 }
@@ -544,11 +586,11 @@ static void test_intersections() {
                 if(!first_lateral.count(car.serial)) {
                     ++crossings;first_lateral[car.serial]=car.lateral;
                     if(car.kind!=1 && car.kind!=3)throw std::runtime_error("crossing kind");
-                    // Placed at +-0x78000 + centre, then one tick of
-                    // acceleration (rate <= 0x13f * 0x24 >> 8) in the same step.
+                    // Controller spawns can run later in the same scheduler
+                    // pass: template dt 10, then dt-scaled acceleration/motion.
                     const int32_t start=(car.kind==3?0x78000:-0x78000)+1000,travel=car.kind==1?car.lateral-start:start-car.lateral;
-                    if(travel<0 || travel>0x2d)throw std::runtime_error("crossing start lateral");
-                    if((car.position&0xff)!=0x80 || (car.position>>8)<91 || (car.position>>8)>94)throw std::runtime_error("crossing sample");
+                    if(travel<0 || travel>car.dt*car.dt*0x2d)throw std::runtime_error("crossing start lateral");
+                    if((car.position&0xff)!=((0x80+((-car.motion.accel*car.dt*car.dt)>>9))&0xff) || (car.position>>8)<91 || (car.position>>8)>94)throw std::runtime_error("crossing sample");
                     if(car.heading!=(car.kind==1?0x400000:-0x400000) || car.signal<0)throw std::runtime_error("crossing heading/signal");
                     if(!(tick&8))throw std::runtime_error("crossing spawned on a tick without bit 3");
                 }
@@ -558,8 +600,9 @@ static void test_intersections() {
         if(crossings==0)throw std::runtime_error("no crossing car in 3000 ticks");
         if(moved<0x20000)throw std::runtime_error("crossing cars do not drive across");
     }
-    // A kind-0 car holds at the stop line on red and goes on green.
+    // A kind-0 car in the near-camera cadence holds at red and goes on green.
     {
+        const int32_t camera=84*256;
         auto route=intersection_route();
         rr::TrafficSystem system(library,synthetic_exe());system.configure(0x7f);
         uint32_t tick=100;
@@ -569,16 +612,17 @@ static void test_intersections() {
         const int32_t stop=90*256+0xa0;
         auto& probe=system.cars_mut()[15];
         probe=rr::TrafficCar{};probe.active=true;probe.kind=0;probe.lane=0;probe.phase=0x100;probe.speed=2500;
+        probe.last_tick=int32_t(tick)-10;probe.next_tick=int32_t(tick);
+        probe.motion.i32(0xc4)=16;probe.motion.i32(0x160)=111;probe.motion.i32(0x150)=50;probe.motion.i32(0x154)=10;
         probe.position=stop-0x600;probe.lateral=(1000+125)*256;probe.serial=999;
         int32_t held=probe.position;int still=0;
         for(int i=0;i<500 && red();++i) {
             system.step(route,camera+0x100,camera+0x5100,0,camera,0,random,tick++);
             if(!probe.active)throw std::runtime_error("probe car vanished");
-            if(probe.position>stop)throw std::runtime_error("car ran the red light");
+            if(probe.position>stop)throw std::runtime_error("car ran the red light tick "+std::to_string(tick-1)+" pos "+std::to_string(probe.position)+" stop "+std::to_string(stop)+" speed "+std::to_string(probe.speed)+" dt "+std::to_string(probe.dt)+" signal "+std::to_string(probe.signal));
             still=probe.position==held?still+1:0;held=probe.position;
         }
-        // The port's car motion has no drag, so the speed word can rest at a
-        // few hundred while position (speed >> 8 a tick) no longer changes.
+        // Think, drag and the coarse scheduler settle the car at red.
         if(still<100 || probe.speed>0x100)throw std::runtime_error("car not stopped at red");
         for(int i=0;i<900 && probe.active && probe.position<=stop;++i)system.step(route,camera+0x100,camera+0x5100,0,camera,0,random,tick++);
         if(probe.position<=stop)throw std::runtime_error("car does not go on green");
@@ -665,6 +709,7 @@ int main() {
         test_countdown_timers();
         test_countdown_initial_fill();
         test_countdown_disabled_spawn_expiry();
+        test_car_schedule_motion();
         test_spawn_and_move();
         test_zone_events();
         test_intersections();

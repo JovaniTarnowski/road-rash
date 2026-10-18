@@ -13,6 +13,7 @@
 #include <map>
 #include <set>
 #include <string>
+#include <tuple>
 #include <vector>
 
 // Field-capture replay (plan 10 Task 6): a capture taken without the solo
@@ -248,6 +249,32 @@ struct FieldReplay {
             check(f, key, native);
         }
     }
+    // The capture's ring.<pool-address> rows carry reliable motion words
+    // (its legacy kind/phase offsets are not the car dword offsets). Pool
+    // addresses are not native pointers: compare the motion triples as a
+    // multiset, like the node list, without hydrating simulation state.
+    void cars(const std::map<std::string,int64_t>& f) {
+        if(ignore_cars || !setup.instance.traffic)return;
+        std::vector<std::string> addresses;
+        for(const auto& [key,value]:f)
+            if(key.rfind("ring.",0)==0 && key.ends_with(".position"))
+                addresses.push_back(key.substr(5,key.size()-14));
+        std::sort(addresses.begin(),addresses.end(),[](const auto& a,const auto& b){return std::stoul(a,nullptr,16)<std::stoul(b,nullptr,16);});
+        std::vector<const TrafficCar*> active;
+        for(const auto& c:setup.instance.traffic->cars())if(c.active)active.push_back(&c);
+        if(active.size()!=addresses.size()) {fail("car pool active count original "+std::to_string(addresses.size())+" native "+std::to_string(active.size()));return;}
+        std::sort(addresses.begin(),addresses.end(),[&](const auto& a,const auto& b){
+            auto motion=[&](const auto& addr){const auto p="ring."+addr+".";return std::tuple{f.at(p+"position"),f.at(p+"lateral"),f.at(p+"speed")};};
+            return motion(a)<motion(b);
+        });
+        std::sort(active.begin(),active.end(),[](const auto* a,const auto* b){return std::tuple{a->position,a->lateral,a->speed}<std::tuple{b->position,b->lateral,b->speed};});
+        for(size_t i=0;i<active.size();++i) {
+            const std::string p="ring."+addresses[i]+".";
+            check(f,p+"position",active[i]->position);
+            check(f,p+"lateral",active[i]->lateral);
+            check(f,p+"speed",active[i]->speed);
+        }
+    }
     void nodes(const std::map<std::string,int64_t>& f) {
         std::vector<std::pair<int64_t,int64_t>> want, have;
         for (int n = 0;; ++n) {
@@ -345,6 +372,7 @@ struct FieldReplay {
             if (!diff.empty() && diff.find(" (native rider ") == std::string::npos)
                 diff += " (native rider " + std::to_string(native_slots[k].first) + ")";
         }
+        if (diff.empty()) cars(f);
         if (diff.empty()) nodes(f);
         if (diff.empty()) sched_and_ring(f);
         if (diff.empty()) return false;
