@@ -136,7 +136,10 @@ Standalone macOS packaging: `tools/build_macos_app.sh` creates
 `build-release/Road Rash Native.app` and `.zip`, with pinned static SDL,
 ARM64/macOS 13 support, included licences and an ad-hoc signature. No Homebrew
 runtime libraries or original game data are included. This packages the
-current incomplete port. Android optimized local APK: `android/gradlew -p
+current incomplete port. Pushing a `v*` tag runs the GitHub Actions release
+workflow, builds and verifies this package on macOS, and attaches the ZIP to a
+GitHub Release with generated release notes. Android optimized local APK:
+`android/gradlew -p
 android assembleRelease -PreleaseDebugSigning=true` (requires JDK 21).
 Owner signing and current controls/import instructions are in
 [docs/USER_GUIDE.md](docs/USER_GUIDE.md). `tools/ci.sh` runs local verification.

@@ -1509,3 +1509,10 @@ other scenarios: level 5, isolated traffic/fights/steals, police, splits and
 mixed pedestrian/controller ordering. It does not establish an entire race,
 all courses, or full human-input parity outside the 1431-tick human capture.
 Final gate receipts are recorded in VERIFICATION and the session handoff.
+
+## 2026-10-18: tag-triggered GitHub release
+
+Added `.github/workflows/release.yml`. Pushing a `v*` tag builds and verifies
+the standalone macOS ARM64 app with `tools/build_macos_app.sh`, then attaches
+the ZIP and generated notes to a GitHub Release. No branch-push or manual
+workflow trigger is configured. The workflow itself has not been run in GitHub.
