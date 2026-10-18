@@ -2691,14 +2691,19 @@ void Race::remove_cop() {
     cop_removal_pending_ = false;
     const int index = cop_index();
     if (index < 0) return;
+    siren_event(riders_.back(), false);   // 0x004073a0 posts event 0x13 with no emitter
     schedule_.erase(std::remove_if(schedule_.begin(), schedule_.end(), [&](const ScheduleNode& n) { return n.rider == index; }), schedule_.end());
     riders_.pop_back();
     for (auto& r : riders_) {
         for (int* v : {&r.brain.target_rider, &r.brain.nbr_ahead, &r.brain.nbr_behind, &r.brain.overtake_latched})
             if (*v == index) *v = -1;
-    siren_event(riders_.back(), false);   // 0x004073a0 posts event 0x13 with no emitter
     }
     if (last_target_ == index) last_target_ = -1;
+}
+
+uint32_t Race::random() {
+    seed_ = seed_ * 0x343fdu + 0x269ec3u;
+    return (seed_ >> 16) & 0x7fff;
 }
 
 // Plan 10: field order follows tests/sim_fields.hpp rider_fields. Values are
@@ -2706,11 +2711,6 @@ void Race::remove_cop() {
 RaceSnapshot Race::snapshot() const {
     RaceSnapshot out{ticks_, seed_, {}};
     for (const auto& r : riders_) {
-uint32_t Race::random() {
-    seed_ = seed_ * 0x343fdu + 0x269ec3u;
-    return (seed_ >> 16) & 0x7fff;
-}
-
         const std::string p = "rider." + std::to_string(r.slot) + ".";
         const Bike& b = r.bike;
         out.fields.push_back({p + "position", b.i32(0x1c)});
@@ -3001,12 +3001,12 @@ void Race::set_ride_library(const ActorAnimationLibrary* library,
     ride_library_ = library; attack_codes_ = attacks;
     if (!ride_library_) return;
     for (auto& r : riders_) {
+        const auto& bank = ride_bank(r);
         auto& st = r.ride_animation;
         set_animation(st, bank, 2, uint32_t(ticks_));
         queue_animation(st, bank, 2);
         st.selected.reset();
         advance_animation(st, bank, uint32_t(ticks_));
-        const auto& bank = ride_bank(r);
     }
 }
 void Race::advance_ride_animation(Rider& r, bool player) {
@@ -3281,6 +3281,6 @@ void Race::step(uint32_t controls) {
     phase("traffic");
     prepare_static_boxes();
     previous_camera_position_=camera_position();
-}
-}
     if (cop_removal_pending_) remove_cop();
+}
+}
