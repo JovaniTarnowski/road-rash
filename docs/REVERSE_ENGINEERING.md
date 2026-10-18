@@ -1832,3 +1832,60 @@ are reliable; its legacy kind/phase offsets are not the car dword offsets
 (e.g. tick 227 reports nonsensical phase). Compare only the measured motion
 triples and state that limitation. At tick 308 they equal 35240/32000/1431,
 while the first pedestrian node differs by one position unit.
+
+
+### Live scheduler/contact continuation (2026-10-17, ped308)
+
+Reference disc EXE SHA-256 rechecked against `analysis/inventory.json`:
+`73d7f9744b5b1a9482b3909950cdf3fe34119fe13d023b031e9c6739a60f18a2`.
+Existing exports/assembly used; no Wine capture or Ghidra database writes.
+
+- `0x00437e60` reads the pre-driver ring camera `DAT_004b6e5c`. The native
+  `camera_position()` derives from the player's already-moved +0x138;
+  reading it in the pedestrian pass made the tick-308 performer run a tick
+  early (13605 rather than 13604). The ring cursor fixes the entire cadence:
+  its first one-unit creep now occurs at 309, as captured.
+- `0x0043a190` has an early `(type & 0x20)` branch after sampling ground:
+  +0xf4 = 0, +0x20 = 0, +0x160 = `DAT_0046dcd8` (74). Pedestrians do not
+  take the bike landing/bounce law, even when knocked down. `0x00437bb0`
+  also sets scheduler flag bit 4 and clears bit 8 at insertion.
+- `0x00437c10` calls `0x00437be0`: clear flag bit 4, set last/next to
+  tick+100, mark the list dirty; then set bit 8. `0x00437df0` unlinks the
+  node at the next scheduler prepass. Live capture: the retired pedestrian
+  remains in the tick-685 list at position 13708 and disappears at 686.
+  This supersedes the immediate live pool removal. The nulled-callback solo
+  replay retains its separately measured same-step lifetime contract:
+  strict human acceptance drops its two frozen nodes at tick 1382. The
+  distinction is explicit in the frozen replay path, not a trace-specific
+  tick check or comparison exclusion.
+- `0x00438170` runs scheduled nodes before `0x004368f0` contacts; the driver
+  then runs ring advance / `0x0044dd90`. Car moves and intersection think
+  are now a separate phase from driver timers. Cars merge with rider nodes
+  in descending position order, with obstacle snapshots taken at the car's
+  turn. At 761, native rider 13 previously saw car position 39879 instead
+  of its already-moved 39929, corrupting brain +0x198; interleaving fixes it.
+- `0x004368f0` contacts walk ascending position. Only the outer (behind)
+  node must have last-run == tick and flags & 6 == 6; its partner needs
+  flags & 5 == 5. A sleeping car behind a due bike cannot scan backward
+  into it. This explains the spurious tick-625 contact: before contacts,
+  rider 14 already had the exact original lateral 9296 / steer -368;
+  native's unconditional car pass changed them to -5722 / -611.
+- Live car separation now reuses `0x00436a40` through the car's persistent
+  object image: both previous positions, actual velocities, both masses,
+  outer-node orientation, containment/fallback branches and impulses. The
+  old scalar approximation first diverged at tick 647 (rider 14 position
+  37958 vs original 38001); the shared separator passes that contact and
+  preserves the car's deferred impulses for its next `0x00439920` move.
+  Legacy unscheduled component fixtures keep their old scalar path.
+
+Measured result: unchanged field trace `99e20344…` matches through tick 787,
+including all compared rider/brain/half/scheduler/node-list and car motion
+words, RNG, the tick-337 parking and tick-765 wake. No car hydration,
+reanchoring or comparison exclusions. First remaining failure at 788:
+RNG 2280515322 original / 34387072 native. From 1941267649, original takes
+three draws and native one. `RR_FIELD_ALL=1` also exposes rider 12 entering
+brain state 3, steer -537 / -1181, steer rate -240 / -480. The two omitted
+`0x00409460` attack rolls and `0x004095d0` selection in the native state-3
+arm are consistent with this failure; this is static attribution plus a
+runtime mismatch, not a captured call-stack proof. Next combat work must
+port the complete branch and measure it, not add two dummy draws.

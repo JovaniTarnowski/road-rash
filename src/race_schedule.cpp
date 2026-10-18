@@ -1,5 +1,6 @@
 #include "race.hpp"
 #include "track_ring.hpp"
+#include "traffic.hpp"
 #include <algorithm>
 #include <array>
 #include <optional>
@@ -9,9 +10,8 @@
 // Live rider scheduler (plan 10 Task 6): 0x00438170(0) walks the object list
 // and 0x00437e60 runs each due node. Each function names the routine it
 // ports. Known native differences (labelled where they occur):
-// - pedestrians, intersection nodes and cars keep their own passes
-//   (step_pedestrians, traffic) after the rider nodes, not interleaved by
-//   list position;
+// - pedestrians keep their own pass after riders/cars, and intersection
+//   controllers run in a prepass; those nodes are not yet interleaved;
 // - the ring trackers 0x00450d30/0x00450dc0 are taken at their measured
 //   offsets from the ring back (14 and 91 samples, set up by 0x004552e0);
 //   their split/merge hand-over is not modelled;
@@ -157,11 +157,29 @@ void Race::schedule_pass(uint32_t controls, bool countdown) {
     // 0x00438170(0): every node whose +0x0c is due runs 0x00437e60 with
     // param_3 = (+0x2c != 0) sampled before the call.
     const std::vector<ScheduleNode> order = schedule_order();
+    const int32_t camera=ring_?ring_->front_q8()-0x5000:int32_t(previous_camera_position_)+0x100;
+    std::vector<std::pair<int32_t,size_t>> cars;
+    if(traffic_ && traffic_->begin_schedule(route_of(riders_[0]),camera+0x5000,[this]{return random();},uint32_t(ticks_))) {
+        const auto& pool=traffic_->cars();
+        for(size_t i=0;i<pool.size();++i)if(pool[i].active)cars.push_back({pool[i].position,i});
+        std::stable_sort(cars.begin(),cars.end(),[](const auto& a,const auto& b){return a.first>b.first;});
+    }
+    size_t car=0;
+    auto run_cars=[&](int32_t position) {
+        while(car<cars.size() && cars[car].first>=position) {
+            prepare_traffic_obstacles();
+            const auto& player=riders_[0];
+            traffic_->run_car(cars[car++].second,route_of(player),camera,camera+0x5000,
+                player.bike.i32(0x1c),player.bike.i32(0x28),[this]{return random();},uint32_t(ticks_),player.bike.i32(0x108));
+        }
+    };
     for (const ScheduleNode& n : order) {
+        run_cars(n.position);
         Rider& r = riders_[size_t(n.rider)];
         if (n.type == 8) { if (r.half_sched_next <= ticks_) run_half_node(r, controls, countdown); }
         else if (r.sched_next <= ticks_) run_bike_node(r, controls, countdown);
     }
+    run_cars(INT32_MIN);
 }
 
 void Race::parked_pace_band() {

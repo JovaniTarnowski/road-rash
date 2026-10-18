@@ -542,24 +542,41 @@ void TrafficSystem::countdown_step(const std::vector<RouteSample>& route, int32_
     think_intersections(front_q8-0x8000,front_q8,tick,route,random);
 }
 
+bool TrafficSystem::begin_schedule(const std::vector<RouteSample>& route,int32_t front_q8,
+                                   const std::function<uint32_t()>& random,uint32_t tick) {
+    if(scheduled_tick_ && *scheduled_tick_==tick)return false;
+    scheduled_tick_=tick;tick_=tick;
+    if(!filled_)build_slices(route,front_q8,0,tick);
+    think_intersections(front_q8-0x8000,front_q8,tick,route,random);
+    return true;
+}
+
+void TrafficSystem::run_car(size_t index,const std::vector<RouteSample>& route,int32_t camera_q8,int32_t front_q8,
+                            int32_t player_q8,int32_t player_lateral,const std::function<uint32_t()>& random,
+                            uint32_t tick,int32_t player_velocity) {
+    auto& car=cars_.at(index);
+    if(!car.active || car.next_tick>int32_t(tick))return;
+    car.dt=int32_t(tick)-car.last_tick;car.last_tick=int32_t(tick);
+    move(car,route,camera_q8,front_q8,front_q8-0x8000,player_q8,player_lateral,random);
+    car.interval=schedule_interval(car,camera_q8,player_velocity);
+    car.next_tick=int32_t(tick)+car.interval;
+}
+
+void TrafficSystem::schedule(const std::vector<RouteSample>& route,int32_t camera_q8,int32_t front_q8,
+                            int32_t player_q8,int32_t player_lateral,const std::function<uint32_t()>& random,
+                            uint32_t tick,int32_t player_velocity) {
+    if(!begin_schedule(route,front_q8,random,tick))return;
+    for(size_t i=0;i<cars_.size();++i)run_car(i,route,camera_q8,front_q8,player_q8,player_lateral,random,tick,player_velocity);
+}
+
 void TrafficSystem::step(const std::vector<RouteSample>& route,int32_t camera_q8,int32_t front_q8,
                         int32_t distance_moved,int32_t player_q8,int32_t player_lateral,const std::function<uint32_t()>& random,
                         uint32_t tick,int32_t player_velocity) {
-    const int32_t back_q8=front_q8-0x8000;
-    tick_=tick;
-    if(!filled_)build_slices(route,front_q8-distance_moved,0,tick);
-    think_intersections(back_q8-distance_moved,front_q8-distance_moved,tick,route,random);
-    // The scheduler precedes the driver's ring advance and spawn timers.
-    // New timer cars first run on the following tick, with template dt+1.
-    for(auto& car:cars_)if(car.active && car.next_tick<=int32_t(tick)) {
-        car.dt=int32_t(tick)-car.last_tick;car.last_tick=int32_t(tick);
-        move(car,route,camera_q8-distance_moved,front_q8-distance_moved,back_q8-distance_moved,player_q8,player_lateral,random);
-        car.interval=schedule_interval(car,camera_q8-distance_moved,player_velocity);
-        car.next_tick=int32_t(tick)+car.interval;
-    }
+    // 0x00438170 precedes contacts and the driver's 0x00454120/0x0044dd90.
+    // Standalone callers use both phases; Race schedules before contacts.
+    schedule(route,camera_q8-distance_moved,front_q8-distance_moved,player_q8,player_lateral,random,tick,player_velocity);
     build_slices(route,front_q8,distance_moved,tick);
-    step_timers(route,front_q8,back_q8,distance_moved,random);
-
+    step_timers(route,front_q8,front_q8-0x8000,distance_moved,random);
 }
 // 0x0044dd90 spawn timers, extracted so the countdown hold can bank them
 // with distance 0 (the original steps them every hold tick). Order, gates,

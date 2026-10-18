@@ -1454,3 +1454,28 @@ capture or golden edit. See [handoff](agent-handoffs/car-cadence-20261017.md).
 Final validation for this slice: native full build, 103/103 CTests with no
 skips, viewer smoke and all-course sweep passed; ASan/UBSan focused 4/4;
 strict human acceptance 1431/1431 identical. Receipts are in VERIFICATION.
+
+
+### Live scheduler/contact continuation — October 17, 2026
+
+Continued from `f987c86`. Pedestrian cadence now uses the pre-driver ring
+camera, type-0x20 vertical motion stays grounded, and live teardown marks
+then unlinks on the following tick. Frozen solo node lifetimes remain at
+their measured behavior. Cars run in position order between rider nodes,
+before contacts and driver timers. Car contact eligibility follows the
+ascending outer node's due tick; live separation uses the shared recovered
+separator and persistent car motion words.
+
+`napa-field-l1-20261017` now matches through tick **787**, including the
+337 parking and 765 wake, RNG and car motion, with no hydration or comparison
+exclusions. The 308, 625, 647, 685 and 761 blockers are resolved. The next
+failure at 788 is an AI state-3 combat mismatch (two missing RNG draws and
+rider-12 steering), consistent with the still-omitted `0x00409460` /
+`0x004095d0` branch. Tasks 6/7 and full field acceptance remain open;
+pedestrian/controller node interleaving, full mixed contact-list ordering,
+car lane/split/wall behavior and combat scenarios are not established by
+this prefix. See [handoff](agent-handoffs/ped308-20261017.md).
+
+Final gates for this continuation: full native build, 103/103 CTests (no
+skips), viewer smoke and course sweep passed; focused ASan/UBSan 5/5; strict
+human acceptance 1431/1431 identical. Receipts are recorded in VERIFICATION.

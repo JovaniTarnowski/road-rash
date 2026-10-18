@@ -10,6 +10,7 @@
 #include "world_renderer.hpp"
 #include <array>
 #include <functional>
+#include <optional>
 #include <vector>
 
 namespace rr {
@@ -151,12 +152,23 @@ public:
     // executable (REA xrefs: only the 0x0041f220 reads), so 0x0041f220's
     // draws are skipped and the port draws nothing, matching the original.
     // distance_moved is the per-step camera advance (0x0044b3b0). player_q8
-    // and player_lateral feed the horn rule (0x0044efa0). tick is the global
+    // and player_lateral are supplied by Race. tick is the global
     // tick (DAT_004b7ecc bit 3 gates crossing spawns). random is the
     // shared CRT rand stream; the original call order is preserved.
     void step(const std::vector<RouteSample>& route, int32_t camera_q8, int32_t front_q8,
               int32_t distance_moved, int32_t player_q8, int32_t player_lateral, const std::function<uint32_t()>& random,
               uint32_t tick, int32_t player_velocity = 0);
+    // Scheduler phase before 0x004368f0 contacts. step() then runs only
+    // the driver's ring/timer phase when this tick was already scheduled.
+    void schedule(const std::vector<RouteSample>& route, int32_t camera_q8, int32_t front_q8,
+                  int32_t player_q8, int32_t player_lateral, const std::function<uint32_t()>& random,
+                  uint32_t tick, int32_t player_velocity = 0);
+    // The live position-ordered walk dispatches each car between rider nodes.
+    bool begin_schedule(const std::vector<RouteSample>& route, int32_t front_q8,
+                        const std::function<uint32_t()>& random, uint32_t tick);
+    void run_car(size_t index, const std::vector<RouteSample>& route, int32_t camera_q8, int32_t front_q8,
+                 int32_t player_q8, int32_t player_lateral, const std::function<uint32_t()>& random,
+                 uint32_t tick, int32_t player_velocity);
     // Hold tick: initialize ring zone events, then run 0x0044dd90 with
     // zero camera delta. Do not move cars or think intersection controllers.
     void countdown_step(const std::vector<RouteSample>& route, int32_t front_q8,
@@ -211,6 +223,7 @@ private:
     PhysicsTables physics_;
     std::array<int32_t,26> car_template_{};
     uint32_t tick_ = 0;
+    std::optional<uint32_t> scheduled_tick_;
     TrafficTimers timers_;
     std::array<int32_t, 4> drift_rates_{};      // 0x00475694[kind] signed byte * 800
     std::vector<TrafficCar> cars_{pool_size};

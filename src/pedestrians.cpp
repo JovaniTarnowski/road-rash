@@ -22,7 +22,7 @@ bool PedestrianSystem::consume(uint32_t section,uint32_t local,size_t index) {
 void PedestrianSystem::apply_template(Bike& b) const {
     // 0x00438930: +0xc0 byte, +0xc4 type, +0x14 first interval; 0x004387a0:
     // template words +0x1c.. to the object words listed below.
-    b.u8(0xc0)=uint8_t(template_[0]);
+    b.u8(0xc0)=uint8_t((template_[0]&~8)|4); // 0x00437bb0 inserts the scheduler node
     b.i32(0xc4)=template_[1];
     b.i32(0x14)=template_[2];
     static constexpr std::array<std::pair<int,int>,18> words{{

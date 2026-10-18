@@ -136,9 +136,11 @@ void Race::step_pedestrians() {
     // behind), else (d + 1) / 2. Parked outside the ring window or beyond
     // lateral +-0xc8000.
     if (!pedestrians_) return;
-    const int32_t ring = int32_t(camera_position()) + 0x100;
+    const int32_t ring = ring_ ? ring_->front_q8() - 0x5000 : int32_t(camera_position()) + 0x100;
     const int32_t front = ring + 0x5000, back = ring - 0x3000;
     for (auto& p : pedestrians_->pool()) {
+        // 0x00437df0 removes last tick's marked nodes before scheduling.
+        if(p.pending_remove) {p.active=false;p.pending_remove=false;continue;}
         if (!p.active || p.next_tick > ticks_) continue;
         Bike& b = p.body.bike;
         b.i32(0x18) = ticks_ - p.last_tick;
@@ -157,9 +159,17 @@ void Race::step_pedestrians() {
             const int32_t interval = d < 4 ? (d < -2 ? 1 - d : 1) : (d + 1) / 2;
             b.i32(0x14) = interval;
         }
-        if (b.i32(0x28) < -0xc8000 || b.i32(0x28) > 0xc8000) { p.active = false; continue; }
         p.next_tick = ticks_ + b.i32(0x14);
-        if (front - b.i32(0x1c) < 0 || b.i32(0x1c) - back < 0) p.active = false;
+        if (b.i32(0x28) < -0xc8000 || b.i32(0x28) > 0xc8000 ||
+            front - b.i32(0x1c) < 0 || b.i32(0x1c) - back < 0) {
+            // Nulled-callback solo replays keep their measured same-step
+            // removal contract; only the live move-slot path defers unlink.
+            if(freeze_actors_) {p.active=false;continue;}
+            // 0x00437c10 -> 0x00437be0: disabled now, still in the list
+            // through this frame; next tick's prepass returns the pool slot.
+            p.pending_remove=true;b.u8(0xc0)=uint8_t((b.u8(0xc0)&~4)|8);
+            p.last_tick=p.next_tick=ticks_+100;
+        }
     }
 }
 
@@ -453,7 +463,7 @@ void Race::collide_pedestrians() {
     // Pedestrian against free cars (the rider pairs run in contact_pass).
     if (!pedestrians_ || !traffic_) return;
     for (auto& p : pedestrians_->pool()) {
-        if (!p.active) continue;
+        if (!p.active || p.pending_remove) continue;
         Bike& q = p.body.bike;
         for (auto& car : traffic_->cars_mut()) {
             if (!car.active || !car.collides) continue;

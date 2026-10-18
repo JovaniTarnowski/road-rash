@@ -95,6 +95,24 @@ int main() {
             if(contained) check(b.i32(0xec)==-1000,"negative contact speed must clamp to -1000");
             check(b.i32(0x288)==123,"knock-off must skip the rate-change steering kick");
         }
+        // Ascending contact walk: a car behind the bike must itself be
+        // due; a due bike behind a sleeping car remains eligible.
+        for(int scenario=0;scenario<3;++scenario) {
+            auto tables=rr::PhysicsTables::synthetic();rr::BikeSpec spec{};
+            rr::Race race(route(),route(),tables,spec,90);
+            auto& b=race.riders()[0].bike;
+            b.u8(0xc0)=7;b.i32(0xc4)=4;b.i32(0x174)=7680;b.i32(0x178)=64;
+            b.i32(0x17c)=8960;b.i32(0x194)=256;b.i32(0x180)=256;b.i32(0x2f0)=1000;
+            race.set_live_schedule(true);
+            rr::TrafficSystem traffic(library,executable());traffic.set_spawn_enabled(false);race.set_traffic(&traffic);
+            auto& car=traffic.cars_mut()[0];car.active=true;car.lateral=0;
+            car.position=b.i32(0x1c)+(scenario==1?64:-64);
+            car.last_tick=0;car.next_tick=scenario==2?1:100;
+            car.motion.u8(0xc0)=7;car.motion.i32(0xc4)=16;
+            const int32_t before=b.i32(0x28);
+            race.step(0);
+            check((b.i32(0x28)!=before)==(scenario!=0),"car contact must gate the ascending outer node's due tick");
+        }
         std::cout<<"car contact crash tails pass\n";
     } catch(const std::exception& e) {std::cerr<<e.what()<<'\n';return 1;}
 }

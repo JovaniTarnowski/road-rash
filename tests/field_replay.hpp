@@ -354,6 +354,8 @@ struct FieldReplay {
                       << " tx " << r.brain.target_x << "/" << gv("brain_194")
                       << " rp " << r.brain.replan_ticks << "/" << gv("brain_188")
                       << " fd " << r.finish_distance << "/" << gv("raw_1f8")
+                      << " steer " << r.bike.i32(0x288) << "/" << gv("steer")
+                      << " half-last " << r.half_sched_last
                       << " sample " << r.sample << '\n';
         }
     }
@@ -361,6 +363,16 @@ struct FieldReplay {
     bool frame(size_t i) {
         const auto& f = g.frames.at(i);
         diff.clear();
+        const char* ped_trace=std::getenv("RR_FIELD_TRACE_PEDS");
+        if(ped_trace && tick0+int64_t(i)>=std::atoi(ped_trace) && setup.instance.pedestrians)
+            for(const auto& p:setup.instance.pedestrians->pool())if(p.active) {
+                const Bike& b=p.body.bike;
+                std::cout<<"ped tick "<<tick0+int64_t(i)<<" serial "<<p.serial<<" type "<<p.type<<" state "<<p.state
+                    <<" pos "<<b.i32(0x1c)<<" anchor "<<p.anchor<<" lat "<<b.i32(0x28)<<" spd "<<b.i32(0xec)
+                    <<" dt "<<b.i32(0x18)<<" last "<<p.last_tick<<" next "<<p.next_tick<<" heading "<<b.i32(0x128)
+                    <<" ground "<<b.i32(0x160)<<" accel "<<b.accel<<" drag "<<b.i32(0x15c)<<" lat_accel "<<b.i32(0x118)
+                    <<" h "<<b.i32(0x20)<<" v "<<b.i32(0xf4)<<" trigger "<<p.trigger<<" pace "<<p.pace<<'\n';
+            }
         const auto native_slots = slots();
         trace(i, native_slots);
         check(f, "riders", int64_t(native_slots.size()));
@@ -423,6 +435,10 @@ struct FieldReplay {
             rng_history.push_back({fr == f.end() ? -1 : fr->second, race().rng_state()});
             if (rng_history.size() > 8) rng_history.erase(rng_history.begin());
             if (fr == f.end() || uint32_t(fr->second) != race().rng_state()) {
+                if(all) {
+                    std::cout<<"rng mismatch original "<<(fr==f.end()?-1:fr->second)<<" native "<<race().rng_state()<<'\n';
+                    if(frame(i))return 1; // diagnostic: expose the simultaneous state mismatch
+                }
                 std::cout << "first divergence at frame " << i << " (tick " << tick0 + int64_t(i) << "): rng original "
                           << (fr == f.end() ? -1 : fr->second) << " native " << race().rng_state() << '\n';
                 std::cout << "rng history (last " << rng_history.size() << " ticks, golden vs native):";

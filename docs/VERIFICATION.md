@@ -1745,3 +1745,37 @@ The v3 native run passed all simulation checks but the unchanged
 Ten isolated repetitions then passed with its original zero-allocation
 threshold. The final v4 native run uses `CTEST_PARALLEL_LEVEL=4`; no renderer
 or allocation-test source was changed.
+
+
+### Live scheduler/contact continuation — October 17, 2026 (ped308)
+
+Baseline `f987c86`; [handoff](agent-handoffs/ped308-20261017.md).
+
+- Native final gate: passed, full build + 103/103 CTests, 0 skips, viewer
+  smoke and all-course sweep; `CTEST_PARALLEL_LEVEL=4 python3
+  tools/agent_gate.py native --build-dir build-agent-ped308-20261017
+  --output analysis/agent-gates/ped308-20261017-native-final --jobs 8`.
+- ASan/UBSan final gate: passed 5/5, 0 skips, focused
+  `^(pedestrian|traffic|car_contact|race_schedule|oracle-sim-field)$`;
+  reused owned sanitizer build `build-agent-car-cadence-asan-20261017`,
+  receipt `analysis/agent-gates/ped308-20261017-sanitizers-final/receipt.json`.
+- Strict human acceptance: the first iteration caught frozen-node lifetime
+  drift at 1382. Restoring its measured nulled-callback removal contract
+  returns exit 0, `1431 ticks identical`, `acceptance_met true`; final report
+  `analysis/agent-gates/ped308-20261017-evidence/human-final.json`.
+- Focused pedestrian/traffic/contact tests: 3/3 passed, including the
+  pre-driver camera boundary, type-0x20 vertical reset, deferred live removal,
+  immediate frozen removal, ascending outer-node gates and split scheduler /
+  driver phase (no duplicate car move).
+- Field replay: countdown 5 + ticks 6..787 compare equal with RNG and car
+  motion triples, through the 765 wake. First mismatch at 788 is RNG
+  original 2280515322 / native 34387072. This is an exact pinned diagnostic,
+  not acceptance. Trace SHA-256 `99e20344…` unchanged. Evidence logs:
+  `analysis/agent-gates/ped308-20261017-evidence/`.
+- No client LSP channel: owned compile DB healthy; clangd 22.1.4 full AST
+  checks with token feature range `--check-lines=1-1` return 0 errors on
+  race, scheduler, traffic and pedestrian simulation files.
+
+The first native/sanitizer receipts precede the frozen-lifetime correction
+and are superseded by final receipts. No Android, device, packaging, Wine
+capture or Ghidra writes in this slice.

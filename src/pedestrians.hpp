@@ -15,6 +15,7 @@ namespace rr {
 // (src/race_pedestrians.cpp); this module owns the pool and course hooks.
 struct Pedestrian {
     bool active=false;
+    bool pending_remove=false;        // 0x00437c10 mark; 0x00437df0 unlinks on the next tick
     Rider body;                        // object image (+0x1c position, +0x28 lateral, motion words) and route bookkeeping
     const PedestrianLook* look=nullptr;// 0x00440b80: null when category-2 resources 0/1 are missing (+0x1e0 stays 0)
     ActorAnimationState animation;     // block +0x70

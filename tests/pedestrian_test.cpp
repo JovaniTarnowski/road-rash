@@ -1,6 +1,7 @@
 #include <cstdlib>
 #include "pedestrians.hpp"
 #include "traffic.hpp"
+#include "track_ring.hpp"
 #include <SDL3/SDL.h>
 #include <iostream>
 #include <map>
@@ -38,6 +39,43 @@ struct Fixture {
     }
 };
 void check(bool ok,const char* what){if(!ok)throw std::runtime_error(what);}
+
+// The scheduler reads the ring camera before the player driver updates it.
+// camera_position() already follows a moved bike's +0x138, so using that
+// derived camera here gives an interval one larger at this boundary.
+void scheduler_camera(const Fixture& f) {
+    auto race=f.race(0);
+    rr::TrackRing ring(f.course,0);
+    race->set_track_ring(&ring);
+    auto pedestrians=f.pedestrians();race->set_pedestrians(pedestrians.get());
+    const int32_t ring_camera=ring.front_q8()-0x5000;
+    auto& p=pedestrians->pool()[0];p.active=true;p.type=10;p.next_tick=0;p.last_tick=-1;
+    auto& b=p.body.bike;pedestrians->apply_template(b);
+    b.i32(0x1c)=ring_camera-10*256-1;p.anchor=b.i32(0x1c);
+    p.body.sample=p.body.previous_sample=size_t(b.i32(0x1c)>>8);
+    b.i32(0x28)=race->route()[p.body.sample].offset*256;
+    // Give the actor an artificial vertical impulse: type 0x20 clears it
+    // after sampling the terrain, rather than taking the bike bounce path.
+    b.i32(0x20)=123;b.i32(0xf4)=300;
+    race->riders()[0].bike.i32(0x138)+=256;
+    race->countdown_step();
+    check(b.i32(0x14)==11 && p.next_tick==12,"pedestrian cadence must use pre-driver ring camera");
+    check(b.i32(0x20)==0 && b.i32(0xf4)==0 && b.i32(0x160)==74,"pedestrian vertical branch must stay grounded");
+    // Marked nodes remain observable for the teardown tick, but no longer
+    // qualify for contact, and release their slot at the next prepass.
+    b.i32(0x1c)=ring.back_q8()-256;p.anchor=b.i32(0x1c);p.next_tick=2;
+    p.body.sample=p.body.previous_sample=size_t(b.i32(0x1c)>>8);
+    race->countdown_step();
+    check(p.active && p.pending_remove && (b.u8(0xc0)&4)==0,"pedestrian teardown must defer unlinking");
+    race->countdown_step();
+    check(!p.active && !p.pending_remove,"pedestrian prepass must release marked slot");
+    // Nulled-callback solo replay keeps the previously receipted lifetime:
+    // the disabled frozen node is absent from the same step's node list.
+    p.active=true;p.last_tick=3;p.next_tick=4;
+    race->set_freeze_actors(true);
+    race->countdown_step();
+    check(!p.active && !p.pending_remove,"frozen replay removal must stay immediate");
+}
 
 struct Summary {int spawned=0,max_active=0,crossers=0,knocked=0;int64_t travel=0;uint32_t rng=0;};
 Summary natural_race(const Fixture& f,const char* frame_path) {
@@ -142,6 +180,7 @@ int main(int argc,char** argv) {
         if(!probe.exists("DATA/COURSES/CITY.CRS")){std::cout<<"No imported course corpus\n";return 0;}
         if(!SDL_Init(0))std::cerr<<SDL_GetError()<<'\n';
         Fixture city("CITY");
+        scheduler_camera(city);
         // DZHR actor records survive placement (0x00451fc0 gate, level 1).
         size_t pedestrians=0,cops=0,looks=0;
         for(size_t s=0;s<city.course.sections.size();++s)for(size_t j=0;j<city.course.sections[s].samples.size();++j)

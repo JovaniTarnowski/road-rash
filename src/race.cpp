@@ -542,13 +542,22 @@ void Race::collide_traffic(Rider& r) {
     constexpr int32_t car_half_length = 64;      // 0x00475698 +0x48
     constexpr int32_t car_half_height = 8960;    // 0x00475698 +0x4c
     Bike& s = r.bike;
-    const int32_t position = s.i32(0x1c), lateral = s.i32(0x28), height = s.i32(0x20);
     const int32_t half_length = s.i32(0x178), half_width = s.i32(0x174), half_height = s.i32(0x17c);
     const auto& route = route_of(r);
-    const auto& sample = route[r.sample];
     for (auto& car : traffic_->cars_mut()) {
         if (!car.active || !car.collides) continue;
+        const int32_t position=s.i32(0x1c),lateral=s.i32(0x28),height=s.i32(0x20);
+        const auto& sample=route[r.sample];
         const int32_t car_half_width = TrafficSystem::car_half_width(car);   // 0x00475700 + kind * 0x18
+        // 0x004368f0 walks ascending position: only the outer (behind)
+        // node must have run this tick. A non-due car behind a due rider
+        // cannot contact it by scanning backward through the list.
+        if(live_schedule_) {
+            const bool rider_outer=position<=car.position;
+            const bool due=rider_outer?(r.sched_last==ticks_ && (s.u8(0xc0)&6)==6)
+                                      :(car.last_tick==ticks_ && (car.motion.u8(0xc0)&6)==6);
+            if(!due)continue;
+        }
         // Split-roadway exclusion (0x004368f0 +0x36 & 3 shared-half test).
         if (sample.dual) {
             // Cars run on the player's route; riders on the other branch pass by.
@@ -557,6 +566,29 @@ void Race::collide_traffic(Rider& r) {
         if (std::abs(position - car.position) > half_length + car_half_length) continue;
         if (std::abs(lateral - car.lateral) > half_width + car_half_width) continue;
         if (std::abs(height) > half_height + car_half_height) continue;
+        if(live_schedule_) {
+            // Cars now retain the original mover image, so use both objects'
+            // previous positions/velocities and the common 0x00436a40 law.
+            Rider other;
+            other.bike=car.motion;other.route=riders_[0].route;
+            other.sample=other.previous_sample=size_t(car.position>>8);
+            Bike& q=other.bike;
+            if(q.i32(0xc4)!=0x10) {
+                q.i32(0xc4)=0x10;q.u8(0xc0)=7;
+                for(int k=0;k<5;++k)q.i32(0x30+4*k)=k==0?car.position:k==3?car.lateral:0;
+                q.i32(0x108)=car.kind==2?-car.speed:car.speed;
+            }
+            q.i32(0x1c)=car.position;q.i32(0x28)=car.lateral;q.i32(0xec)=car.speed;
+            q.i32(0x174)=car_half_width;q.i32(0x178)=car_half_length;
+            q.i32(0x17c)=car_half_height;q.i32(0x194)=1800;
+            if(position<=car.position)separate(r,4,other,0x10);
+            else separate(other,0x10,r,4);
+            car.motion=q;car.position=q.i32(0x1c);car.lateral=q.i32(0x28);car.speed=q.i32(0xec);
+            contact_car(r,car);
+            if(s.i32(0x2f4)!=0)return;
+            continue;
+        }
+        // Legacy unscheduled fixture path. Live races use the object image above.
         // Separate along the previously-clear axis (0x00436a40, mass-weighted;
         // car mass 1800 >> bike 256, so the rider takes nearly all of it).
         // The longitudinal share needs course-ring traversal (0x00439270);
@@ -1460,6 +1492,9 @@ void Race::vertical(Rider& r) {
         ground=terrain_height(terrain_source_(current),current.path,terrain_source_(next),next.path,b.i32(0x28)-current.offset*256,uint8_t(b.i32(0x1c)),next.offset-current.offset,current.offset);
     }
     b.i32(0x24) = ground;
+    // 0x0043a190 type-0x20 branch: pedestrians stay grounded, including
+    // knocked-down actors, without the bike landing/bounce law.
+    if(b.i32(0xc4)&0x20) {b.i32(0xf4)=0;b.i32(0x20)=0;b.i32(0x160)=tables_.contact_base;return;}
     const int32_t dt = b.i32(0x18);
     int32_t ground_move = (ground - b.i32(0x38)) * 0x100 + b.i32(0x12c);
     const int32_t above = (b.i32(0xf4) * dt - ground_move) + b.i32(0x20);
@@ -2815,7 +2850,7 @@ void Race::collide_riders() {
             if (live_schedule_ && (r.sched_last != ticks_ || (r.bike.u8(0xc0) & 6) != 6)) continue;
         } else {
             const auto& p = pedestrians_->pool()[size_t(a.pedestrian)];
-            if (freeze_actors_ || p.last_tick != ticks_) continue;
+            if (freeze_actors_ || p.last_tick != ticks_ || (p.body.bike.u8(0xc0)&6)!=6) continue;
         }
         Bike& ab = bike_of(a);
         if (a.rider >= 0 && std::abs(int32_t(uint32_t(ab.i32(0x1c)) & 0xff) - 0x80) < ab.i32(0x178))
@@ -2824,7 +2859,7 @@ void Race::collide_riders() {
             const ScanObject b = scan_[j];
             if (!rider_or_ped(b)) continue;
             Bike& bb = bike_of(b);
-            if (live_schedule_ && b.rider >= 0 && (bb.u8(0xc0) & 5) != 5) continue;
+            if (live_schedule_ && (bb.u8(0xc0) & 5) != 5) continue;
             if (ab.i32(0x178) + bb.i32(0x178) < std::abs(ab.i32(0x1c) - bb.i32(0x1c))) break;
             if (std::abs(ab.i32(0x28) - bb.i32(0x28)) > ab.i32(0x174) + bb.i32(0x174)) continue;
             const Rider& ar = a.rider >= 0 ? riders_[size_t(a.rider)] : pedestrians_->pool()[size_t(a.pedestrian)].body;
@@ -2843,9 +2878,29 @@ void Race::collide_riders() {
     }
 }
 
+void Race::prepare_traffic_obstacles() {
+    if(!traffic_)return;
+    // Lane-scan obstacles for 0x0044a070 (mask 0x3f): bikes, riders on
+    // foot and pedestrians on the cars' (camera) roadway.
+    auto& obstacles = traffic_->obstacles();
+    obstacles.clear();
+    for (const auto& r : riders_) {
+        if (route_of(r)[r.sample].dual && r.route != riders_[0].route) continue;
+        const Bike& b = r.bike;
+        obstacles.push_back({b.i32(0x1c), b.i32(0x28), b.i32(0x108), b.i32(0x10c), 4});
+        if (r.crash_active) { const Bike& f = r.crash_actor.motion; obstacles.push_back({f.i32(0x1c), f.i32(0x28), f.i32(0x108), f.i32(0x10c), 8}); }
+    }
+    if (pedestrians_) for (const auto& p : pedestrians_->pool()) {
+        if (!p.active) continue;
+        const Bike& b = p.body.bike;
+        obstacles.push_back({b.i32(0x1c), b.i32(0x28), b.i32(0x108), b.i32(0x10c), 0x20});
+    }
+}
+
 void Race::step(uint32_t controls) {
     if (riders_[0].finished && std::all_of(riders_.begin(), riders_.end(), [](const Rider& r) { return r.finished; })) return;
     ++ticks_;
+
     if (live_schedule_) {
         schedule_pass(controls, false);   // 0x00438170(0): bikes and halves on their own cadences
         sort_schedule();                  // 0x004383e0 after the pass
@@ -2874,22 +2929,7 @@ void Race::step(uint32_t controls) {
     if (ring_) ring_->advance(int32_t(camera_position()) - int32_t(previous_camera_position_), ring_random_, ring_sink_);
     else build_pedestrian_slices();
     if (traffic_) {
-        // Lane-scan obstacles for 0x0044a070 (mask 0x3f): bikes, riders on
-        // foot and pedestrians on the cars' (camera) roadway.
-        auto& obstacles = traffic_->obstacles();
-        obstacles.clear();
-        for (const auto& r : riders_) {
-            if (route_of(r)[r.sample].dual && r.route != riders_[0].route) continue;
-            const Bike& b = r.bike;
-            obstacles.push_back({b.i32(0x1c), b.i32(0x28), b.i32(0x108), b.i32(0x10c), 4});
-            if (r.crash_active) { const Bike& f = r.crash_actor.motion; obstacles.push_back({f.i32(0x1c), f.i32(0x28), f.i32(0x108), f.i32(0x10c), 8}); }
-        }
-        if (pedestrians_) for (const auto& p : pedestrians_->pool()) {
-            if (!p.active) continue;
-            const Bike& b = p.body.bike;
-            obstacles.push_back({b.i32(0x1c), b.i32(0x28), b.i32(0x108), b.i32(0x10c), 0x20});
-        }
-
+        if(!live_schedule_)prepare_traffic_obstacles();
         // 0x0044b3b0: distance moved this step feeds the spawn timers; the
         // ring front rides 0x5000 ahead of the ring camera, which runs
         // 0x100 ahead of the view camera (0x0044b250: 0x3200 vs 0x3100).

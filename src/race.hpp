@@ -460,6 +460,7 @@ private:
     void step_frozen_schedule(Rider&);       // 0x00437e60 metadata cadence for hydrated frozen riders
     // Live scheduler (race_schedule.cpp).
     void schedule_pass(uint32_t controls, bool countdown);         // 0x00438170(0)
+    void prepare_traffic_obstacles();
     void run_bike_node(Rider&, uint32_t controls, bool countdown); // 0x00437e60 on a bike
     void run_half_node(Rider&, uint32_t controls, bool countdown); // 0x00437e60 on a rider half
     void think_half(Rider&, uint32_t controls, bool countdown);    // 0x00407bd0 / 0x00434660

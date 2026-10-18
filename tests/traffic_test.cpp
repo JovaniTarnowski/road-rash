@@ -221,6 +221,7 @@ static void test_car_schedule_motion() {
     c.last_tick=216;c.next_tick=226;
     c.motion.i32(0xc4)=16;c.motion.i32(0x160)=111;c.motion.i32(0x150)=50;c.motion.i32(0x154)=10;
     unsigned draws=0;auto random=[&](){++draws;return 0u;};
+    system.schedule(route,0x4000,0x9000,0,0,random,227);
     system.step(route,0x4000,0x9000,0,0,0,random,227);
     if(c.dt!=11 || c.speed!=231 || c.position!=34828 || c.lateral!=32000 || c.next_tick!=287)
         throw std::runtime_error("car first scheduled think/drag/move (dt 11)");
