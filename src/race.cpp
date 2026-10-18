@@ -210,6 +210,7 @@ Race::Race(std::vector<RouteSample> a, std::vector<RouteSample> b, const Physics
         r.weapon = o.weapon;
         riders_.push_back(r);
     }
+    riders_.reserve(riders_.size() + 1);   // the cop is appended mid-race; references into riders_ stay valid
     // Nitro setup (0x0040b0e0): copy the six words from the player spec
     // at +0x14c when the spec carries them, else keep EXE defaults; the
     // accumulator starts at maximum<<8. Synthetic specs are zero there, so
@@ -326,13 +327,13 @@ void Race::cross_sample(Rider& r, int32_t delta) {
         r.previous_sample = start_sample;
         r.sample = size_t(to >> 8);
         accumulate(r, from, to, start_sample, r.sample);
-        if (!r.finished) { r.finished = true; r.finish_tick = ticks_; }
+        if (!r.finished && !r.cop) { r.finished = true; r.finish_tick = ticks_; }
         b.u8(0xc0) = uint8_t(b.u8(0xc0) | 0x10);   // 0x00437800 rider+bike latch
         return;
     }
     if ((to >> 8) > last) {
         to = uint32_t(last << 8);
-        if (!r.finished) { r.finished = true; r.finish_tick = ticks_; }
+        if (!r.finished && !r.cop) { r.finished = true; r.finish_tick = ticks_; }
         b.u8(0xc0) = uint8_t(b.u8(0xc0) | 0x10);   // 0x00437800 latch on the legacy path too
     }
     b.i32(0x134) = int32_t(from);
@@ -1086,7 +1087,7 @@ bool Race::knock_off(Rider& victim, int32_t stamina_damage, int32_t bike_damage,
     }
     if (reason == 4 && victim.bike.i32(0x2f4) == 0) {
         if (live_schedule_ && ride_library_)
-            set_animation_with_fallback(victim.ride_animation, ride_library_->playback[0], 9, uint32_t(ticks_), ride_library_->fallback);
+            set_animation_with_fallback(victim.ride_animation, ride_bank(victim), 9, uint32_t(ticks_), ride_library_->fallback);
         else victim.contact_animation = 9;
     }
     else if (reason == 5) {
@@ -1685,7 +1686,7 @@ int Race::ai_scan_replan(const Rider& r, bool forward, int32_t cap) const {
     // 0x00408cd0: from the rider's half, walk rider halves (mask 8) with
     // 0x00449ce0 until one lies strictly inside its slice's road edges
     // (+0xe0/+0xe4); return that half's bike (+0x1c4). The police rider
-    // (DAT_004642dc) skips the edge test; cops are not riders here.
+    // (DAT_004642dc) skips the edge test.
     build_scan_list();
     int at = scan_find(int(&r - riders_.data()), 8);
     for (;;) {
@@ -1695,7 +1696,7 @@ int Race::ai_scan_replan(const Rider& r, bool forward, int32_t cap) const {
         const Rider& q = riders_[size_t(o.rider)];
         const SliceEdges e = edges(q, q.sample);
         const int32_t x = o.lateral >> 8;
-        if (e.left < x && x < e.right) return o.rider;
+        if (r.cop || (e.left < x && x < e.right)) return o.rider;   // the police rider skips the edge test
     }
 }
 
@@ -1850,20 +1851,23 @@ int32_t Race::ai_curve_limit(const Rider& r) const {
 // tables with the rubber band / fixed cases.
 void Race::ai_replan(Rider& r) {
     AiState& ai = r.brain;
-    // Ease the rating table once per 60 ticks banked (the police rider's
-    // +0x1a4 decay applies to DAT_004642dc only).
+    // Ease the rating table once per 60 ticks banked; the police rider also
+    // decays its pursuit speed +0x1a4 by one each bank (reset below 0x32).
     auto ease = [](int32_t& cur, int32_t target, int32_t step) {
         if (cur == target) return;
         if (target < cur) { cur -= step; if (cur < target) cur = target; }
         else { cur += step; if (target < cur) cur = target; }
     };
     while (ai.replan_ticks > 0x3b) {
+        if (r.cop) {
+            if (--ai.current_speed < 0x32 && level_ >= 0 && level_ < 5) ai.current_speed = ai.spd_b[size_t(level_)];
+        }
         for (int k = 0; k < 10; ++k)
             for (int j = 0; j < 3; ++j)
                 ease(ai.rating[size_t(k * 3 + j)], ai.rating_tgt[size_t(k * 3 + j)], ai.ease[size_t(j)]);
         ai.replan_ticks -= 0x3c;
     }
-    const int32_t cap = 0xa00;   // 0x5000 only for the police rider
+    const int32_t cap = r.cop ? 0x5000 : 0xa00;
     const int ahead = ai_scan_replan(r, true, cap);
     ai.nbr_ahead = ahead;
     const int behind = ai_scan_replan(r, false, cap);
@@ -1899,8 +1903,11 @@ void Race::ai_replan(Rider& r) {
             }
         }
     }
+    // The cop only ever chases a live bike (0x00432500: +0xe4 callback set);
+    // DAT_004c5d7c == 4 (two-player pursuit rules) is not an offline state.
     ai.target_rider = pick;
     ai.target_step = step;
+    if (r.cop) return;   // 0x004082f0: the cop keeps its pursuit speed words
     if (level_ >= 0 && level_ < 5) {
         ai.current_speed = ai.spd_b[size_t(level_)];
         ai.current2 = ai.spd_a[size_t(level_)];
@@ -1972,7 +1979,7 @@ void Race::ai_start_attack(Rider& r, bool backhand) {
         ai_relationship(*t, r, 0);
         ai_relationship(r, *t, 3);
     }
-    set_animation_with_fallback(r.ride_animation, ride_library_->playback[0], code, uint32_t(ticks_), ride_library_->fallback);
+    set_animation_with_fallback(r.ride_animation, ride_bank(r), code, uint32_t(ticks_), ride_library_->fallback);
     r.attack.fired = false;
 }
 
@@ -2008,7 +2015,13 @@ bool Race::ai_can_overtake(Rider& r) {
     if (level_ >= 0 && level_ < 5 && overtake_eagerness_) table = (*overtake_eagerness_)[size_t(level_)] * r.bike.i32(0x18);
     const uint32_t draw = random() & 0xff;
     if (table - int32_t(draw) == 0 || int32_t(draw) > table) return false;
-    return true;
+    if (!r.cop) return true;
+    // 0x004092e0 cop tail: only with the half's latched weapon +0x1d4 == 1,
+    // and then when the target's relationship target (+0x7c) is below the
+    // current (+4) in the target's personality column.
+    if (r.attack.weapon != 1) return false;
+    const int k = t.brain.overtake_index;
+    return k < 10 && r.brain.rating_tgt[size_t(k * 3 + 1)] < r.brain.rating[size_t(k * 3 + 1)];
 }
 
 // 0x0040a4a0: true when the target is within 0xf0 ahead (adjusted for lengths).
@@ -2243,7 +2256,7 @@ void Race::ai_think(Rider& r) {
     case 3: { // 0x00409460: follow, attack selection/hit, then steer again.
         ai_state_follow(r);
         if (!ai_attack_anim(r)) {
-            if (int(random()) % r.brain.kick_roll == 0) {
+            if (int(random()) % r.brain.kick_roll == 0 && !r.cop) {
                 r.attack.weapon = 3;
                 ai_start_attack(r, false);
             } else {
@@ -2286,7 +2299,7 @@ void Race::ai_state_racing(Rider& r) {
 
 // Follow state 4 (0x00409ca0; state 3 runs it first): close on the target's
 // half alongside, matching its speed through 0x00449a80, unless it is far
-// ahead (then race). Police-only caps (DAT_004642dc) are not modelled.
+// ahead (then race). The police rider uses a 500 window and the downed-target caps.
 void Race::ai_state_follow(Rider& r) {
     Bike& b = r.bike;
     AiState& ai = r.brain;
@@ -2299,7 +2312,7 @@ void Race::ai_state_follow(Rider& r) {
     const size_t tsample = live_schedule_ ? t.half_mirror.sample : t.sample;
     const int32_t dpos = tpos - b.i32(0x1c);
     const int32_t dist = std::abs(dpos) >> 4;
-    const int32_t window = 0xa0;   // 500 for the police rider
+    const int32_t window = r.cop ? 500 : 0xa0;
     if (dpos > 0 && window < dist) { ai_state_racing(r); return; }
     if (ai_overtake(r)) { ai_speed_steer(r); return; }
     // Target half speed: +0x108 for the player (+0x324 == 0), else +0xec.
@@ -2338,6 +2351,12 @@ void Race::ai_state_follow(Rider& r) {
     else want = shown + 5;
     ai.target_speed = want;
     if (std::abs(tspeed - speed) < 2000 && alongside && speed > 4000) b.i32(0xec) = ai.target_speed * 100;
+    else if (r.cop) {
+        // 0x00409ca0: the chaser stops for a downed target and slows for one on foot.
+        const int crash = t.bike.i32(0x2f4);
+        if (crash == 1) ai.target_speed = 0;
+        else if (crash != 0) ai.target_speed = std::min(ai.target_speed, 0x14);
+    }
     ai_speed_steer(r);
 }
 
@@ -2362,12 +2381,12 @@ void Race::ai_state_fight(Rider& r) {
         if (ai.target_rider >= 0) {
             const Rider& t = riders_[size_t(ai.target_rider)];
             const int32_t tlat = t.bike.i32(0x28);
-            if (std::abs(ai.target_x - tlat) <= 0x8fff) ai.target_x = tlat;
-            // ...unless the target is a live chaser (needs cops: open).
-            else {
+            // ...unless the rider is the police chaser, which always snaps.
+            if (std::abs(ai.target_x - tlat) > 0x8fff && !r.cop) {
                 ai_state_racing(r);
                 return;
             }
+            ai.target_x = tlat;
         }
     }
     ai_speed_steer(r);
@@ -2462,6 +2481,7 @@ void Race::rider_think(Rider& r, uint32_t controls, bool player) {
     }
     // 0x00407f30 runs at the end of the think (0x00434660 / 0x00407bd0),
     // before the physics move: selection reads the previous tick's speed.
+    if (player) police_think(r);
     advance_ride_animation(r, player);
 }
 // The bike physics move (0x0043a580 from 0x004060b0's live branch).
@@ -2529,6 +2549,140 @@ void Race::spawn_brain(Rider& r, size_t built) {
 uint32_t Race::random() {
     seed_ = seed_ * 0x343fdu + 0x269ec3u;
     return (seed_ >> 16) & 0x7fff;
+}
+
+void Race::set_police(const PoliceConfig& config, std::vector<BikeSpec> specs, const ActorAnimationLibrary* library) {
+    police_ = PoliceSetup{config, std::move(specs), library};
+}
+
+// 0x00406b80 (called with the ring slice from 0x00449910): the cop is built
+// by 0x00405990 (templates 0x464310/0x464378, rider row 15, param_5 = 2),
+// its brain is the police personality, and the player's relationship toward
+// it is replaced from the player's place and the level.
+bool Race::spawn_cop(int32_t slice_offset) {
+    if (!police_ || !police_->library || riders_.empty() || ring_setup_ || cop_index() >= 0) return false;
+    if (riders_.size() == riders_.capacity()) riders_.reserve(riders_.size() + 1);   // keeps outstanding references valid only when the ctor reserved
+    const Rider& player = riders_[0];
+    const auto& road = route_of(player);
+    // 0x00449910 from the player's half slice (+0x2c), clamped to the ring.
+    int64_t slice = int64_t(live_schedule_ ? player.half_mirror.sample : player.sample) + slice_offset;
+    const int64_t lo = ring_ ? int64_t(ring_->back_q8() >> 8) : 0;
+    const int64_t hi = std::min<int64_t>(ring_ ? int64_t(ring_->front_q8() >> 8) - 1 : int64_t(road.size()) - 1, int64_t(road.size()) - 1);
+    slice = std::clamp<int64_t>(slice, std::min(lo, hi), hi);
+    PoliceSpawnInput in;
+    in.level = level_;
+    in.player_place = std::clamp(player.place, 0, 15);
+    in.player_personality = std::clamp(player.brain.overtake_index, 0, 9);
+    in.lane = int(random() % 3);   // 0x00405990: the lane draw
+    in.position = int32_t(slice) * 256;
+    in.lateral_q8 = in.lane_target_q8 = road[size_t(slice)].offset * 256 + road_base_;
+    in.tick = uint32_t(ticks_);
+    PoliceActor a = make_police_actor(police_->config, tables_, police_->specs, *police_->library, in);
+    Rider r;
+    r.cop = true;
+    r.ai = true;
+    r.slot = 15;
+    r.rider_idx = 15;
+    r.route = player.route;
+    r.sample = r.previous_sample = size_t(slice);
+    r.bike = a.bike;
+    r.half_object = a.rider;
+    r.ride_animation = a.rider_animation;
+    for (int k = 0; k < 5; ++k) r.bike.i32(0x30 + 4 * k) = r.bike.i32(0x1c + 4 * k);
+    r.stamina = {a.stats[12], a.stats[13], a.stats[14], a.stats[15]};
+    r.weapon = a.stats[size_t(6 + level_)];
+    r.nitro_charge = nitro_.max << 8;
+    if (crash_library_) init_crash_actor(r.crash_actor, crash_config_);
+    // Brain: the 0x204-byte police personality (config words, relationship
+    // columns reset and the player's column replaced by police_pursuit).
+    const auto& w = a.pursuit.personality;
+    auto byte_at = [&](size_t off) { return int((uint32_t(w[off / 4]) >> (8 * (off & 3))) & 0xff); };
+    AiState& ai = r.brain;
+    for (int i = 0; i < 5; ++i) { ai.spd_a[i] = w[0x1a8 / 4 + size_t(i)]; ai.spd_b[i] = w[0x1bc / 4 + size_t(i)]; }
+    for (int i = 0; i < 30; ++i) { ai.rating[i] = w[size_t(i)]; ai.rating_tgt[i] = w[0x78 / 4 + size_t(i)]; }
+    for (int i = 0; i < 3; ++i) ai.ease[i] = w[0x12c / 4 + size_t(i)];
+    ai.overtake_index = byte_at(0x165);
+    ai.kick_roll = int8_t(byte_at(0x1d0)); ai.backhand_roll = int8_t(byte_at(0x1d1));
+    for (int i = 0; i < 15; ++i) ai.reaction[i] = w[0xf0 / 4 + size_t(i)];
+    ai.reach = w[0x1d4 / 4]; ai.word_184 = w[0x184 / 4];
+    ai.lane = in.lane;
+    riders_.push_back(std::move(r));
+    Rider& cop = riders_.back();
+    const int index = int(riders_.size()) - 1;
+    if (live_schedule_) init_live_rider(cop, 4);   // template interval 4 (0x00464310 word 2)
+    spawn_brain(cop, riders_.size());               // 0x00405c80
+    // 0x00406b80 tail: pursuit speed from +0x1bc[level], overwritten after the build.
+    cop.brain.current_speed = w[0x1a4 / 4];
+    cop.brain.current2 = w[0x1a0 / 4];
+    cop.bike.i32(0xec) = 0;
+    if (live_schedule_) live_standings(cop);
+    // The player's relationship toward the cop (player brain +0x80/+8 columns).
+    const int column = cop.brain.overtake_index;
+    if (column >= 0 && column < 10) {
+        Rider& p0 = riders_[0];
+        p0.brain.rating_tgt[size_t(column * 3 + 2)] = a.player_relationship;
+        p0.brain.rating[size_t(column * 3 + 2)] = a.player_relationship;
+    }
+    schedule_add(index);
+    return true;
+}
+
+// 0x00407860: from the player's half, scan rider halves backward within
+// 0xa00 then forward within 0x500 for the cop's half; an uncrashed cop is
+// returned unless the player's bike is flagged 0x10.
+int Race::find_cop(const Rider& player) const {
+    const int cop = cop_index();
+    if (cop < 0) return -1;
+    build_scan_list();
+    const int from = scan_find(int(&player - riders_.data()), 8);
+    for (int pass = 0; pass < 2; ++pass) {
+        int at = from;
+        for (;;) {
+            at = scan_next(at, 8, pass == 1, pass == 0 ? 0xa00 : 0x500);
+            if (at < 0) break;
+            if (scan_[size_t(at)].rider != cop || riders_[size_t(cop)].bike.i32(0x2f4) != 0) continue;
+            return (player.bike.u8(0xc0) & 0x10) == 0 ? cop : -1;
+        }
+    }
+    return -1;
+}
+
+// 0x00407f30 (owner 0): the arrest decision, then the periodic cop spawn.
+void Race::police_think(Rider& player) {
+    if (!police_) return;
+    const uint8_t half_flags = player.half_object.u8(0xc0);
+    if (half_flags & 0x10) return;
+    const Bike& b = player.bike;
+    const int cop = find_cop(player);
+    PoliceArrestInput in;
+    in.owner = 0;
+    in.crash = b.i32(0x2f4);
+    in.bike_flags = b.u8(0xc0);
+    in.rider_flags = half_flags;
+    in.found_cop = cop >= 0;
+    in.bike_speed = b.i32(0xec);
+    in.rider_position = live_schedule_ ? player.half_mirror.position : b.i32(0x1c);
+    if (cop >= 0) {
+        in.cop_speed = riders_[size_t(cop)].bike.i32(0xec);
+        in.cop_position = riders_[size_t(cop)].bike.i32(0x1c);
+    }
+    if (police_arrest(in)) busted_ = true;   // 0x00416010(4, 0xb4): the screen sees the outcome once
+    if (police_spawn_due(uint32_t(ticks_), 0, half_flags, cop_index() >= 0)) spawn_cop(-0x27);
+}
+
+// 0x004073a0: the cop is unlinked and freed. The cop is always the last
+// rider, so removing it leaves every other index intact.
+void Race::remove_cop() {
+    cop_removal_pending_ = false;
+    const int index = cop_index();
+    if (index < 0) return;
+    schedule_.erase(std::remove_if(schedule_.begin(), schedule_.end(), [&](const ScheduleNode& n) { return n.rider == index; }), schedule_.end());
+    riders_.pop_back();
+    for (auto& r : riders_) {
+        for (int* v : {&r.brain.target_rider, &r.brain.nbr_ahead, &r.brain.nbr_behind, &r.brain.overtake_latched})
+            if (*v == index) *v = -1;
+    }
+    if (last_target_ == index) last_target_ = -1;
 }
 
 // Plan 10: field order follows tests/sim_fields.hpp rider_fields. Values are
@@ -2631,7 +2785,7 @@ bool Race::fight_hit_frame(const Rider& r) const {
     uint32_t flags = 0;
     const auto& selected = r.ride_animation.selected;
     if (selected) {
-        const auto& seq = ride_library_->playback[0].at(size_t((*selected)[0]));
+        const auto& seq = ride_bank(r).at(size_t((*selected)[0]));
         if (seq) flags = seq->at(size_t((*selected)[1])).flags;
     }
     return (flags & 0x600000) || r.ride_animation.frame == 2;
@@ -2714,7 +2868,7 @@ void Race::resolve_hit(Rider& r, size_t index) {
         if (ride_library_ && steal_codes_ && attack_codes_) {
             const auto& codes = *attack_codes_;
             const bool left = target->ride_animation.animation == codes[0][0][0] || target->ride_animation.animation == codes[0][1][0];
-            const auto& bank = ride_library_->playback[0];
+            const auto& bank = ride_bank(r);
             const auto& fallback = ride_library_->fallback;
             set_animation_with_fallback(r.ride_animation, bank, (*steal_codes_)[size_t(r.attack.weapon + left * 4)], uint32_t(ticks_), fallback);
             queue_animation_with_fallback(r.ride_animation, bank, 2, fallback);
@@ -2744,7 +2898,7 @@ void Race::resolve_hit(Rider& r, size_t index) {
         if ((random() % (6 - level_)) == 0) queued = r.ride_animation.animation;
         else if (index != 0 && (random() & 3) == 2) queued = 6;
         if (queued >= 0 && ride_library_)
-            queue_animation_with_fallback(r.ride_animation, ride_library_->playback[0], queued, ride_library_->fallback);
+            queue_animation_with_fallback(r.ride_animation, ride_bank(r), queued, ride_library_->fallback);
     }
     Bike& tb = target->bike;
     if (landed) {
@@ -2825,13 +2979,13 @@ void Race::set_ride_library(const ActorAnimationLibrary* library,
                             const std::array<std::array<std::array<int8_t,4>,2>,2>* attacks) {
     ride_library_ = library; attack_codes_ = attacks;
     if (!ride_library_) return;
-    const auto& bank = ride_library_->playback[0];
     for (auto& r : riders_) {
         auto& st = r.ride_animation;
         set_animation(st, bank, 2, uint32_t(ticks_));
         queue_animation(st, bank, 2);
         st.selected.reset();
         advance_animation(st, bank, uint32_t(ticks_));
+        const auto& bank = ride_bank(r);
     }
 }
 void Race::advance_ride_animation(Rider& r, bool player) {
@@ -2841,7 +2995,7 @@ void Race::advance_ride_animation(Rider& r, bool player) {
     // the bank. Crash states stay owned by step_crash.
     if (!ride_library_) { r.contact_animation = -1; return; }
     if (r.bike.i32(0x2f4) != 0) return;
-    const auto& bank = ride_library_->playback[0];
+    const auto& bank = ride_bank(r);
     const auto& fallback = ride_library_->fallback;
     auto& st = r.ride_animation;
     if (r.contact_animation >= 0) {
@@ -2899,7 +3053,7 @@ int Race::place(size_t index) const {
     const Rider& me = riders_.at(index);
     int place = 1;
     for (size_t i = 0; i < riders_.size(); ++i) {
-        if (i == index) continue;
+        if (i == index || riders_[i].cop) continue;   // the place table 0x004c7fb0 holds no cop
         const Rider& o = riders_[i];
         bool ahead;
         if (o.finished && me.finished) ahead = o.finish_tick < me.finish_tick;
@@ -2929,7 +3083,7 @@ void Race::update_halves() {
         if (r.place_refresh > last) continue;
         int place = 1;   // 0x00407550 over the other riders
         for (size_t j = 0; j < riders_.size(); ++j) {
-            if (j == i) continue;
+            if (j == i || riders_[j].cop) continue;
             const Rider& o = riders_[j];
             const bool shared = o.bike_slice_present && r.bike_slice_present &&
                 !(route_of(r)[r.sample].dual && o.route != r.route);
@@ -3057,7 +3211,7 @@ void Race::prepare_traffic_obstacles() {
 }
 
 void Race::step(uint32_t controls) {
-    if (riders_[0].finished && std::all_of(riders_.begin(), riders_.end(), [](const Rider& r) { return r.finished; })) return;
+    if (riders_[0].finished && std::all_of(riders_.begin(), riders_.end(), [](const Rider& r) { return r.cop || r.finished; })) return;
     ++ticks_;
     const bool trace = std::getenv("RR_SIM_TRACE_TICK") && ticks_ == std::atoi(std::getenv("RR_SIM_TRACE_TICK"));
     auto phase = [&](const char* label) { if (trace) std::fprintf(stderr, "phase %d %s rng %u\n", ticks_, label, seed_); };
@@ -3108,3 +3262,4 @@ void Race::step(uint32_t controls) {
     previous_camera_position_=camera_position();
 }
 }
+    if (cop_removal_pending_) remove_cop();

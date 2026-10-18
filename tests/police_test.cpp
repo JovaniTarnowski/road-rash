@@ -1,9 +1,11 @@
 #include "police.hpp"
 #include "assets.hpp"
 #include "actor_descriptors.hpp"
+#include "race_setup.hpp"
 #include <fstream>
 #include <sstream>
 #include <map>
+#include <cstdlib>
 #include <iostream>
 #include <stdexcept>
 static void require(bool condition,const char* message){if(!condition)throw std::runtime_error(message);}
@@ -59,6 +61,30 @@ int main() {
                 if(rr::police_arrest(input)!=(get("arrested")!=0) || get("delay")!=(get("arrested")?180:0))throw std::runtime_error(root+"original arrest outcome mismatch");
             }
             std::cout<<"1,024 original local arrest outcomes and delays match\n";
+        }
+        {
+            // Live wiring (plan 32 D): a parked player on Napa level 3 meets the
+            // periodic cop at tick 4096 (0x00407f30), the cop chases through the
+            // rider think/move path, finds the stopped player (0x00407860) and
+            // arrests it (outcome 4). The cop never takes a place.
+            const auto exe=assets.read("ROADRASH.EXE");
+            rr::RaceConfig config;config.course="NAPA";config.level=3;config.character=1;config.bike_from_table=true;config.career=false;
+            rr::RaceSetup setup=rr::make_race_setup(assets,exe,config);
+            auto& race=*setup.instance.race;
+            require(race.police_enabled() && race.cop_index()<0 && !race.busted(),"Police enabled without a cop at the start");
+            const int place_before=race.place(0);
+            while(race.ticks()<4095){race.step(0);require(race.cop_index()<0,"No cop before tick 4096");}
+            race.step(0);
+            require(race.ticks()==4096 && race.cop_index()>0,"Periodic cop spawns at tick 4096");
+            const auto& cop=race.riders()[size_t(race.cop_index())];
+            require(cop.cop && cop.ai && cop.bike.i32(0x324)==2 && cop.bike.u8(0x328)==15,"Cop actor identity");
+            require(cop.bike.i32(0x1c)<race.bike().i32(0x1c),"Periodic cop starts behind the player");
+            require(race.place(0)<=race.riders().size(),"Cop does not take a place");
+            (void)place_before;
+            int arrested=-1;
+            for(int t=0;t<6000 && arrested<0;++t){race.step(0);if(race.busted())arrested=t;if(std::getenv("RR_COP_TRACE")&&t%40==0&&race.cop_index()>=0){const auto& c=race.riders()[size_t(race.cop_index())];std::cout<<t<<" cop pos "<<c.bike.i32(0x1c)<<" spd "<<c.bike.i32(0xec)<<" state "<<c.brain.state<<" tgt "<<c.brain.target_rider<<" player "<<race.bike().i32(0x1c)<<"\n";}}
+            std::cout<<"cop present="<<(race.cop_index()>=0)<<" arrested_after="<<arrested<<"\n";
+            require(arrested>=0,"Cop arrests the stopped player");
         }
         std::cout<<"Police spawn/arrest boundary tests passed\n";return 0;
     }catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}

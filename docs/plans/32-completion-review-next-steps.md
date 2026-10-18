@@ -72,9 +72,16 @@ divergence later is progress, not final acceptance.
 
 ### D. Complete live race systems (plans 11, 16, 17, 24)
 
-- [ ] Wire police spawn/pursuit/actors/contact/arrest into the live factory and
+- [~] Wire police spawn/pursuit/actors/contact/arrest into the live factory and
   race result path. Test that a real arrest reaches career penalties and the
   busted cutscene. Helper-only `police_test` is insufficient.
+  Done (October 18, `docs/agent-handoffs/police-live-20261018.md`): cop built in
+  the rider list by the periodic 0x00407f30 spawn and the DZHR cop records,
+  pursuit through the AI think/move with the cop-only branches, cop-find
+  0x00407860, arrest -> `Race::busted()` -> `RaceOutcome::busted`, cop drawn
+  from bank 1. Open: siren audio (event 19, 0x00435ae0), original-capture
+  comparison (`napa-cops`, `city-cops`), cop crash/on-foot semantics, and a
+  playtest through the BUSTED video.
 - [ ] Replace `Race::walls` with the recovered behavior; finish crash/on-foot
   traffic and police-owner recovery semantics. Preserve original integer/RNG
   behavior with scenario captures first.

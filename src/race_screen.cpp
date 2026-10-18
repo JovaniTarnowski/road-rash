@@ -233,12 +233,14 @@ bool RaceScreen::iterate(uint64_t now_ns) {
         if (!g_.view_ready) g_.view_prev = g_.view_cur;
         g_.view_ready = true;
         if (!g_.career) continue;
-        if (!decided_ && (g_.race().finished() || g_.race().wrecked())) {
+        if (!decided_ && (g_.race().finished() || g_.race().wrecked() || g_.race().busted())) {
             decided_ = true;
             end_ticks_ = race_end_delay;
             result_.place = std::max(0, g_.race().place(0) - 1);
-            // 0x00416010: finished becomes won for places 1-3 (0-based < 3), lost otherwise.
-            result_.outcome = g_.race().finished() ? (result_.place < 3 ? RaceOutcome::won : RaceOutcome::lost)
+            // 0x00416010: finished becomes won for places 1-3 (0-based < 3), lost otherwise;
+            // 0x00407f30 arrests with outcome 4 (busted) before the bike is used up.
+            result_.outcome = g_.race().busted() ? RaceOutcome::busted
+                            : g_.race().finished() ? (result_.place < 3 ? RaceOutcome::won : RaceOutcome::lost)
                                                 : RaceOutcome::wrecked;
         } else if (decided_ && --end_ticks_ <= 0) {
             // 0x00442e10 returned true: 0x004163d0 fades out, then returns.

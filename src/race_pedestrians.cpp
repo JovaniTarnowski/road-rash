@@ -84,11 +84,15 @@ void Race::spawn_pedestrian(const RouteSample& sample, size_t s, const DzhrActor
     const int32_t lateral = int32_t(uint32_t((sample.offset + offset12) * 256) - spread * 2 + jitter % (spread * 4 + 1));
     if (type >= 0xb) {
         // 0x004409e0 else-branch: two rand() draws, then the police bike
-        // 0x00406b80 near the player. Cops are not live yet (plan 24 Task 2);
-        // the draws keep the stream aligned.
-        // 0x004409e0 draws only once the player exists (DAT_004642d8);
-        // the ring setup runs before 0x00405600 builds it.
-        if (!ring_setup_) { random(); random(); }
+        // 0x00406b80 at (second draw % 0x81 + 0x200) * 0x10 >> 8 slices
+        // ahead of the player, with the first draw as the siren distance.
+        // It draws only once the player exists (DAT_004642d8); the ring
+        // setup runs before 0x00405600 builds it.
+        if (!ring_setup_) {
+            random();
+            const uint32_t ahead = random() % 0x81;
+            spawn_cop(int32_t((ahead + 0x200) * 0x10) >> 8);
+        }
         return;
     }
     const int32_t player = ring_setup_ ? 0 : riders_[0].bike.i32(0x1c);   // local_8

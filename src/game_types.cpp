@@ -118,29 +118,50 @@ std::vector<DrawNode> Game::rider_nodes(const RoadSlice& near,const RoadSlice& f
         ActorOrientation orientation;orientation.depth=near.depth;orientation.position=pos_q8;orientation.road_x=a.road_x+camera.x;orientation.lateral_q8=lat_q8-sample.offset*256;orientation.road_heading=a.heading;orientation.heading=head;orientation.roll=roll;orientation.rider=!rd.crash_active || item.body;
         ActorProjection projection;projection.road_x=orientation.road_x;projection.far_x=b.road_x+camera.x;projection.road_y=a.world_y;projection.far_y=b.world_y;projection.lateral=orientation.lateral_q8/256;projection.ground=gnd_q8;projection.depth=near.depth;projection.fraction=uint8_t(orientation.position);projection.occlusion=ceiling;
         const auto& state=rd.crash_active?(item.body?rd.crash_actor.animation:rd.crash_bike_animation):actor_states[i];
-        const auto selected=*state.selected;const auto& descriptor=assets.actors->library().playback[0].at(size_t(selected[0]))->at(size_t(selected[1]));
-        const auto nodes=assets.actors->rider(descriptor,0,rd.colour,orientation,projection,camera,depth,bike.i32(0x20),nullptr,logical_width());output.insert(output.end(),nodes.begin(),nodes.end());
+        const size_t bank=rd.cop?1:0;   // 0x00443610: the cop sheets (bank 1) draw with the cop palette
+        const auto selected=*state.selected;const auto& descriptor=assets.actors->library().playback[bank].at(size_t(selected[0]))->at(size_t(selected[1]));
+        const auto nodes=assets.actors->rider(descriptor,bank,rd.colour,orientation,projection,camera,depth,bike.i32(0x20),nullptr,logical_width());output.insert(output.end(),nodes.begin(),nodes.end());
     }
     return output;
+}
+
+// The cop is appended to (and removed from) the rider list mid-race; give its
+// animation block the cop bank (0x00446060 with param_5 = 2) or drop it.
+void Game::sync_actor_states() {
+    const size_t count=race().riders().size();
+    actor_states.resize(count);previous_attacks.resize(count,0);previous_crashes.resize(count,false);
+    const auto& library=assets.actors->library();
+    for(size_t i=0;i<count;++i) {
+        const auto& rider=race().riders()[i];
+        if(rider.cop && !actor_states[i].selected) {
+            actor_states[i]={};
+            set_animation_with_fallback(actor_states[i],library.playback[1],2,uint32_t(race().ticks()),library.fallback);
+            queue_animation_with_fallback(actor_states[i],library.playback[1],2,library.fallback);
+            advance_animation(actor_states[i],library.playback[1],uint32_t(race().ticks()));
+            previous_attacks[i]=0;previous_crashes[i]=false;
+        }
+    }
 }
 
 void Game::tick(uint32_t controls) {
     if (countdown > 0) --countdown;   // race clock starts after the countdown
     else {
         race().step(controls);
+        if(assets.actors)sync_actor_states();
         if(assets.actors)for(size_t i=0;i<actor_states.size();++i) {
             const auto& rider=race().riders()[i];const auto& b=rider.bike;auto& state=actor_states[i];
             const auto& library=assets.actors->library();
+            const auto& playback=library.playback[rider.cop?1:0];
             if(b.i32(0x2f4)){previous_crashes[i]=true;continue;}
             if(previous_crashes[i]){state=rider.crash_bike_animation;previous_crashes[i]=false;previous_attacks[i]=0;}
             // Race still uses its documented combat timer. Bridge its
             // completion to the original queued-animation mechanism until
             // original hit/event scheduling replaces that timer.
-            if(!rider.attack.timer && previous_attacks[i])queue_animation_with_fallback(state,library.playback[0],2,library.fallback);
+            if(!rider.attack.timer && previous_attacks[i])queue_animation_with_fallback(state,playback,2,library.fallback);
             previous_attacks[i]=rider.attack.timer;
-            if(rider.attack.timer==1)set_animation_with_fallback(state,library.playback[0],(*assets.attack_codes)[rider.attack.right][rider.attack.backhand][rider.attack.weapon],uint32_t(race().ticks()),library.fallback);
+            if(rider.attack.timer==1)set_animation_with_fallback(state,playback,(*assets.attack_codes)[rider.attack.right][rider.attack.backhand][rider.attack.weapon],uint32_t(race().ticks()),library.fallback);
             RidingAnimationInput input;input.speed=b.i32(0xec);input.throttle=b.i32(0x114);input.lateral_speed=b.i32(0x100);input.boost=b.i32(0xf4);input.flags=b.u8(0x278);input.player=i==0;input.wrecked=(b.u8(0xc0)&0x10)!=0;input.camera_distance=std::abs(b.i32(0x1c)-int32_t(race().camera_position()));
-            advance_riding_animation(state,library.playback[0],library.fallback,input,uint32_t(race().ticks()));
+            advance_riding_animation(state,playback,library.fallback,input,uint32_t(race().ticks()));
         }
     }
     if (sound) {

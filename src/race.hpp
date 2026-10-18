@@ -3,6 +3,7 @@
 #include "crash.hpp"
 #include "actor_descriptors.hpp"
 #include "road.hpp"
+#include "police.hpp"
 #include "sound_event.hpp"
 #include <array>
 #include <vector>
@@ -179,6 +180,7 @@ struct Rider {
     int rider_idx = 0;                      // 0x00463c78 row / personality index (0x00405990 param_6)
     size_t sample = 0, previous_sample = 0; // bike +0x140 / +0x13c
     bool ai = false;
+    bool cop = false;                       // the police rider (DAT_004642dc, 0x00406b80); never in places or finish order
     bool frozen = false;                    // solo oracle: think/move nulled, scanned but never stepped
     // Frozen scheduler metadata (0x00437e60 head + LAB_00438108): last/next/dt
     // evolve on every scheduled run even with NULL think/move; only the
@@ -348,6 +350,19 @@ public:
     void set_crash_library(const ActorAnimationLibrary&,const CrashConfig&);
     void set_ride_library(const ActorAnimationLibrary* library,
                           const std::array<std::array<std::array<int8_t,4>,2>,2>* attacks);
+    // Police (plan 24 Task 2 / plan 32 D): enables the cop constructor
+    // 0x00406b80 for the periodic spawn in 0x00407f30 and the DZHR cop
+    // records. The cop is appended as the last rider (at most one) and is
+    // removed when it parks (0x00406940 -> 0x004073a0).
+    void set_police(const PoliceConfig&, std::vector<BikeSpec> specs, const ActorAnimationLibrary* library);
+    bool police_enabled() const { return bool(police_); }
+    // 0x00406b80: builds the cop `slice_offset` ring slices from the player's
+    // half (0x00449910 walk, clamped to the ring). False when a cop exists,
+    // the police are not enabled or the race has no player yet.
+    bool spawn_cop(int32_t slice_offset);
+    int cop_index() const { return !riders_.empty() && riders_.back().cop ? int(riders_.size()) - 1 : -1; }
+    // 0x00416010(4, 0xb4): the player was arrested (0x00407f30).
+    bool busted() const { return busted_; }
     // Nitro setup 0x0040b0e0: copy six words from the player spec at +0x14c
     // and start the accumulator at maximum<<8. Call once after construction
     // (the game calls it from 0x00405600 right after the player build).
@@ -578,6 +593,16 @@ private:
     int name_roll_ = -1;
     size_t built_riders_ = SIZE_MAX;   // build_draws: riders 0x00405600 has built so far (scan limit)
     void spawn_brain(Rider& r, size_t built);
+    struct PoliceSetup { PoliceConfig config; std::vector<BikeSpec> specs; const ActorAnimationLibrary* library = nullptr; };
+    std::optional<PoliceSetup> police_;
+    bool busted_ = false;
+    bool cop_removal_pending_ = false;
+    void police_think(Rider& player);              // 0x00407f30 arrest + periodic spawn (owner 0)
+    int find_cop(const Rider& player) const;       // 0x00407860
+    void remove_cop();                             // 0x004073a0
+    void init_live_rider(Rider&, int32_t interval);   // 0x00438930 scheduler words
+    void schedule_add(int rider);                  // 0x00438aa0 insert
+    const ActorAnimationBank& ride_bank(const Rider& r) const { return ride_library_->playback[r.cop ? 1 : 0]; }
 
     std::function<const TerrainSlice&(const RouteSample&)> terrain_source_;
     std::function<int32_t(const RouteSample&)> rail_height_source_;

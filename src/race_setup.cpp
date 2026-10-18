@@ -240,6 +240,8 @@ RaceInstance build_race(const RaceAssets& assets, const std::vector<uint8_t>& ex
     race->set_crash_library(assets.actors->library(), assets.crash);
     race->set_ride_library(&assets.actors->library(), assets.attack_codes.get());
     race->set_nitro(nitro_from_spec(assets.specs[size_t(assets.bike_index)]));
+    // 8. Police (0x00406b80 / 0x00407f30): periodic and DZHR cops, arrest -> busted.
+    if (!config.solo) race->set_police(assets.police, assets.specs, &assets.actors->library());
     out.race = std::move(race);
     return out;
 }

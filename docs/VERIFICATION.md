@@ -1,5 +1,20 @@
 # Verification log (all sessions September 28, 2026)
 
+## Live police (October 18, 2026, plan 32 D)
+
+- Baseline at 919c339 plus the police slice: `cmake --build build --parallel` exit 0;
+  `SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy ctest --test-dir build -j4`: 104 of 105
+  pass. The sandbox has no display, so `first-run-smoke` and `game-race-wiring` need the
+  dummy drivers. `oracle-sim-field-l5` (another session's in-flight test, uncommitted
+  CMake/ring changes) fails with "ring setup does not close on the green anchor"; it
+  does not touch police code (cops spawn at tick 4096, captures end at 2400).
+- `oracle-sim-field`, `oracle-sim-field-schema2`, `race`, `race_schedule` and `race-soak`
+  still pass, so the 2400-tick field parity is unchanged.
+- New: `police-test` live section (Napa level 3, parked player): no cop before tick 4096,
+  cop on slice 11 at 4096 (player slice 50 - 39, as in `napa-police-spawn.tsv`), chase in
+  follow state, `busted()` 440 ticks later. Native behavior only; no original comparison
+  of cop movement yet.
+
 ## Post-merge full gate (October 14, 2026, integrator)
 
 - Tree: `c2ab4d9` + worktree (contact-guard code, gemini parser fixes,

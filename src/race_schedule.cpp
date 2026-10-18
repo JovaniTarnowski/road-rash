@@ -43,27 +43,39 @@ void Race::set_live_schedule(bool v) {
     // 0x00438930: next = build tick, last = tick - template interval. The
     // player bike and half (0x00463c10) carry interval 1, opponent bikes
     // (0x00463ad8) and halves (0x00463b40) interval 4; dt starts at 0.
-    for (size_t i = 0; i < riders_.size(); ++i) {
-        Rider& r = riders_[i];
-        const int32_t interval = i == 0 ? 1 : 4;
-        r.sched_interval = interval; r.sched_next = ticks_; r.sched_last = ticks_ - interval;
-        r.half_sched_interval = interval; r.half_sched_next = ticks_; r.half_sched_last = ticks_ - interval;
-        r.bike.i32(0x18) = 0; r.half_dt = 0;
-        r.sched_live = true;
-        r.live = true; r.parked = false;
-        const auto& road = route_of(r);
-        r.virtual_section = section_start(road, r.sample);
-        r.virtual_local = int32_t(r.sample - r.virtual_section) * 256;   // 0x00405990: slice +4
-        const Bike& b = r.bike;
-        r.half_mirror = {b.i32(0x1c), b.i32(0x28), b.i32(0x20), b.i32(0xf4), b.i32(0xec),
-                         b.i32(0xf0), b.i32(0x10c), b.i32(0x108), b.i32(0x60), r.sample};
-        // 0x00405c80 spawn words (spawn_brain repeats them for built riders).
-        r.bike.i32(0x30c) = 600;
-        r.bike.i32(0x310) = (((level_ * 5 + 0x2d) * 200) >> 8) * 600;
-        r.bike.i32(0x314) = 0;
-        r.bike.i32(0x318) = 0;
-        // 0x00405c80: half +0x1f8 = 0x00407410, the distance to the finish.
-        if (finish_q8_ != 0) r.finish_distance = finish_q8_ - b.i32(0x1c);
+    for (size_t i = 0; i < riders_.size(); ++i) init_live_rider(riders_[i], i == 0 ? 1 : 4);
+}
+
+void Race::init_live_rider(Rider& r, int32_t interval) {
+    r.sched_interval = interval; r.sched_next = ticks_; r.sched_last = ticks_ - interval;
+    r.half_sched_interval = interval; r.half_sched_next = ticks_; r.half_sched_last = ticks_ - interval;
+    r.bike.i32(0x18) = 0; r.half_dt = 0;
+    r.sched_live = true;
+    r.live = true; r.parked = false;
+    const auto& road = route_of(r);
+    r.virtual_section = section_start(road, r.sample);
+    r.virtual_local = int32_t(r.sample - r.virtual_section) * 256;   // 0x00405990: slice +4
+    const Bike& b = r.bike;
+    r.half_mirror = {b.i32(0x1c), b.i32(0x28), b.i32(0x20), b.i32(0xf4), b.i32(0xec),
+                     b.i32(0xf0), b.i32(0x10c), b.i32(0x108), b.i32(0x60), r.sample};
+    // 0x00405c80 spawn words (spawn_brain repeats them for built riders).
+    r.bike.i32(0x30c) = 600;
+    r.bike.i32(0x310) = (((level_ * 5 + 0x2d) * 200) >> 8) * 600;
+    r.bike.i32(0x314) = 0;
+    r.bike.i32(0x318) = 0;
+    // 0x00405c80: half +0x1f8 = 0x00407410, the distance to the finish.
+    if (finish_q8_ != 0) r.finish_distance = finish_q8_ - b.i32(0x1c);
+}
+
+void Race::schedule_add(int rider) {
+    // 0x00438aa0 for a rider created mid-race: the bike node, then the half
+    // node in front of it, each ahead of existing nodes at an equal position.
+    if (schedule_.empty()) return;   // built lazily from riders_ by schedule_order
+    for (uint32_t type : {4u, 8u}) {
+        ScheduleNode n{rider, type, 0};
+        n.position = n.sorted = node_position(n);
+        auto at = std::find_if(schedule_.begin(), schedule_.end(), [&](const ScheduleNode& o) { return o.position <= n.position; });
+        schedule_.insert(at, n);
     }
 }
 
@@ -178,6 +190,7 @@ void Race::schedule_pass(uint32_t controls, bool countdown) {
     for (const ScheduleNode& n : order) {
         run_cars(n.position);
         Rider& r = riders_[size_t(n.rider)];
+        if (r.cop && cop_removal_pending_) continue;   // 0x004073a0 already unlinked it
         if (n.type == 8) { if (r.half_sched_next <= ticks_) run_half_node(r, controls, countdown); }
         else if (r.sched_next <= ticks_) run_bike_node(r, controls, countdown);
     }
@@ -197,7 +210,7 @@ void Race::parked_pace_band() {
     std::array<std::optional<int32_t>,16> by_place{};
     std::array<Rider*,16> who{};
     for (auto& r : riders_)
-        if (!r.live && r.place > 0 && r.place < 0x11) { by_place[size_t(r.place - 1)] = r.bike.i32(0x314); who[size_t(r.place - 1)] = &r; }
+        if (!r.cop && !r.live && r.place > 0 && r.place < 0x11) { by_place[size_t(r.place - 1)] = r.bike.i32(0x314); who[size_t(r.place - 1)] = &r; }
     pace_band(by_place, riders_[0].place);
     for (size_t k = 0; k < 16; ++k) if (who[k]) who[k]->bike.i32(0x314) = *by_place[k];
 }
@@ -303,7 +316,7 @@ void Race::move_bike_live(Rider& r, uint32_t controls, bool countdown) {
             const size_t i = size_t(&r - riders_.data());
             int place = 1;
             for (size_t j = 0; j < riders_.size(); ++j) {
-                if (j == i) continue;
+                if (j == i || riders_[j].cop) continue;   // the place table 0x004c7fb0 holds no cop
                 const Rider& o = riders_[j];
                 const bool shared = o.half_slice_present && r.half_slice_present &&
                     !(route_of(r)[r.sample].dual && o.route != r.route);
@@ -329,6 +342,10 @@ void Race::live_standings(Rider& r) {
 void Race::park(Rider& r) {
     // 0x00406940 with edx 0 on a live opponent (+0x324 != 0).
     if (!r.live || &r == &riders_[0]) return;
+    if (r.cop) {   // single player: 0x004073a0 deletes the cop instead of parking it
+        cop_removal_pending_ = true;
+        return;
+    }
     Bike& b = r.bike;
     b.i32(0x318) = 0;
     if (b.i32(0x2f4) != 0) {
@@ -382,7 +399,7 @@ void Race::move_bike_parked(Rider& r) {
                     if ((b.u8(0xc0) & 0x10) == 0) {   // 0x00437800
                         b.u8(0xc0) |= 0x10;
                         r.half_object.u8(0xc0) |= 0x10;
-                        if (!r.finished) { r.finished = true; r.finish_tick = ticks_; }
+                        if (!r.finished && !r.cop) { r.finished = true; r.finish_tick = ticks_; }
                     }
                     section_changed = true;
                     r.virtual_local = local + int32_t(random() % 0x701) + 0x100;
@@ -461,7 +478,7 @@ void Race::wake(Rider& r, size_t sample) {
     const size_t i = size_t(&r - riders_.data());
     int place = 1;
     for (size_t j = 0; j < riders_.size(); ++j) {
-        if (j == i) continue;
+        if (j == i || riders_[j].cop) continue;
         const Rider& o = riders_[j];
         const bool shared = o.half_slice_present && r.half_slice_present &&
             !(road[r.sample].dual && o.route != r.route);
