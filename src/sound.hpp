@@ -51,8 +51,10 @@ private:
     void play_once(int slot, int32_t volume, int32_t pan, int32_t frequency);   // 0x004142c0
     void play_loop(int slot, int32_t frequency, int32_t volume, int32_t pan);   // 0x004141c0
     void stop(int slot);                                                         // 0x00414160
+    void siren(const SoundEventRecord&);                                         // 0x00435ae0
+    void siren_stop();
     bool playing(int slot) const;
-    void distance(int32_t position, int32_t lateral, int32_t speed, int32_t& doppler, int32_t& volume, int32_t& pan) const;
+    void distance(int32_t position, int32_t lateral, int32_t speed, int32_t& doppler, int32_t& volume, int32_t& pan, int32_t* linear = nullptr) const;
     uint32_t random();
     const Assets& assets_;
     Mixer& mixer_;
@@ -60,6 +62,9 @@ private:
     std::array<Slot, 0x45> slots_;
     std::vector<SoundEventRecord> queue_;
     int32_t effects_ = 80, engine_ = 80, others_ = 80, siren_ = 80;
+    bool siren_off_ = false;                 // DAT_0049768c
+    bool siren_on_ = false, siren_b_ = false, siren_wait_ = false;   // DAT_0046d998 / 0046d99c / 0046d9a4
+    int siren_count_ = 0;                    // DAT_0046d9a0
     bool effects_off_ = false, engine_off_ = false, others_off_ = false, swap_ = false;
     int grunt_offset_ = 0;           // 0x00497694: 3 for Cydney, Pearl and Rhonda
     bool nitro_ = false, tunnel_ = false, finish_yell_ = false, sliding_ = false;

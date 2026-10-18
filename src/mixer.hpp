@@ -44,6 +44,8 @@ public:
     int play_stream(MusicStream* stream,int volume);
     bool set(int voice,int volume,int pan,int pitch_q8);
     bool stop(int voice);
+    // DirectSound Play(0,0,flags) on a playing buffer: switch looping on or off without restarting.
+    bool set_loop(int voice,bool loop);
     bool cursor(int voice,uint64_t& source_frame) const;
     // True while a started voice is queued or still sounding (DirectSound GetStatus PLAYING).
     bool active(int voice) const;

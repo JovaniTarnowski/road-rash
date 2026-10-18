@@ -60,6 +60,37 @@ int main(int argc, char** argv) {
         }
         check(race.position() > 0x3200 + 0x1e00, "sound regression travels beyond start hearing radius");
         check(audible, "player engine stays audible as the camera travels");
+        {
+            // Siren (0x00435ae0): its own channel; SIREN loops 0x259 updates, then
+            // SIRENFST 0x79; an empty record (cop crashed or gone) silences it.
+            sound.stop_race(); sound.start_race(7, 3);   // drop the engine voices
+            rr::SoundLevels siren_only;
+            siren_only.effects = siren_only.engine = siren_only.others = 0;
+            sound.set_levels(siren_only);
+            auto energy_now = [&] {
+                std::vector<int16_t> block(2 * 1024);
+                mixer.render(block.data(), 1024);
+                double e = 0;
+                for (auto v : block) e += double(v) * v;
+                return e;
+            };
+            auto audible_now = [&] { return energy_now() > 0; };
+            auto siren_at = [&](bool emitting) {
+                const int32_t p = emitting ? int32_t(race.camera_position()) + 0x400 : 0;
+                sound.post({rr::SoundEvent::siren, emitting ? race.camera_x() * 256 : 0, 0, p, 0, 0});
+                sound.update(race);
+            };
+            for (int i = 0; i < 3; ++i) siren_at(true);
+            check(audible_now(), "siren audible near the camera");
+            bool always = true;
+            for (int i = 0; i < 0x259 + 0x79 + 300; ++i) { siren_at(true); if (i % 50 == 0) always &= audible_now(); }
+            check(always, "siren keeps sounding across the buffer alternation");
+            const double with_siren = energy_now();
+            for (int i = 0; i < 3; ++i) siren_at(false);
+            energy_now();
+            check(with_siren > 0 && energy_now() == 0, "empty siren record silences it");
+            sound.set_levels({});
+        }
         sound.set_levels({});
         sound.post({rr::SoundEvent::crash_hard, 0, 0, race.bike().i32(0x1c), 0, 0});
         sound.update(race);

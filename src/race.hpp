@@ -599,6 +599,8 @@ private:
     bool cop_removal_pending_ = false;
     void police_think(Rider& player);              // 0x00407f30 arrest + periodic spawn (owner 0)
     int find_cop(const Rider& player) const;       // 0x00407860
+    struct HalfMirrorView { int32_t lateral, height, position, speed; };
+    void siren_event(const Rider& cop, bool emitting);   // 0x00436830(0x13, ...)
     void remove_cop();                             // 0x004073a0
     void init_live_rider(Rider&, int32_t interval);   // 0x00438930 scheduler words
     void schedule_add(int rider);                  // 0x00438aa0 insert

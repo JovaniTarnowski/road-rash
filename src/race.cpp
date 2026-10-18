@@ -2214,6 +2214,9 @@ bool Race::ai_overtake(Rider& r) {
     ai.overtake_position = 0;
     if (at < 0) return false;
     const ScanObject o = scan_[size_t(at)];
+    if (std::getenv("RR_FIELD_BRAINS"))
+        std::fprintf(stderr, "OVERTAKE by %td latch type %d rider %d ped %d car %d pos %d\n",
+                     &r - riders_.data(), int(o.type), o.rider, o.pedestrian, o.car, o.position);
     // Latching the replan target itself (+0x168 is a bike) counts as none;
     // either way the low byte returned is 0.
     if (o.type == 4 && ai.target_rider >= 0 && o.rider == ai.target_rider) return false;
@@ -2250,6 +2253,9 @@ void Race::ai_think(Rider& r) {
     if (std::getenv("RR_SIM_TRACE_TICK") && ticks_ == std::atoi(std::getenv("RR_SIM_TRACE_TICK"))) {
         std::fprintf(stderr, "ai %td state %d target %d anim %d frame %d queued %d deadline %u weapon %d until %d pos %d lat %d spd %d\n", &r-riders_.data(), r.brain.state, r.brain.target_rider, r.ride_animation.animation, r.ride_animation.frame, r.ride_animation.queued, r.ride_animation.deadline, r.attack.weapon, r.hit_until, int32_t(r.bike.i32(0x1c)),int32_t(r.bike.i32(0x28)),int32_t(r.bike.i32(0xec)));
     }
+    // 0x00407bd0 head: the cop half posts the siren event with its position and
+    // speed, or an empty record while it is crashed.
+    if (r.cop) siren_event(r, r.bike.i32(0x2f4) == 0);
     ai_transition(r);
     switch (r.brain.state) {
     case 1: case 2: ai_state_racing(r); break;   // 0x00409000 (2: thunk 0x004092d0)
@@ -2303,7 +2309,11 @@ void Race::ai_state_racing(Rider& r) {
 void Race::ai_state_follow(Rider& r) {
     Bike& b = r.bike;
     AiState& ai = r.brain;
-    if (ai.target_rider < 0) { ai_state_racing(r); return; }
+    if (ai.target_rider < 0) {
+        if (r.cop) siren_event(r, false);   // 0x00409ca0: no target silences the siren
+        ai_state_racing(r);
+        return;
+    }
     const Rider& t = riders_[size_t(ai.target_rider)];
     // 0x00409ca0 reads the target's half (+0x168 -> +0x2fc): position,
     // lateral, slice and speed; the live scheduler keeps them apart.
@@ -2497,6 +2507,16 @@ void Race::rider_move(Rider& r, bool player) {
     vertical(r);
 }
 
+// 0x00436830(0x13, half +0x1c, half +0xec) or (0x13, NULL, NULL).
+void Race::siren_event(const Rider& cop, bool emitting) {
+    if (sound_events_.size() >= 16) return;
+    if (!emitting) { sound_events_.push_back({SoundEvent::siren, 0, 0, 0, 0, 0}); return; }
+    const Bike& b = cop.bike;
+    const HalfMirrorView h = live_schedule_ ? HalfMirrorView{cop.half_mirror.lateral, cop.half_mirror.height, cop.half_mirror.position, cop.half_mirror.speed}
+                                            : HalfMirrorView{b.i32(0x28), b.i32(0x20), b.i32(0x1c), b.i32(0xec)};
+    sound_events_.push_back({SoundEvent::siren, h.lateral, h.height, h.position, h.speed, 0});
+}
+
 void Race::sound(SoundEvent e, const Bike& b) {
     if (sound_events_.size() < 16) sound_events_.push_back({e, b.i32(0x28), b.i32(0x20), b.i32(0x1c), b.i32(0xec), 0});
 }
@@ -2544,11 +2564,6 @@ void Race::spawn_brain(Rider& r, size_t built) {
     built_riders_ = built;
     ai_replan(r);
     built_riders_ = SIZE_MAX;
-}
-
-uint32_t Race::random() {
-    seed_ = seed_ * 0x343fdu + 0x269ec3u;
-    return (seed_ >> 16) & 0x7fff;
 }
 
 void Race::set_police(const PoliceConfig& config, std::vector<BikeSpec> specs, const ActorAnimationLibrary* library) {
@@ -2681,6 +2696,7 @@ void Race::remove_cop() {
     for (auto& r : riders_) {
         for (int* v : {&r.brain.target_rider, &r.brain.nbr_ahead, &r.brain.nbr_behind, &r.brain.overtake_latched})
             if (*v == index) *v = -1;
+    siren_event(riders_.back(), false);   // 0x004073a0 posts event 0x13 with no emitter
     }
     if (last_target_ == index) last_target_ = -1;
 }
@@ -2690,6 +2706,11 @@ void Race::remove_cop() {
 RaceSnapshot Race::snapshot() const {
     RaceSnapshot out{ticks_, seed_, {}};
     for (const auto& r : riders_) {
+uint32_t Race::random() {
+    seed_ = seed_ * 0x343fdu + 0x269ec3u;
+    return (seed_ >> 16) & 0x7fff;
+}
+
         const std::string p = "rider." + std::to_string(r.slot) + ".";
         const Bike& b = r.bike;
         out.fields.push_back({p + "position", b.i32(0x1c)});

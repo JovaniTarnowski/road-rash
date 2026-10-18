@@ -81,10 +81,11 @@ int main() {
             require(cop.bike.i32(0x1c)<race.bike().i32(0x1c),"Periodic cop starts behind the player");
             require(race.place(0)<=race.riders().size(),"Cop does not take a place");
             (void)place_before;
-            int arrested=-1;
-            for(int t=0;t<6000 && arrested<0;++t){race.step(0);if(race.busted())arrested=t;if(std::getenv("RR_COP_TRACE")&&t%40==0&&race.cop_index()>=0){const auto& c=race.riders()[size_t(race.cop_index())];std::cout<<t<<" cop pos "<<c.bike.i32(0x1c)<<" spd "<<c.bike.i32(0xec)<<" state "<<c.brain.state<<" tgt "<<c.brain.target_rider<<" player "<<race.bike().i32(0x1c)<<"\n";}}
+            int arrested=-1,sirens=0;
+            for(int t=0;t<6000 && arrested<0;++t){race.step(0);for(const auto& e:race.take_sound_events())sirens+=e.code==rr::SoundEvent::siren&&e.position!=0;if(race.busted())arrested=t;if(std::getenv("RR_COP_TRACE")&&t%40==0&&race.cop_index()>=0){const auto& c=race.riders()[size_t(race.cop_index())];std::cout<<t<<" cop pos "<<c.bike.i32(0x1c)<<" spd "<<c.bike.i32(0xec)<<" state "<<c.brain.state<<" tgt "<<c.brain.target_rider<<" player "<<race.bike().i32(0x1c)<<"\n";}}
             std::cout<<"cop present="<<(race.cop_index()>=0)<<" arrested_after="<<arrested<<"\n";
             require(arrested>=0,"Cop arrests the stopped player");
+            require(sirens>0,"Cop posts siren events with its position");
         }
         std::cout<<"Police spawn/arrest boundary tests passed\n";return 0;
     }catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}

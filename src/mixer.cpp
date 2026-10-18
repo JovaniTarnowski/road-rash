@@ -81,6 +81,7 @@ bool Mixer::set(int id,int volume,int pan,int pitch) {
     return push({2,id,std::clamp(volume,0,127),std::clamp(pan,-64,63),std::clamp(pitch,1,4096),nullptr,false});
 }
 bool Mixer::stop(int id) { return push({3,id,0,0,256,nullptr,false}); }
+bool Mixer::set_loop(int id,bool loop) { return push({4,id,0,0,256,nullptr,loop}); }
 bool Mixer::cursor(int id,uint64_t& frame) const {
     if (id<0) return false;
     for (size_t i=0;i<voices_.size();++i) {
@@ -134,6 +135,7 @@ void Mixer::consume() {
             const auto slot=std::find_if(voices_.begin(),voices_.end(),[&](const Voice& v) { return v.id==command.id; });
             if (slot!=voices_.end()) {
                 if (command.kind==3) { slot->sound=nullptr; slot->stream=nullptr; cursors_[size_t(slot-voices_.begin())].active.store(false,std::memory_order_release); }
+                else if (command.kind==4) slot->loop=command.loop;
                 else { slot->volume=command.volume;slot->pan=command.pan;slot->pitch=command.pitch; }
             }
         }

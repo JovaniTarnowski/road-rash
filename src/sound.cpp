@@ -140,6 +140,7 @@ void SoundSystem::set_levels(const SoundLevels& l) {
     effects_off_ = l.master == 0 || l.effects == 0 || l.mute;
     engine_off_ = l.master == 0 || l.engine == 0 || l.mute;
     others_off_ = l.master == 0 || l.others == 0 || l.mute;
+    siren_off_ = l.master == 0 || l.siren == 0 || l.mute;
     swap_ = l.swap_speakers;
     // Plan 13 remainder hook region: forward the music channel to the
     // registered race player (pumped in update()).
@@ -175,8 +176,10 @@ void SoundSystem::play_loop(int slot, int32_t frequency, int32_t volume, int32_t
     const int32_t a = ds_attenuation(volume);
     if (a < -8999) { if (s.looping) stop(slot); return; }
     const int v = mixer_volume(a), p = mixer_pan(pan, swap_), q = pitch_q8(frequency, s.pcm.rate);
-    if (s.looping && s.voice >= 0 && mixer_.active(s.voice)) mixer_.set(s.voice, v, p, q);
-    else { s.voice = mixer_.play(&s.pcm, v, p, q, true); s.looping = true; }
+    if (s.voice >= 0 && mixer_.active(s.voice)) {   // 0x004141c0: a playing one-shot is switched to looping
+        if (!s.looping) { mixer_.set_loop(s.voice, true); s.looping = true; }
+        mixer_.set(s.voice, v, p, q);
+    } else { s.voice = mixer_.play(&s.pcm, v, p, q, true); s.looping = true; }
 }
 
 void SoundSystem::stop(int slot) {
@@ -202,6 +205,7 @@ void SoundSystem::start_race(int bike, int character) {
 
 void SoundSystem::stop_race() {
     for (int i = 0; i < 0x45; ++i) stop(i);
+    siren_on_ = siren_b_ = siren_wait_ = false;
     queue_.clear();
     racing_ = false;
 }
@@ -210,12 +214,13 @@ void SoundSystem::post(const SoundEventRecord& e) {
     if (queue_.size() < 10) queue_.push_back(e);   // 0x00436830
 }
 
-void SoundSystem::distance(int32_t position, int32_t lateral, int32_t speed, int32_t& doppler, int32_t& volume, int32_t& pan) const {
+void SoundSystem::distance(int32_t position, int32_t lateral, int32_t speed, int32_t& doppler, int32_t& volume, int32_t& pan, int32_t* linear) const {
     // 0x00434db0 / 0x00435840: chebyshev-like distance from the camera, Doppler from the
     // relative speed, pan from the bearing (angle * 0x62 hundredths of dB).
     const int32_t dp = position - listener_position_;
     const int32_t ap = std::abs(dp);
     doppler = 0x100; volume = 0; pan = 0;
+    if (linear) *linear = 0;
     if (ap >= hearing) return;
     const int32_t dl = lateral - listener_lateral_;
     const int32_t al = std::abs(dl);
@@ -230,6 +235,7 @@ void SoundSystem::distance(int32_t position, int32_t lateral, int32_t speed, int
     if (a < -0x40) a = -0x80 - a;
     pan = a * 0x62;
     volume = v * v / 256;
+    if (linear) *linear = v;
 }
 
 void SoundSystem::update(Race& race) {
@@ -301,6 +307,7 @@ void SoundSystem::update(Race& race) {
     }
     // Event consumer 0x004351f0.
     for (const SoundEventRecord& e : queue_) {
+        if (e.code == SoundEvent::siren) { siren(e); continue; }   // 0x004351f0 fast path: its own channel, no pitch draws
         if (effects_off_ && e.code != SoundEvent::nitro_on && e.code != SoundEvent::nitro_off) continue;
         const int32_t pitch = int32_t(random() % 0xbb9) + 0x214d;
         const int32_t vol = (int32_t(random() % 0x1001) + 0x3fff) / 100 * effects_;
@@ -346,10 +353,57 @@ void SoundSystem::update(Race& race) {
             if (slot > 0 && slot < 0x45) play_once(slot, effects_ * 0x96, 0, 0x2b11);
             break;
         }
-        default: break;   // siren (police, plan 05)
+        default: break;
         }
     }
     queue_.clear();
+}
+
+void SoundSystem::siren_stop() {
+    stop(30); stop(31);
+    siren_on_ = siren_b_ = siren_wait_ = false;
+}
+
+// 0x00435ae0 (event 19, one per cop-half think): volume and pan from 0x00435840
+// (volume = linear^2 * 0x4fff >> 16, scaled by the siren channel and capped at
+// 0x4000; no emitter or out of earshot is volume 0). Two buffers alternate at
+// a fixed 0x2b11 Hz: SIREN loops for 0x259 updates, SIRENFST for 0x79; each is
+// then let finish its pass (Play without looping) before the other starts.
+// The 0x00434f40 height term for a cop on the other branch of a split is not
+// ported. No RNG.
+void SoundSystem::siren(const SoundEventRecord& e) {
+    if (siren_off_) return;
+    int32_t doppler = 0, volume = 0, pan = 0, linear = 0;
+    distance(e.position, e.lateral >> 8, e.speed, doppler, volume, pan, &linear);
+    int32_t level = std::min<int32_t>(siren_ * ((linear * linear * 0x4fff) >> 16) / 100, 0x4000);
+    if (level == 0) { siren_stop(); return; }
+    constexpr int32_t hz = 0x2b11;
+    const int a = 30, b = 31;
+    if (!siren_on_) {
+        stop(b);
+        play_once(a, level, pan, hz);
+        siren_b_ = false; siren_count_ = 0; siren_on_ = true; siren_wait_ = false;
+        return;
+    }
+    const int now = siren_b_ ? b : a, next = siren_b_ ? a : b;
+    const int limit = siren_b_ ? 0x79 : 0x259;
+    if (siren_count_ < limit) {
+        ++siren_count_;
+        play_loop(now, hz, level, pan);
+        return;
+    }
+    if (!siren_wait_) {
+        siren_wait_ = true; ++siren_count_;
+        Slot& s = slots_[size_t(now)];
+        if (s.voice >= 0) mixer_.set_loop(s.voice, false);
+        return;
+    }
+    ++siren_count_;
+    if (!playing(now)) {
+        stop(now);
+        play_once(next, level, pan, hz);
+        siren_b_ = !siren_b_; siren_count_ = 0; siren_wait_ = false;
+    }
 }
 
 MusicPlayer::MusicPlayer(const Assets& assets, Mixer& mixer) : assets_(assets), mixer_(mixer) {}
