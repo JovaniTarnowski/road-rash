@@ -112,3 +112,14 @@ what was missing was the cop-only AI branches and the live integration.
 - Still open: per-tick cop field dumps are not in the proxy (the cop is only an
   extra rider in the generic rider dump), so cop movement/arrest parity is not
   yet compared; `napa-cops-crashed` and `city-cops` not run.
+
+## Follow-up 4: cop parity with the original (2026-10-18)
+
+- Proxy: `rider.N.cop`, `police.slot`, `police.cycle` mark the cop slot
+  (DAT_004642dc); `RR_ORACLE_LEVEL` is in this commit. The main tree still has
+  sim-l5's uncommitted copy of the level hunk; keep one when merging.
+- Fix: `Race::schedule_pass` visits nodes inserted mid-pass.
+- Evidence and commands: `docs/VERIFICATION.md` entry "napa-cops-parked".
+- Open: `napa-cops-crashed` (needs a controls file that wrecks the player; the
+  parked file only covers the stopped-bike arrest), `city-cops` (course 1), and
+  an original on-foot arrest to compare the 1099-step native result against.

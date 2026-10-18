@@ -82,10 +82,55 @@ int main() {
             require(race.place(0)<=race.riders().size(),"Cop does not take a place");
             (void)place_before;
             int arrested=-1,sirens=0;
-            for(int t=0;t<6000 && arrested<0;++t){race.step(0);for(const auto& e:race.take_sound_events())sirens+=e.code==rr::SoundEvent::siren&&e.position!=0;if(race.busted())arrested=t;if(std::getenv("RR_COP_TRACE")&&t%40==0&&race.cop_index()>=0){const auto& c=race.riders()[size_t(race.cop_index())];std::cout<<t<<" cop pos "<<c.bike.i32(0x1c)<<" spd "<<c.bike.i32(0xec)<<" state "<<c.brain.state<<" tgt "<<c.brain.target_rider<<" player "<<race.bike().i32(0x1c)<<"\n";}}
+            for(int t=0;t<6000 && arrested<0;++t){race.step(0);for(const auto& e:race.take_sound_events())sirens+=e.code==rr::SoundEvent::siren&&e.position!=0;if(race.busted())arrested=t;if(std::getenv("RR_COP_TRACE")&&t%std::max(1,std::atoi(std::getenv("RR_COP_TRACE")))==0&&race.cop_index()>=0){const auto& c=race.riders()[size_t(race.cop_index())];std::cout<<t<<" cop pos "<<c.bike.i32(0x1c)<<" spd "<<c.bike.i32(0xec)<<" state "<<c.brain.state<<" tgt "<<c.brain.target_rider<<" player "<<race.bike().i32(0x1c)<<"\n";}}
             std::cout<<"cop present="<<(race.cop_index()>=0)<<" arrested_after="<<arrested<<"\n";
             require(arrested>=0,"Cop arrests the stopped player");
             require(sirens>0,"Cop posts siren events with its position");
+        }
+        {
+            // Original-capture comparison (`napa-cops-parked-20261018`, git-ignored):
+            // Napa, level byte 2, seed 1, the human player parked on the grid
+            // (zero controls), original cop spawned by 0x00407f30 at tick 4096.
+            // The cop's position and speed must match the original on every
+            // tick from spawn to the arrest window. Covers the cop's own
+            // pursuit (state 4) against a stopped player only: the other two
+            // riders are not compared and the capture is not a free-running
+            // field replay, so this does not establish full-field parity.
+            std::ifstream capture(RR_SOURCE_DIR "/analysis/oracle/napa-cops-parked-20261018.tsv");
+            if(capture) {
+                std::map<int,std::pair<int,int>> original;   // tick -> cop (position, speed)
+                std::map<int,std::pair<int,int>> pos_speed;  // rider slot -> (position, speed) of the current frame
+                std::string line;int tick=0,slot=-1;
+                while(std::getline(capture,line)) {
+                    if(!line.empty() && line.back()=='\r')line.pop_back();
+                    const size_t tab=line.find('\t');
+                    const std::string key=line.substr(0,tab);const long long value=tab==std::string::npos?0:std::atoll(line.c_str()+tab+1);
+                    if(key=="frame" || key=="end"){if(slot>=0 && tick>=4096)original[tick]=pos_speed[slot];pos_speed.clear();slot=-1;}
+                    else if(key=="tick")tick=int(value);
+                    else if(key=="police.slot")slot=int(value);
+                    else if(key.rfind("rider.",0)==0) {
+                        const size_t dot=key.find('.',6);const int who=std::atoi(key.c_str()+6);const std::string field=key.substr(dot+1);
+                        if(field=="position")pos_speed[who].first=int(value);else if(field=="speed")pos_speed[who].second=int(value);
+                    }
+                }
+                require(original.count(4096) && original.count(4600),"Cop capture covers the spawn and the arrest window");
+                const auto exe=assets.read("ROADRASH.EXE");
+                rr::RaceConfig config;config.course="NAPA";config.level=2;config.character=1;config.bike_from_table=true;config.career=false;
+                rr::RaceSetup setup=rr::make_race_setup(assets,exe,config);
+                auto& race=*setup.instance.race;
+                int compared=0;
+                for(int t=0;t<4551;++t) {
+                    race.step(0);
+                    if(race.ticks()<4096 || race.cop_index()<0 || !original.count(int(race.ticks())))continue;
+                    const auto& cop=race.riders()[size_t(race.cop_index())];
+                    const auto want=original.at(int(race.ticks()));
+                    if(cop.bike.i32(0x1c)!=want.first || cop.bike.i32(0xec)!=want.second)
+                        throw std::runtime_error("cop differs from the original at tick "+std::to_string(race.ticks())+": position "+std::to_string(cop.bike.i32(0x1c))+" vs "+std::to_string(want.first)+", speed "+std::to_string(cop.bike.i32(0xec))+" vs "+std::to_string(want.second));
+                    ++compared;
+                }
+                require(compared>=450,"Cop compared over the pursuit");
+                std::cout<<"Cop matches the original on "<<compared<<" ticks (position, speed)\n";
+            } else std::cout<<"skipped: analysis/oracle/napa-cops-parked-20261018.tsv absent\n";
         }
         {
             // Arrest while the rider walks (crash state 2, 0x00407f30): the half is the

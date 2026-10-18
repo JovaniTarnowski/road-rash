@@ -1856,3 +1856,24 @@ still has its pinned tick210 divergence (missing frozen-word coverage). It
 is not field acceptance. Other levels, dedicated fight/steal/isolated traffic,
 police, splits and human-input paths outside the receipted capture remain
 unmeasured. No Android/device or full-course simulation claim is made here.
+
+## 2026-10-18 police: original cop capture vs native (napa-cops-parked)
+
+- Capture: `RR_ORACLE_COURSE=4 RR_ORACLE_LEVEL=3 RR_ORACLE_SEED=1 RR_ORACLE_SIM=1
+  RR_ORACLE_HUMAN=1 RR_ORACLE_INPUT='C:\napa-parked.controls' RR_ORACLE_FRAMES=4730
+  tools/oracle_capture.py capture napa-cops-parked-20261018` (zero control words,
+  header level byte 2, 4730 contiguous frames, validated; git-ignored
+  `analysis/oracle/napa-cops-parked-20261018.tsv`). The original arrest window
+  opens at tick 4551 and the race ends 0xb4 = 180 ticks later (4730; a longer run
+  restarts a new race, which the validator rejects).
+- Native: `police-test` compares the cop's position and speed on every tick from
+  the tick-4096 spawn to 4551 (456 ticks, 0 mismatches), skipping when the
+  fixture is absent. Covers the cop chase against a parked player only (other
+  riders not compared; not a free-run field replay).
+- Defect found and fixed: `schedule_pass` walked a snapshot, so the cop inserted
+  mid-pass first ran one tick late with dt 5 instead of 4 (speed 80 vs 48 at
+  the first think). It now resumes on the live list like 0x00438170.
+- Gate: clean worktree, `ctest -j4` 104/104 with 9 disc-fixture tests skipped
+  (the git-ignored sim fixtures copied in). Level numbering: `RR_ORACLE_LEVEL=n`
+  is level byte n-1, i.e. native `config.level = n-1`.
+- Not done: `napa-cops-crashed`, `city-cops`, the on-foot arrest vs original.

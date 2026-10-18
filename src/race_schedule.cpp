@@ -168,7 +168,7 @@ int32_t Race::schedule_interval(const Rider& r, bool half) const {
 void Race::schedule_pass(uint32_t controls, bool countdown) {
     // 0x00438170(0): every node whose +0x0c is due runs 0x00437e60 with
     // param_3 = (+0x2c != 0) sampled before the call.
-    const std::vector<ScheduleNode> order = schedule_order();
+    std::vector<ScheduleNode> order = schedule_order();
     const int32_t camera=ring_?ring_->front_q8()-0x5000:int32_t(previous_camera_position_)+0x100;
     std::vector<std::pair<int32_t,size_t>> cars;
     car_scan_keys_.clear();
@@ -187,12 +187,23 @@ void Race::schedule_pass(uint32_t controls, bool countdown) {
                 player.bike.i32(0x1c),player.bike.i32(0x28),[this]{return random();},uint32_t(ticks_),player.bike.i32(0x108));
         }
     };
-    for (const ScheduleNode& n : order) {
+    for (size_t at = 0; at < order.size(); ++at) {
+        const ScheduleNode n = order[at];
         run_cars(n.position);
         Rider& r = riders_[size_t(n.rider)];
         if (r.cop && cop_removal_pending_) continue;   // 0x004073a0 already unlinked it
         if (n.type == 8) { if (r.half_sched_next <= ticks_) run_half_node(r, controls, countdown); }
         else if (r.sched_next <= ticks_) run_bike_node(r, controls, countdown);
+        if (schedule_.size() != order.size()) {
+            // The original walks the live ring (0x00438170): a node inserted
+            // mid-pass (the periodic cop, 0x00406b80) behind the cursor is met
+            // in the same pass. Resume after the current node in the new list.
+            order = schedule_;
+            bool found = false;
+            for (size_t k = 0; k < order.size() && !found; ++k)
+                if (order[k].rider == n.rider && order[k].type == n.type) { at = k; found = true; }
+            if (!found && at > 0) --at;   // the current node was unlinked: the next one shifts into its slot
+        }
     }
     run_cars(INT32_MIN);
 }

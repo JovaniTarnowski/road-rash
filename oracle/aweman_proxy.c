@@ -25,6 +25,9 @@ int rr_patch_call(uint8_t* site, uint32_t expected_target, void* hook) { return 
 static FILE* g_out;
 static char g_scenario[256] = "unnamed";
 static int g_capture_course;
+/* Display level 1..5 selected through the original level setter
+ * (0x004453f0) at menu entry; 0 keeps the bootstrapped startup level. */
+static int g_capture_level;
 static int g_groups;
 static int g_drive;
 static int readable(uintptr_t p,size_t size);
@@ -117,6 +120,12 @@ static void __fastcall hook_menu_enter(int screen) {
         if (st) *st = (uint32_t)g_seed;
         g_seed_applied = 1;
     }
+    /* Difficulty selection (RR_ORACLE_LEVEL): the bootstrap bypasses the
+     * restroom popup, so run the original level setter 0x004453f0 here
+     * (byte 0x004b8a12 = level-1) before race construction reads the
+     * level. Police captures need it: Napa cops require level 3+. */
+    if (g_capture_level && !g_race_started)
+        ((void (__fastcall*)(int))0x004453f0)(g_capture_level);
     /* Diagnostic startup fixture only: reproduce recorded pre-race speed
      * jitter without changing any live step or RNG anchor. Six extra brains,
      * first three level speeds each. Never enabled by normal captures. */
@@ -444,6 +453,15 @@ static void dump_sim_tick(void) {
             if (slot >= 0) {
                 snprintf(key, sizeof key, "rider.%d.think", slot);
                 rr_log(key, sim_field_value(node, 0xe0, 4, 0));
+                /* Police marker: DAT_004642dc holds the single live cop bike
+                 * (0x00406b80), so the cop is a rider slot whose node it names.
+                 * Keyed only once a cop exists; absent keys read as no cop. */
+                if (RD32(0x004642dc) && (uint32_t)RD32(0x004642dc) == (uint32_t)node) {
+                    snprintf(key, sizeof key, "rider.%d.cop", slot);
+                    rr_log(key, 1);
+                    rr_log("police.slot", slot);
+                    rr_log("police.cycle", RD8(0x004642e0));
+                }
                 for (unsigned f = 0; f < RR_SIM_RIDER_FIELD_COUNT; ++f) {
                     const uint32_t off = rr_sim_rider_fields[f].offset;
                     /* Only bike-half words are mapped (see REVERSE_ENGINEERING.md).
@@ -2283,6 +2301,13 @@ static int rr_install_hooks(void) {
     if (g_palette) palette_open();
     env("RR_ORACLE_RASTER",buf,sizeof buf,"0");g_raster=atoi(buf);
     if (GetEnvironmentVariableA("RR_ORACLE_SHOT_EVERY",buf,sizeof buf) && atoi(buf)>0) g_pixel_every=atoi(buf);
+    if(GetEnvironmentVariableA("RR_ORACLE_LEVEL",buf,sizeof buf)) {
+        g_capture_level=atoi(buf);
+        if(g_capture_level<1 || g_capture_level>5) {
+            if(g_out) fputs("# invalid RR_ORACLE_LEVEL (expected 1..5)\n",g_out);
+            return 0;
+        }
+    }
     if(GetEnvironmentVariableA("RR_ORACLE_COURSE",buf,sizeof buf)) {
         g_capture_course=atoi(buf);
         if(g_capture_course<1 || g_capture_course>5) {
