@@ -82,6 +82,14 @@ what was missing was the cop-only AI branches and the live integration.
   lands; a capture also needs a >4096-tick Wine run and new proxy field
   dumps for the cop. Until then cop movement is checked by the native tests
   and the recovered pseudocode only. Capture spec: `police-spawn-20261016d.md`.
+  Rechecked 2026-10-18 11:39 PDT: `origin/main` is 7d69329 with no sim-l5
+  commit on any branch; the main-tree proxy diff is unchanged (+23/-1,
+  mtime 07:30) and all three claim PIDs (53167, 77755, 60062) are dead with
+  no live peer session, so the claim is stale but the work is preserved
+  untouched. Next action for whoever lands sim-l5 (or the integrator):
+  commit that proxy/CMake/field-replay slice, reinstall the DLL, add cop
+  field dumps to the proxy, then run `napa-cops` (level 3+, past tick
+  4096), `napa-cops-crashed` and `city-cops` and wire the parity check.
 - 0x00434f40 height term in the siren for a cop on the other branch of a split.
 - DAT_004c5d7c == 4 and the network branches (+0x324 == 1, 0x004c4fb0).
 - Cop rider-half name (0x00446bf0 index 9 reads outside the table, left blank).
