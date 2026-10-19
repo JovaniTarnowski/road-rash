@@ -637,5 +637,16 @@ int main(int argc, char** argv) {
     check(fe.pause_open() && !event(FrontendEvent::Kind::quit_race), "pad No stays paused");
     pad("back");
     check(event(FrontendEvent::Kind::resume_race) && !fe.pause_open(), "pad B resumes");
+    // Full offline field: the fourth visible standings row follows the
+    // player even in fifteenth place, rather than assuming eight racers.
+    career.mode = GameMode::thrash;
+    std::vector<Standing> full_field;
+    for (int i = 0; i < 15; ++i) full_field.push_back({i == 14 ? "Last Player" : "Racer", 4000 + i, i == 14});
+    fe.race_finished(RaceOutcome::lost, 14, full_field);
+    key("select");
+    check(fe.screen() == screen_id::standings && fe.items().size() == 15, "full-field standings screen");
+    check(fe.caption_text(fe.items()[3]).find("15)") != std::string::npos &&
+          fe.caption_text(fe.items()[3]).find("Last Player") != std::string::npos,
+          "fifteenth-place player's row is shown with correct name");
     return failures ? 1 : 0;
 }

@@ -1,5 +1,48 @@
 # Verification log (all sessions September 28, 2026)
 
+## Original offline fields in rr-game (October 18, 2026)
+
+- Isolated checkout `/Users/archit/Dev/rr/.field-count-20261018`, baseline
+  `6044526`; shared `native-port/` edits and its divergent local `main` were
+  preserved. Owned Debug build: `build-agent-field-count-20261018`.
+- Original evidence: disc EXE SHA-256 matches `analysis/inventory.json`
+  (`73d7f9744b5b1a9482b3909950cdf3fe34119fe13d023b031e9c6739a60f18a2`).
+  Existing exports `analysis/decompiled/00405600.c`, `00407990.c`,
+  `00402d60.c`, `00402e10.c`, `00446bf0.c`, `00437860.c` and constructor
+  assembly `analysis/original-disassembly.txt` establish fourteen AI rows in
+  offline Thrash, and the selected-character skip in Big Game (thirteen AI).
+  This corrects prior unconditional fourteen-opponent wording. No new Wine
+  capture was made; the shared oracle resources were in use by another session.
+- Configure/build: `cmake -S . -B build-agent-field-count-20261018
+  -DCMAKE_BUILD_TYPE=Debug -DCMAKE_EXPORT_COMPILE_COMMANDS=ON`, then
+  `cmake --build build-agent-field-count-20261018 --parallel 8`: passed.
+- Focused `ctest --test-dir build-agent-field-count-20261018
+  --output-on-failure -R '^(race_setup|race-screen)$'`: 2/2 passed.
+  Setup checks both modes for all eight characters, every spare speed table,
+  all five course name sets and the 42/69 special name branches without RNG
+  consumption. The HUD resolves row 14 and the last race place; the screen
+  timing/pause/restart/reset tests now run with all fifteen racers.
+- `frontend`: passed with a fifteen-row standings fixture and the player's
+  fifteenth-place name visible in the fourth displayed row.
+- CLI, with `SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy` and
+  `rr-game --assets ../cdrom/ROADRASH --print-wiring`: default `--race` and
+  explicit `--opponents 14` report `racers=15`; `--opponents 7` reports 8,
+  `--opponents 0` reports 1. All exit 0. Final `game-race-wiring` CTest passed
+  after adding the racer count to that diagnostic output.
+- No client C++ LSP was exposed. Homebrew `clangd --check=src/race_setup.cpp
+  --compile-commands-dir=build-agent-field-count-20261018 --tweaks=none`
+  and the same check for `src/game_main.cpp`: passed, zero errors. Without
+  disabling tweak probes, clangd reports ExtractFunction applicability errors
+  for loop-control statements; the actual compiler build passes.
+- Full `ctest --test-dir build-agent-field-count-20261018 --output-on-failure
+  --parallel 4`: **104/104 passed, zero skips**, 286.31 seconds, including
+  `oracle-sim`, `oracle-sim-field`, `oracle-sim-field-schema2`, `police`,
+  `race-screen`, `race_setup`, `frontend` and `race-soak`. Existing oracle fixtures are linked from
+  the shared checkout for replay only; no golden or capture was modified.
+  Native tests establish field construction/UI behavior; they do not extend
+  full live gameplay parity, Android device coverage or simulation acceptance.
+
+
 ## Live police (October 18, 2026, plan 32 D)
 
 - Follow-up 2 (arrest -> screen outcome): clean worktree at 2dcd4e6, build +

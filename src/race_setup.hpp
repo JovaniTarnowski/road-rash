@@ -15,6 +15,7 @@
 #include "assets.hpp"
 #include "course.hpp"
 #include "course_scene.hpp"
+#include "career.hpp"
 #include "crash.hpp"
 #include "hud.hpp"
 #include "police.hpp"
@@ -43,7 +44,8 @@ struct RaceConfig {
     int character = 0;           // 1..8 front-end character (0x00415fc0); career only
     int player_rider = -1;       // [0..9] row in 0x00463c78; -1 means character_rider(character)
     bool career = true;
-    int opponents = 7;           // 0..7, for quick races and solo tests
+    int opponents = 14;          // last AI row, 0..14; smaller fields are diagnostic overrides
+    GameMode mode = GameMode::thrash; // Big Game omits the selected character's AI row
     bool high_resolution = true; // Settings::high_resolution (plan 18 Task 4)
     bool metric = false;
     bool solo = false;                         // freeze opponents + scheduler actors (oracle)
@@ -96,6 +98,11 @@ struct RaceInstance {           // race-scoped: rebuilt on restart
 };
 RaceAssets load_race_assets(const Assets&, const std::vector<uint8_t>& exe, const RaceConfig&);
 RaceInstance build_race(const RaceAssets&, const std::vector<uint8_t>& exe, const RaceConfig&);
+// 0x00446bf0 / 0x00437860: resolve built riders, including the six course
+// names (0x00402d60) and name-roll easter eggs (0x00402e10).
+std::vector<std::string> race_rider_names(const std::vector<uint8_t>& exe, const RaceConfig&,
+                                        const Race&, const std::vector<std::string>& strings,
+                                        const std::string& player);
 struct RaceSetup { RaceAssets assets; RaceInstance instance; };
 // The only production/replay constructor of Race; tests with synthetic routes may build Race directly.
 RaceSetup make_race_setup(const Assets&, const std::vector<uint8_t>& exe, const RaceConfig&);  // load + build

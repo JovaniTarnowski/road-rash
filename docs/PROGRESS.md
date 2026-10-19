@@ -1557,3 +1557,25 @@ workflow trigger is configured. The workflow itself has not been run in GitHub.
   the `0x0044e710` lane-validity block, City pedestrian/AI parity (RNG from 235,
   row 11 from 148), and native career races still build 7 opponents where the
   offline original builds 14 (so rows 8..14 never race in `rr-game`).
+
+## 2026-10-18: rr-game uses the original offline field
+
+- Corrected the earlier blanket fourteen-opponent claim: original constructor
+  assembly proves Thrash/attract build rows 1..14 (15 racers), while Big Game
+  skips the selected character's AI row (13 opponents / 14 racers). See
+  `REVERSE_ENGINEERING.md` for addresses, reference hash and evidence limits.
+- Career race setup now requests all fourteen rows and passes the mode. The
+  shared factory omits only Big Game's selected row, preserving all remaining
+  row identities/grid slots. Existing `Career::spare_levels` wiring now reaches
+  the six live spare opponents. Quick race defaults to fourteen opponents;
+  explicit `--opponents 0..14` remains available for diagnostics.
+- HUD and finish standings resolve names from the built riders' personality
+  indices, including the six course names and the original 42/69 name-roll
+  tables. No name lookup consumes RNG. Cops are excluded from finish standings.
+  The dynamic place calculation already supports fifteenth place.
+- Regression coverage: both modes/all eight characters, all spare speed tables,
+  course and special names, row-14 HUD target, last-place HUD/standings, and the
+  real race screen with all fifteen racers. Native gate details are recorded
+  in `VERIFICATION.md`; this closes the seven-opponent rr-game gap above.
+- Simulation/traffic/pedestrian and backward-ring gaps from prior sessions
+  remain separate; this change does not claim broader live gameplay parity.

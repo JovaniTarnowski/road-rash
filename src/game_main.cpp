@@ -118,7 +118,7 @@ auto load_with_indicator(SDL_Renderer* renderer, const char* stage, Work work) {
 // back to the bike only converges with no steering input (0x0040a600
 // state-38 walk; any held direction resets state_elapsed and the walk
 // never reaches the bike), then remounts and keeps hunting. Probe
-// (rr::Game-faithful: NAPA, bike 0, level 0, 7 opponents, density 6, crash
+// (historical seven-opponent probe: NAPA, bike 0, level 0, 7 opponents, density 6, crash
 // library): bias -150 meets a car box (dp<128 AND dl<24064) at t=783 and
 // logs reason 2 the same tick (x=-114, no wall contact before the meet);
 // 6 reason-2 crashes over 20000 ticks with remounts between each.
@@ -248,12 +248,6 @@ int run_game(const rr::Assets& assets, SDL_Window* window, SDL_Renderer* rendere
     rr::add_native_screens(frontend_data, rr::kMobileDisplay);
     rr::Frontend fe(assets, text, strings, rr::credit_lines(resources), std::move(frontend_data), tables, career, settings,
                     (std::filesystem::path(pref) / "saves").string());
-    // Opponent names: personality +0x165 -> 0x00464188 -> string slot (0x00437860).
-    const auto name_table = rr::read_exe_data(exe, 0x00464188, 9 * 4);
-    auto personality_name = [&](int p) {
-        const uint32_t slot = p >= 0 && p < 9 ? uint32_t(name_table[size_t(p) * 4]) | uint32_t(name_table[size_t(p) * 4 + 1]) << 8 : 0;
-        return slot ? fe.string_slot(int(slot)) : std::string();
-    };
     // Audio: one mixer for the soundtrack (0x00403040) and race sounds (0x00435da0).
     rr::Mixer mixer(48);
     if (menu_frames < 0 && (!SDL_InitSubSystem(SDL_INIT_AUDIO) || !mixer.open_device()))
@@ -330,16 +324,16 @@ int run_game(const rr::Assets& assets, SDL_Window* window, SDL_Renderer* rendere
                 g.config.bike = career.state.bike;
                 g.config.character = career.state.character;
                 g.config.career = true;
-                g.config.opponents = 7;
+                g.config.opponents = 14;
+                g.config.mode = ev.demo ? rr::GameMode::attract : career.mode;
                 g.config.spare_levels = career.spare_levels;
                 g.metric=settings.metric;g.player_name=fe.player_name();
-                g.rider_names.clear();g.rider_names.push_back(g.player_name);
-                for(int i=1;i<8;++i)g.rider_names.push_back(personality_name(i));
                 g.load_course(assets,exe);
                 g.career = true;
                 g.quit_prompt = fe.string_slot(316);
                 g.pause_prompt = fe.string_slot(317);
                 g.restart();
+                g.rider_names = rr::race_rider_names(exe, g.config, g.race(), strings, g.player_name);
                 if (ev.demo) {
                     // Attract demo (plan 13 Task 5): AI drives (DAT_004753c8); any input exits to the menu.
                     g.career = false;
@@ -380,11 +374,11 @@ int run_game(const rr::Assets& assets, SDL_Window* window, SDL_Renderer* rendere
                 // Finishing order: riders who finished, by finish tick (0x00420e30 rows).
                 std::vector<std::pair<int32_t, size_t>> order;
                 for (size_t i = 0; i < g.race().riders().size(); ++i)
-                    if (g.race().riders()[i].finished) order.emplace_back(g.race().riders()[i].finish_tick, i);
+                    if (!g.race().riders()[i].cop && g.race().riders()[i].finished) order.emplace_back(g.race().riders()[i].finish_tick, i);
                 std::sort(order.begin(), order.end());
                 std::vector<rr::Standing> standings;
                 for (const auto& [tick, i] : order)
-                    standings.push_back({i == 0 ? fe.player_name() : personality_name(int(i)), tick * 100 / rr::ticks_per_second / 10, i == 0});
+                    standings.push_back({g.rider_names.at(i), tick * 100 / rr::ticks_per_second / 10, i == 0});
                 fe.race_finished(end.outcome, end.place, standings);
                 rr::save_settings(settings_path, settings);
             }
@@ -540,7 +534,7 @@ int main(int argc, char** argv) {
         return 0;
     }
     std::string root, screenshot, video;
-    int course = 0, bike = 0, level = 0, opponents = 7;
+    int course = 0, bike = 0, level = 0, opponents = 14;
     long run_ticks = -1, menu_frames = -1;
     bool auto_drive = false, into_traffic = false, start_paused = false, first_run_smoke = false, quick_race = false;
     bool print_wiring = false;  // plan 26 Task 3: print race wiring after the first tick and exit
@@ -571,7 +565,7 @@ int main(int argc, char** argv) {
         else if (a == "--toggle-fullscreen-at" && i + 1 < argc) cli.toggle_at = std::atol(argv[++i]);
         else if (a == "--print-wiring") { print_wiring = true; quick_race = true; }
     }
-    if (course < 0 || course > 4 || level < 0 || level > 4 || opponents < 0 || opponents > 7) return 2;
+    if (course < 0 || course > 4 || level < 0 || level > 4 || opponents < 0 || opponents > 14) return 2;
     if (render_scale < 1 || render_scale > 4) return 2;
     SDL_Window* window = nullptr;
     SDL_Renderer* renderer = nullptr;
@@ -647,21 +641,15 @@ int main(int argc, char** argv) {
             {
                 const auto strings = rr::frontend_strings(rr::read_string_resources(assets.read(rr::language_dll(rr::default_language()))));
                 if (strings.size() > 317) g.pause_prompt = strings[317];
-                const auto name_table = rr::read_exe_data(exe, 0x00464188, 9 * 4);
                 g.restart();
-                g.rider_names.assign(1, g.player_name);
-                for (size_t i = 1; i < g.race().riders().size(); ++i) {
-                    const int p = g.race().riders()[i].rider_idx;
-                    const uint32_t slot = p >= 0 && p < 9 ? uint32_t(name_table[size_t(p) * 4]) | uint32_t(name_table[size_t(p) * 4 + 1]) << 8 : 0;
-                    g.rider_names.push_back(slot && slot < strings.size() ? strings[slot] : std::string());
-                }
+                g.rider_names = rr::race_rider_names(exe, g.config, g.race(), strings, g.player_name);
             }
             if (print_wiring) {   // plan 26 Task 3: wiring report after the first tick, then exit
                 g.tick(0);
                 const rr::RaceWiring w = g.race().wiring();
-                std::printf("terrain=%d traffic=%d pedestrians=%d ring=%d crash_library=%d ride_library=%d nitro=%d finish=%d personalities=%d\n",
+                std::printf("terrain=%d traffic=%d pedestrians=%d ring=%d crash_library=%d ride_library=%d nitro=%d finish=%d personalities=%d racers=%zu\n",
                     int(w.terrain), int(w.traffic), int(w.pedestrians), int(w.ring), int(w.crash_library),
-                    int(w.ride_library), int(w.nitro), int(w.finish), int(w.personalities));
+                    int(w.ride_library), int(w.nitro), int(w.finish), int(w.personalities), g.race().riders().size());
                 std::fflush(stdout);
                 SDL_DestroyRenderer(renderer);SDL_DestroyWindow(window);SDL_Quit();return 0;
             }

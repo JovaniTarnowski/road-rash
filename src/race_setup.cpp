@@ -152,6 +152,45 @@ RaceAssets load_race_assets(const Assets& assets, const std::vector<uint8_t>& ex
     return out;
 }
 
+std::vector<std::string> race_rider_names(const std::vector<uint8_t>& exe, const RaceConfig& config,
+                                        const Race& race, const std::vector<std::string>& strings,
+                                        const std::string& player) {
+    auto word = [&](uint32_t address) {
+        const auto b = read_exe_data(exe, address, 4);
+        return uint32_t(b[0]) | uint32_t(b[1]) << 8 | uint32_t(b[2]) << 16 | uint32_t(b[3]) << 24;
+    };
+    const std::array<std::string, 5> courses = {"CITY", "HIWAY", "MEDLY", "NAPA", "CANYN"};
+    const auto course = std::find(courses.begin(), courses.end(), config.course);
+    if (course == courses.end()) throw std::runtime_error("Unknown course for rider names");
+    const uint32_t first = word(0x004635b8 + uint32_t(course - courses.begin()) * 4);
+    std::vector<std::string> names;
+    for (const auto& rider : race.riders()) {
+        if (names.empty()) { names.push_back(player); continue; }
+        // Police use a separate personality; no racer-name row is assigned.
+        if (rider.cop) { names.emplace_back(); continue; }
+        const int index = rider.brain.overtake_index; // personality +0x165
+        if (index < 0 || index > 15) { names.emplace_back(); continue; }
+        uint32_t slot = word(0x00464188 + uint32_t(index) * 4);
+        if (index >= 10) {
+            const uint32_t spare = uint32_t(index - 10);
+            if (race.name_roll() == 42 || race.name_roll() == 69) {
+                const uint32_t address = word((race.name_roll() == 42 ? 0x004635d0 : 0x004635e8) + spare * 4);
+                std::string name;
+                for (uint32_t i = 0; i < 128; ++i) {
+                    const char c = char(read_exe_data(exe, address + i, 1)[0]);
+                    if (!c) break;
+                    name.push_back(c);
+                }
+                names.push_back(std::move(name));
+                continue;
+            }
+            slot = first + spare;
+        }
+        names.push_back(slot < strings.size() ? strings[slot] : std::string());
+    }
+    return names;
+}
+
 RaceInstance build_race(const RaceAssets& assets, const std::vector<uint8_t>& exe, const RaceConfig& config) {
     RaceInstance out;
     // 1. Routes, Race ctor (player bike/rider, opponents, level, anchor,
@@ -159,6 +198,13 @@ RaceInstance build_race(const RaceAssets& assets, const std::vector<uint8_t>& ex
     auto route_a = make_route(*assets.course, false);
     auto route_b = make_route(*assets.course, true);
     auto opponents = original_opponents(exe, assets.specs, config.level, config.solo ? 14 : config.opponents);
+    // 0x00405783..0x004057a4: Big Game leaves both place-table entries
+    // empty for DAT_00467a6c; retain the remaining rows' original grid slots.
+    if (config.career && config.mode == GameMode::big_game) {
+        const int player = config.player_rider >= 0 ? config.player_rider :
+            character_rider(config.character >= 1 && config.character <= 8 ? config.character : 1);
+        std::erase_if(opponents, [player](const Opponent& o) { return o.rider == player; });
+    }
     if (config.solo) for (auto& o : opponents) o.frozen = true;
     auto race = std::make_unique<Race>(std::move(route_a), std::move(route_b), assets.physics,
                                        assets.specs[size_t(assets.bike_index)], assets.rider_value,

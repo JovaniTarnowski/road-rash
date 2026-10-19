@@ -10,6 +10,8 @@
 #include "golden.hpp"
 #include "race_setup.hpp"
 #include "road.hpp"
+#include "pe_strings.hpp"
+#include "frontend.hpp"
 #include <algorithm>
 #include <filesystem>
 #include <iostream>
@@ -28,6 +30,74 @@ int main() {
     const std::vector<uint8_t> exe = assets.read("ROADRASH.EXE");
     const rr::DepthTable depths = rr::read_depth_table(exe);
     static const char* courses[] = {"CITY", "HIWAY", "MEDLY", "NAPA", "CANYN"}; // 0x0046df58
+    // Offline 0x00405600: all fourteen rows in Thrash/quick races, with
+    // only the selected character's row omitted in Big Game.
+    {
+        rr::RaceConfig config;
+        const auto strings = rr::frontend_strings(rr::read_string_resources(assets.read("TEXT/ENU.DLL")));
+        const auto tables = rr::read_career_tables(exe);
+        rr::Career career;
+        rr::reset_relations(career, tables);
+        config.spare_levels = career.spare_levels;
+        auto loaded = rr::load_race_assets(assets, exe, config);
+        for (const auto mode : {rr::GameMode::thrash, rr::GameMode::big_game}) {
+            config.mode = mode;
+            for (int character = 1; character <= 8; ++character) {
+                config.character = character;
+                auto instance = rr::build_race(loaded, exe, config);
+                auto& race = *instance.race;
+                const bool big = mode == rr::GameMode::big_game;
+                check(race.riders().size() == (big ? 14u : 15u), "mode field count");
+                const int selected = rr::character_rider(character);
+                const auto names = rr::race_rider_names(exe, config, race, strings, "Player");
+                check(names.size() == race.riders().size() && names[0] == "Player", "names follow compact field");
+                for (size_t i = 1; i < race.riders().size(); ++i) {
+                    const auto& rider = race.riders()[i];
+                    check(!big || rider.rider_idx != selected, "Big Game omits selected AI row");
+                    check(!names[i].empty(), "every racer has a name");
+                    if (rider.rider_idx >= 9) {
+                        const auto& speeds = career.spare_levels[size_t(rider.rider_idx - 9)];
+                        check(std::equal(speeds.begin(), speeds.end(), rider.brain.spd_b), "all spare level speeds reach built field");
+                        check(rider.brain.base_speed == speeds[0], "spare row uses jittered current level");
+                    }
+                    race.riders()[i].bike.i32(0x1c) = race.bike().i32(0x1c) + int32_t(i * 256);
+                }
+                check(race.place(0) == int(race.riders().size()), "place reaches last racer");
+                check(loaded.hud->state(race, "Player", names).place == int(race.riders().size()), "HUD accepts two-digit last place");
+                // Select row 14 as the nearest target, across the compacted Big Game field.
+                race.riders().back().bike.i32(0x1c) = race.bike().i32(0x1c) + 1;
+                check(loaded.hud->state(race, "Player", names).target == names.back(), "HUD resolves row fourteen target");
+            }
+        }
+        config.career = false;
+        config.mode = rr::GameMode::thrash;
+        auto instance = rr::build_race(loaded, exe, config);
+        check(instance.race->riders().size() == 15, "quick race defaults to full field");
+        // Verify the six course-name slots and both special-name tables using
+        // the actual setup roll; resolving names must never draw simulation RNG.
+        for (const char* name : courses) {
+            config.course = name;
+            bool ordinary = false, phil = false, veldaar = false;
+            for (uint32_t seed = 1; seed < 2000 && !(ordinary && phil && veldaar); ++seed) {
+                instance.race->set_rng_state(seed);
+                instance.race->build_draws();
+                const int roll = instance.race->name_roll();
+                const auto rng = instance.race->rng_state();
+                const auto names = rr::race_rider_names(exe, config, *instance.race, strings, "Player");
+                check(instance.race->rng_state() == rng, "name resolution preserves RNG");
+                if (roll == 42) { phil = true; check(names[9] == "Honest Phil", "42 selects Honest Phil table"); }
+                else if (roll == 69) { veldaar = true; check(names[9] == "Veldaar", "69 selects Veldaar table"); }
+                else {
+                    ordinary = true;
+                    const size_t base = 320 + size_t(std::find(std::begin(courses), std::end(courses), name) - std::begin(courses)) * 6;
+                    for (size_t i = 9; i < 15; ++i) check(names[i] == strings[base + i - 9], "course spare-name slot");
+                }
+            }
+            check(ordinary && phil && veldaar, "exercised every name-roll branch");
+        }
+        config.opponents = 7;
+        check(rr::build_race(loaded, exe, config).race->riders().size() == 8, "explicit small diagnostic field retained");
+    }
     size_t races = 0;
     for (const char* name : courses) {
         for (int level = 0; level <= 4; ++level) {

@@ -142,6 +142,28 @@ Native port: `src/bike.cpp`, `src/race.cpp`.
 - **Pair construction:** `0x00405600` creates the racers through `0x00405990`. Each is a **bike** object (table `0x00463ba8`, AI `0x00463ad8`) plus a **rider** object (`0x00463c10`, AI `0x00463b40`), linked through `bike+0x2fc` and `rider+0x1c4`.
 - **Grid placement chain (REA-confirmed October 12, 2026; plan 10 Task 6 trace input):** `0x00405990` places each pair at `*(param_3 + 0xcc) + param_4`, where param_3 is the grid slot (`*(slot + 0x14)`, chosen in `0x00405600` from the `0x0049e820` table by the `0x00464298/0x00464218` start-grid words) and param_4 is the grid lateral offset. `0x004387a0` → `0x00438930` then set bike lateral `+0x1c = *(*(slot + 0x28) + 8) + grid` and copy `*(slot + 0x28) + 8` words into `+0x1c..+0x30`; `0x00439b10(slot, type, lateral)` resolves the sub-slice (type switch on slot `+0x3c`: 0 flag-gated `+0x140/+0x144`, 1 interpolated ramps, 3 edge select, 4 lateral-blended 999/lerp, 5 gate). Pinned REA 6.4.0 (Ghidra 12.1.4) pseudocode for all three functions is whitespace-identical to the project's `tools/decompile.sh` exports (`analysis/oracle/rea-005990-placement.md`, `rea-4387a0-subslice.md`, `rea-439b10-slice.md`; disc-derived, git-ignored). This closes the sibling session's open "`*(slot+0x14)+0xcc` placement field" item at the trace level; replay seeding of frozen laterals from the frame-0 dump is still the Task 6 stopgap until the native ctor consumes absolute sub-slice centres.
   - Rider-build RNG audit (October 12, 2026; plan 10 Task 5 single-anchor input): pinned REA 6.4.0 pseudocode whitespace-identical for `0x00405600` rider build (5363 chars), `0x004078f0` personality copy (1033) and `0x00441750` rand wrapper (111). Setup draws in order: `0x004078f0` makes 10×5 = 50 draws (`rand % 0xd − 6` personality jitter); `0x00405990` draws lane `rand % 3` per AI pair (**corrected Oct 17**: every pair including the player draws when offline, `DAT_004c5b00 == DAT_004c5af9 == 0`; first post-ring draw %3 = 1 = the human capture's player brain lane); `0x00405600` tail draws `rand % 100` once (`0x00402e10`); `0x00441750` returns live `rand()` except mode 3 (`DAT_004b7ecc`-gated replay constant). The 11,461-call pre-green stream is therefore countable per pair — a future harness can reproduce setup exactly instead of anchoring at green. Files: `analysis/oracle/rea-405600-riderbuild.md`, `rea-4078f0-personality.md`, `rea-441750-rand.md` (disc-derived, git-ignored).
+  - **Offline field count correction (October 18, 2026):** the unmodified disc EXE
+    SHA-256 `73d7f9744b5b1a9482b3909950cdf3fe34119fe13d023b031e9c6739a60f18a2`
+    matches `analysis/inventory.json`. In `analysis/original-disassembly.txt`,
+    `0x00405614..0x00405621` tests both network flags; offline jumps to
+    `0x0040564b`, setting `DAT_004642d4 = 16`. The player is built separately;
+    `0x00405867..0x00405876` advances AI row 1 through 14 (`row < count-1`).
+    **Thrash/attract: 14 opponents, 15 racers. Big Game: 13 opponents, 14 racers**:
+    `0x00405783..0x004057a4` checks mode 2 and signed-byte `DAT_00467a6c`,
+    clears both racer-table entries for that row and skips its constructor.
+    The selected character maps to rows 1..8 via `0x00415fc0`. Thus the earlier
+    blanket statement that every offline race builds fourteen opponents needs
+    this Big Game exception. The native CLI quick race uses the Thrash field;
+    explicit `--opponents 0..14` is a native diagnostic override. This is static
+    constructor evidence, corroborated by the existing fourteen-opponent field
+    replays; no new live mode-selection capture was taken.
+  - **Full-field names:** `0x00407990` sets spare-row personality byte `+0x165`
+    to `row+1` (10..15). `0x00402d60` fills name-table indices 10..15 from
+    six consecutive string slots, beginning at the course's `0x004635b8` entry
+    (CITY 320, HIWAY 326, MEDLY 332, NAPA 338, CANYN 344). `0x00402e10`
+    instead selects the six pointers at `0x004635d0` for roll 42 or
+    `0x004635e8` for roll 69. `0x00446bf0` (HUD) and `0x00437860` (finish)
+    both resolve that personality byte, not the compact native rider index.
   - Rider build after the ring (October 17, 2026; spawn-20261017): offline `DAT_004642d4 = 0x10`, so 0x00405600 builds the player and opponents 1..14 through 0x00405990 (lane `rand()%3` each, 15 draws), then `rand()%100` for 0x00402e10 (42 → "Honest Phil" set, 69 → "Veldaar" set, else the default rider names via 0x00402d60): the 16 draws between the 0x004552e0 ring setup and green. 0x00405c80 (per rider): stamina max/current from the row, weapon words, brain +0x160 = 0, byte +0x164 = 0, +0x168..+0x180 = 0, bike +0x2f0 = +0x2ec, 0x004091f0 straight target, **bike +0x28 = brain +0x194**, bike +0x30c = 600, +0x310 = ((level·5 + 0x2d)·200 >> 8)·600, +0x314 = 0, half +0x1f8 = 0x00407410, +0x1fc = 0, +0x1f4 = half +0xc, then 0x004082f0. 0x004082f0 reads the player half's +0x1fc word (DAT_004642d8 NULL → 0xf); during the player's own build its scan finds no riders. 0x00438930/0x004387a0 build the half from table 0x00463c10 (bike 0x00463ba8; opponents 0x00463ad8/0x00463b40, which differ only in interval and think): flags 0 → 4, +0x160 = 37, +0x180 = 192, +0x194 = 25, +0x1a4 = 0x004046b0, +0x1a8/+0x1ac = 1, +0x1b4 = 74. 0x00438a80 does not clear a pool slot, so unwritten words keep the previous contents (zero in a fresh process). Brain +0x184: no instruction in the EXE writes it. 0x00446060 (both blocks, from 0x00405990): 0x0043ae10(2), 0x0043ae60(2), +0xc = 0, 0x0043ae90.
 - **`SPEC`** (`BIKESPEC.RSC`, 15 × 356 bytes), applied by `0x00405ea0`:
   - byte 0 → `+0x1bc`; dwords 1–5 → `+0x168`, `+0x16c`, `+0x170`, `+0x1b4`, `+0x1b8`; dword 6 = mass; dwords 7–82 → `+0x1c4…+0x2f3`

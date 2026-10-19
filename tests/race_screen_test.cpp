@@ -37,9 +37,12 @@ int main() {
         display.window = window; display.renderer = renderer; display.settings = &settings;
         rr::Game game;
         game.depth = rr::read_depth_table(exe);
-        game.config.opponents = 0;
         game.load_course(assets, exe);
         game.restart();
+        check(game.race().riders().size() == 15, "screen builds player plus fourteen opponents");
+        const auto names = rr::frontend_strings(rr::read_string_resources(assets.read("TEXT/ENU.DLL")));
+        game.rider_names = rr::race_rider_names(exe, game.config, game.race(), names, game.player_name);
+        check(game.rider_names.size() == 15 && !game.rider_names.back().empty(), "screen has names through row fourteen");
         game.countdown = 0;
         rr::RaceOptions options;
         options.custom_keys = true; // zero bindings isolate the host keyboard
