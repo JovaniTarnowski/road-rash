@@ -156,13 +156,15 @@ void TrackRing::Borr::load(int32_t index) {
     }
 }
 
-void TrackRing::Borr::init(const std::vector<uint32_t>* data) {
+void TrackRing::Borr::init(const std::vector<uint32_t>* data, int32_t samples, bool at_start) {
     words = data && !data->empty() ? data : nullptr;
     if (!words) return;
-    record = 0; position = 0;
-    load(0);
-    start = 0; current = 0;
-    end = (period + 1) * units + (position >> 8);
+    record = at_start ? 0 : int32_t(words->size()) - 1;
+    position = at_start ? 0 : (samples - 1) * 0x100;
+    load(record);
+    current = position >> 8;
+    start = at_start ? 0 : current - (period + 1) * units;
+    end = at_start ? (period + 1) * units : current;
 }
 
 void TrackRing::Borr::step(int32_t delta) {
@@ -172,8 +174,16 @@ void TrackRing::Borr::step(int32_t delta) {
     const int32_t sample = position >> 8;
     if (sample == old >> 8) return;
     current = sample;
-    if (delta < 1) return;   // backward walks are not ported yet
-    if (end < sample) {
+    if (delta < 1) {
+        if (uint32_t(sample) < uint32_t(start)) {
+            if (record < 1) { selector = 0x3f; return; }
+            load(--record);
+            end = sample;
+            start = sample - (period + 1) * units;
+        }
+        return;
+    }
+    if (uint32_t(end) < uint32_t(sample)) {
         if (int32_t(words->size()) - 1 <= record) { selector = 0x3f; return; }
         load(++record);
         start = position >> 8;
@@ -203,25 +213,36 @@ void TrackRing::Borr::slots(const PathSample& path, const Random& draw, RingStat
     out.borr_selector = selector;
 }
 
-void TrackRing::enter(Walker& w, uint32_t offset) {
-    // 0x00452cb0 with param_3 = 1: position 0 in the node's section.
+void TrackRing::enter(Walker& w, uint32_t offset, bool start) {
+    // 0x00452cb0: road cursor at 0 or length; BORR/DZHR at length-1.
     const auto& node = node_of(course_, offset);
     const auto& section = course_.sections.at(node.link);
     w.node = offset;
-    w.position = 0;
-    w.borr.init(&section.roadside_profiles);
+    w.position = start ? 0 : int32_t(node.length) * 0x100;
+    w.borr.init(&section.roadside_profiles, int32_t(section.samples.size()), start);
     w.terrain.reset();
-    if (section.terrain.kind != TerrainDefinition::Kind::none) w.terrain.emplace(section.terrain, 0, forward_);
-    w.dzhr = {size_t(node.link), 0, 0};
+    if (section.terrain.kind != TerrainDefinition::Kind::none) w.terrain.emplace(section.terrain, w.position, forward_);
+    w.dzhr = {size_t(node.link), start ? 0 : (int32_t(section.samples.size()) - 1) * 0x100,
+              start ? 0 : int32_t(events_.at(node.link).records.size()) - 1};
 }
 
 void TrackRing::step(Walker& w, int32_t delta) {
-    // 0x00453030 -> 0x00452e10, single road, forward.
+    // 0x00453030 -> 0x00452e10, single road, either direction.
     if (w.stopped) return;
     const auto& node = node_of(course_, w.node);
     int32_t next = w.position + delta;
-    if (next < 0) { w.stopped = unsupported_ = true; return; }
-    if (next >= int32_t(node.length) * 0x100) {
+    if (next < 0) {
+        // 0x00452e10 returns 3 without moving at a missing/terminal link.
+        if (!node.previous) return;
+        const auto kind = node_of(course_, node.previous).kind;
+        if (kind > 2) return;
+        if (kind != 0) { w.stopped = unsupported_ = true; return; }
+        // 0x00452f1d uses minus the OLD position, not the residual delta.
+        const int32_t old = w.position;
+        enter(w, node.previous, false);
+        delta = -old;
+        next = w.position + delta;
+    } else if (next >= int32_t(node.length) * 0x100) {
         const auto& following = node_of(course_, node.next);
         if (following.kind != 0) { w.stopped = unsupported_ = true; return; }
         next -= int32_t(node.length) * 0x100;
@@ -241,6 +262,17 @@ void TrackRing::step(Walker& w, int32_t delta) {
             if (sample <= (records[size_t(w.dzhr.index)][0] & 0x7fff0000u) >> 16) break;
             ++w.dzhr.index;
         }
+    } else if (delta < 0) {
+        const uint32_t sample = uint32_t(w.dzhr.position >> 8);
+        while (w.dzhr.index > 0) {
+            // Forward traversal can leave the index one past the records;
+            // 0x00452256 then reads the following SGS word before decrementing.
+            const uint32_t word = w.dzhr.index == int32_t(records.size())
+                ? course_.sections.at(w.dzhr.node).scenery_following_word
+                : records.at(size_t(w.dzhr.index))[0];
+            if (sample >= (word & 0x7fff0000u) >> 16) break;
+            --w.dzhr.index;
+        }
     }
 }
 
@@ -250,7 +282,7 @@ void TrackRing::build_slice(Walker& w, int32_t ring_q8, const ActorSink& sink) {
     const auto& node = node_of(course_, w.node);
     const auto& section = course_.sections.at(node.link);
     const uint32_t local = uint32_t(w.position >> 8);
-    const auto& path = section.samples.at(local);
+    const auto& path = local == section.samples.size() ? section.backward_endpoint : section.samples.at(local);
     RingStatics statics;
     w.borr.slots(path, *random_, statics);   // first walk: stale edges, positions overwritten
     if (slice_sink_ && w.terrain)   // 0x00451910 (draw-free)
@@ -307,7 +339,9 @@ void TrackRing::advance(int32_t delta, const Random& random, const ActorSink& si
     front_ += delta;
     if (((old_back ^ back_) & ~0xff) != 0) {
         if (delta < 1) {
-            back_walker_.stopped = front_walker_.stopped = unsupported_ = true;
+            step(back_walker_, -0x100);
+            build_slice(back_walker_, back_, sink);
+            step(front_walker_, -0x100);
         } else {
             step(back_walker_, 0x100);
             build_slice(front_walker_, front_ - delta, sink);
@@ -321,6 +355,13 @@ TrackRingState TrackRing::diagnostic_state() const {
     auto state=[](const Walker& walker) {
         TrackWalkerState out;
         out.position=walker.position;
+        out.node=walker.node;
+        out.borr_position=walker.borr.position;
+        out.borr_record=walker.borr.record;
+        out.borr_start=walker.borr.start;
+        out.borr_end=walker.borr.end;
+        out.dzhr_position=walker.dzhr.position;
+        out.dzhr_index=walker.dzhr.index;
         if(walker.terrain)out.terrain=walker.terrain->diagnostic_state();
         return out;
     };

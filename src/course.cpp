@@ -87,6 +87,9 @@ Course read_course(const std::vector<uint8_t>& bytes) {
         if(scenery) {
             segments.chunk(scenery,"DZHR",16,8);
             for(uint32_t j=0;j<segments.u32(scenery+8);++j)section.scenery_events.push_back({segments.u32(scenery+16+8*j),segments.u32(scenery+20+8*j)});
+            const size_t following=scenery+16+size_t(8)*segments.u32(scenery+8);
+            if (following<=segments.size && segments.size-following>=4)
+                section.scenery_following_word=segments.u32(following);
         }
         const int32_t start_height=int16_t(uint16_t(segments.byte(path+12)|segments.byte(path+13)<<8));
         for(uint32_t j=0;j<count;++j) {
@@ -169,6 +172,38 @@ Course read_course(const std::vector<uint8_t>& bytes) {
                     throw std::runtime_error("Invalid family event record");
                 section.family_events.push_back({int32_t(segments.s32(p)),type,slot,uint16_t(segments.u32(p+8))});
             }
+        }
+        // 0x00452cb0(...,0) initializes at the road end. These are direct
+        // backwards initializer values, not the final forward sample's slopes.
+        auto& endpoint=section.backward_endpoint;
+        endpoint.elevation=int16_t(uint16_t(segments.byte(path+14)|segments.byte(path+15)<<8));
+        const size_t after_path=path+16+size_t(count)*2;
+        if(after_path<=segments.size && segments.size-after_path>=2) {
+            endpoint.bend=segments.signed_byte(after_path);
+            endpoint.rise=segments.signed_byte(after_path+1);
+        }
+        if(lanes && segments.u32(lanes+8)) {
+            const size_t last=lanes+16+size_t(segments.u32(lanes+8)-1)*20;
+            endpoint.left_q8=segments.byte(last+10)*256;
+            endpoint.right_q8=segments.byte(last+11)*256;
+            endpoint.left=endpoint.left_q8*250/256;
+            endpoint.right=endpoint.right_q8*250/256;
+        }
+        if(sides && segments.u32(sides+8)) {
+            const size_t last=sides+16+size_t(segments.u32(sides+8)-1)*36;
+            endpoint.shoulder_left=segments.byte(last+10);
+            endpoint.shoulder_right=segments.byte(last+11);
+            endpoint.height_left=segments.byte(last+14);
+            endpoint.height_right=segments.byte(last+15);
+            endpoint.side_flags[0]=uint8_t(segments.byte(last+16));
+            endpoint.side_flags[1]=uint8_t(segments.byte(last+17));
+        }
+        if(terrain && section.terrain.kind!=TerrainDefinition::Kind::hill) {
+            const size_t selectors=section.terrain.kind==TerrainDefinition::Kind::building ? 16 :
+                24+16*(section.terrain.walls[0].size()+section.terrain.walls[1].size());
+            const size_t after=terrain+selectors+size_t(count)*2;
+            if(after<=segments.size && segments.size-after>=2)
+                section.terrain.end_selectors=std::array<uint8_t,2>{uint8_t(segments.byte(after)),uint8_t(segments.byte(after+1))};
         }
         course.sections.push_back(std::move(section));
     }

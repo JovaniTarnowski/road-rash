@@ -110,23 +110,25 @@ int main() {
         // pedestrians of these human captures are set up while the tick counter reads 0.
         // The RNG must match on every tick to `rng_end` and every opponent's position and
         // speed to `field_end`:
-        // - Napa: to the knock/arrest. There the camera follows the crash body back across
-        //   a slice and the original walks the ring back one slice (0x00454120, 0x00453030
-        //   with -0x100: 24 terrain draws at 0x4513f3/0x451479/0x4514e7); the backward
-        //   ring step is not ported (TrackRing::advance). The field still matches to the end.
+        // - Napa: parked/crashed/order2 reach the capture end, including the 24
+        //   backward-ring terrain draws on the knock/arrest tick. The foot captures
+        //   next miss one draw: 4552 for foot, 4580 for foot2/3 (no ring crossing).
+        //   A separate RANDLOG run reproduces foot's 0x00409377 overtake draw;
+        //   see docs/VERIFICATION.md for measured spans and capture provenance.
         // - CITY: to 234; tick 235 draws in the pedestrian think (0x004410b5), and rider
         //   row 11 differs from tick 148 (City AI not at parity). The cop matches to the end.
-        for(const CopCapture& scenario:{CopCapture{"NAPA","napa-cops-parked-20261018",4730,0,4730,4552,4551,4730},
+        for(const CopCapture& scenario:{CopCapture{"NAPA","napa-cops-parked-20261018",4730,0,4730,4552,4730,4730},
                                          CopCapture{"CITY","city-cops-parked-20261018",4551,0,4551,0,234,147},
-                                         CopCapture{"NAPA","napa-cops-crashed-20261018",5030,4400,5030,4852,4399,5030},
-                                         CopCapture{"NAPA","napa-cops-order2-20261018",5030,4400,5030,-1,4399,5030},
-                                         CopCapture{"NAPA","napa-cops-foot-20261018",4700,4460,4700,0,4459,4700},
-                                         CopCapture{"NAPA","napa-cops-foot2-20261018",4700,4460,4700,4616,4459,4700},
-                                         CopCapture{"NAPA","napa-cops-foot3-20261018",4700,4460,4700,4616,4459,4700},
+                                         CopCapture{"NAPA","napa-cops-crashed-20261018",5030,4400,5030,4852,5030,5030},
+                                         CopCapture{"NAPA","napa-cops-order2-20261018",5030,4400,5030,-1,5030,5030},
+                                         CopCapture{"NAPA","napa-cops-foot-20261018",4700,4460,4700,0,4551,4700},
+                                         CopCapture{"NAPA","napa-cops-foot2-20261018",4700,4460,4700,4616,4579,4700},
+                                         CopCapture{"NAPA","napa-cops-foot3-20261018",4700,4460,4700,4616,4579,4700},
                                          // Two launches one second apart (no cop: end 1200): rows 9..14 differ, so
                                          // the overtake draws fall on different ticks (245.. vs 403..).
                                          CopCapture{"NAPA","napa-randlog1-20261018",0,0,1200,-1,1200,1200},
-                                         CopCapture{"NAPA","napa-randlog2-20261018",0,0,1200,-1,1200,1200}}) {
+                                         CopCapture{"NAPA","napa-randlog2-20261018",0,0,1200,-1,1200,1200},
+                                         CopCapture{"NAPA","napa-backward-ring-randlog-20261018",0,300,700,-1,700,700}}) {
             std::ifstream capture(std::string(RR_SOURCE_DIR "/analysis/oracle/")+scenario.name+".tsv");
             if(capture) {
                 std::map<int,std::pair<int,int>> original;   // tick -> cop (position, speed)

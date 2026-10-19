@@ -162,8 +162,13 @@ TerrainSlice TerrainIterator::slice(int32_t left,int32_t right) const {
         }
     } else {
         const int32_t sample=sample_of(position_);
-        if(sample<0 || size_t(sample)>=definition_.selectors.size()) throw std::runtime_error("Terrain selector beyond profile");
-        s.selectors=definition_.selectors[sample];s.type=definition_.kind==TerrainDefinition::Kind::wall ? 1 : 0;
+        if(sample>=0 && size_t(sample)==definition_.selectors.size() && definition_.end_selectors)
+            s.selectors=*definition_.end_selectors;
+        else {
+            if(sample<0 || size_t(sample)>=definition_.selectors.size()) throw std::runtime_error("Terrain selector beyond profile");
+            s.selectors=definition_.selectors[sample];
+        }
+        s.type=definition_.kind==TerrainDefinition::Kind::wall ? 1 : 0;
         if(s.type==1) for(int side=0;side<2;++side) {
             const auto& r=definition_.walls[side][wall_record_[side]];const auto& p=r.parameters;const auto& v=wall_values_[side];
             s.walls[side]={v[0],add(v[2],(p[2]+p[5]*2)*2),add(r.base_height,v[1])};

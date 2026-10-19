@@ -1,4 +1,5 @@
 #pragma once
+#include <optional>
 #include <array>
 #include <cstdint>
 #include <functional>
@@ -22,6 +23,8 @@ struct TerrainHillRecord {
 struct TerrainDefinition {
     enum class Kind { none,building,wall,hill } kind=Kind::none;
     std::vector<std::array<uint8_t,2>> selectors;
+    // Original end-position selector read addresses the following payload bytes.
+    std::optional<std::array<uint8_t,2>> end_selectors;
     std::array<std::vector<TerrainWallRecord>,2> walls;
     std::vector<TerrainHillRecord> hills;
 };

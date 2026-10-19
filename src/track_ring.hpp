@@ -37,6 +37,9 @@ struct RingStatics {
 };
 struct TrackWalkerState {
     int32_t position=0;
+    uint32_t node=0;
+    int32_t borr_position=0, borr_record=0, borr_start=0, borr_end=0;
+    int32_t dzhr_position=0, dzhr_index=0;
     std::optional<TerrainIteratorState> terrain;
 };
 struct TrackRingState {
@@ -65,9 +68,9 @@ public:
     // 0x004552e0 (random part): DZHR jitter, walker init, walk to camera -
     // 0x3000, then 128 slice builds from the front walker.
     void setup(int32_t camera_q8, const Random&, const ActorSink&);
-    // 0x00454120 with one slice crossing forward: back walker step, slice
-    // build at the old front, front walker step. Smaller moves only advance
-    // the cursors.
+    // 0x00454120 with one slice crossing: back walker step, slice build
+    // (old front forward, new back backward), then front walker step.
+    // Smaller moves only advance the ring cursors.
     void advance(int32_t delta_q8, const Random&, const ActorSink&);
     int32_t front_q8() const { return front_; }
     int32_t back_q8() const { return back_; }
@@ -85,7 +88,7 @@ private:
         uint8_t alternate = 0, left = 0, selector = 0x3f, random = 0, count = 0, units = 0, period = 0;
         int32_t spacing = 0;             // [8]
         void load(int32_t index);        // 0x00451a90
-        void init(const std::vector<uint32_t>*);   // 0x00451b60 forward
+        void init(const std::vector<uint32_t>*, int32_t samples, bool start);   // 0x00451b60
         void step(int32_t delta);        // 0x00451e20
         void slots(const PathSample&, const Random&, RingStatics&) const;   // 0x00451cb0
     };
@@ -113,7 +116,7 @@ private:
     int probe_step(ProbeHalf&, int32_t delta);                  // 0x00452e10 (0/1/2/3)
     void probe_window(uint32_t node, int32_t direction);        // 0x00453b60 draws
     void jitter_events(uint32_t node, std::vector<uint32_t>& visited, const Random&);   // 0x00453e60
-    void enter(Walker&, uint32_t node);                         // 0x00452cb0 forward
+    void enter(Walker&, uint32_t node, bool start = true);      // 0x00452cb0
     void step(Walker&, int32_t delta);                          // 0x00453030 -> 0x00452e10
     void build_slice(Walker&, int32_t ring_q8, const ActorSink&);   // 0x00454c80 -> 0x00454240
     const Course& course_;

@@ -22,6 +22,7 @@ rr::Course synthetic_course() {
         t.walls[side].push_back(r);
     }
     t.selectors.resize(300, {0, 0});
+    t.end_selectors=std::array<uint8_t,2>{7,8};
     // units 15 (bits 24..27), period 0, random spacing (bit 11), two objects.
     s.roadside_profiles.push_back(0x0f000000u | 0x00010000u | 0x800u | 0x100u);
     // Actor (bit 31) at sample 20, no jitter range, probability 15 (always
@@ -64,6 +65,88 @@ rr::Course window_course(uint32_t branch_length) {
     return c;
 }
 
+void backward_iterators() {
+    auto course = synthetic_course();
+    auto& section = course.sections[0];
+    section.roadside_profiles.push_back(0x0f020000u); // second selector, no random slots
+    // Keep a later record so the backwards DZHR comparison is inside the table.
+    section.scenery_events = {{(4u << 24) | (15u << 20) | (1u << 8), 0},
+                             {(6u << 24) | (15u << 20) | (2u << 8), 0},
+                             {(30u << 24) | (15u << 20) | (3u << 8), 0}};
+    rr::TrackRing ring(course, 0);
+    rr::TrackRing::Random random = [] { return 0u; };
+    ring.setup(0x3200, random, {});
+    for (int i = 0; i < 15; ++i) ring.advance(0x100, random, {});
+    check(ring.diagnostic_state().back.borr_record == 1, "BORR moves to second record");
+    int billboards = 0, selector = -1;
+    ring.set_static_sink([&](int32_t sample, uint32_t, uint32_t, const rr::RingStatics& s) {
+        if (sample == 10) billboards = s.billboards;
+        selector = s.borr_selector;
+    });
+    ring.advance(-0x100, random, {});
+    ring.advance(-0x100, random, {});
+    auto back = ring.diagnostic_state().back;
+    check(back.borr_record == 0 && back.borr_start == 0 && back.borr_end == 15,
+          "BORR rewinds at start, restoring the previous interval");
+    check(selector == 1, "back slice uses rewound BORR selector");
+    for (int i = 0; i < 5; ++i) ring.advance(-0x100, random, {});
+    check(billboards == 1 && ring.diagnostic_state().back.dzhr_index == 1,
+          "DZHR rewinds and rebuilds the billboard at sample ten");
+
+    rr::TrackRing start(course, 0);
+    start.setup(0x3200, random, {});
+    for (int i = 0; i < 3; ++i) start.advance(-0x100, random, {});
+    check(!start.unsupported() && start.diagnostic_state().back.position == 0,
+          "missing previous node leaves the walker at the course start");
+    start.advance(0x100, random, {});
+    check(start.diagnostic_state().back.position == 256, "walker can move away from the course start");
+
+    for (uint32_t following : {0u, 0x52534543u}) {
+        auto tail = synthetic_course();
+        tail.sections[0].scenery_following_word = following;
+        rr::TrackRing exhausted(tail, 0);
+        exhausted.setup(0x3200, random, {});
+        for (int i = 0; i < 20; ++i) exhausted.advance(0x100, random, {});
+        check(exhausted.diagnostic_state().back.dzhr_index == 1, "DZHR exhausted forward index");
+        exhausted.advance(-0x100, random, {});
+        check(exhausted.diagnostic_state().back.dzhr_index == (following ? 0 : 1),
+              "DZHR rewind tests the physical following word before decrementing");
+    }
+
+    // Put the front in road B and walk it back to A. The back stays in A,
+    // so no slice is built from the front's boundary position.
+    auto roads = synthetic_course();
+    roads.sections.push_back(roads.sections[0]);
+    roads.nodes.at(20).next = 60;
+    roads.nodes.emplace(60u, rr::CourseNode{60, 0, 40, 20, 1, 300});
+    rr::TrackRing traversal(roads, 0);
+    traversal.setup(0x3200, random, {});
+    for (int i = 0; i < 170; ++i) traversal.advance(0x100, random, {});
+    check(traversal.diagnostic_state().front.node == 60, "front enters road B");
+    traversal.advance(-0x100, random, {});
+    const auto front = traversal.diagnostic_state().front;
+    check(!traversal.unsupported() && front.node == 20 && front.position == 300 * 256,
+          "backward node entry uses previous road end minus old position");
+    check(front.terrain && front.terrain->position == 300 * 256 &&
+          front.borr_position == 299 * 256 && front.dzhr_position == 299 * 256,
+          "previous-road terrain, BORR and DZHR use their original distinct origins");
+    // Move the back walker across the same boundary. Its rebuilt end slice
+    // must use the backwards initializers, including the physical selector tail.
+    rr::TrackRing back_traversal(roads, 0);
+    back_traversal.setup(0x3200, random, {});
+    for(int i=0;i<298;++i)back_traversal.advance(0x100,random,{});
+    int endpoint_slices=0;
+    back_traversal.set_slice_sink([&](uint32_t section,uint32_t local,const rr::PathSample& path,const rr::TerrainSlice& slice) {
+        if(section==0 && local==300) {
+            ++endpoint_slices;
+            check(path.left==500 && slice.selectors==std::array<uint8_t,2>{7,8},
+                  "reverse boundary slice uses the original endpoint values");
+        }
+    });
+    back_traversal.advance(-0x100,random,{});
+    check(!back_traversal.unsupported() && endpoint_slices==1,"back walker rebuilds the previous road endpoint");
+}
+
 void window_walks() {
     auto run = [](uint32_t branch_length, int& draws) {
         const rr::Course course = window_course(branch_length);
@@ -89,6 +172,7 @@ void window_walks() {
 
 int main() {
     window_walks();
+    backward_iterators();
     const rr::Course course = synthetic_course();
     rr::TrackRing ring(course, 0);
     uint32_t state = 12345;
@@ -117,7 +201,7 @@ int main() {
     check(draws == 12, "one crossing: back and front wall steps");
     draws = 0;
     ring.advance(-0x100, random, sink);
-    check(ring.unsupported() && draws == 0, "backward crossing reported unsupported");
+    check(!ring.unsupported() && draws == 16, "backward crossing: wall steps and two BORR passes");
     if (failures) return 1;
     std::cout << "track ring ok\n";
     return 0;

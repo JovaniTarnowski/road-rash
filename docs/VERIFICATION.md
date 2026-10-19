@@ -2059,3 +2059,88 @@ unmeasured. No Android/device or full-course simulation claim is made here.
   terrain-medly/raster, hires-render, raster-rgb, widescreen, polygon);
   `make verify-sim` passed (receipt
   `analysis/agent-gates/oracle-9b5885ce737742578eab9d810d4ea476`).
+
+
+## 2026-10-18 — backward ring step (baseline 6044526)
+
+Worktree `/Users/archit/Dev/rr/.backward-ring-20261018`; independent build
+`build-backward-ring`. Shared checkout edits were preserved. Fixtures are local
+symlinks from `.police-capture-20261018`, `.rng-vary-20261018`, and the main
+checkout's ignored `analysis/oracle`; no proprietary data is committed.
+
+`police-test` still uses one anchor at the end of tick 1 and asserts every
+intervening RNG state and each opponent's position/speed:
+
+| Capture | Cop comparison | Arrest tick | RNG match through | Opponents through |
+| --- | --- | --- | --- | --- |
+| napa-cops-parked | 635 ticks | 4552 | 4730 (end) | 4730 |
+| napa-cops-crashed | 935 ticks | 4852 | 5030 (end) | 5030 |
+| napa-cops-order2 | 935 ticks | none | 5030 (end) | 5030 |
+| napa-cops-foot | 605 ticks | 4544 | 4551 | 4700 |
+| napa-cops-foot2 | 605 ticks | 4616 | 4579 | 4700 |
+| napa-cops-foot3 | 605 ticks | 4616 | 4579 | 4700 |
+| napa-randlog1 / napa-randlog2 | no cop | none | 1200 (end) | 1200 |
+| napa-backward-ring-randlog | no cop | none | 700 (end) | 700 |
+
+City retains its previous asserted RNG/field limits (234/147), with the cop
+matching 456 ticks. No new City fidelity claim.
+
+New original captures used the existing installed proxy, SHA256
+`6d5f1b7461382197d73fc1f7050301baaf626b998fae6cafb5dbe156b5ab300e`, through
+`tools/oracle_capture.py capture <name> --session backward-ring-20261018`.
+Common environment: `RR_ORACLE_COURSE=4 RR_ORACLE_LEVEL=3 RR_ORACLE_SEED=1
+RR_ORACLE_SIM=1 RR_ORACLE_HUMAN=1 RR_ORACLE_INPUT='C:\napa-parked.controls'
+RR_ORACLE_RANDCOUNT=1 RR_ORACLE_RANDLOG=1`. Controls SHA256
+`2bfc3f36dc3396a852aae4d204db1742bc76ab698d2d71cc8f4675af1340b7fe`.
+Both runs have valid headers, contiguous ticks, completion markers, original
+EXE hashes and process exit 0; the prefix/install/output claims serialized them.
+
+- `napa-backward-ring-randlog-20261018`: `RR_ORACLE_KNOCK=300`, 700 frames,
+  `RR_ORACLE_TERRAIN_TRACE=1`, 26.19 seconds. Trace SHA256
+  `b556931d9870eebdecc857ace50ed19d20efcb97fed411fbb7f2f8c5461946e1`.
+  Knock tick 300 logs eight triples `0x4513f3/0x451479/0x4514e7` (24 terrain
+  draws). Added as an optional end-to-end RNG/field regression in police-test.
+- `napa-foot-randlog-20261018`: knock 4460, 4700 frames, 89.67 seconds.
+  SHA256 `c827c474263d2daddcc272175388d8c2200159874006a8010b08f5b416fa4e4d`.
+  Reproduces foot's RNG states 511658635 -> 1410771746 at ticks 4551 -> 4552;
+  RANDLOG identifies the extra tick-4552 draw as `0x00409377` (AI overtake).
+  Native `RR_SIM_TRACE_TICK=4552` shows no draws in any phase for that scenario.
+  Ring.back changes 410 -> 407, without a slice crossing. Thus the next
+  divergence is outside the backward ring implementation. Foot2/3 similarly
+  miss exactly one draw at 4580 (4181790837 -> 2384560484 and 3226249879 ->
+  475380478); ring.back stays 434. Their caller is not directly logged in the
+  older captures, so the analogous overtake attribution remains an inference.
+
+Focused `ctest --test-dir build-backward-ring -R '^(track_ring|course|terrain)$'
+passed 3/3 after the endpoint addition. It checks both walkers entering the
+previous ordinary road, rebuilding its endpoint slice, the original distinct
+BORR/DZHR/terrain positions, unsigned BORR rewind, billboard revisit, physical
+DZHR follower behavior and recovery from a missing previous link. The first
+parser iteration rejected a synthetic SGS ending at DZHR; bounded the optional
+following-word read and reran the course regression successfully.
+
+Final integration source includes concurrent `fe70d15` (offline rider field and
+names). Rebase preserved both progress entries; no implementation conflicts.
+
+- `cmake -S . -B build-backward-ring -DCMAKE_BUILD_TYPE=Debug
+  -DCMAKE_EXPORT_COMPILE_COMMANDS=ON`, followed by
+  `cmake --build build-backward-ring --parallel 8`: passed.
+- `make verify-sim BUILD_DIR=build-backward-ring JOBS=8`: passed after integration,
+  strict human replay **1431/1431 identical**. Receipt:
+  `analysis/agent-gates/oracle-7909cbcdab24411ea680d0cd9e857dad/receipt.json`.
+- No client C++ LSP tool was exposed. Ran `tools/agent_lsp.py` preflight on the
+  owned compilation database and `clangd --check=<source>
+  --compile-commands-dir=build-backward-ring --tweaks=` for track_ring.cpp,
+  course.cpp and terrain.cpp: zero errors. Empty tweaks disables Apple's
+  unrelated ExtractFunction feature self-tests, which otherwise returned 3;
+  the original check also reported no C++ parse/type diagnostics.
+- `ctest --test-dir build-backward-ring -j6 --output-on-failure`: **104/104
+  passed, zero skips**, exit 0, 171.25 seconds on the integrated final source.
+  Complete build/CTest/clangd/capture logs are retained in
+  `analysis/backward-ring-20261018/`; strict receipt remains at the path above.
+- An earlier, superseded full run during concurrent verification reported four
+  allocations in `render-threads-alloc`; the final integrated run passed that
+  test with no renderer changes. No test/golden or allocation assertion was
+  relaxed. The earlier full run before endpoint integration also passed 104/104.
+- Android/device gates were not run for this simulation/iterator change. These
+  results establish the replay spans above, not full gameplay or dual-road parity.

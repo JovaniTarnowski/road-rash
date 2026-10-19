@@ -2057,3 +2057,58 @@ varies between otherwise identical captures") and identifies its cause.
   (`0x4513f3/0x451479/0x4514e7`) on the knock/arrest tick.
 - City tick 235 draws in the pedestrian think at `0x4410b5`
   (`rand & 3` after the 0x0044a020 side check); native does not reach it.
+
+
+## 2026-10-18 backward track-ring crossing (0x00454120)
+
+- Negative camera slice crossing: back walker `0x0049ea20` steps `-0x100`
+  through `0x00453030`, `0x00450f90(1,-0x100)` moves its slice cursors,
+  `0x00454c80(new_back,0x0049ea20)` rebuilds the new back slice,
+  `0x00450f90(0,-0x100)` moves the other cursors, then front walker
+  `0x0049ee30` steps `-0x100`. The random-consuming native ring now follows
+  this order and builds from the back walker on reverse crossings.
+- `0x00452e10` enters a previous ordinary road with `0x00452cb0(...,0)`:
+  the road/terrain position is `previous.length*256`, while BORR and DZHR
+  initialize to `(their sample_count-1)*256`. The applied iterator delta is
+  **minus the old road position**, not the overshoot (`0x00452f1d`). A missing
+  previous link returns 3 without moving or permanently stopping the walker.
+- `0x00451e20` compares sample/start as unsigned on reverse steps. Before
+  start, it loads the preceding BORR word, sets end to the current sample and
+  start to `sample-(period+1)*units`; before record zero it disables selector
+  `0x3f`. `0x00451b60` at an end loads the last word with those same bounds.
+- `0x00452230` rewinds while sample is below the **current** DZHR word's
+  position, stopping at index zero. A forward walk can leave index equal to
+  count: assembly `0x00452256` reads the physically following SGS word before
+  decrementing. Preserve it in `CourseSection::scenery_following_word` rather
+  than reading past a vector. Disc census: every Napa table is followed by
+  `CESR` (`0x52534543`); the other courses also have `HTPR` and zero followers.
+  Synthetic SGS resources ending exactly at DZHR have no following word and
+  retain zero. BORR header sample counts equal HTPR counts on all five courses.
+- A back-walker road transition can immediately build at `local == length`.
+  `0x00451970(...,0)` uses HTPR header end height, `0x00451a40` reads
+  the two bytes following its path samples, and lane/shoulder backwards
+  initializers (`0x00452820`, `0x00452a00`) take the final record's end
+  values. `CourseSection::backward_endpoint` preserves these directly rather
+  than indexing past `samples`. For wall/building terrain `0x00451710` reads
+  the selector pair at count, including padding/following SGS bytes; preserve
+  those separately as `TerrainDefinition::end_selectors`. A synthetic back
+  walker crosses a road boundary and rebuilds that endpoint without an
+  out-of-range access. This endpoint case has assembly/synthetic evidence,
+  not an original runtime node-transition capture.
+- Terrain negative stepping was already implemented (`0x004516e0` /
+  `0x004515a0` / `0x00451380`); the stepping algorithm was unchanged (only the end-selector read was added). New original
+  RANDLOG evidence shows exactly 24 draws on knock tick 300, callers
+  `0x4513f3`, `0x451479`, `0x4514e7`, eight triples. The native one-anchor
+  replay now matches the complete 700-tick capture's RNG and opponent motion.
+- The next long on-foot mismatch is separate: original RANDLOG at tick 4552
+  calls `0x00409377` (AI overtake roll, `0x004092e0`); neither camera cursor
+  crosses a slice. The companion run has the same RNG states at 4551/4552 as
+  `napa-cops-foot`. Foot2/3 first differ by one draw at 4580 with stationary
+  camera; their older traces do not contain caller logs. This does not claim
+  their exact caller was directly measured. See VERIFICATION.md.
+- Evidence: existing address-keyed `analysis/decompiled/{00454120,00452e10,
+  00452cb0,00451e20,00451b60,00452230,00452060}.c`, assembly in
+  `analysis/oracle/rea-452230-dzhridx.md`, unmodified EXE SHA256
+  `73d7f9744b5b1a9482b3909950cdf3fe34119fe13d023b031e9c6739a60f18a2`
+  verified against inventory. Existing dual-road split/merge ring traversal
+  remains explicitly unsupported; these captures exercise ordinary-road walking.

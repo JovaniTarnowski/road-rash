@@ -1579,3 +1579,23 @@ workflow trigger is configured. The workflow itself has not been run in GitHub.
   in `VERIFICATION.md`; this closes the seven-opponent rr-game gap above.
 - Simulation/traffic/pedestrian and backward-ring gaps from prior sessions
   remain separate; this change does not claim broader live gameplay parity.
+
+## 2026-10-18 — backward ring step and police RNG acceptance
+
+Ported the negative `0x00454120` crossing: step back walker, rebuild new back
+slice, step front walker. Added reverse BORR/DZHR traversal and previous-road
+entry, preserving the original distinct iterator origins and DZHR following-word
+read. Synthetic regression covers rewind ordering/draw counts, BORR boundaries,
+billboard revisit, exhausted DZHR tables, missing links and previous-road entry,
+including the back walker's endpoint slice. Endpoint road geometry and terrain
+selectors are recovered from the original end initializers and physical SGS bytes.
+
+One RNG anchor at tick 1: Napa parked reaches 4730/4730, crashed and order2
+5030/5030. Foot now reaches 4551 (was 4459); foot2/3 reach 4579 (was 4459).
+All cops, arrest outcomes and opponents still match their entire capture spans.
+A new 700-tick knock-at-300 RANDLOG replay matches throughout. The next foot
+mismatch is an original AI overtake draw at caller `0x00409377`, not a ring
+crossing. Foot2/3 each next miss one draw at stationary-camera tick 4580;
+their old captures do not log that caller. Initial setup/tick-1 RNG remains
+anchored rather than reproduced, and dual-road split/merge ring traversal remains
+open. See VERIFICATION.md and agent-handoffs/backward-ring-20261018.md for gates.

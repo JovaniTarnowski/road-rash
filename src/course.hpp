@@ -51,6 +51,11 @@ struct CourseEvent {
      int32_t family_forward_bias=0;
      std::vector<uint32_t> roadside_profiles; // BORR packed words, in original order
      std::vector<std::array<uint32_t,2>> scenery_events; // DZHR packed records, before random placement
+     // 0x00452230 can inspect one word after the last DZHR record on rewind.
+     // Preserve that word from SGS rather than reading past the native vector.
+     uint32_t scenery_following_word=0;
+     // 0x00452cb0(...,0) exposes one slice at position length before rewinding.
+     PathSample backward_endpoint{0,0,500,500,512,512};
  };
 struct CourseNode {
     uint32_t offset, kind, next=0, previous=0, link=0, length=0;
