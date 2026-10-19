@@ -35,6 +35,7 @@ struct CareerTables {
     std::array<uint32_t, 15> prize{};         // 0x0046ab48 + place*0x4c (standings +0)
     // Personality p (0x00464558 + p*0x204) starts with 10 x 3 relation dwords, one triple per rider.
     std::array<std::array<std::array<int32_t, 3>, 10>, 10> default_relations{};
+    std::array<int32_t, 5> spare_levels{};    // personality 0 +0x1bc: level speeds copied to rows 9..14
 };
 CareerTables read_career_tables(const std::vector<uint8_t>& exe);
 
@@ -49,8 +50,16 @@ struct Career {
     // Runtime personality copies at 0x004c6b40 (0x204 bytes each) start with 10 relation
     // triples: relations[personality][other][k]. Saves store relations[p][player's personality].
     std::array<std::array<std::array<int32_t, 3>, 10>, 10> relations{};
+    // Rider rows 9..14 (0x004c5f20 + row*0x204, read by 0x00407990): personality 0 with the five
+    // +0x1bc level speeds jittered by rand()%13-6 in 0x004078f0, row-major, 30 draws.
+    std::array<std::array<int32_t, 5>, 6> spare_levels{};
+    // The CRT rand() state (0x00455eb0, per-thread +0x14) shared by the menus and 0x004078f0.
+    // 0x00448200 seeds it with srand(time(NULL)) at launch, so the jitter differs per second.
+    uint32_t rng = 1;
     bool unsaved = false;   // 0x004753ac
 };
+// MSVC rand() on a Career's CRT state.
+uint32_t career_random(Career&);
 
 // Next front-end screen ids (0x00421df0 screen table indices).
 namespace screen_id {
@@ -63,7 +72,8 @@ constexpr int native_gamepad = 0x27, native_touch = 0x28, native_enhancements = 
 
 // 0x00445090: switching mode resets level, qualifications and character.
 void select_mode(Career&, const CareerTables&, GameMode);
-// 0x004078f0: restore the relation triples from the personality defaults.
+// 0x004078f0: restore the relation triples from the personality defaults and re-jitter the
+// spare rows' level speeds (30 draws from Career::rng).
 void reset_relations(Career&, const CareerTables&);
 // 0x0041f5a0 + 0x0041f630: choose a character; Big Game restarts the career with that rider's cash.
 void choose_character(Career&, const CareerTables&, int character);
@@ -99,5 +109,6 @@ std::string results_video(const Career&, int screen, uint32_t random);
 // checksum(0x0042efc0 over the next 0x9c bytes), 0xcafedead, GameState, 10 x 3 relation dwords.
 uint32_t save_checksum(const uint8_t* bytes, size_t count);
 std::vector<uint8_t> write_save(const Career&);
-Career read_save(const std::vector<uint8_t>&, const CareerTables&);   // throws std::runtime_error
+// rng: the CRT state when the file is read; 0x0042f110 runs 0x004078f0 on a valid file.
+Career read_save(const std::vector<uint8_t>&, const CareerTables&, uint32_t rng = 1);   // throws std::runtime_error
 }

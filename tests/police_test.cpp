@@ -1,9 +1,11 @@
 #include "police.hpp"
 #include "assets.hpp"
+#include "career.hpp"
 #include "actor_descriptors.hpp"
 #include "race_setup.hpp"
 #include <fstream>
 #include <sstream>
+#include <array>
 #include <map>
 #include <tuple>
 #include <cstdlib>
@@ -88,7 +90,7 @@ int main() {
             require(arrested>=0,"Cop arrests the stopped player");
             require(sirens>0,"Cop posts siren events with its position");
         }
-        struct CopCapture { const char* course; const char* name; int asserted_end, knock, end, arrest; };
+        struct CopCapture { const char* course; const char* name; int asserted_end, knock, end, arrest, rng_end, field_end; };
         // Original-capture comparisons (git-ignored `analysis/oracle/<name>.tsv`): level byte
         // 2, seed 1, the human player parked on the grid (zero controls), the original cop
         // spawned by 0x00407f30 at tick 4096. The cop's position and speed (and, with a
@@ -96,81 +98,115 @@ int main() {
         // `asserted_end`; later ticks are reported. `arrest` is the original arrest tick
         // (first tick of the 0xb4 race-end timer, read from `race.end_timer` when the
         // capture has it, else from the camera pull-back 0x00437c30), -1 for none before
-        // `end`, 0 when it falls after the asserted span. Covers the cop against a stopped
-        // or knocked-off player only, not the other riders (not a free-running field replay).
+        // `end`, 0 when it falls after the asserted span.
         //
-        // The RNG is anchored once, at the end of tick 4095 from the capture: tick 4096
-        // draws exactly one rand() there, the cop lane +0x18c (0x00405990, rand() % 3),
-        // and the original's RNG stream before it differs from run to run, so traffic and
-        // the lane do too (napa-cops-crashed/-order/-order2 diverge from tick 245).
-        //
-        // napa-cops-crashed (knock 4400, lane 1): exact to 4835. From 4831 an oncoming car
-        // (lane -2, lateral -88000) lies between the cop and the player; 0x00449e90 stops at
-        // it, so the cop drops its latch on the player's half until it passes (4862). Native
-        // traffic has no such car there (traffic not at parity), so the cop keeps the latch.
-        // napa-cops-order2 (same knock, lane 0, no car in the way): exact on every tick to
-        // 5030, including the remount and the half latch (no arrest before 5030).
-        // CITY is exact until 4501: from 4359 the native cop avoids traffic car 14 where the
-        // original's nearest object is at 9227 (City traffic not at parity).
-        // napa-cops-foot (knock 4460, original on-foot arrest at 4544): exact to 4461, then
-        // the original cop is latched on traffic car 11393 (lane 0) that native lacks.
-        // napa-cops-foot2 (lane 1) and -foot3 (lane 0), same knock, no traffic in the cop's
-        // way: exact to 4700 through the on-foot arrest at 4616 (crash state 2) and after.
-        for(const CopCapture& scenario:{CopCapture{"NAPA","napa-cops-parked-20261018",4730,0,4730,4552},
-                                         CopCapture{"CITY","city-cops-parked-20261018",4501,0,4551,0},
-                                         CopCapture{"NAPA","napa-cops-crashed-20261018",4835,4400,5030,0},
-                                         CopCapture{"NAPA","napa-cops-order2-20261018",5030,4400,5030,-1},
-                                         CopCapture{"NAPA","napa-cops-foot-20261018",4461,4460,4700,0},
-                                         CopCapture{"NAPA","napa-cops-foot2-20261018",4700,4460,4700,4616},
-                                         CopCapture{"NAPA","napa-cops-foot3-20261018",4700,4460,4700,4616}}) {
+        // The whole race is free-run from one RNG anchor at the end of tick 1 (the setup
+        // stream and tick 1 are not reproduced). The original's stream differs between
+        // runs because rider rows 9..14 carry the launch-time 0x004078f0 speed jitter,
+        // drawn from srand(time(NULL)) (0x00448200) before the oracle pins the seed; the
+        // AI overtake rolls (0x004092e0/0x00409460) then fire on different ticks. The
+        // capture's frame-1 +0x1bc..+0x1c4 words of those rows are therefore race input
+        // (RaceConfig::spare_levels). Offline 0x00405600 builds 14 opponents. The ring and
+        // pedestrians of these human captures are set up while the tick counter reads 0.
+        // The RNG must match on every tick to `rng_end` and every opponent's position and
+        // speed to `field_end`:
+        // - Napa: to the knock/arrest. There the camera follows the crash body back across
+        //   a slice and the original walks the ring back one slice (0x00454120, 0x00453030
+        //   with -0x100: 24 terrain draws at 0x4513f3/0x451479/0x4514e7); the backward
+        //   ring step is not ported (TrackRing::advance). The field still matches to the end.
+        // - CITY: to 234; tick 235 draws in the pedestrian think (0x004410b5), and rider
+        //   row 11 differs from tick 148 (City AI not at parity). The cop matches to the end.
+        for(const CopCapture& scenario:{CopCapture{"NAPA","napa-cops-parked-20261018",4730,0,4730,4552,4551,4730},
+                                         CopCapture{"CITY","city-cops-parked-20261018",4551,0,4551,0,234,147},
+                                         CopCapture{"NAPA","napa-cops-crashed-20261018",5030,4400,5030,4852,4399,5030},
+                                         CopCapture{"NAPA","napa-cops-order2-20261018",5030,4400,5030,-1,4399,5030},
+                                         CopCapture{"NAPA","napa-cops-foot-20261018",4700,4460,4700,0,4459,4700},
+                                         CopCapture{"NAPA","napa-cops-foot2-20261018",4700,4460,4700,4616,4459,4700},
+                                         CopCapture{"NAPA","napa-cops-foot3-20261018",4700,4460,4700,4616,4459,4700},
+                                         // Two launches one second apart (no cop: end 1200): rows 9..14 differ, so
+                                         // the overtake draws fall on different ticks (245.. vs 403..).
+                                         CopCapture{"NAPA","napa-randlog1-20261018",0,0,1200,-1,1200,1200},
+                                         CopCapture{"NAPA","napa-randlog2-20261018",0,0,1200,-1,1200,1200}}) {
             std::ifstream capture(std::string(RR_SOURCE_DIR "/analysis/oracle/")+scenario.name+".tsv");
             if(capture) {
                 std::map<int,std::pair<int,int>> original;   // tick -> cop (position, speed)
                 std::map<int,int> player_crash;int crash0=0;
-                long long rng_4095=-1;     // end-of-tick-4095 RNG: the anchor before the cop spawn
                 int arrest_tick=-1;        // first tick of the race-end timer (race.end_timer)
-                std::map<int,std::pair<int,int>> pos_speed;  // rider slot -> (position, speed) of the current frame
+                std::map<int,std::pair<int,int>> pos_speed;  // dump rider index -> (position, speed) of the current frame
+                std::map<int,int> row_now;                   // dump rider index -> row (+0x1e0 -> 0x00463c78 + row*0x40)
+                std::map<int,long long> rng_at;              // tick -> original end-of-tick RNG
+                std::map<int,std::map<int,std::pair<int,int>>> field_at;   // tick -> row -> (position, speed)
+                std::map<int,std::array<long long,3>> levels_at_1;         // frame 1: row -> +0x1bc..+0x1c4
+                std::map<int,std::array<long long,3>> levels_now;
                 std::string line;int tick=0,slot=-1;
                 while(std::getline(capture,line)) {
                     if(!line.empty() && line.back()=='\r')line.pop_back();
                     const size_t tab=line.find('\t');
                     const std::string key=line.substr(0,tab);const long long value=tab==std::string::npos?0:std::atoll(line.c_str()+tab+1);
-                    if(key=="frame" || key=="end"){if(slot>=0 && tick>=4096){original[tick]=pos_speed[slot];player_crash[tick]=crash0;}pos_speed.clear();slot=-1;}
+                    if(key=="frame" || key=="end") {
+                        if(slot>=0 && tick>=4096){original[tick]=pos_speed[slot];player_crash[tick]=crash0;}
+                        for(const auto& [who,ps]:pos_speed)if(row_now.count(who))field_at[tick][row_now.at(who)]=ps;
+                        if(tick==1)for(const auto& [who,levels]:levels_now)if(row_now.count(who))levels_at_1[row_now.at(who)]=levels;
+                        pos_speed.clear();row_now.clear();levels_now.clear();slot=-1;
+                    }
                     else if(key=="tick")tick=int(value);
-                    else if(key=="rng" && tick==4095)rng_4095=value;
+                    else if(key=="rng")rng_at[tick]=value;
                     else if(key=="race.end_timer" && value>0 && arrest_tick<0)arrest_tick=tick;
                     else if(key=="police.slot")slot=int(value);
                     else if(key.rfind("rider.",0)==0) {
                         const size_t dot=key.find('.',6);const int who=std::atoi(key.c_str()+6);const std::string field=key.substr(dot+1);
                         if(field=="position")pos_speed[who].first=int(value);else if(field=="speed")pos_speed[who].second=int(value);else if(field=="crash" && who==0)crash0=int(value);
+                        else if(field=="raw_1e0")row_now[who]=int((value-0x00463c78)/0x40);
+                        else if(tick==1 && (field=="brain_1bc" || field=="brain_1c0" || field=="brain_1c4"))levels_now[who][size_t((std::stoi(field.substr(6),nullptr,16)-0x1bc)/4)]=value;
                     }
                 }
-                require(original.count(4096) && original.count(4600),"Cop capture covers the spawn and the arrest window");
+                const bool cop_span=scenario.end>4096;
+                require(rng_at.count(1) && (!cop_span || (original.count(4096) && original.count(4600))),"Cop capture covers the spawn and the arrest window");
                 const auto exe=assets.read("ROADRASH.EXE");
                 rr::RaceConfig config;config.course=scenario.course;config.level=2;config.character=1;config.bike_from_table=true;config.career=false;
+                config.opponents=14;            // offline 0x00405600 builds 14 (DAT_004642d4 = 0x10)
+                config.pedestrian_setup_tick=0; // ring setup and first pedestrian moves on tick counter 0
+                config.ring_setup_tick=0;       // crossing think on 1 + 30k (napa: 0x0041f040 at 751)
+                const auto tables=rr::read_career_tables(exe);
+                std::array<std::array<int32_t,5>,6> spare{};for(auto& row:spare)for(size_t l=0;l<5;++l)row[l]=tables.spare_levels[l];
+                int spare_rows=0;   // levels 0..2 are dumped (level 2 is raced); 3..4 keep the base words
+                for(const auto& [row,levels]:levels_at_1)if(row>=9 && row<=14){for(size_t l=0;l<3;++l)spare[size_t(row-9)][l]=int32_t(levels[l]);++spare_rows;}
+                require(spare_rows==6,"Capture dumps the six spare rows' level speeds");
+                config.spare_levels=spare;
                 rr::RaceSetup setup=rr::make_race_setup(assets,exe,config);
                 auto& race=*setup.instance.race;
-                int compared=0,reported=0,busted_at=-1;
+                int compared=0,reported=0,busted_at=-1,rng_differs=-1,field_differs=-1;
                 const int knock=scenario.knock,end=scenario.end;
                 while(race.ticks()<end) {
                     if(knock && race.ticks()==knock-1)race.crash_now(race.riders()[0]);
-                    if(race.ticks()==4095 && rng_4095>=0)race.set_rng_state(uint32_t(rng_4095));
                     race.step(0);
-                    if(busted_at<0 && race.busted())busted_at=int(race.ticks());
-                    if(race.ticks()<4096 || race.cop_index()<0 || !original.count(int(race.ticks())))continue;
+                    const int t=int(race.ticks());
+                    if(t==1){race.set_rng_state(uint32_t(rng_at.at(1)));continue;}   // the one anchor
+                    if(rng_differs<0 && rng_at.count(t) && race.rng_state()!=uint32_t(rng_at.at(t)))rng_differs=t;
+                    if(field_differs<0 && field_at.count(t))
+                        for(const auto& [row,ps]:field_at.at(t)) {
+                            if(row<1 || size_t(row)>=race.riders().size() || race.riders()[size_t(row)].cop)continue;
+                            const auto& b=race.riders()[size_t(row)].bike;
+                            if(b.i32(0x1c)!=ps.first || b.i32(0xec)!=ps.second){field_differs=t;std::cout<<scenario.name<<" rider row "<<row<<" differs at tick "<<t<<": "<<b.i32(0x1c)<<"/"<<b.i32(0xec)<<" vs "<<ps.first<<"/"<<ps.second<<"\n";break;}
+                        }
+                    if(rng_differs>0 && rng_differs<=scenario.rng_end)throw std::runtime_error(std::string(scenario.name)+": RNG differs from the original at tick "+std::to_string(rng_differs));
+                    if(field_differs>0 && field_differs<=scenario.field_end)throw std::runtime_error(std::string(scenario.name)+": opponent differs from the original at tick "+std::to_string(field_differs));
+                    if(busted_at<0 && race.busted())busted_at=t;
+                    if(t<4096 || race.cop_index()<0 || !original.count(t))continue;
                     const auto& cop=race.riders()[size_t(race.cop_index())];
-                    const auto want=original.at(int(race.ticks()));
-                    const bool differs=cop.bike.i32(0x1c)!=want.first || cop.bike.i32(0xec)!=want.second || (knock && race.bike().i32(0x2f4)!=player_crash.at(int(race.ticks())));
-                    if(differs && race.ticks()>scenario.asserted_end){if(!reported++)std::cout<<scenario.course<<" known divergence from tick "<<race.ticks()<<" (reported, not asserted)\n";continue;}
+                    const auto want=original.at(t);
+                    const bool differs=cop.bike.i32(0x1c)!=want.first || cop.bike.i32(0xec)!=want.second || (knock && race.bike().i32(0x2f4)!=player_crash.at(t));
+                    if(differs && t>scenario.asserted_end){if(!reported++)std::cout<<scenario.course<<" known divergence from tick "<<t<<" (reported, not asserted)\n";continue;}
                     if(differs)
-                        throw std::runtime_error("cop differs from the original at tick "+std::to_string(race.ticks())+": position "+std::to_string(cop.bike.i32(0x1c))+" vs "+std::to_string(want.first)+", speed "+std::to_string(cop.bike.i32(0xec))+" vs "+std::to_string(want.second)+", player crash "+std::to_string(race.bike().i32(0x2f4)));
+                        throw std::runtime_error("cop differs from the original at tick "+std::to_string(t)+": position "+std::to_string(cop.bike.i32(0x1c))+" vs "+std::to_string(want.first)+", speed "+std::to_string(cop.bike.i32(0xec))+" vs "+std::to_string(want.second)+", player crash "+std::to_string(race.bike().i32(0x2f4)));
                     ++compared;
                 }
-                require(compared>=400 || (knock && compared>=150),"Cop compared over the pursuit");
+                require(!cop_span || compared>=400 || (knock && compared>=150),"Cop compared over the pursuit");
                 const int arrest=arrest_tick>=0?arrest_tick:scenario.arrest;
                 if(arrest>0 && arrest<=scenario.asserted_end){require(busted_at==arrest,"Native arrest on the original tick");std::cout<<scenario.course<<" arrest on tick "<<busted_at<<" as the original\n";}
-                if(arrest<0)require(busted_at<0,"No arrest where the original has none");
-                std::cout<<scenario.course<<" cop matches the original on "<<compared<<" ticks (position, speed)\n";
+                if(arrest<0 && busted_at>=0)throw std::runtime_error(std::string(scenario.name)+": native arrest on tick "+std::to_string(busted_at)+" where the original has none");
+                std::cout<<scenario.name<<": cop matches on "<<compared<<" ticks; RNG matches to "<<(rng_differs<0?end:rng_differs-1)
+                         <<", opponents to "<<(field_differs<0?end:field_differs-1)<<" (one anchor at tick 1)\n";
             } else std::cout<<"skipped: "<<scenario.name<<" fixture absent\n";
         }
         {

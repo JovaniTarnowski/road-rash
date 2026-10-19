@@ -213,7 +213,6 @@ private:
     std::vector<std::string> save_list_;
     std::vector<Standing> standings_;
     RaceReport report_;
-    uint32_t random_ = 0x1234567;
     uint32_t next_random();
 };
 }

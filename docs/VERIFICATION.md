@@ -1966,3 +1966,53 @@ unmeasured. No Android/device or full-course simulation claim is made here.
 - Still open: traffic/pedestrian parity, which depends on the original's
   run-varying RNG stream (City from 4359, and `napa-cops-crashed`/`-foot`
   above); City arrest (original 4552) is not reached at parity.
+
+## 2026-10-18 RNG variance: launch jitter, one-anchor police replays
+
+- New captures (shared prefix via `tools/oracle_capture.py --session
+  rng-vary-20261018`, proxy `6d5f1b74…`, outputs outside the accepted set),
+  all complete and validated: `napa-randlog1-20261018` and `-2` (Napa,
+  `RR_ORACLE_COURSE=4 RR_ORACLE_LEVEL=3 RR_ORACLE_SEED=1 RR_ORACLE_SIM=1
+  RR_ORACLE_HUMAN=1 RR_ORACLE_INPUT='C:\napa-parked.controls'
+  RR_ORACLE_FRAMES=1200 RR_ORACLE_RANDCOUNT=1 RR_ORACLE_RANDLOG=1`, launched
+  29 s apart), `napa-knock-randlog-20261018` (same with `RR_ORACLE_KNOCK=300`,
+  700 frames) and `city-randlog-20261018` (`RR_ORACLE_COURSE=1`, 700 frames).
+  The two Napa runs are copied git-ignored into `analysis/oracle/`.
+- Result: the rows-9..14 speed jitter differs from tick 1 (brain +0x1a4/+0x1bc..
+  +0x1c4 of six riders); the first motion difference is tick 235, the first RNG
+  difference 245 (extra `0x409377` draw), all varying draws are `0x409377`,
+  `0x409487`, `0x4094d3`. Brute force over the MSVC state recovers the
+  `time()` launch seconds of both runs (see REVERSE_ENGINEERING.md).
+- `police-test` now free-runs every capture from one RNG anchor at the end of
+  tick 1 (no 4095 anchor), builds 14 opponents, loads rows 9..14 from the
+  capture's frame-1 levels (`RaceConfig::spare_levels`), and sets the ring and
+  pedestrian setup tick to 0. It asserts the cop to the capture end, the RNG to
+  `rng_end` and every opponent's position/speed to `field_end`:
+  - `napa-cops-parked`: cop 635 ticks (4096..4730), arrest 4552, RNG to 4551,
+    opponents to 4730.
+  - `napa-cops-crashed`: cop 935 ticks (was 740, to 4835), arrest 4852 (the
+    original's camera pull-back starts at 4852), RNG to 4399, opponents to 5030.
+  - `napa-cops-order2`: 935 ticks, no arrest, RNG to 4399, opponents to 5030.
+  - `napa-cops-foot`: cop 605 ticks (was 366, to 4461), arrest 4544 as the
+    original, RNG to 4459, opponents to 4700. `-foot2`/`-foot3`: 605 ticks,
+    arrest 4616, RNG to 4459, opponents to 4700.
+  - `city-cops-parked`: cop 456 ticks (4096..4551, was asserted to 4501),
+    RNG to 234, opponents to 147.
+  - `napa-randlog1/2`: RNG and opponents match on all 1200 ticks, each with
+    its own launch jitter.
+  - Negative control: without `spare_levels` the parked replay's opponents
+    differ at tick 238.
+- Native traffic change behind this: the `0x0044e710` slow-obstacle lane
+  change (`TrafficSystem::plan_speed`, `TrafficCar::steer_error`). Without it
+  Napa car 13e2248 stays behind the parked player and the cop latches it at
+  4463 (14-opponent run).
+- Known, reported not asserted: RNG after a knock/arrest (24 terrain draws of
+  the unported backward ring step), City from 235 (pedestrian think
+  `0x4410b5`) and City row 11 from 148. The tick-1 draws and the setup stream
+  are not reproduced (anchor at the end of tick 1).
+- Gate (worktree at 21be20d + these changes): `cmake --build build --parallel`
+  exit 0; `ctest --test-dir build -j6 --output-on-failure`: 104/104 pass, with
+  the 9 disc/fixture tests skipped as before (oracle-road/scene/terrain/
+  terrain-medly/raster, hires-render, raster-rgb, widescreen, polygon);
+  `make verify-sim` passed (receipt
+  `analysis/agent-gates/oracle-9b5885ce737742578eab9d810d4ea476`).

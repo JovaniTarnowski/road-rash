@@ -47,6 +47,7 @@
 #include <filesystem>
 #include <future>
 #include <chrono>
+#include <ctime>
 #include <algorithm>
 #include <cstdio>
 #include <memory>
@@ -237,6 +238,10 @@ int run_game(const rr::Assets& assets, SDL_Window* window, SDL_Renderer* rendere
     const rr::TextRenderer text(assets);
     const auto tables = rr::read_career_tables(exe);
     rr::Career career;
+    // 0x00448200: srand(time(NULL)) at launch; 0x004490d0 -> 0x00442960 then
+    // runs 0x004078f0 on that stream (spare-row speed jitter, 30 draws).
+    career.rng = uint32_t(std::time(nullptr));
+    rr::reset_relations(career, tables);
     const auto resources = rr::read_string_resources(assets.read(rr::language_dll(settings.language)));
     const auto strings = rr::frontend_strings(resources);
     auto frontend_data = rr::read_frontend_data(exe);
@@ -326,6 +331,7 @@ int run_game(const rr::Assets& assets, SDL_Window* window, SDL_Renderer* rendere
                 g.config.character = career.state.character;
                 g.config.career = true;
                 g.config.opponents = 7;
+                g.config.spare_levels = career.spare_levels;
                 g.metric=settings.metric;g.player_name=fe.player_name();
                 g.rider_names.clear();g.rider_names.push_back(g.player_name);
                 for(int i=1;i<8;++i)g.rider_names.push_back(personality_name(i));
@@ -628,6 +634,13 @@ int main(int argc, char** argv) {
             g.config.bike = bike;
             g.config.career = false;
             g.config.opponents = opponents;
+            {
+                // Launch-time 0x004078f0 jitter (see run_game) for rows 9..14.
+                rr::Career launch;
+                launch.rng = uint32_t(std::time(nullptr));
+                rr::reset_relations(launch, rr::read_career_tables(exe));
+                g.config.spare_levels = launch.spare_levels;
+            }
             g.load_course(assets,exe);
             // Dashboard target names: personality +0x165 -> 0x00464188 ->
             // string slot (0x00437860), as the career path resolves them.

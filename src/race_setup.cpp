@@ -3,6 +3,7 @@
 #include "career.hpp"
 #include "exe_tables.hpp"
 #include "scenery.hpp"
+#include <algorithm>
 #include <stdexcept>
 
 namespace rr {
@@ -164,6 +165,16 @@ RaceInstance build_race(const RaceAssets& assets, const std::vector<uint8_t>& ex
                                        std::move(opponents), config.level, config.road_base_q8,
                                        assets.personalities, exe);
     race->set_pedestrian_setup_tick(config.pedestrian_setup_tick);
+    // 0x00407990 builds rows 9..14 from the 0x004c5f20 copies: base and
+    // current speed are the jittered +0x1bc[level], spd_b the five words.
+    if (config.spare_levels) {
+        for (auto& r : race->riders()) {
+            if (!r.ai || r.cop || r.rider_idx < 9 || r.rider_idx > 14) continue;
+            const auto& levels = (*config.spare_levels)[size_t(r.rider_idx - 9)];
+            std::copy(levels.begin(), levels.end(), r.brain.spd_b);
+            if (config.level >= 0 && config.level < 5) r.brain.base_speed = r.brain.current_speed = levels[size_t(config.level)];
+        }
+    }
     // 2. Prepare hook (demo hold) runs after the ctor, before the ring.
     if (config.prepare) config.prepare(*race);
     // 3. Pedestrians: ring-driven DZHR spawns take a static empty actor
@@ -234,6 +245,7 @@ RaceInstance build_race(const RaceAssets& assets, const std::vector<uint8_t>& ex
     if (assets.vehicles) {
         out.traffic = std::make_unique<TrafficSystem>(*assets.vehicles, exe);
         out.traffic->configure(6);
+        out.traffic->set_setup_tick(config.ring_setup_tick);
         race->set_traffic(out.traffic.get());
     }
     // 7. Crash library, ride library + attack codes, nitro from the player spec.

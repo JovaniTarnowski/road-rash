@@ -1978,3 +1978,60 @@ keys. Scope is this captured Napa level1 demo field, not all levels or races.
   `race.cpp`.
 - The original's RNG stream before the cop varies between otherwise identical
   captures (first difference at tick 245). Traffic and the cop lane follow it.
+
+## Run-to-run RNG variance: launch-time speed jitter (2026-10-18)
+
+Supersedes the open note above ("the original's RNG stream before the cop
+varies between otherwise identical captures") and identifies its cause.
+
+- `0x00448200` (WinMain init) calls `srand(time(NULL))` at `0x448224`
+  (`0x004581e0` is the CRT `time()`: GetLocalTime, then `0x0045ca30`), then
+  `0x004490d0 -> 0x00442960` runs `0x004078f0`. `0x004078f0` copies the ten
+  personalities to `0x004c6b40`, copies personality 0 into the six spare rows
+  `0x004c5f20 + n*0x204` (rider rows 9..14, read by `0x00407990`) and adds
+  `rand()%13 - 6` (via `0x00441750`) to each of their five `+0x1bc` level
+  speeds, row-major: 30 draws. The other callers are `0x00445090` (mode
+  change), `0x0041f630` (character/career restart) and `0x0042f110` (a valid
+  save file only, at `0x42f1f2`).
+- The oracle pins its seed later (menu entry), so these 30 draws use the
+  wall-clock stream. Measured: brute-forcing the MSVC state from the 18
+  dumped jitters (levels 0..2 of rows 9..14, frame 1) of two back-to-back
+  captures gives exactly `1792371931` and `1792371960` (plus the `+2^31`
+  aliases), i.e. the launch seconds 18:05:31 and 18:06:00. The state at
+  `0x004078f0` entry is `time(NULL)` itself: no draw comes between.
+- Those speeds move rows 9..14 differently from tick ~235, so the AI overtake
+  rolls fire on different ticks: `0x004092e0` (call `0x409372`, return
+  `0x409377`, `(rand & 0xff) < 0x00465a10[level] * dt`) and the state-3 rolls
+  in `0x00409460` (`0x409487` kick `% +0x1d0`, `0x4094d3` backhand
+  `% +0x1d1`). These are the only draws whose count varies (RANDLOG of
+  `napa-randlog1/2-20261018`, 245..451); after tick ~490 every run draws the
+  same count per tick, but from a shifted stream, so traffic lanes, vehicles
+  and phases differ. Not frame pacing: everything after the jitter follows
+  the 60 Hz tick.
+- Human oracle captures (`RR_ORACLE_HUMAN=1`, level 3) build the ring and its
+  intersection controllers with the tick counter at 0 (`0x00438930`: +0xc =
+  0, +0x10 = -0x1e): the first crossing think falls on 1 + 30k (Napa tick 751,
+  12 draws: `0x41f160` lane pick plus 5 placement draws per car). The demo and
+  solo captures measured 2 (`TrafficSystem::setup_tick` default).
+- Car think `0x0044e710`, lane change past a slower obstacle
+  (`0x0044e85f..0x0044e909`, now ported): when the obstacle from `0x0044a070`
+  is closer than `(iVar7*3)/2` and is not a car (`+0xc4 & 0x10`), a kind-0
+  car whose obstacle `+0x108` is below its own steps one lane toward 0, or
+  from lane 0 to lane 1 when the slice (`+0x140`) `+0x2c` has two lanes; a
+  kind-2 car (obstacle not a bike/half, `+0xc4 & 0xc`) steps from below -1
+  toward -1, or outward while `-lane` is below the `+0x30` count. That tick
+  skips the follow-speed call, and `0x0044edfc` moves `+0x1dc` (lane-centre
+  error) only halfway from its previous value. Napa example: car 13e2248
+  (spawned tick 391 behind the grid) changes lane 0 -> 1 at 2140, 4.5 samples
+  behind the parked player.
+- Still unported in `0x0044e710`: the lane-validity block
+  `0x0044e9bb..0x0044eb85` (a lane outside the current slice's count is
+  checked against the linked slice `+0x08` (forward, unless the `+0x28` slot
+  type is 3) or `+0x18` (oncoming, unless 1) and stepped, or the car stops).
+  Also unported: the backward ring step (`0x00454120` with a negative
+  camera delta: `0x00453030(-0x100)` for both walkers, `0x00450f90`, and
+  `0x00454c80` at the new back). A crash or arrest pulls the camera back one
+  Q8 across a slice boundary, which draws 24 terrain values
+  (`0x4513f3/0x451479/0x4514e7`) on the knock/arrest tick.
+- City tick 235 draws in the pedestrian think at `0x4410b5`
+  (`rand & 3` after the 0x0044a020 side check); native does not reach it.

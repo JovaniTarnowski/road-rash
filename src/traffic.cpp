@@ -229,7 +229,8 @@ std::pair<int32_t,int32_t> TrafficSystem::plan_speed(TrafficCar& car,const std::
     // Obstacle in the lane (0x0044a070, mask 0x3f): even kinds scan the
     // driving direction within iVar7 << 5 by lane; odd kinds look across
     // the same sample toward their target side.
-    struct Other {int32_t position,lateral,velocity,lateral_velocity;};
+    // v108: the node's own +0x108 word; type: its +0xc4 flags (cars 0x10).
+    struct Other {int32_t position,lateral,velocity,lateral_velocity,v108;uint32_t type;};
     std::optional<Other> obstacle;int32_t best=INT32_MAX;
     auto consider=[&](const Other& o) {
         int32_t distance;
@@ -249,14 +250,30 @@ std::pair<int32_t,int32_t> TrafficSystem::plan_speed(TrafficCar& car,const std::
         if(!other.active || &other==&car)continue;
         const int32_t forward=other.kind==2?-other.speed:(other.kind&1)?0:other.speed;
         const int32_t across=other.kind==1?other.speed:other.kind==3?-other.speed:0;
-        consider({other.position,other.lateral,forward,across});
+        consider({other.position,other.lateral,forward,across,other.motion.i32(0x108),0x10});
     }
-    for(const auto& o:obstacles_)consider({o.position,o.lateral,o.velocity,o.lateral_velocity});
+    for(const auto& o:obstacles_)consider({o.position,o.lateral,o.velocity,o.lateral_velocity,o.velocity,o.type});
+    car.lane_changed=false;
     if(obstacle) {
         gap=kind==0?(obstacle->position-car.position)>>4:kind==2?(car.position-obstacle->position)>>4:
             kind==1?(obstacle->lateral-car.lateral)>>12:(car.lateral-obstacle->lateral)>>12;
-        // Lane changes past a slower obstacle (iVar7 * 3 / 2) are not ported.
-        if(gap<window) {
+        // 0x0044e85f..0x0044e909: within (iVar7 * 3) / 2 of a non-car
+        // obstacle, a forward car passing a slower one leaves lane 0 for
+        // lane 1 when the slice has two right lanes, else steps toward lane
+        // 0; an oncoming car (not for bikes/halves, +0xc4 & 0xc) steps
+        // toward lane -1, or out while -lane is below the left lane count.
+        if(gap<(gap_unit*3)/2 && (obstacle->type&0x10)==0) {
+            if(kind==0) {
+                if(obstacle->v108<car.motion.i32(0x108)) {
+                    if(car.lane!=0){--car.lane;car.lane_changed=true;}
+                    else if(div256(at.path.right_q8)>=2){car.lane=1;car.lane_changed=true;}
+                }
+            } else if(kind==2 && (obstacle->type&0xc)==0) {
+                if(car.lane< -1){++car.lane;car.lane_changed=true;}
+                else if(-int32_t(car.lane)<div256(at.path.left_q8)){--car.lane;car.lane_changed=true;}
+            }
+        }
+        if(!car.lane_changed && gap<window) {
             const int32_t speed=kind==0?obstacle->velocity:kind==2?-obstacle->velocity:
                                 kind==1?obstacle->lateral_velocity:-obstacle->lateral_velocity;
             target=follow_speed(kind,car.position,car.lateral,current,cruise,0,obstacle->position,obstacle->lateral,
@@ -330,9 +347,13 @@ void TrafficSystem::move(TrafficCar& car,const std::vector<RouteSample>& route,i
     const auto [target,rate]=plan_speed(car,route);
     // 0x0044e710 -> 0x00449880/0x004498c0: set heading and approach the
     // target BEFORE the mover applies drag. The target is not a post-move cap.
-    int32_t error=wrap(int64_t(at.offset+car.lane*250+125)*256-car.lateral);
+    // 0x0044edfc: +0x1dc = lane-centre error, halfway from its previous
+    // value on a lane-change think.
+    const int32_t full=wrap(int64_t(at.offset+car.lane*250+125)*256-car.lateral);
+    car.steer_error=car.lane_changed?wrap(int64_t(wrap(int64_t(full)-car.steer_error))/2+car.steer_error):full;
+    int32_t error=car.steer_error;
     int32_t drift=drift_rates_[car.kind&3];
-    if(car.kind&1) {error=car.kind==1?0x32000:-0x32000;drift=0;}
+    if(car.kind&1) {error=car.steer_error=car.kind==1?0x32000:-0x32000;drift=0;}
     car.heading=approx_atan2(drift,error>>8)*0x10000;
     if(car.heading>0x7fffff)car.heading-=0x1000000;
     car.speed=std::min(target,wrap(int64_t(car.speed)+int64_t(car.dt)*rate));

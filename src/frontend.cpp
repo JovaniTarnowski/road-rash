@@ -199,8 +199,7 @@ Frontend::Frontend(const Assets& assets, const TextRenderer& text, std::vector<s
 }
 
 uint32_t Frontend::next_random() {
-    random_ = random_ * 214013u + 2531011u;   // MSVC rand()
-    return (random_ >> 16) & 0x7fff;
+    return career_random(career_);   // the one CRT rand() stream (0x00455eb0)
 }
 
 const std::string& Frontend::str(int slot) const {
@@ -1161,7 +1160,7 @@ int Frontend::run_handler(size_t index) {
             try {
                 std::ifstream in(load_path, std::ios::binary);
                 std::vector<uint8_t> bytes((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
-                career_ = read_save(bytes, tables_);
+                career_ = read_save(bytes, tables_, career_.rng);
                 save_file_ = load_path;
                 apply_restroom_pattern();
                 items_ = data_.screens[size_t(screen_)].items;

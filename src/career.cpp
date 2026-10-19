@@ -29,6 +29,9 @@ CareerTables read_career_tables(const std::vector<uint8_t>& exe) {
         for (size_t r = 0; r < 10; ++r)
             for (size_t k = 0; k < 3; ++k) t.default_relations[p][r][k] = int32_t(rel_reader.le<uint32_t>(12 * r + 4 * k));
     }
+    const auto spare = read_exe_data(exe, 0x00464558 + 0x1bc, 4 * t.spare_levels.size());
+    const ByteReader spare_reader(spare);
+    for (size_t l = 0; l < t.spare_levels.size(); ++l) t.spare_levels[l] = int32_t(spare_reader.le<uint32_t>(4 * l));
     for (auto b : t.level_bike)
         if (b >= t.bike_price.size()) throw std::runtime_error("Invalid default bike table");
     return t;
@@ -45,8 +48,17 @@ int showroom_bike(int slot) {
     return slot >= 0x80 && slot <= 0x8e ? map[slot - 0x80] : 0;
 }
 
+uint32_t career_random(Career& c) {
+    c.rng = c.rng * 214013u + 2531011u;
+    return (c.rng >> 16) & 0x7fff;
+}
+
 void reset_relations(Career& c, const CareerTables& t) {
     c.relations = t.default_relations;
+    // 0x00407918..0x00407978: copy personality 0 into each spare row, then
+    // +0x1bc[level] += rand()%13 - 6 for levels 0..4 (0x00441750 draws).
+    for (auto& row : c.spare_levels)
+        for (size_t l = 0; l < row.size(); ++l) row[l] = t.spare_levels[l] + int32_t(career_random(c) % 13) - 6;
 }
 
 void select_mode(Career& c, const CareerTables& t, GameMode mode) {
@@ -198,7 +210,7 @@ std::vector<uint8_t> write_save(const Career& c) {
     return b;
 }
 
-Career read_save(const std::vector<uint8_t>& b, const CareerTables& t) {
+Career read_save(const std::vector<uint8_t>& b, const CareerTables& t, uint32_t rng) {
     if (b.size() != save_size) throw std::runtime_error("Save file has the wrong size");
     const ByteReader save(b);
     if (save.le<uint32_t>(4) != save_magic) throw std::runtime_error("Not a Road Rash save file");
@@ -212,7 +224,8 @@ Career read_save(const std::vector<uint8_t>& b, const CareerTables& t) {
     if (s.character > 8 || s.level > 4 || s.qualified > all_qualified || s.bike > 14 || s.course > 5)
         throw std::runtime_error("Save file has out-of-range values");
     s.name.back() = '\0';
-    c.relations = t.default_relations;   // 0x004078f0 before the saved triples are applied
+    c.rng = rng;
+    reset_relations(c, t);   // 0x004078f0 before the saved triples are applied
     const size_t rider = size_t(character_rider(s.character));
     for (size_t p = 0; p < 10; ++p)
         for (size_t k = 0; k < 3; ++k) c.relations[p][rider][k] = int32_t(save.le<uint32_t>(40 + 12 * p + 4 * k));

@@ -1536,3 +1536,24 @@ workflow trigger is configured. The workflow itself has not been run in GitHub.
   varies between runs, so its traffic does too (City, `napa-cops-crashed`
   from 4831, `napa-cops-foot` from 4462). The arrest-to-BUSTED video playtest
   in `rr-game` is also still open.
+
+## 2026-10-18: run-to-run RNG variance explained; traffic lane change
+
+- The original's run-varying RNG stream comes from `srand(time(NULL))` at
+  launch (`0x00448200`): `0x004078f0` jitters the five level speeds of rider
+  rows 9..14 from it before any race seed. Native now models this: `Career`
+  holds the CRT state (`Career::rng`, seeded from `time()` at launch in
+  `rr-game`, shared with the front end's `rand()` uses), `reset_relations`
+  performs the 30-draw jitter (`Career::spare_levels`) at all four original
+  call sites (launch, mode change, character restart, valid save load), and
+  `RaceConfig::spare_levels` builds rows 9..14 from it.
+- Traffic: cars now change lane past a slower non-car obstacle (`0x0044e710`),
+  with the halved steering error of that think.
+- `police-test` replays every police capture from one RNG anchor at tick 1
+  with 14 opponents and the capture's spare-row speeds. All six Napa cop
+  captures match over their whole length (cop, arrest tick, every opponent),
+  and the RNG to the knock/arrest. City's cop matches to its end.
+- Remaining: the backward ring step after a crash/arrest (24 terrain draws),
+  the `0x0044e710` lane-validity block, City pedestrian/AI parity (RNG from 235,
+  row 11 from 148), and native career races still build 7 opponents where the
+  offline original builds 14 (so rows 8..14 never race in `rr-game`).
