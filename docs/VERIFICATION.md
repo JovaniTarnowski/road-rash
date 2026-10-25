@@ -1,5 +1,35 @@
 # Verification log (all sessions September 28, 2026)
 
+## Menu capture and RGB565 picture pipeline (October 26, 2026)
+
+- Baseline `1eab47e`. New proxy mode `RR_ORACLE_MENU=<screen>` in
+  `oracle/aweman_proxy.c`: a watchdog thread polls `0x0046a660` for the
+  target screen, dumps the live `0x00485df8` colour table to
+  `C:\menu-table.bin`, then screenshots the 640×480 client window to
+  `C:\menu-<id>.bmp`. Read-only w.r.t. game state; the driver kills the game
+  once the BMP lands. `oracle/build.sh` gains `-lgdi32`.
+- Screen 9 run under an `agent_resource` claim (prefix + install), cnc-ddraw
+  gdi renderer temporarily at 640×480 (`ddraw.ini` restored, hash-verified):
+  `analysis/oracle/menu-09-20261026.bmp` (+ `.receipt.json`; TSV hex + window
+  dump agree). Boot takes ~100 s under Wine (intro video), so the watchdog
+  allows 300 s. Failure analysis on the way: an unflushed 120 s watchdog and
+  the ini-size question were both settled with heartbeat logging.
+- Findings: the live table maps every 555-grid input to RGB565 (32768/32768,
+  no odd 6-bit greens) — the picture surface is 565. Port fix: `quantise565`
+  in `src/rri.*` (green channel now matches). Dark fills measure as
+  halved-555 of the decoded photo (button bar/desc boxes within JPEG noise),
+  contradicting the naive table-mask reading; the halving path is unlocated,
+  so dark fills stay `darken555` and the question is recorded open in
+  REVERSE_ENGINEERING.md rather than guessed.
+- `tests/frontend_test.cpp`: unit pins updated (`quantise565`,
+  `darken555`) plus a screen-9 golden comparison (text/chrome masked 60%;
+  unmasked exact 15% floor, large-diff (>32) ceiling 5%; currently 15%/1%).
+  Thresholds are characterization pins; full-pixel acceptance stays open.
+- Full owned-Release gate (`build-agent-frontend-menu-26`): **106/106 passed**,
+  zero failures. `make verify-sim` / sanitizers / Android not run in this
+  slice (no sim, sanitizer-sensitive, or Android-affecting change: proxy is a
+  separate mingw build, game changes are render-path only).
+
 ## Original save-file writer capture (October 26, 2026)
 
 - Baseline `fe33fd9`. New proxy mode `RR_ORACLE_SAVE=1` in

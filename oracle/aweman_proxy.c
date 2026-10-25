@@ -768,6 +768,7 @@ static int g_pixels, g_pixel_every=30, g_pixel_written;
 static int g_pixel_width, g_pixel_height, g_pixel_pitch;
 static char g_output[MAX_PATH];
 static int g_raster, g_save;
+static int g_menu_screen = -1;  // RR_ORACLE_MENU target screen id (plan 13 Task 6 Step 2)
 static struct { int vertices[8],input[8],clip[4],colour,width,height; } g_raster_cases[64];
 static int g_raster_count;
 static int g_view_inputs[12]={0,65535,65536,65537,-1,-65535,-65536,-65537,32768,-32768,0x7fffffff,(int)0x80000000u};
@@ -2379,6 +2380,92 @@ static void capture_save(void) {
     }
 }
 
+/* Watchdog thread (RR_ORACLE_MENU): waits for 0x0046a660 to hold the target
+   screen, then screenshots the game window client area to C:\menu-<id>.bmp.
+   Read-only w.r.t. game state; the driver kills the game after the BMP lands.
+   A separate thread is used because menus are message-driven with no hooked
+   per-frame call; GDI reads from another thread are legal. */
+static BOOL CALLBACK find_game_process_window(HWND window, LPARAM out) {
+    DWORD pid = 0;
+    GetWindowThreadProcessId(window, &pid);
+    if (pid == GetCurrentProcessId() && IsWindowVisible(window) && !GetWindow(window, GW_OWNER)) {
+        *(HWND*)out = window;
+        return FALSE;
+    }
+    return TRUE;
+}
+
+static DWORD WINAPI menu_watchdog(LPVOID arg) {
+    const int target = (int)(intptr_t)arg;
+    int stable = 0;
+    for (int i = 0; i < 600 && stable < 6; ++i) {
+        Sleep(500);
+        if (!g_out) return 0;
+        const int cur = RD32(0x0046a660);
+        stable = (cur == target) ? stable + 1 : 0;
+        if (i % 20 == 19) { fprintf(g_out, "# menu: poll %d screen %d stable %d\n", i, cur, stable); fflush(g_out); }
+    }
+    if (stable < 6 || !g_out) { if (g_out) { fputs("# menu: target never settled\n", g_out); fflush(g_out); } return 0; }
+    {   // Menu colour table (0x0041e6b0/0x0041e6e0) is built at init by
+        // 0x0041e090; dump the live table now (attach-time reads zeros).
+        FILE* tab = fopen("C:\\menu-table.bin", "wb");
+        if (tab) {
+            for (uint32_t i = 0; i < 0x10000; ++i) {
+                const uint32_t v = (uint32_t)RD32(0x00485df8 + i * 2) & 0xffff;
+                fputc(v & 0xff, tab); fputc((v >> 8) & 0xff, tab);
+            }
+            fclose(tab);
+            if (g_out) { fputs("menu.table\t1\n", g_out); fflush(g_out); }
+        }
+    }
+    HWND window = NULL;
+    EnumWindows(find_game_process_window, (LPARAM)&window);
+    if (!window) { fputs("# menu: no game window\n", g_out); fflush(g_out); return 0; }
+    RECT rc; GetClientRect(window, &rc);
+    const int w = rc.right - rc.left, h = rc.bottom - rc.top;
+    int ok = 0;
+    if (w > 0 && w <= 4096 && h > 0 && h <= 4096) {
+        HDC wdc = GetDC(window), mem = CreateCompatibleDC(wdc);
+        BITMAPINFO bi; memset(&bi, 0, sizeof bi);
+        bi.bmiHeader.biSize = sizeof bi.bmiHeader;
+        bi.bmiHeader.biWidth = w; bi.bmiHeader.biHeight = -h;
+        bi.bmiHeader.biPlanes = 1; bi.bmiHeader.biBitCount = 24;
+        void* bits = NULL;
+        HBITMAP bmp = CreateDIBSection(mem, &bi, DIB_RGB_COLORS, &bits, NULL, 0);
+        if (bmp && bits) {
+            HGDIOBJ old = SelectObject(mem, bmp);
+            ok = BitBlt(mem, 0, 0, w, h, wdc, 0, 0, SRCCOPY);
+            SelectObject(mem, old);
+            if (ok) {
+                char path[64];
+                snprintf(path, sizeof path, "C:\\menu-%02d.bmp", target);
+                FILE* f = fopen(path, "wb");
+                if (f) {
+                    const int stride = (w * 3 + 3) & ~3;
+                    uint8_t hdr[54]; memset(hdr, 0, sizeof hdr);
+                    hdr[0] = 'B'; hdr[1] = 'M';
+                    uint32_t size = 54 + (uint32_t)(stride * h), off = 54, hs = 40;
+                    memcpy(hdr + 2, &size, 4); memcpy(hdr + 10, &off, 4);
+                    memcpy(hdr + 14, &hs, 4);
+                    memcpy(hdr + 18, &w, 4); memcpy(hdr + 22, &h, 4);
+                    hdr[26] = 1; hdr[28] = 24;
+                    fwrite(hdr, 1, 54, f);
+                    for (int y = h - 1; y >= 0; --y)
+                        fwrite((uint8_t*)bits + (size_t)y * stride, 1, stride, f);
+                    fclose(f);
+                } else ok = 0;
+            }
+            DeleteObject(bmp);
+        }
+        DeleteDC(mem); ReleaseDC(window, wdc);
+    }
+    if (g_out) {
+        fprintf(g_out, "menu.screen\t%d\nmenu.size\t%d %d\nmenu.captured\t%d\n", target, w, h, ok);
+        fflush(g_out);
+    }
+    return 0;
+}
+
 static int rr_install_hooks(void) {
     char buf[32], path[MAX_PATH];
     if (GetEnvironmentVariableA("RR_ORACLE_FRAMES", buf, sizeof buf)) g_quit_after = atoi(buf);
@@ -2420,6 +2507,7 @@ static int rr_install_hooks(void) {
     if (g_palette) palette_open();
     env("RR_ORACLE_RASTER",buf,sizeof buf,"0");g_raster=atoi(buf);
     if (GetEnvironmentVariableA("RR_ORACLE_SAVE",buf,sizeof buf)) g_save=atoi(buf)!=0;
+    if (GetEnvironmentVariableA("RR_ORACLE_MENU",buf,sizeof buf)) g_menu_screen=atoi(buf);
     if (GetEnvironmentVariableA("RR_ORACLE_SHOT_EVERY",buf,sizeof buf) && atoi(buf)>0) g_pixel_every=atoi(buf);
     if(GetEnvironmentVariableA("RR_ORACLE_LEVEL",buf,sizeof buf)) {
         g_capture_level=atoi(buf);
@@ -2523,6 +2611,10 @@ BOOL WINAPI DllMain(HINSTANCE inst, DWORD reason, LPVOID reserved) {
             capture_save();
             fputs("end\n", g_out);
             fclose(g_out); g_out = NULL;
+        }
+        if (g_menu_screen >= 0) {
+            HANDLE thread = CreateThread(NULL, 0, menu_watchdog, (LPVOID)(intptr_t)g_menu_screen, 0, NULL);
+            if (thread) CloseHandle(thread);
         }
         if (g_out) fflush(g_out);
     } else if (reason == DLL_PROCESS_DETACH && g_out) {

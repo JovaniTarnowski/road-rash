@@ -12,9 +12,10 @@ namespace {
 constexpr int max_rri_dimension = 4096;
 }
 
-uint32_t quantise555(uint32_t c) {
-    auto q = [](uint32_t v) { v >>= 3; return (v << 3) | (v >> 2); };
-    return q(c >> 16 & 0xff) << 16 | q(c >> 8 & 0xff) << 8 | q(c & 0xff);
+uint32_t quantise565(uint32_t c) {
+    auto q5 = [](uint32_t v) { v >>= 3; return (v << 3) | (v >> 2); };
+    auto q6 = [](uint32_t v) { v >>= 2; return (v << 2) | (v >> 4); };
+    return q5(c >> 16 & 0xff) << 16 | q6(c >> 8 & 0xff) << 8 | q5(c & 0xff);
 }
 
 uint32_t darken555(uint32_t c) {
@@ -36,7 +37,7 @@ RgbImage decode_rri(const std::vector<uint8_t>& bytes) {
     }
     RgbImage img(w, h);
     for (size_t i = 0; i < img.pixels.size(); ++i)
-        img.pixels[i] = quantise555(uint32_t(p[3 * i]) << 16 | uint32_t(p[3 * i + 1]) << 8 | p[3 * i + 2]);
+        img.pixels[i] = quantise565(uint32_t(p[3 * i]) << 16 | uint32_t(p[3 * i + 1]) << 8 | p[3 * i + 2]);
     stbi_image_free(p);
     return img;
 }

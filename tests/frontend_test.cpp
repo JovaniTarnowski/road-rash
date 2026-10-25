@@ -6,7 +6,9 @@
 #include "rri.hpp"
 #include <SDL3/SDL_scancode.h>
 #include <SDL3/SDL_keyboard.h>
+#include <algorithm>
 #include <cstdio>
+#include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
@@ -27,16 +29,42 @@ static void write_bmp(const std::string& path, const RgbImage& img) {
     }
 }
 
+static bool read_bmp_24(const std::string& path, RgbImage& out) {
+    std::ifstream f(path, std::ios::binary);
+    if (!f) return false;
+    uint8_t h[54];
+    if (!f.read((char*)h, 54) || h[0] != 'B' || h[1] != 'M') return false;
+    const uint32_t w = uint32_t(h[18]) | (uint32_t(h[19]) << 8) | (uint32_t(h[20]) << 16) | (uint32_t(h[21]) << 24);
+    const int32_t hh = int32_t(uint32_t(h[22]) | (uint32_t(h[23]) << 8) | (uint32_t(h[24]) << 16) | (uint32_t(h[25]) << 24));
+    if (h[28] != 24 || hh <= 0 || w == 0 || w > 4096 || hh > 4096) return false;
+    const uint32_t row = (w * 3 + 3) & ~3u;
+    out = RgbImage(int(w), int(hh), 0);
+    std::vector<uint8_t> buf(row);
+    for (int y = 0; y < hh; ++y) {
+        if (!f.read((char*)buf.data(), row)) return false;
+        for (uint32_t x = 0; x < w; ++x)
+            out.at(int(x), int(hh) - 1 - y) = uint32_t(buf[3 * x + 2]) << 16 | uint32_t(buf[3 * x + 1]) << 8 | buf[3 * x];
+    }
+    return true;
+}
+
 int main(int argc, char** argv) {
     int failures = 0;
     auto check = [&](bool v, const std::string& what) { if (!v) { ++failures; std::cerr << "FAIL " << what << "\n"; } };
     // Synthetic checks that need no disc: 15-bit quantisation and the darkened surface.
-    check(quantise555(0xffffff) == 0xffffff && quantise555(0x070707) == 0, "quantise555");
+    check(quantise565(0xffffff) == 0xffffff && quantise565(0x070707) == 0x000400, "quantise565");
     check(darken555(0xffffff) == 0x7b7b7b && darken555(0x080808) == 0, "darken555");
 
     const std::string root = argc > 1 && std::string(argv[1]) != "--dump" ? argv[1] : RR_SOURCE_DIR "/../cdrom/ROADRASH";
-    std::string dump;
-    for (int i = 1; i + 1 < argc; ++i) if (std::string(argv[i]) == "--dump") dump = argv[i + 1];
+    std::string dump, menu_corpus;
+    auto usage = [&](const char* flag) -> std::string {
+        for (int i = 1; i + 1 < argc; ++i)
+            if (std::string(argv[i]) == flag) return argv[i + 1];
+        return {};
+    };
+    dump = usage("--dump");
+    menu_corpus = usage("--menu-corpus");
+    if (menu_corpus.empty()) menu_corpus = RR_SOURCE_DIR "/analysis/oracle";
     Assets assets(root);
     if (!assets.exists("ROADRASH.EXE")) { std::cout << "skip: no disc\n"; return failures ? 1 : 77; }
     const auto exe = assets.read("ROADRASH.EXE");
@@ -118,6 +146,48 @@ int main(int argc, char** argv) {
     key("back");
     check(fe.screen() == screen_id::main_menu, "Escape skips the credits to the main menu");
     snap("main");
+    {   // Plan 13 Task 6 Step 2, first slice: screen 9 vs the original
+        // RR_ORACLE_MENU=9 capture (menu-09-<date>.bmp, git-ignored, skip 77).
+        // Masked: title, description box and button row (text/chrome: GDI
+        // rendering, wrap and layout gaps stay open). Unmasked picture and
+        // fills compare directly; thresholds are characterization pins, since
+        // JPEG-decoder deltas keep full-pixel acceptance open.
+        RgbImage gold;
+        if (!read_bmp_24(menu_corpus + "/menu-09-20261026.bmp", gold)) {
+            std::cout << "skip: no menu-09 golden\n";
+        } else {
+            auto masked = [&](int x, int y) {
+                if (y < 80) return true;                                  // title box
+                if (x < 350 && y >= 100 && y < 345) return true;          // description box
+                if (y >= 405) return true;                               // button row
+                return false;
+            };
+            check(gold.width == 640 && gold.height == 480, "menu-09 golden size");
+            size_t total = 0, exact = 0, big = 0, masked_px = 0;
+            int maxdiff = 0;
+            for (int y = 0; y < 480; ++y)
+                for (int x = 0; x < 640; ++x) {
+                    if (masked(x, y)) { ++masked_px; continue; }
+                    ++total;
+                    const uint32_t a = img.at(x, y), g = gold.at(x, y);
+                    const int d = std::max({abs(int(a & 0xff) - int(g & 0xff)),
+                                            abs(int(a >> 8 & 0xff) - int(g >> 8 & 0xff)),
+                                            abs(int(a >> 16 & 0xff) - int(g >> 16 & 0xff))});
+                    maxdiff = std::max(maxdiff, d);
+                    if (d == 0) ++exact;
+                    if (d > 32) ++big;
+                }
+            const double coverage = double(masked_px) / double(640 * 480);
+            const double exact_frac = double(exact) / double(total);
+            const double big_frac = double(big) / double(total);
+            std::cout << "menu-09: masked " << int(100 * coverage) << "%, exact "
+                      << int(100 * exact_frac) << "%, maxdiff " << maxdiff
+                      << ", big " << int(100 * big_frac) << "%\n";
+            check(coverage < 0.65, "menu-09 mask coverage under two thirds");
+            check(exact_frac >= 0.12, "menu-09 unmasked exact floor");
+            check(big_frac <= 0.05, "menu-09 large-diff ceiling");
+        }
+    }
     // Plan 19 Task 5: draw at scale 2 — focus rectangles double exactly and
     // text ink stays inside its doubled box. Probed on the main menu.
     {

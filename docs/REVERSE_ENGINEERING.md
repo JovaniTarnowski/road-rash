@@ -572,6 +572,11 @@ The course screens share one item array; the sixth item is copied from `0x004691
 - Two to four candidate lines come from `0x0046a6e0[level*8 + r]` (shorts; extra lines when +24/+26 name the player's character). The picture is `Chars/<name>-<"FNH"[attitude]>`.
 - A visit shows at most five riders (`0x00420b50`).
 
+**Menu colour pipeline (October 26, 2026; plan 13 Task 6 Step 2 input):**
+- `0x0041e090` builds the 64K-entry `0x00485df8` table from the display mode masks: for 555-grid inputs it emits RGB565 (all 32768 grid points map to `(r5<<11)|(g5<<6)|b5`, dumped live from the running original via the `RR_ORACLE_MENU` proxy thread; no odd 6-bit greens). The menu picture surface is therefore RGB565, not RGB555. The native picture decode is `quantise565` (`src/rri.cpp`); green-channel agreement on the captured screen 9 confirms it.
+- Dark fills (button bar, description/title box backgrounds) measure as halved-555 of the decoded photo (button bar matches `halve(photo555)` within JPEG-decoder noise: R ±8, G/B exact at five sample points), NOT as the `0x7bde`-masked 565 mapping the same table would give. The halving code path is unlocated (0x0041e6e0 is the table path; no second `>>1` packing was found in the exports). The native dark fill stays `darken555`. Open question recorded; it blocks exact-pixel acceptance, not the current characterization pin.
+- Screen 9 capture: `RR_ORACLE_MENU=9` screenshots the composed 640×480 client window once `0x0046a660` holds 9 (`analysis/oracle/menu-09-20261026.bmp` + receipt, git-ignored; cnc-ddraw gdi renderer, boot takes ~100 s under Wine). First-slice `frontend-test` comparison: title/description/button areas masked (GDI text, wrap and layout gaps), picture + fills compared directly (masked 60%, unmasked exact 15%, large-diff (>32) 1%). Thresholds are characterization pins; full-pixel acceptance stays open.
+
 **Not ported or replaced natively:**
 - Mano-a-mano is disabled (plan 09).
 - Jukebox track list and video popup ported (plan 13 Task 4 Step 1); Sound Mix and Configure Input items do nothing yet (plan 18 Tasks 6-7).
