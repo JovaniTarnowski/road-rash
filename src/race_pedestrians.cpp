@@ -3,6 +3,8 @@
 #include "track_ring.hpp"
 #include "traffic.hpp"
 #include <algorithm>
+#include <cstdlib>
+#include <cstdio>
 
 // Pedestrians, plan 24 Task 4. Each function names the routine it ports.
 // Known native differences (labelled where they occur):
@@ -117,6 +119,11 @@ void Race::spawn_pedestrian(const RouteSample& sample, size_t s, const DzhrActor
     p.side = lateral < 1 ? 1 : 3;
     p.trigger = player + int32_t(random() % 0x4fb1);
     p.serial = system.next_serial();
+    // 0x00440680 loads the category-2 resources (+0x1e0) lazily at the
+    // first draw, not here: p.look stays null until Race::load_pedestrian_looks
+    // models that frame render. The think's +0x208/+0x21c gate and its
+    // rand() draw at 0x00440eff read the unloaded words until then (plan 10
+    // napa-field-l5 measured the tick-1 draw this way).
     // Scan-list ties: ring-setup spawns exist before 0x00405600 builds the
     // riders; later spawns come after every rider.
     p.order = (ring_setup_ ? 0u : 0x40000000u) + spawn_order_++;
@@ -125,55 +132,76 @@ void Race::spawn_pedestrian(const RouteSample& sample, size_t s, const DzhrActor
     const int32_t created = ring_setup_ ? setup_tick_ : ticks_;
     p.last_tick = created - b.i32(0x14);
     p.next_tick = created;
-    p.look = system.look(sample, p.selector);
-    if (p.look) {   // 0x00440b80
-        set_animation(p.animation, p.look->bank, 1, uint32_t(ticks_));
-        queue_animation(p.animation, p.look->bank, -1);
-        advance_animation(p.animation, p.look->bank, uint32_t(ticks_));
-    }
+    p.look = nullptr;   // 0x00440680 loads it at the first draw (load_pedestrian_looks)
     ++system.spawned_;
 }
 
-void Race::step_pedestrians() {
-    // 0x00437e60 for type 0x20: dt = tick - last run; the next interval is
-    // 1 within 4 samples of the ring camera (1 - d when more than 2
-    // behind), else (d + 1) / 2. Parked outside the ring window or beyond
-    // lateral +-0xc8000.
+void Race::load_pedestrian_looks() {
+    // 0x00440680/0x00440b80: the renderer loads a pedestrian's category-2
+    // resources on its first drawn frame, after that tick's sim step. The
+    // think gate at 0x00440eff reads the still-unloaded +0x208/+0x21c words
+    // until then and passes via +0x1e0 == 0 (plan 10 napa-field-l5 measured
+    // the resulting tick-1 rand() draw). Every spawn lands inside the camera
+    // ring window, so one end-of-tick load pass models that render.
     if (!pedestrians_) return;
+    for (auto& p : pedestrians_->pool()) {
+        if (!p.active || p.look) continue;
+        const auto& road = route_of(p.body);
+        p.look = pedestrians_->look(road[std::min(p.body.sample, road.size() - 1)], p.selector);
+        if (p.look) {   // 0x00440b80
+            set_animation(p.animation, p.look->bank, 1, uint32_t(ticks_));
+            queue_animation(p.animation, p.look->bank, -1);
+            advance_animation(p.animation, p.look->bank, uint32_t(ticks_));
+        }
+    }
+}
+
+void Race::run_ped_node(Pedestrian& p) {
+    // 0x00437e60 for a +0x20 node: dt = tick - last run; the next interval is
+    // 1 within 4 samples of the ring camera (1 - d when more than 2 behind),
+    // else (d + 1) / 2. Parked outside the ring window or beyond lateral
+    // +-0xc8000.
     const int32_t ring = ring_ ? ring_->front_q8() - 0x5000 : int32_t(camera_position()) + 0x100;
     const int32_t front = ring + 0x5000, back = ring - 0x3000;
+    Bike& b = p.body.bike;
+    b.i32(0x18) = ticks_ - p.last_tick;
+    p.last_tick = ticks_;
+    // Solo oracle freeze (proxy sim_freeze_others runs at the start of every
+    // step from green, before the node's first scheduled run): 0x00437e60
+    // skips the think when +0xe0 is NULL, so a frozen pedestrian never
+    // thinks, moves, or recomputes +0x14. The scheduler metadata (+0x18 dt,
+    // +0x10 last, +0xc next) and the window test still run, which is why the
+    // frozen nodes stay in place and leave the list on a scheduled run once
+    // the ring passes them.
+    if (!freeze_actors_) {
+        think_pedestrian(p);
+        move_pedestrian(p);
+        const int32_t d = sar8(b.i32(0x1c) - ring);
+        const int32_t interval = d < 4 ? (d < -2 ? 1 - d : 1) : (d + 1) / 2;
+        b.i32(0x14) = interval;
+    }
+    p.next_tick = ticks_ + b.i32(0x14);
+    if (b.i32(0x28) < -0xc8000 || b.i32(0x28) > 0xc8000 ||
+        front - b.i32(0x1c) < 0 || b.i32(0x1c) - back < 0) {
+        // Nulled-callback solo replays keep their measured same-step removal
+        // contract; only the live move-slot path defers unlink.
+        if(freeze_actors_) {p.active=false;return;}
+        // 0x00437c10 -> 0x00437be0: disabled now, still in the list through
+        // this frame; next tick's prepass returns the pool slot.
+        p.pending_remove=true;b.u8(0xc0)=uint8_t((b.u8(0xc0)&~4)|8);
+        p.last_tick=p.next_tick=ticks_+100;
+    }
+}
+
+void Race::step_pedestrians() {
+    // Legacy (non-live scheduler) captures keep the separate pass; the live
+    // scheduler interleaves pedestrian nodes by position in schedule_pass.
+    if (!pedestrians_) return;
     for (auto& p : pedestrians_->pool()) {
         // 0x00437df0 removes last tick's marked nodes before scheduling.
         if(p.pending_remove) {p.active=false;p.pending_remove=false;continue;}
         if (!p.active || p.next_tick > ticks_) continue;
-        Bike& b = p.body.bike;
-        b.i32(0x18) = ticks_ - p.last_tick;
-        p.last_tick = ticks_;
-        // Solo oracle freeze (proxy sim_freeze_others runs at the start of
-        // every step from green, before the node's first scheduled run):
-        // 0x00437e60 skips the think when +0xe0 is NULL, so a frozen
-        // pedestrian never thinks, moves, or recomputes +0x14. The scheduler
-        // metadata (+0x18 dt, +0x10 last, +0xc next) and the window test
-        // still run, which is why the frozen nodes stay in place and leave
-        // the list on a scheduled run once the ring passes them.
-        if (!freeze_actors_) {
-            think_pedestrian(p);
-            move_pedestrian(p);
-            const int32_t d = sar8(b.i32(0x1c) - ring);
-            const int32_t interval = d < 4 ? (d < -2 ? 1 - d : 1) : (d + 1) / 2;
-            b.i32(0x14) = interval;
-        }
-        p.next_tick = ticks_ + b.i32(0x14);
-        if (b.i32(0x28) < -0xc8000 || b.i32(0x28) > 0xc8000 ||
-            front - b.i32(0x1c) < 0 || b.i32(0x1c) - back < 0) {
-            // Nulled-callback solo replays keep their measured same-step
-            // removal contract; only the live move-slot path defers unlink.
-            if(freeze_actors_) {p.active=false;continue;}
-            // 0x00437c10 -> 0x00437be0: disabled now, still in the list
-            // through this frame; next tick's prepass returns the pool slot.
-            p.pending_remove=true;b.u8(0xc0)=uint8_t((b.u8(0xc0)&~4)|8);
-            p.last_tick=p.next_tick=ticks_+100;
-        }
+        run_ped_node(p);
     }
 }
 
@@ -444,6 +472,7 @@ void Race::contact_pedestrian(Rider& self, Pedestrian& p) {
     if (s.i32(0xec) > 30000) s.i32(0xec) = 30000;
     if (s.i32(0xec) < -1000) s.i32(0xec) = -1000;
     s.i32(0xf4) = std::clamp(int32_t(s.i32(0xf4)), -10000, 10000);
+    if (live_schedule_ && s.i32(0x2f4) == 0 && finish_q8_ != 0) self.finish_distance = finish_q8_ - self.half_mirror.position;
 }
 
 void Race::contact_rider_pedestrian(Rider& r, Pedestrian& p, bool rider_outer) {

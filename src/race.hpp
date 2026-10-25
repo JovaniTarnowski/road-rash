@@ -224,7 +224,7 @@ struct Rider {
     // half carries the bike's motion words (measured on sched-human-20261016:
     // equal every tick except where contacts then move the bike).
     struct HalfMirror { int32_t position = 0, lateral = 0, height = 0, velocity = 0, speed = 0,
-                        steer_rate = 0, lat_vel = 0, lat108 = 0, yaw = 0; size_t sample = 0; };
+                        steer_rate = 0, lat_vel = 0, lat108 = 0, yaw = 0; size_t sample = 0; int route = 0; };
     HalfMirror half_mirror;
     // Rider-half object image (0x00405990: 0x004387a0 from table 0x00463c10).
     // Holds the half's own words; its motion words are in half_mirror, and
@@ -479,6 +479,15 @@ private:
     void walls(Rider&, const Bike* owner = nullptr);
     void crash(Rider&);
     void step_crash(Rider&,bool player,uint32_t controls);
+    // Crash step parts, split across the live scheduler nodes like the
+    // original: half node = crash_phases (think) + crash_body_motion and
+    // crash_recovery (move), bike node = crash_bike_animation +
+    // crash_bike_motion.
+    void crash_phases(Rider&);
+    void crash_bike_animation(Rider&);
+    void crash_bike_motion(Rider&,bool player);
+    void crash_body_motion(Rider&,int32_t dt);
+    void crash_recovery(Rider&,bool player,uint32_t controls);
     void step_rider(Rider&, uint32_t controls, bool player);
     void rider_think(Rider&, uint32_t controls, bool player);   // think body after fight()
     void rider_move(Rider&, bool player);                       // physics move 0x0043a580
@@ -493,7 +502,9 @@ private:
     void move_bike_parked(Rider&);                                 // 0x004060b0 parked branch
     void park(Rider&);                                             // 0x00406940 (edx 0)
     void wake(Rider&, size_t sample);                              // 0x004060b0 tail
-    void live_standings(Rider&);                                   // 0x004067d0 + 0x004075f0
+    void live_standings(Rider&);                                   // 0x004067d0
+    void refresh_place(Rider&);                                    // 0x004075f0 -> 0x00407550 place table
+    void sync_half_mirror(Rider&);                                 // half mirror follows the crash body
     int32_t schedule_interval(const Rider&, bool half) const;      // 0x00437e60 LOD tail
     void sort_schedule();                                          // 0x004383e0
     int32_t node_position(const ScheduleNode&) const;
@@ -570,7 +581,9 @@ private:
     void build_pedestrian_slices();                                   // 0x00454120/0x004552e0 ring builds -> 0x004520d0
     void spawn_pedestrian(const RouteSample&, size_t sample, const DzhrActor&, uint32_t jitter);  // 0x004520d0 actor record -> 0x004409e0
     void ring_actor(const RingActor&, uint32_t jitter);              // TrackRing DZHR sink
-    void step_pedestrians();                                          // scheduler cadence 0x00437e60 for type 0x20
+    void step_pedestrians();                                          // legacy cadence 0x00437e60 for type 0x20
+    void run_ped_node(Pedestrian&);                                   // one +0x20 node of 0x00437e60
+    void load_pedestrian_looks();                                     // 0x00440680 first-draw resource load
     void think_pedestrian(Pedestrian&);                               // 0x00440dd0
     void move_pedestrian(Pedestrian&);                                // 0x00440990
     int pedestrian_lane(const Pedestrian&) const;                     // 0x0044a020(obj, 0)
@@ -582,8 +595,9 @@ private:
     void pedestrian_voice(Pedestrian&, int which);                    // 0x00436830(0x16) with the MROF voice
     void contact_hazard(Rider&, int32_t hazard_lo_q8, int32_t hazard_hi_q8);
     void prepare_static_boxes(); // original 33-slice draw preparation, no simulation RNG
-    bool sweep_statics(Rider&);                                       // 0x004373f0 against the live ring slice
-    void hit_static(Rider&, int32_t lateral_units, const std::array<int32_t,4>& box);   // 0x00437660
+    bool sweep_statics(Rider&, Rider* half_owner = nullptr);           // 0x004373f0 against the live ring slice
+    void hit_static(Rider&, int32_t lateral_units, const std::array<int32_t,4>& box, Rider* half_owner = nullptr);   // 0x00437660
+    void contact_half_static(Rider& body, Rider& owner, Rider& other);  // 0x004046b0 crashed-half contact
     void contact_static(Rider& self, Rider& other);                   // 0x004049c0 against a type-1 static
     void fight(Rider&, uint32_t controls, size_t index);
     bool fight_hit_frame(const Rider&) const;  // descriptor flags + frame-2 gate (0x004096f0 head)
@@ -617,6 +631,7 @@ private:
     TrafficSystem* traffic_ = nullptr;
     PedestrianSystem* pedestrians_ = nullptr;
     std::vector<int32_t> car_scan_keys_; // list positions retained across this scheduler pass
+    std::vector<int32_t> ped_scan_keys_;
     mutable std::vector<ScanObject> scan_;  // reused by build_scan_list (no tick allocation after warm-up)
     uint32_t spawn_order_ = 0;              // creation counter for pedestrians
     bool countdown_started_ = false;        // first countdown tick seen (player dt 2)

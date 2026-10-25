@@ -11,6 +11,7 @@
 #include <cstdlib>
 #include <iostream>
 #include <map>
+#include <optional>
 #include <set>
 #include <string>
 #include <tuple>
@@ -37,6 +38,12 @@ struct FieldReplay {
     size_t green = 1;
     bool demo = true;
     bool coverage = false;
+    // Deferred green closure (field captures): the factory end state and the
+    // green pre-step anchor when the original consumed measured draws in the
+    // pre-green countdown window, which the countdown replay below reproduces.
+    std::optional<uint32_t> closure_factory_end;
+    std::optional<uint32_t> closure_anchor;
+    int64_t closure_post = 0;
     std::set<std::string> used;
     std::map<int64_t,int> identity;              // node address -> native rider (-1 other)
     std::map<int64_t,int64_t> address_type;      // node address -> +0xc4 at frame 0
@@ -112,7 +119,10 @@ struct FieldReplay {
     }
     void brain(const std::map<std::string,int64_t>& f, const std::string& p, const Rider& r) {
         const AiState& br = r.brain;
-        for (uint32_t off = 0x138; off <= 0x1c4 && (diff.empty() || all); off += 4) {
+        // Captures after the +0x1cc schema extension also compare the level
+        // 3/4 speed words; older ones stop at +0x1c4.
+        const uint32_t last = f.count(p + "brain_1cc") ? 0x1cc : 0x1c4;
+        for (uint32_t off = 0x138; off <= last && (diff.empty() || all); off += 4) {
             char hex[8]; std::snprintf(hex, sizeof hex, "%x", off);
             const std::string key = p + "brain_" + hex;
             const auto it = f.find(key);
@@ -314,7 +324,7 @@ struct FieldReplay {
                 if (p.active && !ignore_peds) have.push_back({0x00440680, p.body.bike.i32(0x1c)});
         if (setup.instance.traffic) {
             for (const auto& c : setup.instance.traffic->controllers()) if (c.active) have.push_back({0, c.position_q8});
-            for (const auto& sg : setup.instance.traffic->signals()) if (sg.active) have.push_back({0, sg.position_q8});
+            for (const auto& sg : setup.instance.traffic->signals()) if (sg.active) have.push_back({sg.quiet ? 0 : 0x0041f220, sg.position_q8});
             if (!ignore_cars)
                 for (const auto& c : setup.instance.traffic->cars()) if (c.active) have.push_back({0x00446830, c.position});
         }
@@ -439,7 +449,31 @@ struct FieldReplay {
             race().countdown_step();
             if (frame(i)) return 1;
         }
-        if (race().rng_state() != rng_before) { std::cout << "countdown consumed draws\n"; return 1; }
+        if (closure_factory_end && closure_anchor) {
+            // Deferred closure: the countdown replay must land exactly on the
+            // green pre-step anchor (its pre-step consumers are reproduced by
+            // Race::countdown_step, e.g. the pedestrian re-trigger 0x00440dd0
+            // at level 5). The header's ring.post_draws only covers the
+            // factory-to-green window it could measure; the countdown's own
+            // draws are the delta between rng_before and the replayed state.
+            const uint32_t end = race().rng_state();
+            if (end != *closure_anchor) {
+                int64_t off = 0;
+                uint32_t a = *closure_factory_end, b = *closure_anchor;
+                for (int64_t n = 1; n <= 200000 && !off; ++n) {
+                    a = a * 0x343fdu + 0x269ec3u;
+                    b = b * 0x343fdu + 0x269ec3u;
+                    if (a == *closure_anchor) off = n;               // countdown ends n draws early
+                    else if (b == *closure_factory_end) off = -n;    // countdown ends n draws late
+                }
+                std::cout << "countdown does not close on the green anchor";
+                if (off) std::cout << " (factory end is " << off << " draws from green)";
+                std::cout << '\n';
+                return 1;
+            }
+            std::cout << "countdown closes on the green anchor (pre-green countdown consumers reproduced)\n";
+            race().set_rng_state(*closure_anchor);
+        } else if (race().rng_state() != rng_before) { std::cout << "countdown consumed draws\n"; return 1; }
         std::cout << "countdown: " << green << " native ticks equal\n";
         std::vector<std::pair<int64_t,uint32_t>> rng_history;
         for (size_t i = green; i < g.frames.size(); ++i) {

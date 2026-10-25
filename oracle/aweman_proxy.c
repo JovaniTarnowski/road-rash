@@ -25,8 +25,8 @@ int rr_patch_call(uint8_t* site, uint32_t expected_target, void* hook) { return 
 static FILE* g_out;
 static char g_scenario[256] = "unnamed";
 static int g_capture_course;
-/* Display level 1..5 selected through the original level setter
- * (0x004453f0) at menu entry; 0 keeps the bootstrapped startup level. */
+/* Display level 1..5 selected through the original level popup setter
+ * (0x004453f0); 0 leaves the bootstrapped startup level (display 1) alone. */
 static int g_capture_level;
 static int g_groups;
 static int g_drive;
@@ -129,10 +129,14 @@ static void __fastcall hook_menu_enter(int screen) {
         if (st) *st = (uint32_t)g_seed;
         g_seed_applied = 1;
     }
-    /* Difficulty selection (RR_ORACLE_LEVEL): the bootstrap bypasses the
-     * restroom popup, so run the original level setter 0x004453f0 here
-     * (byte 0x004b8a12 = level-1) before race construction reads the
-     * level. Police captures need it: Napa cops require level 3+. */
+    /* Difficulty selection (RR_ORACLE_LEVEL, plan 10 scenario
+     * `napa-field-l5` and police captures): the bootstrap bypasses the
+     * restroom popup, so run the original level setter 0x004453f0 here -
+     * byte 0x004b8a12 = level-1, qualified-course bits cleared, player level
+     * bike 0x004b8a14 rebuilt from 0x004641c8. It draws no randomness (its
+     * FUN_004306e0 profile sync runs only when DAT_004c5af9 is set, which the
+     * offline capture build never sets), so the pinned seed is untouched.
+     * Applied before FUN_004160c0 -> 0x0044b250 -> 0x00405600 reads the level. */
     if (g_capture_level && !g_race_started)
         ((void (__fastcall*)(int))0x004453f0)(g_capture_level);
     /* Diagnostic startup fixture only: reproduce recorded pre-race speed
@@ -589,7 +593,9 @@ static void dump_sim_tick(void) {
                             rr_log(key, sim_field_value(brain, 4 * w, 4, 1));
                         }
                     }
-                    for (unsigned w = 0; w < 36; ++w) {
+                    /* Through +0x1cc: the level 3/4 speed words that level-4
+                     * replan reads from the jittered copies (plan 10 L5). */
+                    for (unsigned w = 0; w < 38; ++w) {
                         snprintf(key, sizeof key, "rider.%d.brain_%x", slot, 0x138 + 4 * w);
                         rr_log(key, sim_field_value(brain, 0x138 + 4 * w, 4, 1));
                     }

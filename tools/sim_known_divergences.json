@@ -10,5 +10,11 @@
     "divergence": "first divergence at frame 209 (tick 210): rng original 849046096 native 2140064586",
     "reason": "Driver-axis replay (--driver=demo), single green anchor, native countdown (player dt 2 at tick 1). Matches every compared field, the brain window and rng through tick 209. Tick 208's class-3 knock tail (0x004052c0 reason 3, stamina param 0) is now ported in Race::contact: tick 208 steer matches exactly (2392). Tick 210: native-only bike-bike contact (slots 0 vs 2): lateral differs by exactly one 960-unit nudge push, speed by exactly shit/4 = 424 from native S184 = -2262, and native rng advances 2 draws from the contact sounds; the original shows no nudge, no speed loss and no draws, so it has no overlap there. Trigger is an uncovered frozen-rider word (grid-setup fix order 1); needs a current-era SIM capture with frozen bike-word coverage (see docs/agent-handoffs/sim-fault-20261014.md). Diagnostic only. Output re-pinned Oct 16 (ring-terrain-20261016): only the closure line changed (+11 -> +16 post draws) after porting the 0x00453b60 window walks into the ring setup (srand + 0 pre draws); the divergence line is identical. Output re-pinned Oct 17 (spawn-20261017): only the closure line changed (+16 -> +0 post draws) after porting the 0x00405600 rider build draws (lanes, name roll) after the ring setup; the divergence line is identical.",
     "output_sha256": "0424ae8a4f1df973b2fac801cdf10451051db676ba79c7ecdb8b4efd9cd436e0"
+  },
+  "napa-field-l5-20261018.tsv": {
+    "trace_sha256": "882d66b003428a6ca5834b3627e4cfbd0641d6b2e0c751ea3da23829967e69aa",
+    "divergence": "first divergence at frame 1994 (tick 1995): ring.13e2038.position original 87436 native 87105",
+    "reason": "Plan 10 Task 6 scenario napa-field-l5 (14 opponents, display level 5 via RR_ORACLE_LEVEL / 0x004453f0), demo driver, single green anchor. The countdown closes on the green anchor (level-5 pedestrian re-trigger reproduced in Race::countdown_step) and every compared field matches through tick 1994. Tick 1995: one ring node position differs by 331 Q8 units; cause not yet traced (handoffs codex-l5-integration-20261018 / sim-l5-20261018). Pinned Oct 24 (commit-push integration) so the regression detects any change; diagnostic only, not acceptance.",
+    "output_sha256": "04ead14ef09ee49105dfda0fce8b3c2b2701c7a03b0292abc84c5db80ab2926a"
   }
 }

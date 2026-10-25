@@ -307,7 +307,7 @@ void SoundSystem::update(Race& race) {
     }
     // Event consumer 0x004351f0.
     for (const SoundEventRecord& e : queue_) {
-        if (e.code == SoundEvent::siren) { siren(e); continue; }   // 0x004351f0 fast path: its own channel, no pitch draws
+        if (e.code == SoundEvent::siren) { siren(e, race); continue; }   // 0x004351f0 fast path: its own channel, no pitch draws
         if (effects_off_ && e.code != SoundEvent::nitro_on && e.code != SoundEvent::nitro_off) continue;
         const int32_t pitch = int32_t(random() % 0xbb9) + 0x214d;
         const int32_t vol = (int32_t(random() % 0x1001) + 0x3fff) / 100 * effects_;
@@ -369,12 +369,53 @@ void SoundSystem::siren_stop() {
 // 0x4000; no emitter or out of earshot is volume 0). Two buffers alternate at
 // a fixed 0x2b11 Hz: SIREN loops for 0x259 updates, SIRENFST for 0x79; each is
 // then let finish its pass (Play without looping) before the other starts.
-// The 0x00434f40 height term for a cop on the other branch of a split is not
-// ported. No RNG.
-void SoundSystem::siren(const SoundEventRecord& e) {
+// 0x00434f40 adds lateral branch separation when the player and cop halves
+// have disjoint road masks. This is ring +0x24 (traversal x_sep), not height.
+// No RNG.
+void SoundSystem::siren(const SoundEventRecord& e, const Race& race) {
     if (siren_off_) return;
     int32_t doppler = 0, volume = 0, pan = 0, linear = 0;
-    distance(e.position, e.lateral >> 8, e.speed, doppler, volume, pan, &linear);
+    int32_t lateral = e.lateral / 256;   // 0x00435840 truncates toward zero
+    if (const int cop_index = race.cop_index(); cop_index >= 0) {
+        const Rider& cop = race.riders()[size_t(cop_index)];
+        if (!cop.half_slice_present) { siren_stop(); return; }
+        const Rider& player = race.riders()[0];
+        const auto half_route = [&](const Rider& rider) {
+            return race.live_schedule() ? rider.half_mirror.route :
+                   rider.crash_active ? rider.crash_actor.route : rider.route;
+        };
+        const auto half_sample = [&](const Rider& rider) {
+            return race.live_schedule() ? rider.half_mirror.sample :
+                   rider.crash_active ? rider.crash_actor.sample : rider.sample;
+        };
+        const auto& cop_road = race.route_for(half_route(cop));
+        const auto& player_half_road = race.route_for(half_route(player));
+        const auto& camera_road = race.route();
+        const size_t cop_sample = half_sample(cop), player_sample = half_sample(player);
+        const auto road_mask = [](const RouteSample& sample) {
+            return sample.dual ? 1u << sample.half : 3u;  // sub-slice +0x36 bits 0/1
+        };
+        const size_t ci = std::min(cop_sample, cop_road.size() - 1);
+        const size_t pi = std::min(player_sample, player_half_road.size() - 1);
+        if ((road_mask(cop_road[ci]) & road_mask(player_half_road[pi])) == 0) {
+            const auto separation = [](const std::vector<RouteSample>& road, size_t sample, int32_t position) {
+                const int32_t current = road[sample].x_sep;
+                const int32_t next = road[std::min(sample + 1, road.size() - 1)].x_sep;
+                // imul/add in 0x00434f40 are 32-bit; each interpolation truncates
+                // separately before their wrapped sum is divided by two.
+                const int32_t delta = int32_t(uint32_t(next) - uint32_t(current));
+                const int32_t product = int32_t(uint32_t(delta) * (uint32_t(position) & 0xff));
+                return int32_t(uint32_t(current) + uint32_t(product / 256));
+            };
+            const int32_t cop_position = race.live_schedule() ? cop.half_mirror.position :
+                                         cop.crash_active ? cop.crash_actor.motion.i32(0x1c) : cop.bike.i32(0x1c);
+            const size_t camera_sample = std::min(size_t(uint32_t(listener_position_) >> 8), camera_road.size() - 1);
+            const int32_t offset = int32_t(uint32_t(separation(cop_road, ci, cop_position)) +
+                                           uint32_t(separation(camera_road, camera_sample, listener_position_))) / 2;
+            lateral = int32_t(uint32_t(lateral) + uint32_t(offset));
+        }
+    }
+    distance(e.position, lateral, e.speed, doppler, volume, pan, &linear);
     int32_t level = std::min<int32_t>(siren_ * ((linear * linear * 0x4fff) >> 16) / 100, 0x4000);
     if (level == 0) { siren_stop(); return; }
     constexpr int32_t hz = 0x2b11;

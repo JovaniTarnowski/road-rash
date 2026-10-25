@@ -487,8 +487,10 @@ int main(int argc, char** argv) {
     // five level speeds +0x1bc jittered by rand()%13-6 (0x004078f0 into
     // 0x004c5f20, the 0x004c4cfc + row*0x204 brains of 0x00407990). Those
     // 30 draws run before the oracle's srand, so they are capture input: the
-    // dumped levels (+0x1bc..+0x1c4) are loaded for every slotted row
-    // before the spawn reads them; levels 3..4 are not dumped.
+    // dumped levels (+0x1bc..+0x1cc) are loaded for every slotted row
+    // before the spawn reads them. Older captures stop at +0x1c4 (levels
+    // 0..2); level 5 replan reads the level-4 word, so the extended schema
+    // is required for display levels 4..5.
     if (!solo) {
         auto prepare = config.prepare;
         config.prepare = [&h, prepare](rr::Race& rr) {
@@ -500,9 +502,10 @@ int main(int argc, char** argv) {
                 const int64_t index = (row->second - 0x00463c78) / 0x40;
                 if (index < 9 || index > 14 || size_t(index) >= rr.riders().size()) continue;
                 auto& brain = rr.riders()[size_t(index)].brain;
-                for (int level = 0; level < 3; ++level) {
+                for (int level = 0; level < 5; ++level) {
                     char key[32]; std::snprintf(key, sizeof key, "brain_%x", 0x1bc + 4 * level);
-                    brain.spd_b[level] = int32_t(h.at(p + key));
+                    const auto it = h.find(p + key);
+                    if (it != h.end()) brain.spd_b[level] = int32_t(it->second);
                 }
             }
         };
@@ -517,6 +520,10 @@ int main(int argc, char** argv) {
     // count any further draws before green.
     const std::optional<uint32_t> ring_end_state = race.rng_state();
     const int64_t ring_post = h.count("ring.post_draws") ? h.at("ring.post_draws") : 0;
+    // Field captures defer the green closure to after their countdown replay
+    // (pre-green countdown consumers, e.g. the level-5 pedestrian re-trigger).
+    std::optional<uint32_t> field_factory_end, field_anchor;
+    int64_t field_ring_post = 0;
     // The golden rng is the live CRT state AFTER each tick's step (the hook
     // dumps after 0x0044b3b0). The race-setup stream (menu entry through grid
     // build, 11,461 calls) is not reproduced: a single anchor at green covers
@@ -620,6 +627,16 @@ int main(int argc, char** argv) {
             uint32_t x = *ring_end_state;
             for (int64_t k = 0; k < ring_post; ++k) x = x * 0x343fdu + 0x269ec3u;
             if (x != uint32_t(anchor)) {
+                if (!solo) {
+                    // Field captures: the original can consume measured draws
+                    // in the pre-green countdown window (a pedestrian
+                    // re-trigger, 0x00440dd0 at level 5) which the native
+                    // countdown replay reproduces inside Race::countdown_step.
+                    // Defer the closure to FieldReplay, after those ticks.
+                    field_factory_end = *ring_end_state;
+                    field_anchor = uint32_t(anchor);
+                    field_ring_post = ring_post;
+                } else {
                 // Report how far off the setup ends, so ring.pre_draws can be
                 // corrected when a setup consumer changes its draw count.
                 int64_t off = 0;
@@ -634,10 +651,11 @@ int main(int argc, char** argv) {
                 if (off) std::cout << "; setup end is " << off << " draws before green";
                 std::cout << ")\n";
                 return 1;
+                }
             }
-            std::cout << "ring setup closes on the green anchor (+" << ring_post << " draws)\n";
+            if (!field_anchor) std::cout << "ring setup closes on the green anchor (+" << ring_post << " draws)\n";
         }
-        race.set_rng_state(uint32_t(anchor));
+        if (!field_anchor) race.set_rng_state(uint32_t(anchor));
         std::cout << (reanchor ? "[reanchor] " : "[single-anchor] ") << "start-hold: " << green << " frozen frames, green at tick " << (tick0 + int64_t(green))
                   << " driver=" << (demo ? "demo" : "human") << (driver_cli.empty() ? " (measured player.demo_hold=" + std::to_string(measured_hold) + ")" : " (cli override)")
                   << " think=0x" << std::hex << think_entry << std::dec << " count=" << think_count
@@ -647,6 +665,9 @@ int main(int argc, char** argv) {
     // (tests/field_replay.hpp). Solo captures continue below.
     if (!solo) {
         rr::golden::FieldReplay field{g, setup, tick0, green, demo, coverage};
+        field.closure_factory_end = field_factory_end;
+        field.closure_anchor = field_anchor;
+        field.closure_post = field_ring_post;
         return field.run();
     }
     // Default: free-run from the single green anchor, so any missing or

@@ -11,6 +11,7 @@
 #include <cstdlib>
 #include <iostream>
 #include <stdexcept>
+#include <utility>
 static void require(bool condition,const char* message){if(!condition)throw std::runtime_error(message);}
 int main() {
     try {
@@ -23,6 +24,27 @@ int main() {
         in.cop_position=0;
         for(int speed:{-5000,-4999,4999,5000}){in.cop_speed=speed;require(rr::police_arrest(in)==(speed>-5000 && speed<5000),"Relative speed boundary");}
         in.cop_speed=0;in.cop_crashed=true;require(!rr::police_arrest(in),"Crashed cop exclusion");in.cop_crashed=false;
+        {
+            // 0x00407f76..0x00407fc8 takes a wrapped int32 absolute value
+            // and compares it as signed; only INT32_MIN stays negative.
+            rr::PoliceArrestInput edge;edge.found_cop=true;edge.crash=2;
+            for(int32_t speed:{INT32_MIN,INT32_MIN+1}) {
+                edge.bike_speed=edge.cop_speed=speed;
+                require(rr::police_arrest(edge)==(speed==INT32_MIN),"Original crashed speed absolute-value wrap");
+            }
+            edge.crash=0;edge.bike_speed=edge.cop_speed=0;
+            for(const auto positions:{std::pair{INT32_MIN,0},std::pair{0,INT32_MIN},std::pair{INT32_MAX,-1}}) {
+                edge.cop_position=positions.first;edge.rider_position=positions.second;
+                require(rr::police_arrest(edge),"Original position subtraction and absolute-value wrap");
+            }
+            edge.cop_position=INT32_MIN+1;edge.rider_position=0;
+            require(!rr::police_arrest(edge),"Position next to absolute-value wrap rejected");
+            edge.cop_position=edge.rider_position=0;
+            for(int32_t speed:{INT32_MIN,INT32_MIN+1}) {
+                edge.cop_speed=speed;
+                require(rr::police_arrest(edge)==(speed==INT32_MIN),"Original relative-speed absolute-value wrap");
+            }
+        }
         in.rider_flags=0x10;require(!rr::police_arrest(in),"Rider flag exclusion");in.rider_flags=0;
         in.bike_flags=0x10;require(!rr::police_arrest(in),"Bike flag exclusion");in.bike_flags=0;
         in.owner=1;require(!rr::police_arrest(in),"Owner exclusion");in.owner=-1;require(!rr::police_arrest(in),"Remote owner does not decide local outcome");

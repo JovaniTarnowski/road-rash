@@ -288,12 +288,19 @@ SliceEdges Race::edges(const Rider& r, size_t i) const {
 }
 
 void Race::accumulate(Rider& r, uint32_t from, uint32_t to, size_t from_sample, size_t to_sample) {
-    // 0x004394c0: bend and rise swept over the move, weighted by the Q8 distance in each sample.
+    // 0x004394c0: bend and rise swept over the move, weighted by the Q8 distance in
+    // each sample, and the heading word swept by the sub-slice curvature.
     const auto& route = route_of(r);
     Bike& b = r.bike;
     const int32_t bend_now = route[to_sample].path.bend, rise_now = route[to_sample].path.rise;
+    // +0xb4 = atan(bend) << 14 (route build 0x00454240). 0x128 loses its low 12 bits
+    // to the heading branch (0x00439920) and is scaled by half the swept distance;
+    // bikes overwrite it again in 0x004395e0, so only route-following bodies (crash
+    // halves, traffic, peds) keep the accumulated value.
+    const auto curvature = [&](int32_t bend) { return (atan_ratio(tables_, bend) * (1 << 14)) >> 8; };
     if (((to ^ from) & 0xffffff00u) == 0) {
         const int32_t d = int32_t(to - from);
+        b.i32(0x128) -= (curvature(bend_now) * d) / 2;
         b.i32(0x130) = -(bend_now * d);
         b.i32(0x12c) = rise_now * d;
         return;
@@ -302,6 +309,7 @@ void Race::accumulate(Rider& r, uint32_t from, uint32_t to, size_t from_sample, 
     if (int32_t(to) < int32_t(from)) { in_old = -int32_t(from & 0xff); in_new -= 0x100; }
     else in_old = 0x100 - int32_t(from & 0xff);
     const int32_t bend_old = route[from_sample].path.bend, rise_old = route[from_sample].path.rise;
+    b.i32(0x128) -= (curvature(bend_old) * in_old + curvature(bend_now) * in_new) / 2;
     b.i32(0x130) = -(bend_now * in_new + bend_old * in_old);
     b.i32(0x12c) = rise_now * in_new + rise_old * in_old;
 }
@@ -358,14 +366,14 @@ void Race::move_along(Rider& r, int32_t distance, bool sweep) {
     // sweep=false is the third-argument-0 form used by collisions: position only.
     Bike& b = r.bike;
     if (distance == 0) { if (sweep) { b.i32(0x130) = 0; b.i32(0x12c) = 0; } return; }
-    const int32_t saved_bend = b.i32(0x130), saved_rise = b.i32(0x12c);
+    const int32_t saved_bend = b.i32(0x130), saved_rise = b.i32(0x12c), saved_heading = b.i32(0x128);
     const int32_t pos = b.i32(0x1c);
     int32_t steps = ((pos + distance) >> 8) - (pos >> 8);
     int32_t unit = 0x100;
     if (steps < 0) { steps = -steps; unit = -0x100; }
     if (steps < 2) {
         cross_sample(r, distance);
-        if (!sweep) { b.i32(0x130) = saved_bend; b.i32(0x12c) = saved_rise; }
+        if (!sweep) { b.i32(0x130) = saved_bend; b.i32(0x12c) = saved_rise; b.i32(0x128) = saved_heading; }
         return;
     }
     const size_t start_sample = r.sample;
@@ -382,6 +390,7 @@ void Race::move_along(Rider& r, int32_t distance, bool sweep) {
     r.previous_sample = start_sample;
     b.i32(0x130) = sweep ? bend : saved_bend;
     b.i32(0x12c) = sweep ? rise : saved_rise;
+    if (!sweep) b.i32(0x128) = saved_heading;   // 0x00439270 skips 0x004394c0 entirely
 }
 
 // 32-bit imul wraparound: 0x00436a40 multiplies depths and speeds by the
@@ -792,7 +801,7 @@ void Race::prepare_static_boxes() {
             if (road[i].built) road[i].boxes_ready = true;
 }
 
-bool Race::sweep_statics(Rider& r) {
+bool Race::sweep_statics(Rider& r, Rider* half_owner) {
     // 0x004373f0 over the rider's own slice (+0x140): BORR slots (+0x60
     // count, boxes +0x61/+0x68) first, then the billboards (+0x3d). The first
     // overlapping box runs its contact and ends the sweep.
@@ -817,7 +826,7 @@ bool Race::sweep_statics(Rider& r) {
                 // as wide (sub-slice +0xac bit 0x4000 never set by the ring).
                 if (std::abs(units) >= 0x400 && boxes.size() == 1) { b[0] *= 3; b[2] *= 3; }
                 if (!overlaps(b, base)) continue;
-                hit_static(r, units, {b[0] + base, b[1], b[2] + base, b[3]});
+                hit_static(r, units, {b[0] + base, b[1], b[2] + base, b[3]}, half_owner);
                 return true;
             }
         }
@@ -835,8 +844,9 @@ bool Race::sweep_statics(Rider& r) {
             if (bb.type < 3) {
                 if (bb.type == 1) b[1] = b[3] - 0x2000;
                 else if (bb.type == 2) b[1] = b[3] - 0x3fff;
-                hit_static(r, bb.lateral, b);
+                hit_static(r, bb.lateral, b, half_owner);
             } else {
+                if (half_owner) return true;   // 0x004046b0 ignores type-2 markings
                 // 0x00437750 -> 0x004049c0 type2: decal/terrain marking.
                 Bike& bike = r.bike;
                 if (bike.i32(0x2f4) == 0 && int32_t(r.sample) != r.half_object.i32(0x1ec)) {
@@ -856,6 +866,7 @@ bool Race::sweep_statics(Rider& r) {
                 bike.u8(0x19c) = 0;
                 bike.i32(0xec) = std::clamp(int32_t(bike.i32(0xec)), -1000, 30000);
                 bike.i32(0xf4) = std::clamp(int32_t(bike.i32(0xf4)), -10000, 0x600);
+                if (live_schedule_ && bike.i32(0x2f4) == 0 && finish_q8_ != 0) r.finish_distance = finish_q8_ - r.half_mirror.position;
             }
             return true;
         }
@@ -863,7 +874,7 @@ bool Race::sweep_statics(Rider& r) {
     return false;
 }
 
-void Race::hit_static(Rider& r, int32_t lateral_units, const std::array<int32_t,4>& box) {
+void Race::hit_static(Rider& r, int32_t lateral_units, const std::array<int32_t,4>& box, Rider* half_owner) {
     // 0x00437660: the shared static object 0x004c3e90 at mid-sample with the
     // box extents, separated (0x00436a40) and handed to the rider's handler.
     Rider& o = static_actor_;
@@ -882,8 +893,50 @@ void Race::hit_static(Rider& r, int32_t lateral_units, const std::array<int32_t,
     b.i32(0x180) = 0xc0;
     b.i32(0x194) = 0x1000000;
     b.u8(0xc0) = uint8_t(b.u8(0xc0) | 0x10);   // native guard: the static never latches the finish
-    separate(r, 4, o, 1);
-    contact_static(r, o);
+    if (half_owner) r.bike.i32(0x1a0) = 0x004c3e90;   // original fixed static-object identity
+    separate(r, half_owner ? 8 : 4, o, 1);
+    if (half_owner) contact_half_static(r, *half_owner, o);
+    else contact_static(r, o);
+}
+
+void Race::contact_half_static(Rider& detached, Rider& owner, Rider& other) {
+    // 0x004046b0: the crashed half has a contact response independent of
+    // its bike. The lateral nudge uses the owning bike's last dt; only the
+    // final randomized longitudinal move sweeps the half's own route.
+    Bike& s = detached.bike; const Bike& o = other.bike;
+    auto& animation = owner.crash_actor.animation;
+    const auto& library = *crash_library_;
+    if (o.i32(0xc4) != 2) {
+        if (&owner == &riders_[0]) sound(SoundEvent::grunt_b, s);   // event 4
+        if (owner.bike.i32(0x2f4) != 2 || o.i32(0xec) >= 1700) {
+            if (o.i32(0xc4) & 0x15) s.i32(0x20) = o.i32(0x17c) * 2;
+            if (s.i32(0x20) > 0x5000) s.i32(0x20) = 0x5000;
+            const int32_t speed = std::abs(s.i32(0xec));
+            s.i32(0xf4) = speed < 501 ? 0 : std::abs(s.i32(0xf4) / 2) + speed / 16;
+            s.i32(0xec) -= s.i32(0xec) / 4;
+            if (animation.animation != 33 && animation.animation != 29) {
+                set_animation_with_fallback(animation, library.playback[0], 28, uint32_t(ticks_), library.fallback);
+                queue_animation_with_fallback(animation, library.playback[0], 28, library.fallback);
+            }
+            if (s.i32(0xf4) > 0x150) s.i32(0xf4) = 0x150;
+            if (owner.bike.i32(0x2f4) == 2 && o.i32(0xec) > 1700) {
+                s.i32(0xec) += o.i32(0xec) / 4;
+                owner.bike.i32(0x2f4) = 1;
+                set_animation_with_fallback(animation, library.playback[0], 34, uint32_t(ticks_), library.fallback);
+                queue_animation_with_fallback(animation, library.playback[0], 38, library.fallback);
+            }
+            if (&owner == &riders_[0] && s.i32(0xec) >= 2001)
+                sound(SoundEvent((random() & 1) + (s.i32(0xec) >= 6001 ? 4 : 3)), s);
+        }
+        if (s.i32(0xf4) < 3000) {
+            const int32_t step = (o.i32(0x174) + s.i32(0x174)) / 16 * owner.bike.i32(0x18);
+            s.i32(0x28) += o.i32(0x28) < s.i32(0x28) ? step : -step;
+            move_along(detached, int32_t(random() % 33) - 16);
+        }
+    }
+    s.i32(0x184) = s.i32(0x188) = s.i32(0x18c) = 0; s.u8(0x19c) = 0;
+    s.i32(0xec) = std::clamp(int32_t(s.i32(0xec)), -2000, 30000);
+    s.i32(0xf4) = std::clamp(int32_t(s.i32(0xf4)), -10000, 10000);
 }
 
 void Race::contact_static(Rider& self, Rider& other) {
@@ -971,6 +1024,7 @@ void Race::contact_static(Rider& self, Rider& other) {
     s.i32(0x188) = 0; s.i32(0x18c) = 0; s.i32(0x184) = 0; s.u8(0x19c) = 0;
     if (s.i32(0xec) > 30000) s.i32(0xec) = 30000;
     if (s.i32(0xec) < -1000) s.i32(0xec) = -1000;
+    if (live_schedule_ && s.i32(0x2f4) == 0 && finish_q8_ != 0) self.finish_distance = finish_q8_ - self.half_mirror.position;
 }
 
 void Race::contact_hazard(Rider& self, int32_t hazard_lo_q8, int32_t hazard_hi_q8) {
@@ -1206,6 +1260,7 @@ void Race::contact_car(Rider& self, TrafficCar& car) {
         const int32_t next = s.i32(0x288) + kick;
         s.i32(0x288) = std::max(-lim, std::min(lim, next));
     }
+    if (live_schedule_ && s.i32(0x2f4) == 0 && finish_q8_ != 0) self.finish_distance = finish_q8_ - self.half_mirror.position;
 }
 
 // Crash entries for contact 0x00403d60. crash_car keeps the reason-2 car path;
@@ -1227,9 +1282,17 @@ void Race::crash_entry(Rider& r, int32_t reason, std::optional<std::array<int32_
         r.bike.i32(0x2f4) = 0;
         begin_crash(r.bike, r.crash_actor, crash_config_, crash_library_->playback[0],
                     crash_library_->fallback, uint32_t(ticks_), reason, rider_impulse, bike_impulse);
+        // 0x00403d60 writes the crash rider animation into the rider half's
+        // +0x70 block (iVar2 = *(bike+0x2fc)) - the same block the riding
+        // animation advances, so the field frame dump (half+0x80) reads the
+        // crash code (29/33/35) right from the crash tick.
+        r.ride_animation = r.crash_actor.animation;
         r.crash_active = true; r.crash_timer = 0;
         r.crash_actor.route = r.route; r.crash_actor.sample = r.sample;
         r.crash_actor.previous_sample = r.previous_sample;
+        // The half is now the crash body (0x00403d60): its mirror reads the
+        // copied body words even before the first body motion step.
+        sync_half_mirror(r);
         return;
     }
     // Stand-in (no crash library): the shared helper already computed the
@@ -1241,88 +1304,130 @@ void Race::crash_entry(Rider& r, int32_t reason, std::optional<std::array<int32_
     r.crash_timer = 0;
 }
 
+// The rider half doubles as the crash body (0x00403d60): while the rider is
+// crashed the ring node and the object scans read the body's own words, so
+// the mirror is refreshed from it instead of the bike.
+void Race::sync_half_mirror(Rider& r) {
+    const Bike& m = r.crash_actor.motion;
+    r.half_mirror = {m.i32(0x1c), m.i32(0x28), m.i32(0x20), m.i32(0xf4), m.i32(0xec),
+                     m.i32(0xf0), m.i32(0x10c), m.i32(0x108), m.i32(0x60), r.crash_actor.sample, r.crash_actor.route};
+}
+
 void Race::contact(Rider& self, Rider& other) {
-    // Bike-against-bike branch of the contact handler 0x004049c0. Class
-    // routing (lines 77-88): both bikes are tall (+0x17c = 0x2300 >= 0x2000),
-    // so a contained hit (the +0x19c bit 0x40 width rule from 0x00436a40) is
-    // class 1: the other bike is short-ish (+0x17c 0x2300 < 0x2800) and
-    // unflagged (+0xc4 & 0x10 == 0 for bikes). Otherwise the hit is class 3
-    // (glance). The knock-off decision 0x004052c0 runs on both: the bike
-    // caller (+0xc4 & 0xc != 0) zeroes the stamina param and passes the
-    // pre-shift magnitude sum >> 4 as the bike-damage param.
+    // Bike-against-bike branch of the contact handler 0x004049c0. The hit
+    // object's class ladder (lines 77-88) reads the OTHER bike's height box:
+    // a bike crashed to the ground (+0x17c < 0x2000) is class 0 and the rider
+    // rides over it; a contained hit (+0x19c bit 0x40 width rule from
+    // 0x00436a40) is class 1 against a short-ish unflagged bike, class 2
+    // otherwise; an uncontained hit is class 3 (glance). The knock-off
+    // decision 0x004052c0 runs for classes 1-3: the bike caller
+    // (+0xc4 & 0xc != 0) zeroes the stamina param and passes the shifted
+    // magnitude sum as the bike-damage param. A crashed self only gains
+    // +0x150 velocity and joins the shared nudge and kick with the raw
+    // magnitude (else branch, line 219).
     Bike& s = self.bike; const Bike& o = other.bike;
-    if (s.i32(0x2f4) != 0) return;
-    const int32_t old_steer_rate = s.i32(0xf0);   // 0x00404f93 tail compares against this
-    // 0x004049c0 sounds, class routing and knock magnitudes read the
-    // UNSCALED impulses; elasticity applies after (lines 89-93).
     const int32_t raw184 = s.i32(0x184), raw188 = s.i32(0x188), raw18c = s.i32(0x18c);
-    const int32_t hit = std::abs(raw184);
-    if (&self == &riders_[0]) {
-        // 0x004049c0: the player grunts and the contact makes a crash sound by its strength.
-        if (hit < 0x1771) {
-            if (hit >= 0x7d1 || std::abs(raw188) >= 0x3e9) {
-                if (s.i32(0x2f4) == 0) sound(SoundEvent((random() & 1) + 3), s);
+    const int32_t full = std::abs(raw184) + std::abs(raw188) + std::abs(raw18c);
+    int32_t local20 = full >> 10;   // 0x00404f93 kick target; the class branches
+                                    // replace it with the old steer rate
+    int iclass = 6;
+    bool down = false;   // 0x004052c0 local_21: the kick is skipped when the rider went down
+    if (s.i32(0x2f4) != 0) {
+        s.i32(0xf4) += 0x150;
+    } else {
+        self.half_object.u8(0x1e9) = 0;   // line 37: contact clears the half's wobble
+        if (&self == &riders_[0]) {
+            // 0x004049c0: the player grunts and the contact makes a crash sound by its strength.
+            const int32_t hit = std::abs(raw184);
+            if (hit < 0x1771) {
+                if (hit >= 0x7d1 || std::abs(raw188) >= 0x3e9) {
+                    if (s.i32(0x2f4) == 0) sound(SoundEvent((random() & 1) + 3), s);
+                    sound(SoundEvent(random() & 1), s);
+                }
+            } else {
+                if (s.i32(0x2f4) == 0) sound(SoundEvent((random() & 1) + 4), s);
                 sound(SoundEvent(random() & 1), s);
             }
+        }
+        if (o.i32(0x17c) < 0x2000) iclass = 0;
+        else if ((s.u8(0x19c) & 0x40) == 0) iclass = 3;
+        else if (o.i32(0x17c) < 0x2800 && (o.i32(0xc4) & 0x10) == 0) iclass = 1;
+        else iclass = 2;
+        // The sounds, class routing and knock magnitudes read the UNSCALED
+        // impulses; elasticity applies after (lines 89-93).
+        const int32_t elasticity = s.i32(0x180);
+        s.i32(0x188) = div256(int64_t(raw188) * elasticity);
+        s.i32(0x184) = div256(int64_t(raw184) * elasticity);
+        s.i32(0x18c) = div256(int64_t(raw18c) * elasticity);
+        const int32_t steer = s.i32(0xf0);
+        if (iclass != 0) {
+            const int32_t swing = (local20 + ((full >> 31) & 15)) >> 4;
+            down = knock_off(self, 0, swing, iclass);
+            local20 = steer;   // every response branch lands on the old steer rate
+            if (iclass == 1 || iclass == 2) {
+                if (down) {
+                    // Class 1 and down: speed is untouched (only class 2 transfers it).
+                    if (iclass == 2) s.i32(0xec) += s.i32(0x184);
+                } else if (s.i32(0xec) - o.i32(0x108) < 0x1771) {
+                    // Small speed gap: rear-end pushes speed over.
+                    s.i32(0xec) += s.i32(0x184);
+                } else {
+                    // Big speed gap: the handler's own local_18 pair, then the
+                    // nudge and tail below.
+                    crash_reason(self, iclass, kContactCrashRiderImpulse, kContactCrashBikeImpulse);
+                }
+            } else if (down) {
+                s.i32(0xf4) += div256(std::abs(s.i32(0x184)));
+            } else {
+                // Class 3 (glance): the lateral branch (or the down vertical transfer).
+                const int32_t shove = std::abs(s.i32(0x184));
+                if (o.i32(0x28) < s.i32(0x28)) {
+                    if (s.i32(0xf0) < 0) s.i32(0xf0) = 0;
+                    s.i32(0xf0) += shove / 2;
+                } else {
+                    if (s.i32(0xf0) > 0) s.i32(0xf0) = 0;
+                    s.i32(0xf0) -= shove / 2;
+                }
+                s.i32(0xec) -= div_pow2(shove, 2);
+                if (s.i32(0xec) < 0) s.i32(0xec) = 0;
+            }
         } else {
-            if (s.i32(0x2f4) == 0) sound(SoundEvent((random() & 1) + 4), s);
-            sound(SoundEvent((random() & 1) + 1), s);
+            // Short other (a bike on the ground): slow riders are nudged
+            // aside, faster ones ride over it.
+            if (s.i32(0xec) < 300 && s.u8(0x19c) == 0x20) { move_along(self, s.i32(0x18) * 2, false); iclass = 6; }
+            else if (s.i32(0xec) < 500) iclass = 6;
+            local20 = steer;
+            if (iclass == 0) {
+                s.i32(0x20) += o.i32(0x17c) / 2;
+                const int32_t t = wrap_mul(wrap_mul(o.i32(0x17c), std::abs(s.i32(0x184))), 2);
+                const int32_t u = (t + ((t >> 31) & 0x3fff)) >> 14;
+                s.i32(0xf4) += ((u + ((u >> 31) & 0xf)) >> 4) * 4;
+            }
         }
     }
-    const bool contained = (s.u8(0x19c) & 0x40) != 0;
-    const int32_t full = std::abs(raw184) + std::abs(raw188) + std::abs(raw18c);
-    const int32_t magnitude = full >> 10;
-    const int32_t swing = (magnitude + ((full >> 31) & 15)) >> 4;
-    const int32_t elasticity = s.i32(0x180);
-    s.i32(0x188) = div256(int64_t(raw188) * elasticity);
-    s.i32(0x184) = div256(int64_t(raw184) * elasticity);
-    s.i32(0x18c) = div256(int64_t(raw18c) * elasticity);
-    const int32_t shit = std::abs(s.i32(0x184));   // scaled hit: the branches below
-    bool down = false;   // 0x004052c0 local_21: the kick is skipped when the rider went down
-    if (contained) {
-        // Class 1: contained by a short-ish unflagged bike.
-        down = knock_off(self, 0, swing, 1);
-        if (!down && s.i32(0xec) - o.i32(0x108) < 0x1771) {
-            // Class 1, small speed gap: rear-end pushes speed over.
-            s.i32(0xec) += s.i32(0x184);
-        } else if (!down) {
-            // Class 1, big speed gap: the handler's own local_18 pair, then
-            // the nudge and tail below (no kick: the steer rate is untouched).
-            crash_reason(self, 1, kContactCrashRiderImpulse, kContactCrashBikeImpulse);
-        }
-        // Class 1 and down: speed is untouched (only class 2 transfers it).
-    } else {
-        // Class 3 (glance): the knock decision first, then the lateral
-        // branch (or the down vertical transfer).
-        down = knock_off(self, 0, swing, 3);
-        if (down) {
-            s.i32(0xf4) += div256(shit);
-        } else if (o.i32(0x28) < s.i32(0x28)) {
-            if (s.i32(0xf0) < 0) s.i32(0xf0) = 0;
-            s.i32(0xf0) += shit / 2;
-            s.i32(0xec) = std::max(0, s.i32(0xec) - div_pow2(shit, 2));
-        } else {
-            if (s.i32(0xf0) > 0) s.i32(0xf0) = 0;
-            s.i32(0xf0) -= shit / 2;
-            s.i32(0xec) = std::max(0, s.i32(0xec) - div_pow2(shit, 2));
-        }
+    if (iclass != 0) {
+        // Nudge apart sideways (0x00404f4d).
+        const int32_t step = div_pow2(s.i32(0x174) + o.i32(0x174), 4) * s.i32(0x18);
+        s.i32(0x28) += o.i32(0x28) < s.i32(0x28) ? step : -step;
     }
-    // Nudge apart sideways (0x00404f4d).
-    const int32_t push = div_pow2(s.i32(0x174) + o.i32(0x174), 4) * s.i32(0x18);
-    s.i32(0x28) += o.i32(0x28) < s.i32(0x28) ? push : -push;
     // Steering kick (0x00404f93): a moved steer rate kicks +0x288 by
-    // +0x2d8*(new-old)*2>>8 (sar-rounded), clamped to +-+0x29c. Skipped when
-    // the rider went down (0x004052c0 local_21 true).
-    if (!down && old_steer_rate != s.i32(0xf0)) {
+    // +0x2d8*(new-target)*2>>8 (sar-rounded), clamped to +-+0x29c. Skipped when
+    // the rider went down (0x004052c0 local_21 true) or the rate is unchanged.
+    if (!down && local20 != s.i32(0xf0)) {
         // Original-width 32-bit wraparound product (cf. knock_off reason 5).
-        const uint32_t raw = uint32_t(s.i32(0x2d8)) * uint32_t(s.i32(0xf0) - old_steer_rate) * 2u;
+        const uint32_t raw = uint32_t(s.i32(0x2d8)) * uint32_t(s.i32(0xf0) - local20) * 2u;
         const int32_t prod = raw <= uint32_t(INT32_MAX) ? int32_t(raw) : int32_t(int64_t(raw) - 0x100000000LL);
         const int32_t next = s.i32(0x288) + ((prod + ((prod >> 31) & 0xff)) >> 8);
         const int32_t lim = s.i32(0x29c);
         s.i32(0x288) = (next > lim || (-lim != -next && next <= -lim)) ? (next > lim ? lim : -lim) : next;
     }
-    // Tail (0x00404feb): impulses and flags clear.
-    s.i32(0x184) = 0; s.i32(0x188) = 0; s.i32(0x18c) = 0; s.u8(0x19c) = 0;
+    // Tail (0x00404feb): vertical clamp, impulses and flags clear, speed
+    // clamp (the +10000 upper clamp is dead behind the +0x600 one).
+    if (s.i32(0xf4) > 0x600) s.i32(0xf4) = 0x600;
+    s.i32(0x188) = 0; s.i32(0x18c) = 0; s.i32(0x184) = 0; s.u8(0x19c) = 0;
+    if (s.i32(0xec) > 30000) s.i32(0xec) = 30000;
+    if (s.i32(0xec) < -1000) s.i32(0xec) = -1000;
+    if (s.i32(0xf4) < -10000) s.i32(0xf4) = -10000;
     // An uncrashed rider's half recomputes +0x1f8 (0x00407410 from its own
     // position, which the half took at the bike's last move).
     if (live_schedule_ && s.i32(0x2f4) == 0 && finish_q8_ != 0) self.finish_distance = finish_q8_ - self.half_mirror.position;
@@ -1351,7 +1456,7 @@ void Race::move(Rider& r, bool player) {
     if (bend != 0) {
         int32_t push;
         if (!(b.u8(0x278) & 4) || int8_t(b.u8(0x164)) < 0x33) push = bend * 400 / dt;
-        else if (player) push = bend * 800 / dt;
+        else if (player && !demo_hold_) push = bend * 800 / dt;   // 0x004398c0: DAT_004753c8 demo gate
         else push = bend * 600 / dt;
         b.i32(0x10c) += div256(push);
         heading = approx_atan2(distance, div256(int64_t(bend) * 400)) * 65536;
@@ -1611,8 +1716,10 @@ void Race::crash(Rider& r) {
         // traction currently raises the crash flag directly; entry applies once.
         r.bike.i32(0x2f4)=0;
         begin_crash(r.bike,r.crash_actor,crash_config_,crash_library_->playback[0],crash_library_->fallback,uint32_t(ticks_),0);
+        r.ride_animation=r.crash_actor.animation;   // 0x00403d60: the crash rider animation is the half block
         r.crash_active=true;r.crash_timer=0;
         r.crash_actor.route=r.route;r.crash_actor.sample=r.sample;r.crash_actor.previous_sample=r.previous_sample;
+        sync_half_mirror(r);
         return;
     }
     // Simplified stand-in for 0x00403d60: fall, slide to a stop, then remount on the road.
@@ -1621,23 +1728,67 @@ void Race::crash(Rider& r) {
     r.crash_timer = 0;
 }
 
-void Race::step_crash(Rider& r,bool player,uint32_t controls) {
-    auto& bike=r.bike;auto& body=r.crash_actor;const auto& library=*crash_library_;
+// 0x00407f30 (the rider node's crash think) advances the crash animations
+// and the +0x2f4 phase before any motion: the rider animation gate reads the
+// body words left by the previous tick's body move.
+void Race::crash_phases(Rider& r) {
+    Bike& bike=r.bike;Bike& body=r.crash_actor.motion;const auto& library=*crash_library_;
+    CrashRiderAnimationInput input;input.crash=bike.i32(0x2f4);input.speed=body.i32(0xec);input.height_q8=body.i32(0x20);
+    advance_crash_rider_animation(r.crash_actor.animation,library.playback[0],library.fallback,input,uint32_t(ticks_),[&]{return random();});
+    r.ride_animation=r.crash_actor.animation;   // the crash rider animation runs on the rider half block
+    if(bike.i32(0x2f4)!=input.crash)r.crash_timer=0;
+    bike.i32(0x2f4)=input.crash;if(input.crash==2)++r.crash_timer;
+}
+// 0x0043a580: the riderless bike (the +0x300 path of 0x004060b0) has its
+// own move - prep 0x00438c70, integrate 0x004390c0, gear shift 0x004391d0,
+// road-relative move 0x004395e0 - while the detached rider body keeps the
+// generic actor motion 0x0043adc0 on the half node.
+void Race::crash_bike_animation(Rider& r) {
+    Bike& bike=r.bike;const auto& library=*crash_library_;
+    advance_crash_bike_animation(r.crash_bike_animation,library.playback[0],library.fallback,bike.i32(0xec),uint32_t(ticks_),[&]{return random();});
+}
+void Race::crash_bike_motion(Rider& r,bool player) {
+    Bike& bike=r.bike;
+    const int32_t steer=bike.i32(0x288);
+    bike.i32(0x60)=wrap_angle(approx_atan2(74,div256(steer))*65536);   // 0x00438c70 (exe 0x46dcd8 = 74)
+    bike.i32(0x114)=0;bike.i32(0x118)=0;bike.i32(0xf0)=0;bike.u8(0x164)=0;
+    const int surface=surface_class(edges(r,r.sample),bike.i32(0x28));
+    integrate_speed(bike,tables_,surface);   // 0x004390c0
+    shift_gears(bike);                       // 0x004391d0
+    move(r,player);                          // 0x004395e0: +0x108 := +0xec, then the advance
+    walls(r,&r.bike);vertical(r);
+}
+// The crash body (0x00406890's crashed half callback -> 0x0043adc0): the
+// detached rider half's own motion, then the mirror and standings refresh.
+void Race::crash_body_motion(Rider& r,int32_t dt) {
+    CrashActor& body=r.crash_actor;
     auto motion=[&](Rider& actor) {
-        auto& b=actor.bike;b.i32(0x18)=1;
+        auto& b=actor.bike;
         if(!b.i32(0x160)){b.i32(0x114)=b.i32(0x118)=0;b.u8(0x164)=0;}
         const int surface=surface_class(edges(actor,actor.sample),b.i32(0x28));
         integrate_speed(b,tables_,surface);
         advance_actor_motion(b,tables_,[&](int32_t distance){move_along(actor,distance);});
         walls(actor,&r.bike);vertical(actor);
     };
-    // The rider animation reads the body's height and speed from before this
-    // tick's motion (measured against napa-cops-crashed: the original lands
-    // into animation 34 one tick after the height first drops under 0xfff).
-    const int32_t height_before=body.motion.i32(0x20),speed_before=body.motion.i32(0xec);
-    motion(r);
     Rider detached;detached.bike=body.motion;detached.route=body.route;detached.sample=body.sample;detached.previous_sample=body.previous_sample;
-    motion(detached);body.motion=detached.bike;body.route=detached.route;body.sample=detached.sample;body.previous_sample=detached.previous_sample;
+    detached.bike.i32(0x18)=dt;   // the half node's own dt in the live scheduler
+    const int32_t body_before=detached.bike.i32(0x1c);
+    motion(detached);
+    body.motion=detached.bike;body.route=detached.route;body.sample=detached.sample;body.previous_sample=detached.previous_sample;
+    // 0x00403d60 makes the half the crash body, so the ring node and the
+    // scans read its live words: the mirror follows the body while crashed
+    // (live_standings takes over again on the first uncrashed step).
+    sync_half_mirror(r);
+    // 0x00406890's crashed half callback runs with this motion: the body's
+    // position delta feeds half +0x1f8, then the place refresh (0x004075f0).
+    r.finish_distance+=body_before-body.motion.i32(0x1c);
+    if(r.place_refresh<=r.half_sched_last)refresh_place(r);
+}
+// The crash recovery (0x00407f30's tail plus the walk-back think states):
+// phase timeouts, the remount and the off-screen bounds wreck. Runs on the
+// half node after the body move, matching the original's think order.
+void Race::crash_recovery(Rider& r,bool player,uint32_t controls) {
+    Bike& bike=r.bike;CrashActor& body=r.crash_actor;const auto& library=*crash_library_;
     CrashRecoveryInput recovery;recovery.player=player;recovery.police_owner=r.cop;recovery.state_elapsed=r.crash_timer;
     if(player) {
         if(controls&control_accelerate)recovery.walk_controls|=0x800;
@@ -1663,14 +1814,23 @@ void Race::step_crash(Rider& r,bool player,uint32_t controls) {
     if(!bounds_wreck)r.crash_timer=recovery.state_elapsed;
     if(action==CrashRecoveryAction::remount) {
         remount_crash_actor(bike,r.crash_bike_animation,body,crash_config_,library.playback[0],library.fallback,uint32_t(ticks_));
+        r.ride_animation=body.animation;   // one half block: the remount code continues into the ride advance
         r.stamina.current=r.stamina.max;r.crash_active=false;return;
     }
     if(action==CrashRecoveryAction::wrecked)bike.i32(0x2f0)=0;
-    advance_crash_bike_animation(r.crash_bike_animation,library.playback[0],library.fallback,bike.i32(0xec),uint32_t(ticks_),[&]{return random();});
-    CrashRiderAnimationInput input;input.crash=bike.i32(0x2f4);input.speed=speed_before;input.height_q8=height_before;
-    advance_crash_rider_animation(body.animation,library.playback[0],library.fallback,input,uint32_t(ticks_),[&]{return random();});
-    if(bike.i32(0x2f4)!=input.crash)r.crash_timer=0;
-    bike.i32(0x2f4)=input.crash;if(input.crash==2)++r.crash_timer;
+}
+// The combined crash step for the every-tick rider loop (step_rider). The
+// live scheduler runs the same parts split across the nodes: the half node
+// owns the think phases (think_half) and the body move + recovery
+// (run_half_node), the bike node owns the bike animation and the riderless
+// bike move (move_bike_live) - matching 0x00407f30/0x00406890 on the half
+// node against 0x00407a90/0x004060b0 on the bike node.
+void Race::step_crash(Rider& r,bool player,uint32_t controls) {
+    crash_bike_animation(r);
+    crash_phases(r);
+    crash_bike_motion(r,player);
+    crash_body_motion(r,r.bike.i32(0x18));
+    crash_recovery(r,player,controls);
 }
 
 int32_t Race::curvature(const Rider& r, size_t sample, int samples) const {
@@ -1789,8 +1949,13 @@ void Race::build_scan_list() const {
     // Live scheduler: rider nodes keep the list order of the last
     // 0x004383e0 sort (the scans walk links, which a pass does not reorder),
     // keyed by their position at that sort; other objects by position.
-    for (auto& o : scan_) o.key = live_schedule_ && o.car >= 0 && size_t(o.car) < car_scan_keys_.size()
-        ? car_scan_keys_[size_t(o.car)] : o.position;
+    for (auto& o : scan_) {
+        if (live_schedule_ && o.car >= 0 && size_t(o.car) < car_scan_keys_.size())
+            o.key = car_scan_keys_[size_t(o.car)];
+        else if (live_schedule_ && o.pedestrian >= 0 && size_t(o.pedestrian) < ped_scan_keys_.size())
+            o.key = ped_scan_keys_[size_t(o.pedestrian)];
+        else o.key = o.position;
+    }
     if (live_schedule_) {
         (void)schedule_order();
         const int count = int(schedule_.size());
@@ -3118,7 +3283,7 @@ void Race::update_halves() {
         if (r.frozen) continue;
         const Bike& b = r.bike;
         r.half_mirror = {b.i32(0x1c), b.i32(0x28), b.i32(0x20), b.i32(0xf4), b.i32(0xec),
-                         b.i32(0xf0), b.i32(0x10c), b.i32(0x108), b.i32(0x60), r.sample};
+                         b.i32(0xf0), b.i32(0x10c), b.i32(0x108), b.i32(0x60), r.sample, r.route};
     }
     // 0x004060b0 tail for riding (uncrashed) riders: distance to the finish,
     // then 0x004075f0 refreshes the place when the half's scheduler tick
@@ -3155,11 +3320,11 @@ void Race::countdown_step() {
         schedule_pass(0, true);
         sort_schedule();
         parked_pace_band();
-        step_pedestrians();
         prepare_static_boxes();
         if (traffic_ && !riders_.empty())
             traffic_->countdown_step(route_of(riders_[0]), int32_t(camera_position()) + 0x5100,
                                      [this] { return random(); }, uint32_t(ticks_));
+        load_pedestrian_looks();   // the frame render after this step draws them
         return;
     }
     if (!riders_.empty()) {
@@ -3180,7 +3345,7 @@ void Race::countdown_step() {
     if (traffic_ && !riders_.empty())
         traffic_->countdown_step(route_of(riders_[0]), int32_t(camera_position()) + 0x5100,
                                  [this] { return random(); }, uint32_t(ticks_));
-
+    load_pedestrian_looks();
 }
 
 void Race::collide_riders() {
@@ -3203,6 +3368,26 @@ void Race::collide_riders() {
     auto rider_or_ped = [](const ScanObject& o) { return (o.rider >= 0 && o.type == 4) || o.pedestrian >= 0; };
     for (size_t i = 0; i < scan_.size(); ++i) {
         const ScanObject a = scan_[i];
+        if (a.rider >= 0 && a.type == 8) {
+            Rider& owner = riders_[size_t(a.rider)];
+            const Bike& body = owner.crash_actor.motion;
+            if (!owner.crash_active || owner.frozen || owner.finished ||
+                (live_schedule_ && (owner.half_sched_last != ticks_ || ((body.u8(0xc0) | 4) & 6) != 6))) continue;
+            if (std::abs(int32_t(uint32_t(body.i32(0x1c)) & 0xff) - 0x80) < body.i32(0x178)) {
+                Rider detached;
+                detached.bike = body; detached.route = owner.crash_actor.route;
+                detached.sample = owner.crash_actor.sample; detached.previous_sample = owner.crash_actor.previous_sample;
+                if (sweep_statics(detached, &owner)) {
+                    owner.crash_actor.motion = detached.bike; owner.crash_actor.route = detached.route;
+                    owner.crash_actor.sample = detached.sample; owner.crash_actor.previous_sample = detached.previous_sample;
+                    for (int off = 0x180; off <= 0x1a0; off += 4) owner.half_object.i32(off) = detached.bike.i32(off);
+                    owner.ride_animation = owner.crash_actor.animation;
+                    sync_half_mirror(owner);
+                    if (finish_q8_) owner.finish_distance = finish_q8_ - detached.bike.i32(0x1c);
+                }
+            }
+            continue;
+        }
         if (!rider_or_ped(a)) continue;
         if (a.rider >= 0) {
             const Rider& r = riders_[size_t(a.rider)];
@@ -3277,7 +3462,7 @@ void Race::step(uint32_t controls) {
         for (size_t i = 0; i < riders_.size(); ++i) step_frozen_schedule(riders_[i]);
     }
     phase("schedule");
-    step_pedestrians();   // same scheduler pass (0x00438170) as the riders
+    if (!live_schedule_) step_pedestrians();   // live cadence interleaves them in schedule_pass
     if (!live_schedule_) update_halves();   // rider halves mirror their bikes before contacts
     phase("pedestrians");
     collide_riders();
@@ -3308,6 +3493,7 @@ void Race::step(uint32_t controls) {
     phase("traffic");
     prepare_static_boxes();
     previous_camera_position_=camera_position();
+    load_pedestrian_looks();   // the frame render after this step draws them
     if (cop_removal_pending_) remove_cop();
 }
 }

@@ -51,7 +51,7 @@ private:
     void play_once(int slot, int32_t volume, int32_t pan, int32_t frequency);   // 0x004142c0
     void play_loop(int slot, int32_t frequency, int32_t volume, int32_t pan);   // 0x004141c0
     void stop(int slot);                                                         // 0x00414160
-    void siren(const SoundEventRecord&);                                         // 0x00435ae0
+    void siren(const SoundEventRecord&, const Race&);                            // 0x00435ae0
     void siren_stop();
     bool playing(int slot) const;
     void distance(int32_t position, int32_t lateral, int32_t speed, int32_t& doppler, int32_t& volume, int32_t& pan, int32_t* linear = nullptr) const;

@@ -147,6 +147,15 @@ else()
             --fixture "${CMAKE_SOURCE_DIR}/analysis/oracle/napa-field-l1-schema2-20261018.tsv"
             --report "${CMAKE_BINARY_DIR}/oracle-field-schema2-diagnostic.json")
         set_tests_properties(oracle-sim-field-schema2 PROPERTIES SKIP_RETURN_CODE 77)
+        # Level-5 live field (plan 10 Task 6 scenario `napa-field-l5`): the same
+        # 2400-tick free run with RR_ORACLE_LEVEL=5 selected through the
+        # original level setter, so level brain/bike/grid tables are exercised.
+        add_test(NAME oracle-sim-field-l5 COMMAND ${Python3_EXECUTABLE}
+            "${CMAKE_SOURCE_DIR}/tools/verify_sim.py" --mode diagnostic
+            --binary "$<TARGET_FILE:oracle-sim-test>"
+            --fixture "${CMAKE_SOURCE_DIR}/analysis/oracle/napa-field-l5-20261018.tsv"
+            --report "${CMAKE_BINARY_DIR}/oracle-field-l5-diagnostic.json")
+        set_tests_properties(oracle-sim-field-l5 PROPERTIES SKIP_RETURN_CODE 77)
         add_test(NAME agent-tooling COMMAND ${Python3_EXECUTABLE}
             "${CMAKE_SOURCE_DIR}/tests/agent_tooling_test.py")
         add_custom_target(verify-sim
@@ -302,7 +311,7 @@ else()
         # `sim` = simulation coverage; `disc` = reads the disc (77 without it);
         # everything else gets `unit` from the loop below (Review Focus 1).
         set(RR_SLOW_TESTS hires-render race-soak course_scene race_setup raster-rgb widescreen oracle-scene oracle-terrain oracle-terrain-medly)
-        set(RR_SIM_TESTS oracle-sim oracle-sim-field oracle-sim-field-schema2 race race_schedule car_contact frozen_state race-soak race_setup bike crash traffic actor_traffic pedestrian police sim_fields track_ring)
+        set(RR_SIM_TESTS oracle-sim oracle-sim-field oracle-sim-field-schema2 oracle-sim-field-l5 race race_schedule car_contact frozen_state race-soak race_setup bike crash traffic actor_traffic pedestrian police sim_fields track_ring)
         set(RR_DISC_TESTS oracle-road oracle-scene oracle-terrain oracle-terrain-medly oracle-raster hires-render raster-rgb widescreen polygon text frontend
             native_screens sound music pe-strings-corpus career-corpus wav-corpus race-soak race_setup course_scene)
         foreach(t ${RR_SLOW_TESTS})

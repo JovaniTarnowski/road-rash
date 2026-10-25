@@ -1,5 +1,18 @@
 # Verification log (all sessions September 28, 2026)
 
+## Shared-tree integration commit (October 24, 2026)
+
+- Build `build-agent-commit-push` (Debug), baseline `7fe5973` plus the shared
+  tree's Oct 18–19 session edits. `cmake --build`: exit 0.
+- `ctest -j8`: 104/105 pass before pinning; `oracle-sim-field-l5` failed with
+  `first divergence at frame 1994 (tick 1995): ring.13e2038.position original
+  87436 native 87105` (countdown closes on the green anchor; all earlier
+  ticks equal). Pinned in `tools/sim_known_divergences.json` as a diagnostic
+  known divergence; rerun passes as `known-divergence`. Not acceptance.
+- `verify-sim` (strict, `sched-human-cov2-20261017`, human): 1431 ticks
+  identical, exit 0. `oracle-sim-field` and `-schema2` pass.
+- Not run: sanitizers, Android assembly, a visual check of the import screen.
+
 ## Race frame performance (October 24, 2026)
 
 - Isolated worktree `../native-port-perf` at `289def9` plus only this change.

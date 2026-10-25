@@ -7,7 +7,9 @@ int32_t word(const std::vector<uint8_t>& bytes,size_t p) {
     const uint32_t u=uint32_t(bytes[p])|uint32_t(bytes[p+1])<<8|uint32_t(bytes[p+2])<<16|uint32_t(bytes[p+3])<<24;
     return u<=INT32_MAX?int32_t(u):int32_t(int64_t(u)-0x100000000LL);
 }
-int64_t magnitude(int32_t value){return value<0?-int64_t(value):int64_t(value);}
+// 0x00407f76/0x00407faa/0x00407fbe: CDQ; XOR; SUB, then a signed
+// threshold comparison. INT32_MIN remains negative under the x86 wrap.
+int32_t magnitude(int32_t value){const uint32_t u=value<0?0u-uint32_t(value):uint32_t(value);return u<=INT32_MAX?int32_t(u):int32_t(int64_t(u)-0x100000000LL);}
 int32_t difference(int32_t a,int32_t b){const uint32_t u=uint32_t(a)-uint32_t(b);return u<=INT32_MAX?int32_t(u):int32_t(int64_t(u)-0x100000000LL);}
 }
 PoliceConfig read_police_config(const std::vector<uint8_t>& exe) {

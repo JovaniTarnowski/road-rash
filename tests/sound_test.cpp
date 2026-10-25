@@ -2,6 +2,7 @@
 #include "bike.hpp"
 #include "race.hpp"
 #include "sound.hpp"
+#include <algorithm>
 #include <cmath>
 #include <iostream>
 
@@ -90,6 +91,93 @@ int main(int argc, char** argv) {
             energy_now();
             check(with_siren > 0 && energy_now() == 0, "empty siren record silences it");
             sound.set_levels({});
+        }
+        {
+            // Original 0x00434f40: each branch separation interpolates and
+            // truncates independently, then their sum truncates on division
+            // by two. Compare complete PCM with the equivalent translated
+            // same-road emitter, so both attenuation and pan are exercised.
+            auto a = straight(4000), b = straight(4000);
+            for (auto& sample : a) { sample.dual = true; sample.half = 0; }
+            for (auto& sample : b) { sample.dual = true; sample.half = 1; }
+            a[49].x_sep = 200; a[50].x_sep = 195;
+            b[51].x_sep = 1000; b[52].x_sep = 1513;
+            // A negative separation with odd sums catches signed rounding.
+            a[53].x_sep = -200; a[54].x_sep = -195;
+            b[55].x_sep = -1001; b[56].x_sep = -1514;
+            // Large separation must take the siren outside hearing range.
+            a[57].x_sep = a[58].x_sep = 9000;
+            b[59].x_sep = b[60].x_sep = 9000;
+            b[63].dual = false; // a merged roadway shares both half masks
+            b[63].x_sep = b[64].x_sep = 9000;
+            rr::Race split(std::move(a), std::move(b), t, specs.at(7), 90);
+            split.riders().push_back(rr::Rider{});
+            split.riders().back().cop = true;
+            rr::Mixer split_mixer(48);
+            rr::SoundSystem split_sound(assets, split_mixer, curve, 2);
+            rr::SoundLevels only;
+            only.effects = only.engine = only.others = 0;
+            split_sound.set_levels(only);
+            auto pcm = [&](int road, int32_t lateral, int half_road = -1) {
+                split_sound.stop_race();
+                std::vector<int16_t> block(2 * 1024);
+                split_mixer.render(block.data(), 64);
+                split_sound.start_race(7, 3);
+                split.riders().back().route = road;
+                if (split.live_schedule()) split.riders().back().half_mirror.route = half_road < 0 ? road : half_road;
+                split_sound.post({rr::SoundEvent::siren, lateral * 256, 0,
+                                  int32_t(split.camera_position()) + 0x400, 0, 0});
+                split_sound.update(split);
+                split_mixer.render(block.data(), 1024);
+                return block;
+            };
+            auto position = [&](int camera_sample, int cop_sample) {
+                split.riders()[0].bike.i32(0x138) = camera_sample * 256 + 128 + 256;
+                split.riders()[0].sample = size_t(camera_sample + 1);
+                split.riders().back().sample = size_t(cop_sample);
+                split.riders().back().bike.i32(0x1c) = cop_sample * 256 + 192;
+            };
+            position(49, 51);
+            const auto positive = pcm(1, 0);
+            check(positive == pcm(0, 791), "split siren matches interpolated lateral separation");
+            check(positive != pcm(0, 0), "split siren changes attenuation or pan");
+            position(53, 55);
+            check(pcm(1, 0) == pcm(0, -791), "negative split separation truncates toward zero");
+            position(57, 59);
+            const auto distant = pcm(1, 0);
+            check(std::all_of(distant.begin(), distant.end(), [](int16_t v) { return v == 0; }),
+                  "split separation can silence an otherwise nearby siren");
+            position(61, 63);
+            check(pcm(1, 0) == pcm(0, 0), "single road shares both branch masks");
+            position(49, 51);
+            split.set_live_schedule(true);
+            // The half may lag its bike on the live scheduler: use its own
+            // slice and position, matching DAT_004642dc in the original.
+            split.riders()[0].half_mirror.sample = 50;
+            split.riders().back().half_mirror.sample = 51;
+            split.riders().back().half_mirror.position = 51 * 256 + 192;
+            split.riders().back().sample = 200;
+            split.riders().back().bike.i32(0x1c) = 200 * 256;
+            check(pcm(1, 0) == pcm(0, 791), "live siren uses cop half slice and position");
+            check(pcm(0, 0, 1) == pcm(0, 791, 0), "live siren keeps cop half branch after bike changes route");
+            split.riders()[0].half_mirror.route = 1;
+            const auto player_half_other = pcm(0, 0, 0);
+            split.riders()[0].half_mirror.route = 0;
+            check(player_half_other == pcm(0, 99, 0), "player half mask and camera separation use their own routes");
+            split.set_live_schedule(false);
+            position(49, 51);
+            split.riders()[0].crash_active = true;
+            split.riders()[0].crash_actor.motion.i32(0x138) = split.riders()[0].bike.i32(0x138);
+            split.riders()[0].crash_actor.route = 1;
+            split.riders()[0].crash_actor.sample = 50;
+            const auto crash_half_other = pcm(0, 0);
+            split.riders()[0].crash_active = false;
+            check(crash_half_other == pcm(0, 99), "crashed player half uses body's route");
+            split.riders().back().half_slice_present = false;
+            const auto absent = pcm(1, 0);
+            check(std::all_of(absent.begin(), absent.end(), [](int16_t v) { return v == 0; }),
+                  "cop with no slice silences siren");
+            split_sound.stop_race();
         }
         sound.set_levels({});
         sound.post({rr::SoundEvent::crash_hard, 0, 0, race.bike().i32(0x1c), 0, 0});

@@ -107,6 +107,7 @@ struct IntersectionSignal {
     int32_t position_q8 = 0;      // +0x1c: corner slice * 0x100 + 0x50 / 0xb0
     int32_t lateral_q8 = 0;       // +0x28: middle of that side's shoulder
     int controller = -1;          // +0xec
+    bool quiet = false;           // 0x0041eca0 bVar13: clears +0xdc (0x0041f220) when true
 };
 struct IntersectionController {
     bool active = false;

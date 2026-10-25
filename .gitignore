@@ -28,3 +28,9 @@ analysis/agent-tools/
 # Plan 22 Task 2: local fuzz corpora (may hold disc-derived seeds; never committed).
 analysis/fuzz/
 .vercel
+# Per-session agent evidence (traces, logs, receipts); local only. Tracked
+# notes under analysis/ stay tracked; new ones need an explicit `git add -f`.
+analysis/*/
+analysis/codex-*.json
+analysis/field-count-sessions.json
+analysis/sim-forensics

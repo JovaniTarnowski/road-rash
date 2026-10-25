@@ -218,6 +218,80 @@ int main() {
             if (!interpolate) check(rr::capture_race_frame(renderer).pixels == original_frame,
                                     "Original pixels agree at 30/60/120 FPS");
         }
+        // Plan 32 D / plan 24 Task 2: start with a real periodic cop, then
+        // let the screen advance the chase and arrest. Carry its result into
+        // the same frontend entry point used by the game host.
+        game.config.level = 3;
+        game.config.character = 1;
+        game.config.bike_from_table = true;
+        game.config.opponents = 7;
+        game.config.career = false;
+        game.load_course(assets, exe);
+        settings.video_mode = 2;
+        for (const bool on_foot : {false, true}) {
+            game.restart(); game.countdown = 0; game.career = true;
+            while (game.race().ticks() < 4096) game.tick(0);
+            check(game.race().cop_index() > 0 && !game.race().busted(),
+                  "periodic cop enters the live game before the arrest");
+            // A stamina knockdown leaves the bike usable; consuming all bike
+            // condition would correctly end the screen as wrecked first.
+            if (on_foot) {
+                for (int tick = 0; tick < 1000 && !game.race().busted(); ++tick) {
+                    const auto& cop = game.race().riders()[size_t(game.race().cop_index())];
+                    if (game.race().bike().i32(0x1c) - cop.bike.i32(0x1c) < 5000) break;
+                    game.tick(0);
+                }
+                check(!game.race().busted(), "cop approaches before the knockdown");
+                game.race().knock_off(game.race().riders()[0], 5000, 0, 1);
+            }
+            rr::RaceScreen screen(game, renderer, options, display);
+            uint64_t now = 1000000000ull;
+            bool running = screen.iterate(now);
+            bool walked = false;
+            for (int frame = 0; running && !game.race().busted() && frame < 6000; ++frame) {
+                running = screen.iterate(now += 16666667);
+                walked |= game.race().bike().i32(0x2f4) == 2;
+            }
+            check(game.race().busted(), "screen ticks reach an actual police arrest");
+            if (!game.race().busted())
+                std::cerr << "arrest fixture: on_foot=" << on_foot << " tick=" << game.race().ticks()
+                          << " wrecked=" << game.race().wrecked() << " finished=" << game.race().finished()
+                          << " crash=" << int(game.race().bike().i32(0x2f4))
+                          << " outcome=" << int(screen.result().outcome) << '\n';
+            check(!on_foot || walked, "on-foot arrest reaches the walking state");
+            check(!on_foot || game.race().bike().i32(0x2f4) == 2,
+                  "cop arrests the player while still on foot");
+            check(running && screen.result().outcome == rr::RaceOutcome::busted,
+                  "screen maps the live arrest to busted before ending");
+            const int arrest_tick = game.race().ticks();
+            for (int frame = 0; running && frame < 100; ++frame)
+                running = screen.iterate(now += 250000000);
+            check(!running && game.race().ticks() >= arrest_tick + rr::race_end_delay - 15,
+                  "arrest completes the end delay and palette fade");
+            const int ended_tick = game.race().ticks();
+            check(!screen.iterate(now += 1000000000ull) && game.race().ticks() == ended_tick,
+                  "completed arrest screen cannot advance the race again");
+
+            career.mode = rr::GameMode::big_game;
+            career.state.level = uint8_t(game.config.level);
+            career.state.character = 1;
+            career.state.cash = 10000;
+            career.state.qualified = 0;
+            rr::FrontendEvent action;
+            while (menu.poll(action)) {}
+            const auto result = screen.result();
+            menu.race_finished(result.outcome, result.place, {});
+            check(menu.screen() == rr::screen_id::busted && career.state.cash == 8400,
+                  "live arrest opens busted results and charges the level-four fine");
+            check(career.state.qualified == 0, "arrest does not qualify a course");
+            int busted_videos = 0;
+            while (menu.poll(action))
+                if (action.kind == rr::FrontendEvent::Kind::play_video &&
+                    action.video.rfind("VIDEO/BUSTED", 0) == 0) ++busted_videos;
+            check(busted_videos == 1, "live arrest queues exactly one BUSTED movie");
+            std::cout << (on_foot ? "On-foot" : "Riding")
+                      << " arrest reaches screen result, fine and BUSTED movie\n";
+        }
     } catch (const std::exception& error) { std::cerr << error.what() << '\n'; ++failures; }
     SDL_DestroyRenderer(renderer); SDL_DestroyWindow(window); SDL_Quit();
     std::cout << failures << " failures\n";

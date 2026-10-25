@@ -443,11 +443,15 @@ void TrafficSystem::place_intersection(const std::vector<RouteSample>& route,int
     if(split_hills && quiet){c.durations[0]=0x4b;c.durations[1]=0;c.durations[2]=0xf0;}
     c.last_tick=int32_t(tick)-0x1e;c.next_tick=int32_t(tick);   // 0x00438930: +0x10 = tick - interval, +0xc = tick
     // Creation order and the null-goto: a failed signal skips the rest.
-    if(traffic_lane_count(first.path.right_q8)>0 && (c.signals[0]=place_signal(route,ci,0,1,0x50,last,rear))<0)return;
-    if(traffic_lane_count(before.path.left_q8)>0 && (c.signals[2]=place_signal(route,ci,2,0,0xb0,start,rear))<0)return;
-    if(split_hills)return;
-    if((variant==1 || variant==2) && (c.signals[3]=place_signal(route,ci,3,0,0x50,last,across))<0)return;
+    auto finish_signals = [&] {
+        if (quiet) for (int k = 0; k < 4; ++k) if (c.signals[k] >= 0) signals_[size_t(c.signals[k])].quiet = true;
+    };
+    if(traffic_lane_count(first.path.right_q8)>0 && (c.signals[0]=place_signal(route,ci,0,1,0x50,last,rear))<0){finish_signals();return;}
+    if(traffic_lane_count(before.path.left_q8)>0 && (c.signals[2]=place_signal(route,ci,2,0,0xb0,start,rear))<0){finish_signals();return;}
+    if(split_hills){finish_signals();return;}
+    if((variant==1 || variant==2) && (c.signals[3]=place_signal(route,ci,3,0,0x50,last,across))<0){finish_signals();return;}
     if(variant==1 || variant==3)c.signals[1]=place_signal(route,ci,1,1,0xb0,start,across);
+    finish_signals();
 }
 
 int TrafficSystem::pedestrian_signal(uint8_t marking_flags,int32_t position_q8,int lane) const {

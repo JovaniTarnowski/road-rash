@@ -1621,3 +1621,32 @@ open. See VERIFICATION.md and agent-handoffs/backward-ring-20261018.md for gates
 - Gaps: double-precision trilinear and grade math remains the per-pixel cost at
   scale 3+; no Android device benchmark; `draw_slices` does not reach the race
   fog (recorded in PERFORMANCE.md).
+
+## 2026-10-24: integration of the Oct 18–19 shared-tree sessions
+
+Uncommitted work from the codex-siren, codex-police-wrap, codex-arrest-flow,
+codex-l5-integration/sim-l5 and import-hud-terrain sessions, reviewed and
+committed together (their handoffs are in `agent-handoffs/`):
+
+- Siren: the `0x00434f40` term is lateral branch separation (ring `+0x24`,
+  `x_sep`), applied when cop and player halves sit on disjoint road masks; a
+  cop half with no slice is silent (`SoundSystem::siren`).
+- Police: arrest thresholds use the x86 `CDQ; XOR; SUB` magnitude, so
+  `INT32_MIN` stays negative in the signed comparisons.
+- Crash split across scheduler nodes like the original: the half node runs
+  the crash phases, body motion (`0x0043adc0`) and recovery, the bike node
+  the riderless bike animation/motion and the `0x500` speed pull toward the
+  half. The half mirror follows the crash body; `0x00404560` cleanup on park;
+  crashed-half static contact `0x004046b0`; bike contact class ladder 0–3
+  of `0x004049c0`; `0x004394c0` heading sweep into `+0x128`.
+- Pedestrian nodes run inside the position-sorted scheduler walk; quiet
+  intersection signals carry their `0x0041eca0` flag.
+- Level 5: `RR_ORACLE_LEVEL` in the proxy, brain dump through `+0x1cc`, field
+  replay defers the green closure past the countdown, new diagnostic test
+  `oracle-sim-field-l5`.
+- Import screen: arcade restyle, input geometry unchanged.
+
+Gaps: `napa-field-l5` diverges at tick 1995 (ring node position, cause not
+traced) and is pinned as a known divergence; the `0x0043c7e0` standings call
+in the crashed-bike pull is not ported; the import screen has no screenshot
+check (no display in that session).
