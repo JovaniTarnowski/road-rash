@@ -43,6 +43,48 @@ int main() {
         const auto names = rr::frontend_strings(rr::read_string_resources(assets.read("TEXT/ENU.DLL")));
         game.rider_names = rr::race_rider_names(exe, game.config, game.race(), names, game.player_name);
         check(game.rider_names.size() == 15 && !game.rider_names.back().empty(), "screen has names through row fourteen");
+        // Autopilot should fight riders within reach, never shadowbox on a timer.
+        {
+            auto saved = game.race().riders();
+            auto fixture = [&]() -> rr::Rider& {
+                game.race().riders() = saved;
+                auto& riders = game.race().riders();
+                riders.resize(2);
+                auto& me = riders[0];
+                me.attack.timer = 0; me.finished = false;
+                auto& target = riders[1];
+                target.route = me.route; target.live = true; target.parked = false;
+                target.finished = target.crash_active = target.half_detached = false;
+                target.bike.i32(0x2f4) = 0;
+                target.bike.i32(0x1c) = me.bike.i32(0x1c) + 0x20;
+                target.bike.i32(0x28) = me.bike.i32(0x28) + 0x2000;
+                target.bike.i32(0x20) = me.bike.i32(0x20);
+                return target;
+            };
+            auto punches = [&]() { return (rr::autopilot(game.race(), nullptr) & rr::control_punch) != 0; };
+            fixture(); check(punches(), "autopilot fights a nearby rider on the right");
+            fixture().bike.i32(0x28) = game.race().bike().i32(0x28) - 0x2000;
+            check(punches(), "autopilot fights a nearby rider on the left");
+            fixture().bike.i32(0x1c) = game.race().bike().i32(0x1c) - 0x20;
+            check(punches(), "autopilot can strike a rider slightly behind");
+            fixture().bike.i32(0x1c) = game.race().bike().i32(0x1c) + 0x40;
+            check(!punches(), "no punch into empty road ahead");
+            fixture().bike.i32(0x28) += 0x10000;
+            check(!punches(), "no punch across distant lanes");
+            fixture().bike.i32(0x20) += 0x3000;
+            check(!punches(), "no punch at a different elevation");
+            fixture().route ^= 1; check(!punches(), "no punch across road branches");
+            fixture().parked = true; check(!punches(), "no punch at a parked rider");
+            fixture().live = false; check(!punches(), "no punch at an inactive rider");
+            fixture().crash_active = true; check(!punches(), "no punch at a crashed rider");
+            fixture().half_detached = true; check(!punches(), "no punch at a detached rider");
+            fixture().bike.i32(0x2f4) = 1; check(!punches(), "no punch at crash motion");
+            fixture(); game.race().riders()[0].attack.timer = 1;
+            check(!punches(), "do not retrigger a swing in progress");
+            fixture(); game.race().riders().resize(1);
+            check(!punches(), "no punch when alone even on tick zero");
+            game.race().riders() = saved;
+        }
         game.countdown = 0;
         rr::RaceOptions options;
         options.custom_keys = true; // zero bindings isolate the host keyboard

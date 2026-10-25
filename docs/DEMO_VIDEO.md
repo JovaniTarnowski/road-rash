@@ -16,8 +16,8 @@ The default Release build directory is `build-demo-video`.
 
 The default is a **120-second, 1280×960, 60 fps MP4**, H.264/yuv420p video,
 AAC stereo audio and fast-start metadata. It joins five 24-second clips in
-quick-race order: Napa (0), City (1), Peninsula/HIWAY (2), Sierra/CANYN (3),
-Pacific Highway/MEDLY (4). Six seconds of simulation run before each clip,
+quick-race order: Napa (0), City (1), Sierra Nevada/HIWAY (2), Pacific Highway/CANYN (3),
+Peninsula/MEDLY (4). Six seconds of simulation run before each clip,
 skipping the countdown and initial acceleration. Original 4:3 framing keeps
 the full dashboard. Render scale 2 draws the scene at 1280×960. The original
 visual settings are used; enhancements and external upscaled artwork are off.
@@ -59,6 +59,27 @@ The simulation still uses the native port's present gameplay implementation;
 a demo video does not establish original-game fidelity. A long single-course
 capture can include crashes, arrests or the finish; the driver is an autopilot,
 not a curated human control recording.
+
+## Combat in demos
+
+The autopilot starts a punch only when another active rider is alongside on
+its own road, inside the carried weapon's lateral reach, within `0x40` Q8
+longitudinal units and `0x3000` Q8 height units (the same limits as native
+`Race::fight_reach`). Crashed, parked, detached and finished targets are
+excluded. It waits for the current swing to finish before requesting another.
+Normal combat still resolves hit timing and damage; proximity does not force
+a hit. The former unconditional punch every 40 ticks has been removed.
+
+A curated two-minute cut starts with Sierra Nevada and Pacific Highway encounters, then
+Napa, City and Peninsula. It starts each clip 16 simulation seconds in:
+
+```sh
+python3 tools/render_demo.py --warmup 960 --courses 2 3 0 1 4
+```
+
+The October 24 corrected cut is under
+`analysis/demo-video/twitter-2min-proximity-combat/`. The original
+`twitter-2min/` cut used the old periodic-punch driver and is superseded.
 
 ## How the engine capture works
 

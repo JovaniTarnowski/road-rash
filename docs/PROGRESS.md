@@ -1667,3 +1667,14 @@ See [DEMO_VIDEO.md](DEMO_VIDEO.md) for parameters and repeatable commands.
 The standalone disc-backed `tests/demo_capture_test.py` verifies deterministic
 pixels/audio, moving scenes, sample arithmetic and invalid CLI rejection.
 This is native export coverage, not additional original-game parity evidence.
+
+## Demo combat correction (October 24, 2026)
+
+Removed the autopilot's unconditional punch every 40 ticks. It now initiates
+swings only beside an active opponent inside the native weapon, longitudinal
+and height reach on the same road; current swings complete through normal
+combat. This changes the demo input driver, not simulation or hit rules.
+`race-screen` covers nearby riders on either side, riders slightly behind,
+empty road and distant/invalid/crashed targets, plus swing retrigger gating.
+The corrected two-minute cut uses `--warmup 960 --courses 2 3 0 1 4`, retaining
+actual close-range combat and avoiding shadowboxing. See DEMO_VIDEO.md.

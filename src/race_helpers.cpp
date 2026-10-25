@@ -120,7 +120,24 @@ uint32_t autopilot(const Race& race, const TrafficSystem* traffic) {
     if (error > 20) c |= rr::control_right; else if (error < -20) c |= rr::control_left;
     if (speed > limit + 800) c |= rr::control_brake;
     else if (speed < std::min(3000, limit) || (speed < limit && std::abs(target - me) < 500)) c |= control_accelerate;
-    if (race.ticks() % 40 == 0) c |= rr::control_punch;   // demo: swing at anyone alongside
+    // Start a swing only beside a live rider, not on a periodic timer.
+    // Use fight_reach's longitudinal, lateral and height limits. Native
+    // combat owns swing completion and resolves whether the hit lands.
+    const auto& player = race.riders()[0];
+    if (!player.finished && player.attack.timer == 0) {
+        const int reach = weapon_reach[std::clamp(player.weapon, 0, 3)] * 0x1000;
+        for (size_t i = 1; i < race.riders().size(); ++i) {
+            const auto& other = race.riders()[i];
+            if (other.route != player.route || other.parked || !other.live || other.finished ||
+                other.crash_active || other.half_detached || other.bike.i32(0x2f4) != 0) continue;
+            if (std::abs(int64_t(other.bike.i32(0x1c)) - bike.i32(0x1c)) < 0x40 &&
+                std::abs(int64_t(other.bike.i32(0x28)) - bike.i32(0x28)) < reach &&
+                std::abs(int64_t(other.bike.i32(0x20)) - bike.i32(0x20)) < 0x3000) {
+                c |= control_punch;
+                break;
+            }
+        }
+    }
     return c;
 }
 

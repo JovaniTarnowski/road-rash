@@ -1,5 +1,38 @@
 # Verification log (all sessions September 28, 2026)
 
+## Proximity-aware demo combat correction (October 24, 2026)
+
+- Baseline `e865dd6`. The original cut used `autopilot()`'s unconditional
+  `ticks % 40` punch. Replaced it with a same-road, active-rider check using
+  the native weapon/longitudinal/height reach; no new swing while one is active.
+  This changes the demo driver's control requests, not native combat rules.
+- Release full build passed. Focused `race-screen` passed, including nearby
+  left/right/behind targets, empty road on tick zero, distance/elevation/branch
+  rejection, parked/inactive/crashed/detached targets and busy-swing rejection.
+- Debug full build and all **105/105 CTests passed, zero skips**, parallel 8,
+  209.96 seconds. Logs are in `analysis/demo-video/twitter-2min-proximity-combat/`.
+- Local deterministic gameplay audit: the corrected driver requests HIWAY
+  punches at ticks 1640 and 1673, records a player hit on rider 11, and requests
+  CANYN punches at ticks 1847 and 2134 in the selected window. Other courses
+  show normal riding in this window. Audit: `combat-audit.log` in output folder.
+- Corrected render command: `python3 tools/render_demo.py --build
+  build-agent-demo-video-20261024 --no-build --warmup 960 --courses 2 3 0 1 4
+  --out analysis/demo-video/twitter-2min-proximity-combat`.
+- Final corrected assembly passed all stream/frame/duration checks:
+  **120.000 seconds, 7,200 frames, 1280x960 at 60 fps, H.264/yuv420p + AAC**,
+  302,938,864 bytes. The old periodic-punch cut is superseded.
+  Receipt: `analysis/demo-video/twitter-2min-proximity-combat/receipt.json`.
+- Visual QA of completed combat clips: ordinary riding with opponents ahead
+  (`riding.jpg`), a punch with the yellow rider alongside (`combat.jpg`), and
+  a punch toward a rider on the left (`combat-pacific-highway.jpg`).
+- C++ client LSP remains unavailable. clangd check of race_helpers.cpp parses
+  the source but reports 26 ExtractFunction tweak failures on loop control;
+  no non-tweak error lines. Release/Debug compilation and runtime tests pass.
+- Corrected the demo guide's course-name mapping using the existing original
+  index/horizon mapping: HIWAY=Sierra, CANYN=Pacific Highway, MEDLY=Peninsula.
+- Desktop driver/capture coverage only. Android, sanitizer and new original-game
+  oracle captures not run; no new simulation-fidelity claim.
+
 ## Offline native demo export (October 24, 2026)
 
 - Baseline `be2ded7`, owned Release build `build-agent-demo-video-20261024`:
