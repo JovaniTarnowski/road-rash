@@ -726,6 +726,19 @@ Native integration: `Race::set_traffic` steps the timers after the camera
 update with the per-step camera advance; drawing reuses the verified
 scenery projection with the depth-table scale at each car's Q8 depth.
 Frame cycling and car CCB world-size scaling are native stand-ins.
+  - Lane-validity completion (October 26, plan 10): the block above is
+    now ported (`TrafficSystem::plan_speed`, new `front_q8` parameter),
+    including the asymmetric bounds and the step-then-recheck shape
+    (`+0x2c` right-lane word, `+0x30` left-lane word, both from the
+    ring slot). Car template words read from the EXE: `+0x0c` draw
+    `0x00446830`, `+0x10` think `0x0044e710`, `+0x14` move
+    `0x0043adc0`; per-kind `0x00475700+kind*0x18` blocks carry the
+    `0x0044efa0` contact callback. Mover `0x0043adc0` is a thin
+    dispatcher (`0x004390c0` servo, `0x00439920` integration,
+    `0x0043a610` lane/steer, conditional `0x0043a190`); of these only
+    `0x0043a610` (lane/steer with a low-speed stop branch) and the
+    conditional `0x0043a190` remain unported, and both are proven
+    no-ops on the traced removal runs. Evidence in the L5 handoff.
 
 Actor animation playback and descriptor recovery (October 11 continuation):
 
@@ -2083,11 +2096,23 @@ varies between otherwise identical captures") and identifies its cause.
   error) only halfway from its previous value. Napa example: car 13e2248
   (spawned tick 391 behind the grid) changes lane 0 -> 1 at 2140, 4.5 samples
   behind the parked player.
-- Still unported in `0x0044e710`: the lane-validity block
-  `0x0044e9bb..0x0044eb85` (a lane outside the current slice's count is
-  checked against the linked slice `+0x08` (forward, unless the `+0x28` slot
-  type is 3) or `+0x18` (oncoming, unless 1) and stepped, or the car stops).
-  Also unported: the backward ring step (`0x00454120` with a negative
+- Ported in `0x0044e710` (October 26, plan 10): the lane-validity
+  block `0x0044e9bb..0x0044eb85` (a lane outside the slice's count
+  is checked against the linked slice `+0x08` (forward, unless the
+  `+0x28` slot reads 3) or `+0x18` (oncoming, unless 1), stepped
+  toward validity, else the car stops with target 0). Kind 0 uses
+  a non-strict bound (count <= lane is outside); kind 2 uses a
+  strict bound (count < -lane is outside); the recheck keeps the
+  stepped lane on failure and restores the original on success.
+  The car reads its lane words from a scrolling-window ring slot
+  (`+0x140` == `+0x2c`, newest same-residue sample at/under the
+  ring front over the 0x8000 window): verified end to end
+  against dumped per-tick slice words on the L5e kind-0 removal
+  (lane 1 -> 0 with full stop), closing the L5 (1995) and L5e
+  (2399) divergences and advancing L5d past tick 2002. The `+0x28`
+  slot reads 0 in every dumped tick, so the link is always taken
+  here. See `docs/agent-handoffs/l5-tick1995-trace-20261026.md`.
+- Still unported: the backward ring step (`0x00454120` with a negative
   camera delta: `0x00453030(-0x100)` for both walkers, `0x00450f90`, and
   `0x00454c80` at the new back). A crash or arrest pulls the camera back one
   Q8 across a slice boundary, which draws 24 terrain values
