@@ -16,5 +16,11 @@
     "divergence": "first divergence at frame 1994 (tick 1995): ring.13e2038.position original 87436 native 87105",
     "reason": "Plan 10 Task 6 scenario napa-field-l5 (14 opponents, display level 5 via RR_ORACLE_LEVEL / 0x004453f0), demo driver, single green anchor. The countdown closes on the green anchor (level-5 pedestrian re-trigger reproduced in Race::countdown_step) and every compared field matches through tick 1994. Tick 1995: one ring node position differs by 331 Q8 units; cause not yet traced (handoffs codex-l5-integration-20261018 / sim-l5-20261018). Pinned Oct 24 (commit-push integration) so the regression detects any change; diagnostic only, not acceptance.",
     "output_sha256": "04ead14ef09ee49105dfda0fce8b3c2b2701c7a03b0292abc84c5db80ab2926a"
+  },
+  "napa-field-l5d.tsv": {
+    "trace_sha256": "5064e7d57197e95c2f7e4b156199dd24ac1b8a8e2224c6c1e0f7092ba5fd5abb",
+    "divergence": "first divergence at frame 2001 (tick 2002): ring.13e2038.position original 87859 native 87575",
+    "reason": "Plan 10 Task 6 scenario napa-field-l5 re-captured with the w2c/we8 proxy (per-tick car +0x2c/+0xe8 diagnostics): 14 opponents, display level 5, demo driver, single green anchor; countdown closes on the green anchor and every compared field matches through tick 2001. Tick 2002 is a behind-back car removal run (pos-back -761 < 0x800, front-pos 33529): original moves +70, zeroes speed 1328->0 and steps lane -2->-1 with pause1f8=0/signal=0/dt=60 and next==last==tick+100; w2c nonzero (window branch taken) and we8=0 (00437c10 mark path, which writes no motion). Native continues without the stop/lane-step (native 87575): the missing 0x0044e710 lane-validity stop sub-path (lines 208-212) is the remaining candidate. Second instance at tick 2255 (13e2248, +70, 2140->0, lane 1->0, pos-back -2402). Diagnostic only, not acceptance.",
+    "output_sha256": "e268edcce3c3f05ad3114baa36326b295820099f1d168506668d549aa1bac714"
   }
 }
