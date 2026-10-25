@@ -696,6 +696,15 @@ static void dump_sim_tick(void) {
                                sim_field_value(node, rr_sim_car_fields[f].offset, rr_sim_car_fields[f].width,
                                                rr_sim_car_fields[f].is_signed));
                     }
+                    /* 0x00437e60 branch words (diagnostic-only, not in
+                     * rr_sim_car_fields so old goldens still load): +0x2c
+                     * selects the window branch (param_3), +0xe8 is the
+                     * else-callback invoked on mark. sim_field_value
+                     * returns -1 when unreadable. */
+                    snprintf(key, sizeof key, "ring.%x.w2c", node);
+                    rr_log(key, sim_field_value(node, 0x2c, 4, 0));
+                    snprintf(key, sizeof key, "ring.%x.we8", node);
+                    rr_log(key, sim_field_value(node, 0xe8, 4, 0));
                 }
                 ++node_index;
             }
