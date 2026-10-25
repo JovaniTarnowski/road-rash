@@ -1,5 +1,36 @@
 # Verification log (all sessions September 28, 2026)
 
+## Slot-rule lane validity and L5 removal-run closure (October 26, 2026)
+
+- Baseline `61b9a0c` through `32605ef` (docs/format only in between).
+  `src/traffic.cpp` `plan_speed` ports the `0x0044e710:122-215`
+  lane-validity block with the kind asymmetry intact (kind 0
+  non-strict `count <= lane` outside; kind 2 strict `count < -lane`
+  outside) plus the step-then-recheck-then-stop-or-restore shape;
+  lane words are read from the newest same-residue ring slot
+  at/under the ring front (mod-128 over the 0x8000 window, new
+  `front_q8` parameter). `tests/traffic_test.cpp` gains 6 synthetic
+  pins (kind-0 step+stop, pull-to-0 without stop, cruise holds,
+  kind-2 step+stop, both no-fire cases).
+- Oracle captures (all `RR_ORACLE_COURSE=4 RR_ORACLE_LEVEL=5
+  RR_ORACLE_SEED=1 RR_ORACLE_SIM=1 RR_ORACLE_DRIVE=2
+  RR_ORACLE_FRAMES=2400 RR_ORACLE_RATINGS=1`, receipts local and
+  git-ignored): `napa-field-l5d` (proxy `0572d4ce`, w2c/we8
+  branch words) and `napa-field-l5e` (proxy `30f4a83e`, per-tick
+  car `+0x140/+0x2c/+0x30`/link-selector/linked-slice words).
+- Replays with the owned Debug build (`build-agent-l5d`):
+  L1/schema2 `2400 ticks identical`; L5 (1995) now identical
+  (old pin retired); L5e identical plus 43 golden-only
+  diagnostic keys (kept unregistered: a golden-only suffix can
+  neither pass nor pin); L5d advances 2002 -> 2267 and is
+  re-pinned on a single rider finish-distance word (+23, all
+  cars/riders/RNG otherwise identical -- split/merge handover,
+  known-open).
+- Full owned-Debug gate (`build-agent-l5d`): **107/107 passed,
+  zero failures**. Sanitizers/Android not run in this slice
+  (no sanitizer-sensitive or Android-affecting change: native
+  traffic logic + tests + oracle proxy + pins only).
+
 ## Menu capture and RGB565 picture pipeline (October 26, 2026)
 
 - Baseline `1eab47e`. New proxy mode `RR_ORACLE_MENU=<screen>` in

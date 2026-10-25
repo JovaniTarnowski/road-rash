@@ -53,6 +53,32 @@ Detailed evidence is in [REVERSE_ENGINEERING.md](REVERSE_ENGINEERING.md) and tes
 
 ## Timeline
 
+### October 26, 2026: lane-validity stop port closes the L5 removal runs
+
+- `0x0044e710:122-215` ported into `TrafficSystem::plan_speed` with
+  the kind asymmetry intact (kind 0 non-strict, kind 2 strict) and
+  the step-then-recheck-then-stop-or-restore shape; lane words
+  come from the newest same-residue ring slot at/under the ring
+  front (mod-128 over the 0x8000 window, `+0x140`/`+0x2c` slot
+  identity, `+0x08`/`+0x18` linked slots, `+0x28` slot always 0 in
+  every dumped tick). Verified end to end against dumped
+  per-tick slice words (`napa-field-l5e`): kind-0 lane 1 with
+  1-lane count steps to 0 and stops (+70, full stop).
+  `traffic_test` pins the block plus both no-fire cases.
+- New captures (same L5 recipe, git-ignored goldens): `napa-field-l5d`
+  (car `+0x2c/+0xe8` branch words, proxy `0572d4ce`) isolates the
+  tick-2002 removal; `napa-field-l5e` (per-tick slice words, proxy
+  `30f4a83e`) isolates the tick-2399 removal. Both replay to the
+  removal tick with every compared field identical, then diverge
+  on the removal run alone.
+- Results: L5 (1995) and L5d (2002) and L5e (2399) divergences all
+  gone with the slot-rule port -- L5 and L5e replay 2400/2400, L5d
+  advances to a tick-2267 split/merge finish-distance diff (single
+  rider word, everything else identical; re-pinned as a known
+  divergence). L1/schema2 still 2400/2400; full owned-Debug gate
+  107/107. Remaining: behind-back slot repurposing beyond the
+  newest-in-window rule needs the ring allocator (plan-17 work).
+
 ### October 25, 2026: Crash-think flash and player-only nitro from disassembly
 
 - `0x00407a90` head (disassembly `407a91-407aa7`): nitro `0x0040b1a0` runs
