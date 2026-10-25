@@ -68,7 +68,8 @@
   `407a91-407b0b` (player check, +0x7c clear, flash words), `40b1a0-40b1fa`
   (global charge `DAT_004c5f10`, dt = bike +0x18), `437e69-437e6f` (+0x10
   stored before think). REA has no `0x00407a90` procedure entry (known gap
-  #8); no fresh REA fetch was used for this slice (limitation recorded).
+  #8); `0x0040b1a0` was REA-confirmed instead (whitespace-identical to the
+  export, 438 chars).
 - `race-test`: new player-only nitro pin (AI charge stays 0 while the player
   recharges over 10 ticks). `crash-test`: new pickup-flash pin on the live
   Napa race (gap-1 mirror to 1, 20-tick staleness expiry, off-sample clear)
@@ -81,7 +82,9 @@
   (strict human 1431 ticks identical; field replays green, no new divergence
   pin). Owned ASan+UBSan build `build-agent-crash-asan`: focused
   `crash-test`/`race-test` and all four sim/field tests pass, then the full
-  suite **106/106 passed, zero skips**. No Android/oracle-capture run.
+  suite **106/106 passed, zero skips**. `tools/determinism_check.sh`
+  (Debug `build-agent-crash-flash` vs Release `build-agent-crash-release`):
+  determinism OK (3 hashes). No Android/oracle-capture run.
 - Live parity note: the run_bike_node flash was first rewritten to the exact
   bike words (position>>8, +0x10) and the field replays diverged at tick 1301
   (`rider.3.raw_1e8` 896 vs 128: mark kept vs cleared); the think was

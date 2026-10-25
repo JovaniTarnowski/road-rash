@@ -33,13 +33,16 @@ accepted sample form; the helper flash runs only when `!live_schedule_`
 (verified: exact bike-word think diverged field L1 at tick 1301
 `rider.3.raw_1e8` 896 vs 128, restored before commit).
 
-Checks (owned build):
+Checks (owned builds):
 - `cmake --build build-agent-crash-flash --parallel 8`: exit 0.
 - `race-test`, `crash-test`: pass (new pins fail before / pass after by
   construction).
-- `ctest --test-dir build-agent-crash-flash --parallel 8`: 105/105 pass.
+- `ctest --test-dir build-agent-crash-flash --parallel 8`: 105/105 pass
+  (106/106 with the tree's current test set).
 - `make verify-sim BUILD_DIR=build-agent-crash-flash`: exit 0 (strict human
   1431 identical; field replays green).
+- ASan+UBSan full suite 106/106; Debug-vs-Release determinism OK (3 hashes;
+  `build-agent-crash-release`).
 
 ## Follow-up: exact-word lineage (same day, same build)
 
