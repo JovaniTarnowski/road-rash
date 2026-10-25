@@ -7,6 +7,7 @@
 #include "race_caches.hpp"
 #include "race_helpers.hpp"
 #include "race_screen.hpp"
+#include "offline_capture.hpp"
 #include "game_types.hpp"
 #include "lifecycle.hpp"
 #include <SDL3/SDL_main.h>
@@ -253,7 +254,10 @@ rr::RaceEnd run_race(rr::Game& g, SDL_Renderer* renderer, const rr::RaceOptions&
     rr::RaceScreen screen(g, renderer, opt, display);
     for (;;) {
         SDL_Event e;
-        while (SDL_PollEvent(&e)) screen.event(e);
+        while (SDL_PollEvent(&e)) {
+            // Offline takes no keyboard, controller, focus or resize input.
+            if (!opt.capture || e.type == SDL_EVENT_QUIT) screen.event(e);
+        }
         if (!screen.iterate(SDL_GetTicksNS())) break;
     }
     return screen.result();
@@ -579,6 +583,7 @@ int main(int argc, char** argv) {
     bool explicit_render_scale = false;
     rr::FrameBench bench;   // --bench FRAMES: timed autopilot race (docs/PERFORMANCE.md)
     bool benchmark = false, bench_vsync = false;
+    rr::OfflineCapture capture;
     std::string menu_script;
     CliDisplayOverride cli;
     for (int i = 1; i < argc; ++i) {
@@ -602,6 +607,10 @@ int main(int argc, char** argv) {
         else if (a == "--windowed") cli.fullscreen = 0;
         else if (a == "--window-scale" && i + 1 < argc) cli.window_scale = std::atoi(argv[++i]);
         else if (a == "--render-scale" && i + 1 < argc) { render_scale = std::atoi(argv[++i]); explicit_render_scale = true; quick_race = true; }
+        else if (a == "--capture-video" && i + 1 < argc) { capture.video_path = argv[++i]; auto_drive = quick_race = true; }
+        else if (a == "--capture-audio" && i + 1 < argc) capture.audio_path = argv[++i];
+        else if (a == "--capture-frames" && i + 1 < argc) capture.frames = std::atol(argv[++i]);
+        else if (a == "--capture-warmup" && i + 1 < argc) capture.warmup = std::atol(argv[++i]);
         else if (a == "--bench" && i + 1 < argc) { bench.frames = std::atol(argv[++i]); benchmark = auto_drive = quick_race = true; }
         else if (a == "--bench-warmup" && i + 1 < argc) bench.warmup = std::atol(argv[++i]);
         else if (a == "--bench-out" && i + 1 < argc) bench.out_path = argv[++i];
@@ -613,6 +622,9 @@ int main(int argc, char** argv) {
     if (course < 0 || course > 4 || level < 0 || level > 4 || opponents < 0 || opponents > 14) return 2;
     if (render_scale < 1 || render_scale > 4) return 2;
     if (benchmark && (bench.frames < 1 || bench.warmup < 0)) return 2;
+    const bool capturing = !capture.video_path.empty() || !capture.audio_path.empty() || capture.frames != 0;
+    if (capturing && (!capture.enabled() || capture.video_path.empty() || capture.audio_path.empty() ||
+        capture.warmup < 0 || run_ticks >= 0 || benchmark || into_traffic || start_paused || !video.empty() || !screenshot.empty())) return 2;
     SDL_Window* window = nullptr;
     SDL_Renderer* renderer = nullptr;
     int result = 0;
@@ -626,9 +638,18 @@ int main(int argc, char** argv) {
         // the race scale follows the settings file unless --render-scale.
         if (benchmark && !bench_vsync) boot_settings.vsync = false;
         if (benchmark && !explicit_render_scale) render_scale = 0;
+        if (capturing) {
+            // Isolated, reproducible presentation; never save over user settings.
+            boot_settings = rr::default_settings();
+            boot_settings.vsync = false;
+            boot_settings.window_scale = 2;
+            boot_settings.show_fps = false;
+            boot_settings.widescreen = rr::Widescreen::off;
+        }
         rr::DisplayDriver boot{window, renderer, &boot_settings, (std::filesystem::path(rr::pref_directory()) / "settings.txt").string()};
         boot.toggle_at = cli.toggle_at;
         boot.apply(480);
+        if (capturing) SDL_HideWindow(window);
         if (root.empty()) {
             root = rr::data_root();
 #ifdef RR_DEV_ASSETS
@@ -681,7 +702,7 @@ int main(int argc, char** argv) {
             {
                 // Launch-time 0x004078f0 jitter (see run_game) for rows 9..14.
                 rr::Career launch;
-                launch.rng = uint32_t(std::time(nullptr));
+                launch.rng = capturing ? 1u : uint32_t(std::time(nullptr));
                 rr::reset_relations(launch, rr::read_career_tables(exe));
                 g.config.spare_levels = launch.spare_levels;
             }
@@ -755,8 +776,8 @@ int main(int argc, char** argv) {
                 rr::RaceMusicPlayer race_music(assets, mixer);
                 std::unique_ptr<rr::SoundSystem> sound;
                 if (run_ticks < 0) {
-                    const auto settings = rr::load_settings((std::filesystem::path(rr::pref_directory()) / "settings.txt").string());
-                    if (!SDL_InitSubSystem(SDL_INIT_AUDIO) || !mixer.open_device()) SDL_Log("Audio unavailable: %s", SDL_GetError());
+                    const auto settings = capturing ? boot_settings : rr::load_settings((std::filesystem::path(rr::pref_directory()) / "settings.txt").string());
+                    if (!capturing && (!SDL_InitSubSystem(SDL_INIT_AUDIO) || !mixer.open_device())) SDL_Log("Audio unavailable: %s", SDL_GetError());
                     sound = std::make_unique<rr::SoundSystem>(assets, mixer, rr::read_volume_curve(exe), int(rr::read_exe_data(exe, 0x0046dce5, 1)[0]));
                     rr::SoundLevels levels;
                     levels.master = settings.master_volume; levels.engine = settings.engine_volume;
@@ -767,12 +788,14 @@ int main(int argc, char** argv) {
                     // Public quick-race order differs from the original course index.
                     const int original_index[] = {4, 1, 2, 5, 3};
                     race_music.set_music_level(settings.mute ? 0 : settings.music_volume * settings.master_volume / 100);
-                    race_music.play_race(original_index[course], "");
+                    if (!capturing) race_music.play_race(original_index[course], "");
                     g.mixer = &mixer; g.sound = sound.get(); g.race_music = &race_music;
                 }
                 boot.frame = 0;
                 boot.apply(480);
-                run_race(g, renderer, {.auto_drive = auto_drive, .start_paused = start_paused, .screenshot = screenshot, .key_codes = boot_settings.controls, .custom_keys = boot_settings.custom_controls, .swap_punch_kick = boot_settings.swap_punch_kick, .stick_deadzone = boot_settings.stick_deadzone, .left_handed = boot_settings.left_handed, .show_fps = boot_settings.show_fps, .assets = &assets, .render_scale = render_scale, .settings = &boot_settings, .bench = benchmark ? &bench : nullptr}, boot);
+                if (capturing) capture.open();
+                run_race(g, renderer, {.auto_drive = auto_drive, .start_paused = start_paused, .screenshot = screenshot, .key_codes = boot_settings.controls, .custom_keys = boot_settings.custom_controls, .swap_punch_kick = boot_settings.swap_punch_kick, .stick_deadzone = boot_settings.stick_deadzone, .left_handed = boot_settings.left_handed, .show_fps = boot_settings.show_fps, .assets = &assets, .render_scale = render_scale, .settings = &boot_settings, .capture = capturing ? &capture : nullptr, .bench = benchmark ? &bench : nullptr}, boot);
+                if (capturing) capture.finish();
                 if (benchmark) write_bench_report(bench, boot_settings, boot, window, renderer, g, course, render_scale);
                 g.mixer = nullptr; g.sound = nullptr; g.race_music = nullptr;
             }

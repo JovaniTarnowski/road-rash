@@ -1,5 +1,6 @@
 // Plan 28 Task 4: RaceScreen implementation (moved from run_race, split in two).
 #include "race_screen.hpp"
+#include "offline_capture.hpp"
 #include "race_caches.hpp"
 #include "race_helpers.hpp"
 #include "course_scene.hpp"
@@ -42,7 +43,7 @@ RaceScreen::RaceScreen(Game& g, SDL_Renderer* r, const RaceOptions& opt, Display
     pad_ = open_first_gamepad();
     if (opt_.show_fps && opt_.assets) fps_ = std::make_unique<FpsOverlay>(*opt_.assets);
     // 0x004163d0: a fresh race (timer still at its start value) fades in.
-    if (g_.countdown == countdown_ticks) fade_ = Fade::in;
+    if (!opt_.capture && g_.countdown == countdown_ticks) fade_ = Fade::in;
     display_.frame = 0;
     display_.apply(480);
 }
@@ -216,8 +217,8 @@ bool RaceScreen::iterate(uint64_t now_ns) {
     // pause_open(); the mixer pauses race sounds but the interface levels
     // stay live so the sound sliders apply (no preview click, as in Task 6).
     const bool menu_pause = opt_.menu && opt_.menu->pause_open();
-    const bool frozen = lifecycle_.state.paused() || g_.quitting || g_.pause_message || menu_pause;
-    if (g_.mixer) g_.mixer->pause(frozen || lifecycle_.state.background());
+    const bool frozen = !opt_.capture && (lifecycle_.state.paused() || g_.quitting || g_.pause_message || menu_pause);
+    if (g_.mixer) g_.mixer->pause(frozen || (!opt_.capture && lifecycle_.state.background()));
     if (g_.race_music && !frozen && !lifecycle_.state.background()) g_.race_music->update();
     update_fade(now);
     // DAT_004c5bd0 for this frame: quit prompt (316) or pause message (317,
@@ -225,7 +226,7 @@ bool RaceScreen::iterate(uint64_t now_ns) {
     g_.banner_message = g_.quitting ? g_.quit_prompt
                       : g_.pause_message || (lifecycle_.state.paused() && !opt_.menu) ? g_.pause_prompt
                       : std::string();
-    const int steps = clock_.advance(now - last_, frozen);
+    const int steps = opt_.capture ? 1 : clock_.advance(now - last_, frozen);
     last_ = now;
     std::optional<ProfileScope> sim_scope(std::in_place, prof, FrameProfile::sim);
     for (int step = 0; step < steps && !frozen && fade_ == Fade::none && running_; ++step) {
@@ -256,10 +257,10 @@ bool RaceScreen::iterate(uint64_t now_ns) {
     }
     sim_scope.reset();
     if (g_.view_ready) {
-        const uint32_t alpha = g_.enhancements.interpolate ? clock_.alpha_q16() : 65536;
+        const uint32_t alpha = g_.enhancements.interpolate && !opt_.capture ? clock_.alpha_q16() : 65536;
         blend_view(g_.view_drawn, g_.view_prev, g_.view_cur, alpha);
     }
-    if (lifecycle_.state.background()) { SDL_Delay(20); return true; }
+    if (!opt_.capture && lifecycle_.state.background()) { SDL_Delay(20); return true; }
     if (hold_frame_) { SDL_Delay(1); return running_; }
     if (menu_pause && opt_.menu) {
         // Plan 18 Task 8: the pause menu draws over the captured frame.
@@ -317,6 +318,10 @@ bool RaceScreen::iterate(uint64_t now_ns) {
         if (!capture || !SDL_SaveBMP(capture.get(), opt_.screenshot.c_str())) throw std::runtime_error(SDL_GetError());
         running_ = false;
         result_.quit_app = true;
+    }
+    if (opt_.capture) {
+        opt_.capture->frame(renderer_, g_.mixer);
+        if (opt_.capture->done()) { running_ = false; result_.quit_app = true; }
     }
     {
         ProfileScope ps(prof, FrameProfile::present);

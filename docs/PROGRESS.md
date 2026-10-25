@@ -1650,3 +1650,20 @@ Gaps: `napa-field-l5` diverges at tick 1995 (ring node position, cause not
 traced) and is pinned as a known divergence; the `0x0043c7e0` standings call
 in the crashed-bike pull is not ported; the import screen has no screenshot
 check (no display in that session).
+
+## Offline native gameplay demo export (October 24, 2026)
+
+Added `--capture-video/--capture-audio/--capture-frames/--capture-warmup`
+to the playable race driver. Capture shares `RaceScreen` and the native mixer,
+with exactly one 60 Hz tick per frame, fixed launch jitter, no physical audio
+device and no real-time input. Original interactive execution keeps its clock,
+input and audio-device path. Export preserves 4:3/HUD framing at 1280×960,
+uses original visual settings, and omits soundtrack playback.
+
+`tools/render_demo.py` builds the engine and streams RGB to FFmpeg, exports
+native engine/effect PCM, and produces H.264/AAC course clips plus a two-minute
+five-course assembly. Original assets and outputs remain local/ignored.
+See [DEMO_VIDEO.md](DEMO_VIDEO.md) for parameters and repeatable commands.
+The standalone disc-backed `tests/demo_capture_test.py` verifies deterministic
+pixels/audio, moving scenes, sample arithmetic and invalid CLI rejection.
+This is native export coverage, not additional original-game parity evidence.

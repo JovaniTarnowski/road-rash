@@ -1,5 +1,47 @@
 # Verification log (all sessions September 28, 2026)
 
+## Offline native demo export (October 24, 2026)
+
+- Baseline `be2ded7`, owned Release build `build-agent-demo-video-20261024`:
+  configure/full build passed; full CTest **105/105 passed, zero skips**.
+  Logs: `analysis/demo-video/twitter-2min/ctest-release.log`.
+- Owned Debug build `build-agent-demo-video-debug`: configure/full build passed;
+  full `ctest --parallel 8`: **105/105 passed, zero skips**, 193.58 seconds.
+  Log: `analysis/demo-video/twitter-2min/ctest-debug.log`. An initial serial
+  attempt was interrupted for runtime and its owned child terminated; this
+  result is the completed fresh parallel suite.
+- `python3 tests/demo_capture_test.py build-agent-demo-video-20261024/rr-game`:
+  passed on both Release and Debug: seven-frame captures after 361 warm-up
+  ticks, exact RGB/PCM lengths,
+  non-flat/moving frames, non-silent audio, identical video/audio SHA-256 across
+  launches more than one second apart, and malformed CLI rejection.
+- Five-course wrapper smoke tests passed: 60 total frames with zero warm-up
+  (`analysis/demo-video/smoke-02/`), and 62 total frames split 13/13/12/12/12
+  with one warm-up tick (`smoke-odd/`). These exercise anonymous-pipe video,
+  odd fractional audio counts, AAC muxing and exact-frame final assembly.
+- Full command: `python3 tools/render_demo.py --no-build --out
+  analysis/demo-video/twitter-2min` (then-default owned Release build above).
+  Final `road-rash-native-demo.mp4`: **120.000 seconds, 7,200 frames,
+  1280×960, 60/1 fps, H.264/yuv420p + AAC stereo**, 299,795,586 bytes.
+  All five course clips are 1,440 frames/24 seconds. `receipt.json` preserves
+  embedded binary identity and actual probed streams. Native engine/effect
+  audio only, no soundtrack. The current script defaults to `build-demo-video`;
+  `--build build-agent-demo-video-20261024 --no-build` selects this exact build.
+- Full 120-second video/audio decode passed; blackdetect reported no black
+  intervals of 0.1 seconds or longer; audio is non-silent (mean -25.2 dB).
+  Log: `analysis/demo-video/twitter-2min/av-quality.log`.
+- Visual QA: native frame grabs early/late in Napa and midpoint samples in all
+  five courses (`review-grid.jpg`), including roads, terrain, urban buildings,
+  traffic, riders and the uncropped full dashboard. This is capture/output
+  coverage; no new original-game fidelity or human-driver parity claim.
+- Python syntax compilation and `git diff --check` passed. No client C++ LSP
+  channel is available; owned compilation database preflight is healthy
+  (187 entries). clangd on `game_main.cpp` reports zero errors. RaceScreen's
+  clangd parse reports two ExtractFunction tweak failures on existing loop
+  constructs, while native compilers accept it; recorded as a tooling limit.
+- No Wine captures, Android/device, sanitizer or packaging checks were run:
+  this change is desktop offline export, with no new simulation code.
+
 ## Shared-tree integration commit (October 24, 2026)
 
 - Build `build-agent-commit-push` (Debug), baseline `7fe5973` plus the shared

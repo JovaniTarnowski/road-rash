@@ -145,3 +145,14 @@ GitHub Release with generated release notes. Android optimized local APK:
 android assembleRelease -PreleaseDebugSigning=true` (requires JDK 21).
 Owner signing and current controls/import instructions are in
 [docs/USER_GUIDE.md](docs/USER_GUIDE.md). `tools/ci.sh` runs local verification.
+
+### Gameplay demo video
+
+Render a two-minute, five-course gameplay demo directly from the native engine:
+
+```sh
+python3 tools/render_demo.py
+```
+
+Outputs a 1280×960, 60 fps H.264/AAC MP4 plus individual course clips.
+See [docs/DEMO_VIDEO.md](docs/DEMO_VIDEO.md) for reusable commands and capture details.

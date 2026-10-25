@@ -136,6 +136,7 @@ struct RaceOptions {
     const Assets* assets = nullptr;      // fonts for the overlay; null disables it
     int render_scale = 1;                    // plan 19 Task 4: race surface is 640s x 480s
     const Settings* settings = nullptr;  // plan 19 Task 8: live scale via effective_render_scale
+    class OfflineCapture* capture = nullptr; // fixed 60 Hz offline video/audio export
     FrameBench* bench = nullptr;         // --bench: phase timings, ends the race after bench->frames
 };
 }
