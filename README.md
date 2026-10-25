@@ -1,158 +1,163 @@
-# Road Rash native port research
+# Road Rash — Native Port
 
-Current implementation and acceptance gaps: [docs/CURRENT_STATUS.md](docs/CURRENT_STATUS.md).
-Agent setup, ownership, verification profiles and capture receipts:
-[docs/AGENT_TOOLING.md](docs/AGENT_TOOLING.md). The dated sections below and in
-the progress timeline describe historical checkpoints; use the current matrix
-and gate receipts when assessing completion.
+Native C++20 / SDL3 port of the 1996 Windows rerelease of Road Rash.
+Runs the game directly on modern systems: no Wine, no x86 emulation at runtime.
 
-Progress summary, timeline and next steps: [docs/PROGRESS.md](docs/PROGRESS.md). Binary evidence: [docs/REVERSE_ENGINEERING.md](docs/REVERSE_ENGINEERING.md). Test log: [docs/VERIFICATION.md](docs/VERIFICATION.md). Plans to completion: [docs/plans/00-INDEX.md](docs/plans/00-INDEX.md).
+Primary target is macOS ARM64, second is Android ARM64. Linux and Windows
+are planned (see `docs/plans/33-linux-windows-ports.md`). The port is
+incomplete; see Status below.
 
-**Goal: a 100% complete, feature-complete native port of Road Rash for modern systems.** macOS ARM64 comes first, then Android ARM64 and Linux, then Windows ([plan 33](docs/plans/33-linux-windows-ports.md)). Plans are implemented in full, not partially; remaining gaps are listed in [docs/CURRENT_STATUS.md](docs/CURRENT_STATUS.md).
+Reference for reverse engineering is the unmodified disc binary at
+`../cdrom/ROADRASH/ROADRASH.EXE`. Oracle captures run it under Wine to
+produce comparison traces. It is never executed by the game itself.
 
-Native C++17 / SDL3 code targeting macOS ARM64 and Android ARM64 today. `rr-game` is a **playable race against the original offline field (14 AI opponents in Thrash, 13 in Big Game)** with the original bike physics and combat; `rr-viewer` is the asset research viewer. It does not execute the Windows binary, use Wine, or emulate x86.
+## Status
 
-C++ formatting and static analysis: `make format FILES='src/foo.cpp src/foo.hpp'`,
-`make format-check FILES='src/foo.cpp src/foo.hpp'`, and
-`make lint BUILD_DIR=build FILES='src/foo.cpp'` use LLVM 22.
-See [docs/CPP_QUALITY.md](docs/CPP_QUALITY.md) for setup, checks and rollout.
+Playable today via `rr-game`: full menu / career / shop / save flow leads
+into races on all five courses (Napa, City, Highway, Canyon, Medley) with
+the original bike physics, AI field, combat, traffic, pedestrians, engine /
+effect audio, soundtrack, and cutscene playback.
 
-## Current implementation
+What matches the original on receipted captures:
 
-- Original executable imported and analyzed in Ghidra: 1,585 functions exported as address-keyed pseudocode.
-- Original disc inventory: 341 files with SHA-256 hashes and executable import table.
-- Native, bounds-checked resource directory reader, validated against all 13 `CRSR` containers on this disc.
-- Native JPEG decoding for six original menu screens.
-- Native palette decoding for the original 190×64 dashboard and 720×320 Napa and city horizons. Dimensions traced to original executable routines.
-- Native decoding of all five courses' sections, lane widths and branch graph.
-- Integer port of the original road projection: 33 perspective slices, curvature/height integration and the original depth table read from `ROADRASH.EXE`, including the second roadway at splits and merges. The viewer drives through each course with flat placeholder shading.
-- Shared desktop/Android viewer source with keyboard, mouse and touch navigation.
+- Napa level 1, full 14-rider offline field: 2400/2400 ticks identical.
+- Napa level 1, recorded human-input run: 1431/1431 ticks identical.
+- Full native suite: 105/105 CTests, zero skips; sanitizer suites clean.
 
-Racing, bike physics, AI riders, sprites and combat are implemented with the approximations recorded in `docs/PROGRESS.md`. Scenery, original road textures, game sound triggers/music selection, save games and original menu interactions remain open. Native audio/video codecs are implemented and video playback is available via `--video`. Decompiler output is research input: inferred signatures, types and library labels still need correction.
+Still open (see `docs/CURRENT_STATUS.md` and `docs/PROGRESS.md`):
 
-## Play (single course)
+- Simulation parity outside those captures: other courses/levels, human
+  paths beyond the receipted run, isolated fight/steal/traffic cases.
+- Gameplay: live police, wall/crash-sequence stand-ins, some car/pedestrian
+  branches, race MIDI, sirens/car engines.
+- Frontend: some option screens (mano-a-mano, jukebox, sound mix, controls),
+  no original-save round trip, no menu pixel comparison.
+- Android builds and packages but hardware validation (render, input,
+  import, lifecycle, performance) is pending.
+- Linux/Windows builds do not exist yet.
+
+## Requirements
+
+- Your own 1997 Windows rerelease disc (ISO or extracted `ROADRASH`
+  folder, 341 files, SHA-256 verified on import). No game data is included
+  or redistributed.
+- CMake 3.22+, a C++20 compiler, SDL3 3.2+ (`brew install cmake sdl3`).
+- Android builds additionally need JDK 21, Android SDK 35 / NDK 28, Gradle
+  wrapper in `android/`.
+
+## Quick start (macOS)
 
 ```sh
-cd /Users/archit/Dev/rr/native-port
-./run-macos.sh                                      # build (Release) and launch the current game
-./run-macos.sh --debug                              # unoptimized Debug build (slow renderer)
-tools/bench_game.sh user original enhanced          # race frame-time benchmark (docs/PERFORMANCE.md)
+./run-macos.sh                       # Release build in build-play/, launch game
+./run-macos.sh --debug               # Debug build in build/ (slower renderer)
 ```
 
-Or build and run directly:
+Or with CMake directly:
 
 ```sh
-cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug && cmake --build build --parallel
-build/rr-game --assets ../cdrom/ROADRASH            # Napa; --course 0-4, --bike 0-14
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug
+cmake --build build --parallel
+ctest --test-dir build --output-on-failure
+build/rr-game --assets ../cdrom/ROADRASH
 ```
 
-Arrows or WASD: Up accelerates, Down brakes, Left/Right steer; Z punches, X kicks, C backhands. Gamepad: A or right trigger accelerates, B or left trigger brakes, D-pad or left stick steers; X punches, Y kicks, RB backhands. Touch: top third punches, left/right thirds below it steer, bottom middle brakes; other zones accelerate. Multiple fingers can steer and punch together; a braking finger overrides touch auto-throttle. Enter, A or a tap restarts after the finish.
+Options:
 
-P/Esc, gamepad Start or Android Back opens the pause menu (RESUME, SOUND, DISPLAY, CONTROLS, QUIT RACE with confirmation) over the darkened race frame. Backgrounding, losing window focus or disconnecting the active gamepad opens it too. Q or closing the desktop window quits. `--paused` starts the presentation paused (after any `--ticks` verification run).
+```sh
+build/rr-game --assets ../cdrom/ROADRASH --course 0 --level 1 --bike 0
+build/rr-game --assets ../cdrom/ROADRASH --video VIDEO/INTRO.AVI
+```
 
-Graphics Options holds Display, Sound (master + six channels, mute, swap), Configure Input (nine rebindable keys plus gamepad/touch pages) and the FPS counter. See `docs/USER_GUIDE.md` for the Settings section.
+`--course 0-4` (Napa, City, Highway, Canyon, Medley),
+`--level 1-5`, `--bike 0-14`. Omitting race flags enters the menu/career
+flow. `--ticks N --screenshot out.bmp` runs a headless verification slice.
 
-The race uses the original 60 Hz bike physics ported from the executable (throttle, brakes, 7-gear shifting, drag, traction, steering, curve drift, crests and jumps) on the original course geometry. You race the original offline field of AI opponents with punches, kicks and weapons, drawn with the original rider sprites. Road shading is a placeholder; some traffic, police, race audio and gameplay menus are still being completed; the port is not finished until they are. See `docs/PROGRESS.md` for what is simplified.
+## Controls
 
-## Import your disc
+| Action | Keyboard | Gamepad | Touch |
+| --- | --- | --- | --- |
+| Accelerate | Up / W | South / RT | Free zones (auto-throttle) |
+| Brake | Down / S | East / LT | Bottom-middle zone |
+| Steer | Left/Right, A/D | D-pad / left stick | Left/right thirds |
+| Punch / Kick / Backhand | Z / X / C | West / North / RB | Top third |
+| Pause | P / Esc | Start | System Back / pause tap |
+| Restart after finish | Enter | South | Tap |
+| Quit (desktop) | Q | — | — |
 
-Launching `rr-game` without `--assets` uses its imported data directory and shows the first-run picker when absent. On desktop, choose either an ISO or the extracted folder. The importer leaves no half-imported destination on missing files, hash mismatch or cancellation. Existing nonempty destinations are preserved.
+P/Esc/Start opens the pause menu (Resume, Sound, Display, Controls,
+Quit Race with confirmation). Backgrounding, focus loss, or disconnecting
+the active gamepad also pauses; resume is always explicit. Keys are
+rebindable in Graphics Options → Configure Input; gamepad mapping is fixed
+except punch/kick swap and stick dead zone.
 
-A command-line import is also available:
+## Disc import
+
+First launch without `--assets` shows the import screen: pick the ISO or an
+extracted folder. The importer verifies all 341 files by SHA-256 and commits
+only a complete match; failures leave any existing install untouched.
+
+Command-line equivalent:
 
 ```sh
 build/rr-import "/path/to/Road Rash.iso" "/path/to/imported/ROADRASH"
 build/rr-game --assets "/path/to/imported/ROADRASH"
 ```
 
-The default destination is `SDL_GetPrefPath("RoadRashNative", "RoadRash")/game/ROADRASH`. `RR_PREF_OVERRIDE` redirects the pref root for development tests. `--first-run-smoke` renders the missing-data screen once and exits; `--screenshot` can capture it. All imported commercial assets stay outside the source and APK.
+Default destination is the SDL pref dir `RoadRashNative/RoadRash/game/ROADRASH`.
+`RR_PREF_OVERRIDE` redirects it for isolated test runs.
 
-## Run the research viewer (developer tool)
+## Tools
 
-The asset research viewer is a separate tool, not the game. Use `./run-viewer.sh`:
+| Binary / script | Purpose |
+| --- | --- |
+| `build/rr-game` | The game (menus, career, races, video playback) |
+| `build/rr-viewer` (`./run-viewer.sh`) | Asset research viewer, not the game: screens, course drive-through |
+| `build/rr-import` | CLI disc import with hash verification |
+| `build/rr-inspect FILE.RSC` | Dump a resource container directory |
+| `build/rr-course --exe ../cdrom/ROADRASH/ROADRASH.EXE DATA/COURSES/*.CRS` | Course graph / projection sweep |
+| `python3 tools/check_corpus.py <assets>` | Validate all resource containers |
+| `python3 tools/render_demo.py` | Render a 2-minute 5-course demo MP4 from the engine |
+| `tools/bench_game.sh user original enhanced` | Race frame-time benchmark (`docs/PERFORMANCE.md`) |
+| `tools/ci.sh` | Local verification gate (native build, tests, APK assembly) |
 
-```sh
-cd /Users/archit/Dev/rr/native-port
-./run-viewer.sh
-```
-
-The default assets directory is `../cdrom/ROADRASH`; an alternative extracted original directory can be passed as the first argument. Left/Right, Space, click, or tap cycle nine images and five course views. On course views, Up/Down change drive speed (negative reverses) and B switches split branch. Escape exits. `--screen 9 --position 1400 --screenshot out.bmp` captures one frame.
-
-Dependencies: CMake, a C++17 compiler and SDL3 (`brew install cmake sdl3`). The local build links Homebrew SDL3; it is not yet a standalone distributable app bundle.
-
-```sh
-cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug
-cmake --build build --parallel
-ctest --test-dir build --output-on-failure
-build/rr-viewer --assets ../cdrom/ROADRASH --smoke
-build/rr-inspect ../cdrom/ROADRASH/DATA/BIKESPEC.RSC
-build/rr-course --exe ../cdrom/ROADRASH/ROADRASH.EXE ../cdrom/ROADRASH/DATA/COURSES/*.CRS
-python3 tools/check_corpus.py ../cdrom/ROADRASH
-```
+Video playback uses native Cinepak / IMA-ADPCM decoders. FFmpeg appears
+only in tests as a decode oracle; runtime needs neither FFmpeg nor Wine.
 
 ## Android
-
-The Gradle project is `android/`; it builds the game into `libmain.so` for `arm64-v8a`. Normal APKs contain no original game data. On first launch choose your own rerelease ISO; all 341 files are SHA-256 verified before the imported directory is committed. SDL supplies the Android content-URI picker and lifecycle/input bridge. Nonseekable document streams are temporarily cached during import.
 
 ```sh
 export JAVA_HOME=/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home
 android/gradlew -p android assembleDebug
 ```
 
-SDK location is configured in the local, ignored `android/local.properties`. This workspace has its SDK in `.tools/android-sdk`. Required packages: `platforms;android-35`, `build-tools;35.0.0`, `ndk;28.2.13676358`, `cmake;3.22.1`, and `platform-tools`. Gradle 8.11.1 and Android Gradle Plugin 8.9.2 are pinned. The bundled SDL3 3.4.8 AAR comes from the official Android development archive, with its SHA-256 verified before extraction.
+Output: `android/app/build/outputs/apk/debug/app-debug.apk`.
+Normal APKs ship no game data; on first launch pick your own ISO and it is
+verified the same way as desktop. SDK location lives in the ignored
+`android/local.properties`. Optimized local build:
+`assembleRelease -PreleaseDebugSigning=true`. Owner signing and versioning
+are documented in `docs/USER_GUIDE.md`. Device behavior is unverified.
 
-Output: `android/app/build/outputs/apk/debug/app-debug.apk`. Assembly verifies that the APK has no `assets/game/` entries. For local developer research only, stage with `tools/prepare_android_assets.py` and build with `-PdevAssets=true`; that exemption never applies to release APKs.
-
-The APK was built and installed on the connected MANGMI AIR X. Its native library starts, but rendering and touch checks remain pending because the device was locked. See `docs/VERIFICATION.md` for exact test coverage.
-
-## Reproduce analysis
-
-```sh
-python3 tools/inventory.py ../cdrom/ROADRASH --out analysis/inventory.json
-tools/decompile.sh
-```
-
-The script defaults to Homebrew Ghidra 12.1.4 and JDK 21; `GHIDRA_HOME` and `JAVA_HOME` can override those locations. It overwrites the RoadRash analysis import, so save manual Ghidra changes separately before rerunning.
-
-- `analysis/decompiled/*.c`: pseudocode, one file per virtual address.
-- `analysis/decompiled/functions.tsv`: function index and export results.
-- `analysis/decompiled/string-references.tsv`: strings and referencing functions.
-- `analysis/ghidra-project/`: saved analysis database.
-- `analysis/inventory.json`: original asset hashes and PE information.
-- `analysis/resources.tsv`: resource directory dump of all original containers.
-- `docs/REVERSE_ENGINEERING.md`: recovered structures, evidence and next implementation work.
-
-Original commercial assets and reverse-engineered output remain local. No redistribution license for the game is implied. Third-party library license texts are in `third_party/` and inside the SDL AAR.
-
-References: [SDL Android integration](https://wiki.libsdl.org/SDL3/README-android), [Ghidra headless documentation](https://github.com/NationalSecurityAgency/ghidra/blob/master/Ghidra/RuntimeScripts/support/analyzeHeadlessREADME.md), [Android Gradle Plugin 8.9 compatibility](https://developer.android.com/build/releases/agp-8-9-0-release-notes).
-
-Native cutscene playback (the presentation and clip-selection frontend is still in progress):
-```sh
-build/rr-game --assets ../cdrom/ROADRASH --video VIDEO/INTRO.AVI
-build/rr-game --assets ../cdrom/ROADRASH --video VIDEO/RAT/BANZAI.AVI
-python3 tools/verify_video_audio.py ../cdrom/ROADRASH/VIDEO --video-decoder build/cinepak-test
-```
-P/Esc pauses, a key/click/tap skips, and input while paused resumes. Codec verification uses FFmpeg as a test oracle only; playback uses the native decoders and SDL3. For a deterministic silent screenshot use `--ticks 600 --screenshot analysis/native-video.bmp` (ten seconds).
-
-Standalone macOS packaging: `tools/build_macos_app.sh` creates
-`build-release/Road Rash Native.app` and `.zip`, with pinned static SDL,
-ARM64/macOS 13 support, included licences and an ad-hoc signature. No Homebrew
-runtime libraries or original game data are included. This packages the
-current incomplete port. Pushing a `v*` tag runs the GitHub Actions release
-workflow, builds and verifies this package on macOS, and attaches the ZIP to a
-GitHub Release with generated release notes. Android optimized local APK:
-`android/gradlew -p
-android assembleRelease -PreleaseDebugSigning=true` (requires JDK 21).
-Owner signing and current controls/import instructions are in
-[docs/USER_GUIDE.md](docs/USER_GUIDE.md). `tools/ci.sh` runs local verification.
-
-### Gameplay demo video
-
-Render a two-minute, five-course gameplay demo directly from the native engine:
+## macOS packaging
 
 ```sh
-python3 tools/render_demo.py
+tools/build_macos_app.sh
 ```
 
-Outputs a 1280×960, 60 fps H.264/AAC MP4 plus individual course clips.
-See [docs/DEMO_VIDEO.md](docs/DEMO_VIDEO.md) for reusable commands and capture details.
+Produces `build-release/Road Rash Native.app` and a ZIP with pinned static
+SDL3, ARM64 / macOS 13 baseline, bundled licences, ad-hoc signature, and no
+game data. Pushing a `v*` tag builds and attaches the same package via
+GitHub Actions.
+
+## Docs map
+
+- `docs/CURRENT_STATUS.md` — evidence matrix and latest gate receipts.
+- `docs/PROGRESS.md` — what is ported, approximations, next steps.
+- `docs/VERIFICATION.md` — commands run, outcomes, skips, evidence paths.
+- `docs/REVERSE_ENGINEERING.md` — recovered structures and addresses.
+- `docs/USER_GUIDE.md` — install, import, settings, controls reference.
+- `docs/plans/00-INDEX.md` — plan dependency order to completion.
+- `docs/AGENT_TOOLING.md` — agent workflow, gates, capture rules.
+
+Commercial assets, disc dumps, and upscaled artwork stay local and out of
+the source tree, APKs, and app bundles. Third-party licence texts are in
+`third_party/`. No redistribution licence for the game is implied.
