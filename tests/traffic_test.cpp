@@ -251,6 +251,59 @@ static void test_lane_validity_stop() {
     }
 }
 
+// Linked-slot reads use the newest same-residue sample at/under the
+// ring front (mod-128 slots, verified against dumped proxy words on
+// L5e). On a course that narrows to one lane, a behind-back car
+// reads its slot sample, not its current sample.
+static void test_lane_validity_linked_slots() {
+    rr::VehicleLibrary library(synthetic_container(0));
+    rr::TrafficSystem system(library, synthetic_exe());
+    system.configure(6);
+    system.set_spawn_enabled(false);
+    auto random = [] { return 1u; };
+    // One-lane stretch with a two-lane island: the slot sample and
+    // the linked slot can disagree, exercising the revert path.
+    std::vector<rr::RouteSample> route(400, lane_sample(0x200, 0x200));
+    for (int s = 140; s <= 160; ++s) {
+        if (s == 151) continue;
+        route[size_t(s)].path.left_q8 = route[size_t(s)].path.right_q8 = 0x100;
+    }
+    const int32_t front = 200 * 256, back = front - 0x8000, camera = front - 0x5000;
+    auto drive_at = [&](uint8_t kind, int8_t lane, int32_t sample, int32_t speed) {
+        system.begin_schedule(route, front, random, 1);
+        auto& car = system.cars_mut()[0];
+        car = rr::TrafficCar{};
+        car.active = true;
+        car.kind = kind;
+        car.lane = lane;
+        car.phase = 0x100;
+        car.position = sample * 256;
+        car.lateral = 0;
+        car.speed = speed;
+        car.motion.u8(0xc0) = 7;
+        car.last_tick = 0;
+        car.next_tick = 1;
+        system.run_car(0, route, camera, front, camera, 0, random, 1, 8000);
+        return car;
+    };
+    // Slot sample 145 (1-lane), linked slot 146 (1-lane): step to 0,
+    // recheck fails, stop. The current sample 17 is 2-lane, so the
+    // static-route read would have skipped the block entirely.
+    {
+        const auto car = drive_at(0, 1, 17, 1000);
+        if (car.lane != 0 || car.speed != 0 || car.lane_changed)
+            throw std::runtime_error("linked 1-lane slot must stop the car");
+    }
+    // Slot sample 150 (1-lane), linked slot 151 (2-lane): the step to 0
+    // applies but the recheck passes on the linked counts, so the lane
+    // is restored and cruise continues (revert path).
+    {
+        const auto car = drive_at(0, 1, 22, 1000);
+        if (car.lane != 1 || car.speed != 1036 || car.lane_changed)
+            throw std::runtime_error("linked 2-lane slot must restore the lane");
+    }
+}
+
 static void test_deferred_car_teardown() {
     rr::VehicleLibrary library(synthetic_container(0));
     rr::TrafficSystem traffic(library, synthetic_exe());
@@ -1077,6 +1130,7 @@ int main() {
         test_countdown_disabled_spawn_expiry();
         test_car_schedule_motion();
         test_lane_validity_stop();
+        test_lane_validity_linked_slots();
         test_spawn_and_move();
         test_zone_events();
         test_intersections();
