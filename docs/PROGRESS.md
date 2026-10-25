@@ -53,6 +53,24 @@ Detailed evidence is in [REVERSE_ENGINEERING.md](REVERSE_ENGINEERING.md) and tes
 
 ## Timeline
 
+### October 24, 2026: Crash pickup draws one bike; walk-back faces the bike
+
+- Pickup double bike: `0x00407a90` clears the riderless bike's frame pointer
+  (+0x7c) and skips its advance outside crash states 1/2, so during the
+  state-3 pickup only rider animation 41 (which carries the bike) is drawn.
+  `Race::crash_bike_animation` now does the same; before, the lying bike kept
+  drawing beside the lifted one.
+- Walk-back facing: `capture_view` never copied the crash body's heading
+  (+0x5c) or roll into its interpolated pose, so with interpolation on the
+  walking rider always drew heading 0 (back to camera) even when walking
+  toward a bike behind. The sim heading from `0x0040a600` was already right.
+- On-foot control (no change needed): `0x0040a600` auto-walks toward the bike
+  at speed 1200 with no keys; accelerate/brake step only toward the bike
+  longitudinally, left/right move sideways, and any key resets the 1200-tick
+  timeout. The native port already matches this (`recover_crash_actor`).
+- Remaining: `0x00407a90`'s state-3 flash copy (+0x81 from half +0x1e9) and
+  the player-only `0x0040b1a0` call are not ported.
+
 ### October 14, 2026: Plan10 SIM captures restored; frozen-state replay
 
 - Fixed oracle billboard forwarding and a 512-record overflow that overwrote

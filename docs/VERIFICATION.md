@@ -1,5 +1,17 @@
 # Verification log (all sessions September 28, 2026)
 
+## Crash pickup and walk-back render (October 24, 2026)
+
+- Baseline `1a43c5e`. `crash` test gained live-Napa checks: the riderless bike
+  has no selected frame on consecutive state-3 ticks, and the crash-body view
+  pose carries +0x5c/+0x60 while walking (animation 38). Both checks failed
+  before the fix (each verified independently) and pass after.
+- Debug full build (`build-pickup`) and all **105/105 CTests passed, zero
+  skips**, parallel 8. `make verify-sim BUILD_DIR=build-pickup` passed
+  (receipt `analysis/agent-gates/oracle-b0ae1168162a48b79f83c317c71e0c48/`).
+- Not done: no in-game visual capture of the fixed pickup/walk frames; the
+  front-facing walk frames come from the existing view selection by yaw.
+
 ## Proximity-aware demo combat correction (October 24, 2026)
 
 - Baseline `e865dd6`. The original cut used `autopilot()`'s unconditional

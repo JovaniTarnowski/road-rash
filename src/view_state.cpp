@@ -52,6 +52,8 @@ void capture_view(ViewState& v, const Race& race, const TrafficSystem* traffic) 
             c.position_q8 = uint32_t(rd.crash_actor.motion.i32(0x1c));
             c.lateral_q8 = rd.crash_actor.motion.i32(0x28);
             c.height_q8 = rd.crash_actor.motion.i32(0x24);
+            c.heading = rd.crash_actor.motion.i32(0x5c);   // walk-back facing (0x0040a600)
+            c.roll = rd.crash_actor.motion.i32(0x60);
             c.route = rd.crash_actor.route;
             c.visible = true;
             v.actors.push_back(c);

@@ -1745,6 +1745,10 @@ void Race::crash_phases(Rider& r) {
 // generic actor motion 0x0043adc0 on the half node.
 void Race::crash_bike_animation(Rider& r) {
     Bike& bike=r.bike;const auto& library=*crash_library_;
+    // 0x00407a90: outside states 1/2 (the state-3 pickup) the bike clears
+    // its frame pointer +0x7c and skips the advance; rider animation 41
+    // draws the bike being lifted.
+    if(bike.i32(0x2f4)!=1 && bike.i32(0x2f4)!=2){r.crash_bike_animation.selected.reset();return;}
     advance_crash_bike_animation(r.crash_bike_animation,library.playback[0],library.fallback,bike.i32(0xec),uint32_t(ticks_),[&]{return random();});
 }
 void Race::crash_bike_motion(Rider& r,bool player) {

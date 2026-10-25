@@ -3,6 +3,7 @@
 #include "assets.hpp"
 #include "race.hpp"
 #include "course.hpp"
+#include "view_state.hpp"
 #include <fstream>
 #include <sstream>
 #include <map>
@@ -80,11 +81,32 @@ int main(int argc,char** argv) {
         auto& live_bike=const_cast<rr::Bike&>(race.bike());live_bike.i32(0xec)=6000;live_bike.i32(0x2f4)=1;
         race.step(0);
         if(!race.riders()[0].crash_active || !race.riders()[0].crash_actor.animation.selected || !race.riders()[0].crash_bike_animation.selected)throw std::runtime_error("Live crash did not start independent actors");
-        bool separated=false;int elapsed=0;
+        bool separated=false,pickup=false,walked=false,was_pickup=false;int elapsed=0;
         while(race.crashed() && elapsed++<4000) {
             race.step(0);const auto& rider=race.riders()[0];
             separated|=rider.bike.i32(0x1c)!=rider.crash_actor.motion.i32(0x1c);
+            // 0x00407a90: outside crash states 1/2 the bike think clears its
+            // frame pointer (+0x7c), so only the rider's pickup animation 41
+            // (which carries the bike) is drawn.
+            // The half node enters state 3 after the bike node ran, so the
+            // clear lands on the next bike think.
+            const bool in_pickup=rider.crash_active && rider.bike.i32(0x2f4)==3;
+            if(in_pickup && was_pickup) {
+                pickup=true;
+                if(rider.crash_bike_animation.selected)throw std::runtime_error("Riderless bike still drawn during pickup");
+            }
+            was_pickup=in_pickup;
+            // The interpolated pose must carry the walking body's heading
+            // (+0x5c), or the walk back draws facing away from the bike.
+            if(rider.crash_active && rider.crash_actor.animation.animation==38 && rider.crash_actor.motion.i32(0x5c)) {
+                rr::ViewState view;rr::capture_view(view,race,nullptr);
+                for(const auto& pose:view.actors)if(pose.id==1000) {
+                    walked=true;
+                    if(pose.heading!=rider.crash_actor.motion.i32(0x5c) || pose.roll!=rider.crash_actor.motion.i32(0x60))throw std::runtime_error("Crash body pose lost its heading/roll");
+                }
+            }
         }
+        if(!pickup || !walked)throw std::runtime_error("Live crash did not reach both walk and pickup");
         if(!separated || race.crashed() || race.riders()[0].crash_active)throw std::runtime_error("Live crash did not separate and remount: elapsed="+std::to_string(elapsed)+" state="+std::to_string(race.bike().i32(0x2f4))+" speed="+std::to_string(race.bike().i32(0xec)));
         if(race.bike().i32(0x154)!=8 || race.bike().i32(0x174)!=config.normal_dimensions[0])throw std::runtime_error("Live remount did not restore bike dimensions");
         std::cout<<"Live Napa crash separated and remounted after "<<elapsed<<" ticks\n";
