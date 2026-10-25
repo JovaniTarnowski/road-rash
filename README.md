@@ -31,7 +31,7 @@ Still open (see `docs/CURRENT_STATUS.md` and `docs/PROGRESS.md`):
 - Gameplay: live police, wall/crash-sequence stand-ins, some car/pedestrian
   branches, race MIDI, sirens/car engines.
 - Frontend: some option screens (mano-a-mano, jukebox, sound mix, controls),
-  no original-save round trip, no menu pixel comparison.
+  no driven-career original-save round trip, no menu pixel comparison.
 - Android builds and packages but hardware validation (render, input,
   import, lifecycle, performance) is pending.
 - Linux/Windows builds do not exist yet.

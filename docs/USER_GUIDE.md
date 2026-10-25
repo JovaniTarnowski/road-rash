@@ -83,8 +83,8 @@ The Touch page (touch devices) sets overlay opacity and a left-handed layout
 that mirrors the touch zones.
 
 Current race HUD and several behaviors are provisional, as documented
-in PROGRESS.md. Career saves use the recovered original format; compatibility
-with a save written by the original game has not been measured.
+in PROGRESS.md. Career saves use the recovered original format; only a seeded
+original-writer file has been round-tripped so far, not a driven career save.
 
 ## Settings
 

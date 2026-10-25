@@ -1,7 +1,9 @@
 #include "assets.hpp"
 #include "career.hpp"
+#include <fstream>
 #include <iostream>
 #include <random>
+#include <string>
 
 using namespace rr;
 
@@ -116,6 +118,35 @@ int main(int argc, char** argv) {
         select_mode(b, real, GameMode::big_game);
         choose_character(b, real, 3);   // Cydney -> personality 2
         check(b.state.cash == 1000 && b.state.bike == real.level_bike[2 * 5], "Cydney starts with $1000");
+    }
+    if (argc > 1 && std::string(argv[1]) == "--save-corpus") {
+        // Original-writer file from the RR_ORACLE_SAVE capture (plan 13 Task 6
+        // Step 1): seeded state + personality triples, written by 0x0042f000.
+        const std::string path = argc > 2 ? argv[2] : std::string(RR_SOURCE_DIR "/analysis/oracle/save-seed-20261026.rrs");
+        std::ifstream f(path, std::ios::binary);
+        if (!f) { std::cout << "skip: no original save\n"; return 77; }
+        const std::vector<uint8_t> golden((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
+        check(golden.size() == 0xa0, "original save size");
+        if (golden.size() == 0xa0) {
+            const Career l = read_save(golden, t);
+            check(l.state.character == 3 && l.state.level == 2 && l.state.qualified == 5, "original save header");
+            check(l.state.bike == 7 && l.state.course == 4 && l.state.place == 1 && l.state.flags == 1, "original save race fields");
+            check(l.state.cash == 0x12345678 && std::string(l.state.name.data()) == "SAVETEST", "original save cash and name");
+            check(l.mode == GameMode::big_game && !l.unsaved, "original save forces big game");
+            const size_t rider = size_t(character_rider(3));
+            check(rider == 2, "seeded rider index");
+            for (size_t p = 0; p < 10; ++p)
+                for (size_t k = 0; k < 3; ++k) {
+                    int32_t want;
+                    if (p == 9 && k == 2) want = 0x7fffffff;
+                    else {
+                        want = int32_t(0x01010101u * uint32_t(p) + 0x101u * uint32_t(k) + 7u);
+                        if (((p + k) & 1)) want = -want;
+                    }
+                    check(l.relations[p][rider][k] == want, "original save relations");
+                }
+            check(write_save(l) == golden, "original save byte identity");
+        }
     }
     std::cout << failures << " failures\n";
     return failures ? 1 : 0;

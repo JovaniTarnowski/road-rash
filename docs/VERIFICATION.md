@@ -1,5 +1,37 @@
 # Verification log (all sessions September 28, 2026)
 
+## Original save-file writer capture (October 26, 2026)
+
+- Baseline `fe33fd9`. New proxy mode `RR_ORACLE_SAVE=1` in
+  `oracle/aweman_proxy.c` (`capture_save`, mirroring the raster mode-2
+  attach-time pattern): seeds the 32-byte state `0x004b8a10`
+  (player 0, character 3, level 2, qualified 0x05, bike 7, course 4,
+  place 1, flags 1, cash 0x12345678, name `SAVETEST`), the 10 personality
+  triples at `0x004c6b40` for rider index 2 (`0x00467a6c`, from
+  `0x00415fc0`), points `DAT_004b8900` at `C:\save-seed.RRS`, calls the
+  original writer `0x0042f000`, hex-dumps its `0x00497090` buffer. The
+  reader `0x0042f110` is not called in-proxy (it runs the UI string setter
+  `0x00444fb0`, unsafe before a window exists); the native reader is pinned
+  by the byte-identity test instead. No menu driving was needed
+  (`RR_ORACLE_KEYS` only posts race-frame keys).
+- `oracle/build.sh` (mingw, one pre-existing palette `-Wformat-truncation`
+  warning, unrelated), `oracle/install.sh` → proxy
+  `ec1ac9e564e0b3195cd058e866ffc7ec798cca9d516ce377472a83289cf35a3d`.
+  Direct Wine run of the installed `ROADRASH.EXE` under an
+  `agent_resource` claim on the prefix/install; killed only its own process
+  group once `C:\save-seed.RRS` reached 0xa0 bytes.
+- Golden `analysis/oracle/save-seed-20261026.rrs` (sha256 `45c601fd…3619c388`)
+  plus `.receipt.json` (proxy/EXE hashes, seed, method); TSV dump matches the
+  file byte-for-byte. Magic `0xcafedead`, header, cash, name and all 30
+  seeded triples (including negatives and `0x7fffffff`) read back as seeded.
+- `tests/career_test.cpp --save-corpus` (new `career-save-corpus` CTest, skip
+  77 without the git-ignored golden): `read_save` accepts the original file,
+  every field matches, `write_save` is byte-identical. Synthetic
+  `career-test` still 0 failures. Full owned-Debug gate
+  (`build-agent-frontend-save-26`): **106/106 passed**. This pins the writer
+  format, not a driven career save (plan 13 Task 6 Step 1's menu-driven
+  variant stays open), and no menu pixel comparison was attempted.
+
 ## Crash-think flash and player-only nitro (October 25, 2026)
 
 - Baseline `ec7f0c1`. Disassembly evidence: `analysis/original-disassembly.txt`

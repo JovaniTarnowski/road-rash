@@ -767,7 +767,7 @@ static rr_frame_fn const orig_frame = (rr_frame_fn)0x004439f0;
 static int g_pixels, g_pixel_every=30, g_pixel_written;
 static int g_pixel_width, g_pixel_height, g_pixel_pitch;
 static char g_output[MAX_PATH];
-static int g_raster;
+static int g_raster, g_save;
 static struct { int vertices[8],input[8],clip[4],colour,width,height; } g_raster_cases[64];
 static int g_raster_count;
 static int g_view_inputs[12]={0,65535,65536,65537,-1,-65535,-65536,-65537,32768,-32768,0x7fffffff,(int)0x80000000u};
@@ -2338,6 +2338,47 @@ FRAME_HOOK(1, 0x00416406)
 FRAME_HOOK(2, 0x0041656d)
 FRAME_HOOK(3, 0x00443249)
 
+/* Original save-file writer capture (RR_ORACLE_SAVE=1, plan 13 Task 6 Step 1).
+   Isolated call at attach time: seeds the 32-byte game state (0x004b8a10)
+   and the 10 personality triples for rider index 2 (0x004c6b40,
+   0x00467a6c), points the dialog path (0x004b8900) at C:\save-seed.RRS and
+   calls the original writer 0x0042f000, then hex-dumps its 0xa0-byte buffer
+   (0x00497090). The reader 0x0042f110 is not called here: it runs the UI
+   string setter 0x00444fb0, which is unsafe before a window exists. */
+static void capture_save(void) {
+    static const uint8_t seed_state[32] = {
+        0x00,0x03,0x02,0x05,0x07,0x04,0x01,0x01,
+        0x78,0x56,0x34,0x12,
+        'S','A','V','E','T','E','S','T',0,0,0,0,0,0,0,0,0,0,0,0
+    };
+    for (int i = 0; i < 32; ++i) RD8(0x004b8a10 + i) = seed_state[i];
+    RD8(0x00467a6c) = 2;
+    for (int p = 0; p < 10; ++p)
+        for (int k = 0; k < 3; ++k) {
+            int32_t v;
+            if (p == 9 && k == 2) v = 0x7fffffff;
+            else {
+                v = (int32_t)(0x01010101u * (uint32_t)p + 0x101u * (uint32_t)k + 7u);
+                if (((p + k) & 1)) v = -v;
+            }
+            RD32(0x004c6b40 + p * 0x204 + 2 * 12 + k * 4) = v;
+        }
+    char oldpath[260];
+    for (int i = 0; i < 260; ++i) oldpath[i] = (char)RD8(0x004b8900 + i);
+    const char* sp = "C:\\save-seed.RRS";
+    int i = 0;
+    while (sp[i]) { RD8(0x004b8900 + i) = (uint8_t)sp[i]; ++i; }
+    RD8(0x004b8900 + i) = 0;
+    ((void (__cdecl*)(void))0x0042f000)();
+    for (int j = 0; j < 260; ++j) RD8(0x004b8900 + j) = (uint8_t)oldpath[j];
+    if (g_out) {
+        fputs("save.begin\n", g_out);
+        for (int j = 0; j < 0xa0; ++j) fprintf(g_out, "%02x", RD8(0x00497090 + j));
+        fputs("\nsave.end\n", g_out);
+        fflush(g_out);
+    }
+}
+
 static int rr_install_hooks(void) {
     char buf[32], path[MAX_PATH];
     if (GetEnvironmentVariableA("RR_ORACLE_FRAMES", buf, sizeof buf)) g_quit_after = atoi(buf);
@@ -2378,6 +2419,7 @@ static int rr_install_hooks(void) {
     }
     if (g_palette) palette_open();
     env("RR_ORACLE_RASTER",buf,sizeof buf,"0");g_raster=atoi(buf);
+    if (GetEnvironmentVariableA("RR_ORACLE_SAVE",buf,sizeof buf)) g_save=atoi(buf)!=0;
     if (GetEnvironmentVariableA("RR_ORACLE_SHOT_EVERY",buf,sizeof buf) && atoi(buf)>0) g_pixel_every=atoi(buf);
     if(GetEnvironmentVariableA("RR_ORACLE_LEVEL",buf,sizeof buf)) {
         g_capture_level=atoi(buf);
@@ -2476,6 +2518,11 @@ BOOL WINAPI DllMain(HINSTANCE inst, DWORD reason, LPVOID reserved) {
                 fputs("frame\t0\n",g_out);dump_raster();capture_view();capture_terrain();capture_hill_projection();capture_polygon();capture_texture_spans();capture_texture_quads();capture_cels();capture_node_render();capture_road_panels();fputs("end\n",g_out);
                 fclose(g_out);g_out=NULL;
             }
+        }
+        if (g_save && g_out) {
+            capture_save();
+            fputs("end\n", g_out);
+            fclose(g_out); g_out = NULL;
         }
         if (g_out) fflush(g_out);
     } else if (reason == DLL_PROCESS_DETACH && g_out) {

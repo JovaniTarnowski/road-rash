@@ -35,7 +35,7 @@ Detailed evidence is in [REVERSE_ENGINEERING.md](REVERSE_ENGINEERING.md) and tes
 | Language strings (`TEXT/*.DLL`) | All five languages, original table assembly and continuations | `src/pe_strings.cpp` |
 | Menu text | Disc TrueType fonts (Badloc, Futura); GDI hinting not reproduced | `src/text.cpp` |
 | Front end (menus, Thrash/Big Game flow, shop, Schmooze, restroom, results, credits) | Ported from the EXE screen tables and handlers; mano-a-mano, jukebox, sound mix and controls screens not ported; not pixel-compared. Native Display/Sound/Pause/Enhancements screens, visual-style presets, single widescreen setting (October 13) | `src/frontend.cpp` |
-| Career rules and save files | Prize, fines, repairs, shop, level-up and the original 0xa0-byte save format; no original save round-tripped yet | `src/career.cpp` |
+| Career rules and save files | Prize, fines, repairs, shop, level-up and the original 0xa0-byte save format; seeded original-writer file round-trips byte-exact (`career-save-corpus`), driven-career saves and menu pixels still open | `src/career.cpp` |
 | Settings | Registry values as a preference file | `src/settings.cpp` |
 | Traffic, police | Traffic spawning/placement ported with the original timers and vehicle library (not oracle-verified); movement/honk/drawing are documented approximations; collisions, DZHR scripted vehicles and police not started. Career races keep the purchased bike; bad `.CAR` degrades to no-traffic (October 13 review follow-ups) | `src/traffic.cpp`, `docs/ACTORS.md` |
 | macOS build | Standalone ARM64 `.app`/ZIP with static pinned SDL, system-only dependencies, ad-hoc signature; 35 release tests pass | `tools/build_macos_app.sh` |
