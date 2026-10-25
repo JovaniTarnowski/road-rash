@@ -27,6 +27,7 @@
 #include "view_state.hpp"
 
 namespace rr {
+struct FrameBench;   // frame_profile.hpp
 // Display settings driver (plan 18 Task 3): owns the window/renderer state derived
 // from Settings. Each mode applies its logical height (480 menus/videos, 480 race:
 // the race composes the dashboard inside the 480 frame, so no 510 path exists yet).
@@ -135,5 +136,6 @@ struct RaceOptions {
     const Assets* assets = nullptr;      // fonts for the overlay; null disables it
     int render_scale = 1;                    // plan 19 Task 4: race surface is 640s x 480s
     const Settings* settings = nullptr;  // plan 19 Task 8: live scale via effective_render_scale
+    FrameBench* bench = nullptr;         // --bench: phase timings, ends the race after bench->frames
 };
 }

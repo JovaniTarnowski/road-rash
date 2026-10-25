@@ -10,6 +10,7 @@
 #include <SDL3/SDL.h>
 #include <algorithm>
 #include <filesystem>
+#include <optional>
 #include <string>
 
 std::string pref_directory();  // game_main.cpp; plan 20 Task 3 cache root
@@ -147,6 +148,8 @@ bool RaceScreen::iterate(uint64_t now_ns) {
     const uint64_t now = now_ns ? now_ns : SDL_GetTicksNS();
     if (!running_) return false;
     if (!last_) reset_clock(now);
+    FrameProfile* prof = opt_.bench ? &opt_.bench->current : nullptr;
+    canvas_.profile = prof;
     if (restart_) {
         g_.restart();   // Enter / pad South / tap after a quick-race finish (README)
         restart_ = false;
@@ -224,6 +227,7 @@ bool RaceScreen::iterate(uint64_t now_ns) {
                       : std::string();
     const int steps = clock_.advance(now - last_, frozen);
     last_ = now;
+    std::optional<ProfileScope> sim_scope(std::in_place, prof, FrameProfile::sim);
     for (int step = 0; step < steps && !frozen && fade_ == Fade::none && running_; ++step) {
         if (g_.view_ready) g_.view_prev = g_.view_cur;   // adjacent tick snapshot
         g_.tick(controls);
@@ -250,6 +254,7 @@ bool RaceScreen::iterate(uint64_t now_ns) {
             g_.fade_lut = fade_out_lut(0);
         }
     }
+    sim_scope.reset();
     if (g_.view_ready) {
         const uint32_t alpha = g_.enhancements.interpolate ? clock_.alpha_q16() : 65536;
         blend_view(g_.view_drawn, g_.view_prev, g_.view_cur, alpha);
@@ -284,7 +289,7 @@ bool RaceScreen::iterate(uint64_t now_ns) {
         SDL_RenderClear(renderer_);
         int dw = 0, dh = 0;
         if (display_.window) SDL_GetWindowSize(display_.window, &dw, &dh);
-        const int race_scale = opt_.menu && opt_.settings ? effective_render_scale(*opt_.settings, dw, dh, kMobileDisplay)
+        const int race_scale = (opt_.menu || opt_.render_scale == 0) && opt_.settings ? effective_render_scale(*opt_.settings, dw, dh, kMobileDisplay)
                                                         : opt_.render_scale;
         if (opt_.settings) {
             g_.widescreen = opt_.settings->widescreen;
@@ -297,6 +302,7 @@ bool RaceScreen::iterate(uint64_t now_ns) {
                                          g_.logical_width());
         if (g_.scene()) canvas_.draw(renderer_, g_, slices, race_scale, display_.render_threads);
         else draw_road(renderer_, slices);
+        ProfileScope sprites_scope(prof, FrameProfile::sprites_hud);
         draw_opponents(renderer_, g_, sprites_, slices);
         draw_bike(renderer_, g_, sprites_,slices);
         draw_hud(renderer_, g_);
@@ -312,8 +318,17 @@ bool RaceScreen::iterate(uint64_t now_ns) {
         running_ = false;
         result_.quit_app = true;
     }
-    if (!SDL_RenderPresent(renderer_)) throw std::runtime_error(SDL_GetError());
+    {
+        ProfileScope ps(prof, FrameProfile::present);
+        if (!SDL_RenderPresent(renderer_)) throw std::runtime_error(SDL_GetError());
+    }
     display_.maybe_toggle();
+    if (opt_.bench) {
+        // Fade-in frames are skipped by the warm-up; a whole frame is
+        // iterate entry to after present.
+        opt_.bench->finish_frame(SDL_GetTicksNS() - now, steps);
+        if (opt_.bench->done()) { running_ = false; result_.quit_app = true; }
+    }
     return running_;
 }
 }

@@ -212,6 +212,43 @@ const char* const original_course_files[5] = {"CITY", "HIWAY", "MEDLY", "NAPA", 
 
 
 
+// --bench report: the run context (settings that cost frame time, the
+// effective surface, build type), then the timings from FrameBench.
+void write_bench_report(const rr::FrameBench& bench, const rr::Settings& s, const rr::DisplayDriver& d, SDL_Window* window,
+                        SDL_Renderer* renderer, const rr::Game& g, int course, int render_scale) {
+    int ww = 0, wh = 0, pw = 0, ph = 0;
+    SDL_GetWindowSize(window, &ww, &wh);
+    SDL_GetWindowSizeInPixels(window, &pw, &ph);
+    const int scale = render_scale ? render_scale : rr::effective_render_scale(s, ww, wh, rr::kMobileDisplay);
+    const auto& e = s.enhancements;
+    const char* renderer_name = SDL_GetRendererName(renderer);
+#ifdef NDEBUG
+    const char* build = "release";
+#else
+    const char* build = "debug";
+#endif
+    char ctx[1536];
+    std::snprintf(ctx, sizeof ctx,
+                  "  \"build\": \"%s\",\n  \"renderer\": \"%s\",\n  \"course\": %d,\n  \"window\": [%d, %d],\n"
+                  "  \"window_pixels\": [%d, %d],\n  \"render_scale\": %d,\n  \"logical_width\": %d,\n"
+                  "  \"surface\": [%d, %d],\n  \"render_threads\": %d,\n  \"vsync\": %d,\n"
+                  "  \"settings\": {\"hires\": %d, \"render_scale\": %d, \"widescreen\": %d, \"texture_detail\": %d, "
+                  "\"filter\": %d, \"interpolate\": %d, \"perspective\": %d, \"full_colour\": %d, \"enh_filter\": %d, "
+                  "\"fog\": %d, \"grade\": %d, \"draw_slices\": %d, \"bloom\": %d, \"vignette\": %d, \"motion_blur\": %d},\n",
+                  build, renderer_name ? renderer_name : "?", course, ww, wh, pw, ph, scale, int(g.logical_width()),
+                  int(g.logical_width()) * 2 * scale, 480 * scale, d.render_threads, s.vsync ? 1 : 0, int(s.high_resolution),
+                  s.render_scale, int(s.widescreen), s.texture_detail, int(s.filter), int(e.interpolate), int(e.perspective),
+                  int(e.full_colour), int(e.filter), e.fog, int(e.grade), e.draw_slices, int(e.bloom), int(e.vignette),
+                  int(e.motion_blur));
+    const std::string report = bench.report(ctx);
+    std::fputs(report.c_str(), stdout);
+    std::fflush(stdout);
+    if (!bench.out_path.empty()) {
+        FILE* f = std::fopen(bench.out_path.c_str(), "wb");
+        if (!f || std::fputs(report.c_str(), f) < 0 || std::fclose(f) != 0) throw std::runtime_error("Cannot write " + bench.out_path);
+    }
+}
+
 rr::RaceEnd run_race(rr::Game& g, SDL_Renderer* renderer, const rr::RaceOptions& opt, rr::DisplayDriver& display) {
     rr::RaceScreen screen(g, renderer, opt, display);
     for (;;) {
@@ -539,6 +576,9 @@ int main(int argc, char** argv) {
     bool auto_drive = false, into_traffic = false, start_paused = false, first_run_smoke = false, quick_race = false;
     bool print_wiring = false;  // plan 26 Task 3: print race wiring after the first tick and exit
     int render_scale = 1;   // plan 19 Task 4: --render-scale 1..4
+    bool explicit_render_scale = false;
+    rr::FrameBench bench;   // --bench FRAMES: timed autopilot race (docs/PERFORMANCE.md)
+    bool benchmark = false, bench_vsync = false;
     std::string menu_script;
     CliDisplayOverride cli;
     for (int i = 1; i < argc; ++i) {
@@ -561,12 +601,18 @@ int main(int argc, char** argv) {
         else if (a == "--fullscreen") cli.fullscreen = 1;
         else if (a == "--windowed") cli.fullscreen = 0;
         else if (a == "--window-scale" && i + 1 < argc) cli.window_scale = std::atoi(argv[++i]);
-        else if (a == "--render-scale" && i + 1 < argc) { render_scale = std::atoi(argv[++i]); quick_race = true; }
+        else if (a == "--render-scale" && i + 1 < argc) { render_scale = std::atoi(argv[++i]); explicit_render_scale = true; quick_race = true; }
+        else if (a == "--bench" && i + 1 < argc) { bench.frames = std::atol(argv[++i]); benchmark = auto_drive = quick_race = true; }
+        else if (a == "--bench-warmup" && i + 1 < argc) bench.warmup = std::atol(argv[++i]);
+        else if (a == "--bench-out" && i + 1 < argc) bench.out_path = argv[++i];
+        else if (a == "--bench-label" && i + 1 < argc) bench.label = argv[++i];
+        else if (a == "--bench-vsync") bench_vsync = true;
         else if (a == "--toggle-fullscreen-at" && i + 1 < argc) cli.toggle_at = std::atol(argv[++i]);
         else if (a == "--print-wiring") { print_wiring = true; quick_race = true; }
     }
     if (course < 0 || course > 4 || level < 0 || level > 4 || opponents < 0 || opponents > 14) return 2;
     if (render_scale < 1 || render_scale > 4) return 2;
+    if (benchmark && (bench.frames < 1 || bench.warmup < 0)) return 2;
     SDL_Window* window = nullptr;
     SDL_Renderer* renderer = nullptr;
     int result = 0;
@@ -576,6 +622,10 @@ int main(int argc, char** argv) {
             throw std::runtime_error(SDL_GetError());
         rr::Settings boot_settings = rr::load_settings((std::filesystem::path(rr::pref_directory()) / "settings.txt").string());
         apply_cli_overrides(boot_settings, cli);
+        // The benchmark measures throughput: no vsync wait unless asked, and
+        // the race scale follows the settings file unless --render-scale.
+        if (benchmark && !bench_vsync) boot_settings.vsync = false;
+        if (benchmark && !explicit_render_scale) render_scale = 0;
         rr::DisplayDriver boot{window, renderer, &boot_settings, (std::filesystem::path(rr::pref_directory()) / "settings.txt").string()};
         boot.toggle_at = cli.toggle_at;
         boot.apply(480);
@@ -722,7 +772,8 @@ int main(int argc, char** argv) {
                 }
                 boot.frame = 0;
                 boot.apply(480);
-                run_race(g, renderer, {.auto_drive = auto_drive, .start_paused = start_paused, .screenshot = screenshot, .key_codes = boot_settings.controls, .custom_keys = boot_settings.custom_controls, .swap_punch_kick = boot_settings.swap_punch_kick, .stick_deadzone = boot_settings.stick_deadzone, .left_handed = boot_settings.left_handed, .show_fps = boot_settings.show_fps, .assets = &assets, .render_scale = render_scale, .settings = &boot_settings}, boot);
+                run_race(g, renderer, {.auto_drive = auto_drive, .start_paused = start_paused, .screenshot = screenshot, .key_codes = boot_settings.controls, .custom_keys = boot_settings.custom_controls, .swap_punch_kick = boot_settings.swap_punch_kick, .stick_deadzone = boot_settings.stick_deadzone, .left_handed = boot_settings.left_handed, .show_fps = boot_settings.show_fps, .assets = &assets, .render_scale = render_scale, .settings = &boot_settings, .bench = benchmark ? &bench : nullptr}, boot);
+                if (benchmark) write_bench_report(bench, boot_settings, boot, window, renderer, g, course, render_scale);
                 g.mixer = nullptr; g.sound = nullptr; g.race_music = nullptr;
             }
         }

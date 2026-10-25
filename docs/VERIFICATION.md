@@ -1,5 +1,24 @@
 # Verification log (all sessions September 28, 2026)
 
+## Race frame performance (October 24, 2026)
+
+- Isolated worktree `../native-port-perf` at `289def9` plus only this change.
+  Release `ctest`: 104/104 pass, disc present, local oracle captures
+  symlinked. The shared tree's `oracle-sim-field-l5` failure comes from another
+  session's uncommitted simulation edits (that test is not in HEAD).
+- `post-chain` adds pooled == inline over four frames with all effects on.
+  `raster-rgb-threads` (1 vs N threads, byte-equal) passes with the new
+  banding. A scratch harness hashed HEAD's and the new inline post chain on the
+  same 852×480 frames: both `362dcc05`.
+- Benchmarks: `tools/bench_game.sh` (Napa autopilot, 600 frames after 90
+  warm-up, vsync off). Local reports are in `analysis/bench/{baseline,final}-*`.
+  Owner settings: Release 69.0 to 120.2 fps (present-capped). Debug 9.7 to
+  30.3 fps. Scale 2, everything on: 64.0 to 71.7 fps. Tables are in
+  [PERFORMANCE.md](PERFORMANCE.md).
+- Not done: no Android or other-machine benchmark. No interactive play-through
+  after the change; the bench drives the real race loop and window with
+  autopilot.
+
 ## Original offline fields in rr-game (October 18, 2026)
 
 - Isolated checkout `/Users/archit/Dev/rr/.field-count-20261018`, baseline

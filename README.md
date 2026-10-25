@@ -34,7 +34,9 @@ Racing, bike physics, AI riders, sprites and combat are implemented with the app
 
 ```sh
 cd /Users/archit/Dev/rr/native-port
-./run-macos.sh                                      # build and launch the current game
+./run-macos.sh                                      # build (Release) and launch the current game
+./run-macos.sh --debug                              # unoptimized Debug build (slow renderer)
+tools/bench_game.sh user original enhanced          # race frame-time benchmark (docs/PERFORMANCE.md)
 ```
 
 Or build and run directly:

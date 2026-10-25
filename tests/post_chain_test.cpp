@@ -8,6 +8,8 @@
 //   first frame after a pause or a teleport;
 // - with all effects off, apply() leaves the frame untouched.
 #include "post_chain.hpp"
+#include "render_threads.hpp"
+#include <cstdint>
 #include <iostream>
 #include <vector>
 
@@ -78,6 +80,26 @@ int main() {
         const uint32_t p = blue[0];
         const int r = (p >> 16) & 0xff, b = p & 0xff;
         check(r > 0 && b > 0 && r < 255 && b < 255, "motion blur mixes frames");
+    }
+    {
+        // Row-parallel passes match the inline chain exactly (every effect,
+        // several frames so motion-blur history and the vignette cache run).
+        rr::Enhancements e;
+        e.bloom = e.vignette = e.motion_blur = true;
+        rr::PostChain inline_chain, pooled_chain;
+        inline_chain.configure(e);
+        pooled_chain.configure(e);
+        rr::RenderThreads pool(5);
+        const int w = 213, h = 97;   // odd sizes: uneven bands and 4x bloom edges
+        uint32_t seed = 12345;
+        for (int f = 0; f < 4; ++f) {
+            std::vector<uint32_t> frame(size_t(w) * h);
+            for (auto& p : frame) { seed = seed * 1103515245u + 12345u; p = 0xff000000u | (seed >> 8); }
+            std::vector<uint32_t> pooled = frame;
+            inline_chain.apply(frame.data(), w, h, 12000.0f, f == 2);
+            pooled_chain.apply(pooled.data(), w, h, 12000.0f, f == 2, 20000.0f, &pool);
+            check(frame == pooled, "pooled post chain equals inline");
+        }
     }
     std::cout << failures << " failures\n";
     return failures ? 1 : 0;

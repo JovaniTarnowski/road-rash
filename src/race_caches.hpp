@@ -3,12 +3,14 @@
 #include <SDL3/SDL.h>
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <vector>
 #include "actor_nodes.hpp"
 #include "display.hpp"
 #include "fog.hpp"
 #include "framebuffer.hpp"
 #include "framebuffer_rgb.hpp"
+#include "frame_profile.hpp"
 #include "game_types.hpp"
 #include "lifecycle.hpp"
 #include "post_chain.hpp"
@@ -51,6 +53,7 @@ struct CourseCanvas {
     int scale_w=640,scale_h=480;   // plan 19 Task 4: 640s x 480s surface
     int wide_w=320;                // plan 21 Task 8: logical width of the surface
     TexturePtr texture;
+    FrameProfile* profile = nullptr;   // --bench phase timings (null: off)
     bool texture_is_rgb = false;  // plan 21 Task 4: RGB path needs ARGB8888 upload
     SDL_ScaleMode scale = crisp_scale;   // plan 18 Task 3: from DisplayDriver (filter setting)
     ~CourseCanvas(){clear();}
@@ -69,6 +72,8 @@ struct CourseCanvas {
     int worker_count = 0;
     FramebufferRgb rgb;  // plan 21 Task 4: full-colour frame (resized with frame)
     PostChain post_chain;  // plan 21 Task 7: per-race post history
+    std::vector<uint32_t> grade_table;   // grade_lut(grade_for), rebuilt on change
+    Grade grade_for = Grade::none;
     // Review 2026-10-13 item 2: cached RGB555 -> palette-index LUT for the
     // dashboard map (replaces the per-pixel 255-entry search). Reset when
     // the palette generation changes.
@@ -98,11 +103,22 @@ struct CourseCanvas {
     void draw_horizon_rgb(const CourseScene& scene,const Palette& palette,int32_t scroll,int32_t logical_width) {
         if (rgb.width() != scale_w || rgb.height() != scale_h) rgb.resize(scale_w,scale_h);
         scene.draw_horizon(frame,scroll,logical_width);
-        for (int y=0;y<scale_h;++y)
-            for (int x=0;x<scale_w;++x) {
-                const uint8_t* c=&palette.rgbx[4*frame.row(y)[x]];
-                rgb.row(y)[x]=0xff000000u | (uint32_t(c[0])<<16) | (uint32_t(c[1])<<8) | uint32_t(c[2]);
-            }
+        uint32_t argb[256];
+        for (int i=0;i<256;++i) {
+            const uint8_t* c=&palette.rgbx[4*i];
+            argb[i]=0xff000000u | (uint32_t(c[0])<<16) | (uint32_t(c[1])<<8) | uint32_t(c[2]);
+        }
+        rows([&](int y) {
+            const uint8_t* src=frame.row(y);
+            uint32_t* dst=rgb.row(y);
+            for (int x=0;x<scale_w;++x) dst[x]=argb[src[x]];
+        });
+    }
+    // Row-parallel pass over the surface on the render pool (each row is
+    // independent, so the result equals a single-threaded loop).
+    template <class F> void rows(F&& fn) {
+        if (!workers || workers->count() <= 1) { for (int y=0;y<scale_h;++y) fn(y); return; }
+        workers->run(workers->count(), scale_h, [&](int, int top, int bottom) { for (int y=top;y<=bottom;++y) fn(y); });
     }
     void draw(SDL_Renderer* renderer,const Game& game,const std::vector<RoadSlice>& slices,int s,int threads) {
         const int32_t wide = game.logical_width();
@@ -136,11 +152,13 @@ struct CourseCanvas {
         const bool dim = banner.dim || message;
         const bool remap = game.fade_lut.has_value() || dim;
         const ChannelLut lut = game.fade_lut ? *game.fade_lut : dim ? half_palette_lut() : identity_lut();
+        std::optional<ProfileScope> dash_scope(std::in_place, profile, FrameProfile::dash);
         RgbImage dash = need_dash ? game.assets.hud->compose(game.assets.hud->state(game.race(), game.player_name, game.rider_names),
                                                 game.assets.physics, rr::DashMode::full, s)
                                         : RgbImage(0, 0, 0);
         if (need_dash && message) game.assets.hud->draw_message(dash, game.banner_message, s);
         else if (need_dash) game.assets.hud->draw_countdown(dash, banner.text, s);
+        dash_scope.reset();
         if (!workers || worker_count != threads) { workers = std::make_unique<RenderThreads>(threads); worker_count = threads; }
         // Plan 20 Task 3: lazy attach/detach on detail flips (load_course runs
         // before the settings sync, so attach here where the setting is live).
@@ -152,38 +170,54 @@ struct CourseCanvas {
             game.assets.scene->clear_upscaled();
             game.upscaled_attached = false;
         }
+        std::optional<ProfileScope> nodes_scope(std::in_place, profile, FrameProfile::scene_nodes);
         auto nodes=game.assets.scene->draw_nodes(game.race().route(),slices,game.race().camera(),game.depth,[&](const rr::RoadSlice& near,const rr::RoadSlice& far,int road,int32_t ceiling,bool back){return game.rider_nodes(near,far,road,ceiling,back);},wide);
+        nodes_scope.reset();
         if (use_rgb) {
             // Reuse the indexed canvas as horizon scratch; the RGB path
             // never composites a dashboard into that buffer.
-            draw_horizon_rgb(*game.assets.scene,game.palette,game.race().horizon_scroll(),wide);
+            { ProfileScope ps(profile, FrameProfile::horizon);
+            draw_horizon_rgb(*game.assets.scene,game.palette,game.race().horizon_scroll(),wide); }
             // Plan 21 Task 5: fog colour from the horizon's own bottom rows
             // (user's art, computed at runtime); sky/horizon exempt from fog.
             const uint32_t fog_rgb = fog_colour(rgb.row(0), scale_w, scale_h);
-            render_nodes_rgb_fog(rgb,nodes,view_mode_wide(s,wide),16,game.palette,game.enhancements,*workers,fog_rgb);
+            { ProfileScope ps(profile, FrameProfile::raster);
+            render_nodes_rgb_fog(rgb,nodes,view_mode_wide(s,wide),16,game.palette,game.enhancements,*workers,fog_rgb); }
             // Grade post-pass (identity when grade == none).
             if (game.enhancements.grade != Grade::none) {
-                const auto lut = grade_lut(game.enhancements.grade);
-                for (int y = 0; y < scale_h; ++y)
+                ProfileScope ps(profile, FrameProfile::grade);
+                if (grade_for != game.enhancements.grade) { grade_table = grade_lut(game.enhancements.grade); grade_for = game.enhancements.grade; }
+                const auto& lut = grade_table;
+                rows([&](int y) {
+                    // Runs of one colour are common (sky, flat road): reuse
+                    // the previous result for an identical input pixel.
+                    uint32_t last_in = 0, last_out = 0;
+                    bool have = false;
+                    uint32_t* row = rgb.row(y);
                     for (int x = 0; x < scale_w; ++x) {
-                        const uint32_t p = rgb.row(y)[x];
+                        const uint32_t p = row[x];
                         if (!(p >> 24)) continue;
-                        rgb.row(y)[x] = (p & 0xff000000u) | grade_apply(lut, p & 0xffffffu);
+                        const uint32_t c = p & 0xffffffu;
+                        if (!have || c != last_in) { last_in = c; last_out = grade_apply(lut, c); have = true; }
+                        row[x] = (p & 0xff000000u) | last_out;
                     }
+                });
             }
             // Plan 21 Task 7: CPU post chain (motion blur -> bloom -> vignette).
             // Speed from the race's speedometer state (presentation read of the
             // drawn tick, never a sim write); pause/teleport resets history.
             post_chain.configure(game.enhancements);
             if (post_chain.any()) {
+                ProfileScope ps(profile, FrameProfile::post);
                 const float speed = float(std::abs(game.race().speed()));
                 post_chain.apply(reinterpret_cast<uint32_t*>(rgb.row(0)), scale_w, scale_h, speed,
-                                 game.post_teleported);
+                                 game.post_teleported, 20000.0f, workers.get());
                 game.post_teleported = false;
             }
             // Dashboard composited directly (no palette round-trip; the
             // once-per-frame image from above).
             if (need_dash) {
+                ProfileScope ps(profile, FrameProfile::dash);
                 const int xoff = margin * 2 * s;
                 const int panel_w = margin * 2 * s;
                 for (int y = 0; y < dash.height && y < scale_h; ++y)
@@ -211,18 +245,24 @@ struct CourseCanvas {
                 }
             }
             // The palette upload applies to the whole presented frame.
-            if (remap)
-                for (int y = 0; y < scale_h; ++y)
+            if (remap) {
+                ProfileScope ps(profile, FrameProfile::remap);
+                rows([&](int y) {
+                    uint32_t* row = rgb.row(y);
                     for (int x = 0; x < scale_w; ++x) {
-                        const uint32_t p = rgb.row(y)[x];
-                        rgb.row(y)[x] = (p & 0xff000000u) | (uint32_t(lut[(p >> 16) & 0xff]) << 16) |
-                                        (uint32_t(lut[(p >> 8) & 0xff]) << 8) | lut[p & 0xff];
+                        const uint32_t p = row[x];
+                        row[x] = (p & 0xff000000u) | (uint32_t(lut[(p >> 16) & 0xff]) << 16) |
+                                 (uint32_t(lut[(p >> 8) & 0xff]) << 8) | lut[p & 0xff];
                     }
+                });
+            }
         } else {
-        game.assets.scene->draw_horizon(frame,game.race().horizon_scroll(),wide);
+        { ProfileScope ps(profile, FrameProfile::horizon);
+        game.assets.scene->draw_horizon(frame,game.race().horizon_scroll(),wide); }
         // The dashboard stays a centred 4:3 image (plan 21 Task 8); side
         // panels are drawn from its edge columns below.
-        rr::render_nodes_threaded(frame,nodes,view_mode_wide(s,wide),16,*workers,game.enhancements.perspective);
+        { ProfileScope ps(profile, FrameProfile::raster);
+        rr::render_nodes_threaded(frame,nodes,view_mode_wide(s,wide),16,*workers,game.enhancements.perspective); }
         if (need_dash) {
             // Plan 19 Task 8: the dashboard composes at the race scale. Its
             // RgbImage pixels are palette-mapped into the indexed frame.
@@ -263,8 +303,10 @@ struct CourseCanvas {
                 }
             }
         }
+        ProfileScope ps(profile, FrameProfile::remap);
         frame.to_rgba(remap ? shown_palette(game.palette, lut) : game.palette,rgba.data(),scale_w*4);
         }
+        ProfileScope upload_scope(profile, FrameProfile::upload);
         if(!texture || texture_is_rgb != use_rgb) {
             texture.reset(SDL_CreateTexture(renderer,use_rgb?SDL_PIXELFORMAT_ARGB8888:SDL_PIXELFORMAT_RGBA32,SDL_TEXTUREACCESS_STREAMING,scale_w,scale_h));
             if(!texture)throw std::runtime_error(SDL_GetError());

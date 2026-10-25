@@ -1599,3 +1599,25 @@ crossing. Foot2/3 each next miss one draw at stationary-camera tick 4580;
 their old captures do not log that caller. Initial setup/tick-1 RNG remains
 anchored rather than reproduced, and dual-road split/merge ring traversal remains
 open. See VERIFICATION.md and agent-handoffs/backward-ring-20261018.md for gates.
+
+## 2026-10-24: race frame performance and benchmark tooling
+
+- `./run-macos.sh` now builds Release in `build-play/` by default; `--debug`
+  keeps the Debug `build/` tree. The owner's 10 fps came mostly from the Debug
+  build of the CPU renderer.
+- New `rr-game --bench FRAMES` (plus `--bench-warmup`, `--bench-out`,
+  `--bench-label` and `--bench-vsync`) runs a phase-timed autopilot race with the
+  settings file. `tools/bench_game.sh` runs presets in isolated preference dirs.
+  `tools/bench_report.py` prints tables, compares runs and gates a minimum fps.
+  See [PERFORMANCE.md](PERFORMANCE.md).
+- Made the RGB post-processing passes row-parallel on the render pool: grade,
+  horizon conversion, remap, motion blur, bloom and vignette. Cached the grade
+  table and the vignette gain. Rasterizer bands are now 4x workers with
+  per-band node culling and clipped edge walks. All of it is bit-identical to
+  the previous output.
+- Measured with the owner's settings, Release, 852×480: 69 to 120 fps
+  (display present cap). Debug: 9.7 to 30 fps. Scale 2 (1704×960) with
+  everything on: 72 fps.
+- Gaps: double-precision trilinear and grade math remains the per-pixel cost at
+  scale 3+; no Android device benchmark; `draw_slices` does not reach the race
+  fog (recorded in PERFORMANCE.md).

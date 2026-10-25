@@ -49,8 +49,10 @@ Prem sample_nearest(const RgbaMip& mip, double u, double v) {
 }
 // Edge walk over x (double) + u/v/fog (double), same fill rules as affine.
 struct RgbEdge { double x = 0, u = 0, v = 0, fog = 0; };
+// Rows outside [row_lo, row_hi] are not written (the caller's clip); each
+// row's value is computed directly from its vertex, so clipping is exact.
 void rgb_chain(std::vector<RgbEdge>& rows, std::vector<char>& set, const std::array<RgbVertex, 4>& verts,
-               int first, int bottom, int direction, int height) {
+               int first, int bottom, int direction, int row_lo, int row_hi) {
     int index = first;
     for (int guard = 0; guard < 4; ++guard) {
         const int next = (index + direction + 4) % 4;
@@ -62,7 +64,7 @@ void rgb_chain(std::vector<RgbEdge>& rows, std::vector<char>& set, const std::ar
         if (dy > 0) {
             const double sx = (double(b.x) - a.x) / dy, su = (double(b.u) - a.u) / dy;
             const double sv = (double(b.v) - a.v) / dy, sf = (double(b.fog_q8) - a.fog_q8) / dy;
-            const int y0 = std::max(0, a.y), y1 = std::min(height - 1, b.y);
+            const int y0 = std::max(row_lo, a.y), y1 = std::min(row_hi, b.y);
             for (int y = y0; y <= y1; ++y) {
                 const double t = double(y) - double(a.y);
                 rows[size_t(y)] = {double(a.x) + sx * t, double(a.u) + su * t, double(a.v) + sv * t,
@@ -121,12 +123,14 @@ void draw_rgb_impl(FramebufferRgb& fb, const std::array<RgbVertex, 4>& verts, co
     thread_local std::vector<char> lset, rset;
     const size_t hh = size_t(fb.height());
     if (left.size() < hh) { left.resize(hh); right.resize(hh); lset.resize(hh); rset.resize(hh); }
-    std::fill(lset.begin(), lset.begin() + ptrdiff_t(hh), 0);
-    std::fill(rset.begin(), rset.begin() + ptrdiff_t(hh), 0);
-    rgb_chain(left, lset, verts, first, bottom, -1, fb.height());
-    rgb_chain(right, rset, verts, first, bottom, 1, fb.height());
+    // Only rows [top, last] are read below, so only they are reset/walked.
     const int top = std::max({0, verts[size_t(first)].y, clip.top});
     const int last = std::min({bottom, clip.bottom, fb.height() - 1});
+    if (top > last) return;
+    std::fill(lset.begin() + top, lset.begin() + last + 1, 0);
+    std::fill(rset.begin() + top, rset.begin() + last + 1, 0);
+    rgb_chain(left, lset, verts, first, bottom, -1, top, last);
+    rgb_chain(right, rset, verts, first, bottom, 1, top, last);
     const int bound = std::min(clip.right, fb.width());
     if (level0 >= count || level1 >= count) throw std::runtime_error("RGB mip level out of range");
     const RgbaMip& m0 = mips[level0];
@@ -430,6 +434,7 @@ struct ResolvedNode {
     size_t srcpx_size = 0;
     unsigned stride_shift = 0;
     const Palette* palette = nullptr;
+    int miny = 0, maxy = 0;   // mapped row range, for band culling
 };
 static void draw_resolved(FramebufferRgb& fb, const ResolvedNode& r, RasterClip clip, RasterScratch64& scratch) {
     switch (r.kind) {
@@ -472,6 +477,8 @@ static void render_nodes_rgb_impl(FramebufferRgb& fb, const std::vector<DrawNode
     // the happens-before edge.
     static std::vector<ResolvedNode> resolved;
     resolved.clear();
+    int node_miny = 0, node_maxy = 0;
+    const auto push_node = [&](ResolvedNode& r) { r.miny = node_miny; r.maxy = node_maxy; resolved.push_back(r); };
     resolved.reserve(nodes.size());
     for (const auto& node : nodes) {
         if (!node.texture && !node.flat_index) continue;
@@ -484,6 +491,7 @@ static void render_nodes_rgb_impl(FramebufferRgb& fb, const std::vector<DrawNode
             miny = std::min(miny, p.y); maxy = std::max(maxy, p.y);
         }
         if (minx > clip.right || maxx < clip.left || miny > clip.bottom || maxy < clip.top) continue;
+        node_miny = miny; node_maxy = maxy;   // normalize_quad permutes corners only
         if (node.texture && node.texture->mips.empty() && !(node.texture->flags & flat_mask)) continue;
         bool rgb_flip = node.flip_u;
         std::array<RasterPoint, 4> nq;
@@ -521,7 +529,7 @@ static void render_nodes_rgb_impl(FramebufferRgb& fb, const std::vector<DrawNode
             ResolvedNode r;
             r.kind = ResolvedNode::Kind::flat;
             r.pts = fp; r.fog = flat_fog; r.flat_argb = argb;
-            resolved.push_back(r);
+            push_node(r);
             continue;
         }
         const auto& texture = *node.texture;
@@ -571,7 +579,7 @@ static void render_nodes_rgb_impl(FramebufferRgb& fb, const std::vector<DrawNode
             rt.kind = ResolvedNode::Kind::trilinear;
             rt.pts = pts; rt.mips = mip_set->data(); rt.mip_count = mip_set->size();
             rt.transparent = transparent; rt.lod = lod; rt.fog = tex_fog;
-            resolved.push_back(rt);
+            push_node(rt);
         } else if (enh.filter == TextureFilter::nearest) {
             // Fogged nearest goes through the float path (no exactness claim
             // with fog on); unfogged keeps the Q16-exact walk.
@@ -582,7 +590,7 @@ static void render_nodes_rgb_impl(FramebufferRgb& fb, const std::vector<DrawNode
                 rn.kind = ResolvedNode::Kind::nearest_impl;
                 rn.pts = pts; rn.mips = mip_set->data(); rn.mip_count = mip_set->size();
                 rn.level = level; rn.transparent = transparent; rn.fog = nf;
-                resolved.push_back(rn);
+                push_node(rn);
                 continue;
             }
             // Upscaled active: Q16 walk over the upscaled index pixels.
@@ -605,7 +613,7 @@ static void render_nodes_rgb_impl(FramebufferRgb& fb, const std::vector<DrawNode
                                     uint16_t(uint16_t(uu[i] >> level) * uv_scale),
                                     uint16_t(uint16_t(vv[i] >> level) * uv_scale)};
                 }
-                resolved.push_back(ru);
+                push_node(ru);
                 continue;
             }
             // Nearest-exact: Q16 walk over the index pixels (byte-identical).
@@ -627,27 +635,31 @@ static void render_nodes_rgb_impl(FramebufferRgb& fb, const std::vector<DrawNode
                                 int16_t(std::max(-32768, std::min(32767, pts[i].y))),
                                 uint16_t(uu[i] >> level), uint16_t(vv[i] >> level)};
             }
-            resolved.push_back(rq);
+            push_node(rq);
         } else {
             FogState bi_fog{fog_on && (pts[0].fog_q8 | pts[1].fog_q8 | pts[2].fog_q8 | pts[3].fog_q8), fog_colour};
             ResolvedNode rb;
             rb.kind = ResolvedNode::Kind::bilinear;
             rb.pts = pts; rb.mips = mip_set->data(); rb.mip_count = mip_set->size();
             rb.transparent = transparent; rb.fog = bi_fog;
-            resolved.push_back(rb);
+            push_node(rb);
         }
     }
     // Band dispatch: every band draws all resolved nodes with a row clip.
     // The edge walk starts at the polygon top (Focus 1); the clip only skips
     // writes, so the union is bit-identical to one thread. Scratch comes from
     // the pool (plan 29 Task 4); the job captures one pointer (SBO-clean).
-    const int bands = std::max(1, pool.count());
+    // More bands than workers: the pool hands bands out as workers free up,
+    // so cheap sky rows and busy road rows balance. Nodes entirely outside a
+    // band are skipped (their draw would write nothing there).
+    const int bands = pool.count() > 1 ? std::min(fb.height(), pool.count() * 4) : 1;
     struct Ctx { FramebufferRgb* fb; const std::vector<ResolvedNode>* nodes; };
     Ctx ctx{&fb, &resolved};
     Ctx* pc = &ctx;
     pool.run(bands, fb.height(), [pc](int, int top, int bottom, RasterScratch64& scratch) {
         const RasterClip band{0, top, pc->fb->width(), bottom};
-        for (const auto& r : *pc->nodes) draw_resolved(*pc->fb, r, band, scratch);
+        for (const auto& r : *pc->nodes)
+            if (r.maxy >= top && r.miny <= bottom) draw_resolved(*pc->fb, r, band, scratch);
     });
 }
 void render_nodes_rgb(FramebufferRgb& fb, const std::vector<DrawNode>& nodes, const ViewMode& mode,
