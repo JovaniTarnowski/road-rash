@@ -110,6 +110,44 @@ int main(int argc,char** argv) {
         if(!separated || race.crashed() || race.riders()[0].crash_active)throw std::runtime_error("Live crash did not separate and remount: elapsed="+std::to_string(elapsed)+" state="+std::to_string(race.bike().i32(0x2f4))+" speed="+std::to_string(race.bike().i32(0xec)));
         if(race.bike().i32(0x154)!=8 || race.bike().i32(0x174)!=config.normal_dimensions[0])throw std::runtime_error("Live remount did not restore bike dimensions");
         std::cout<<"Live Napa crash separated and remounted after "<<elapsed<<" ticks\n";
+        // 0x00407a90 state-3 flash (407acd-407b0b): bike +0x81 mirrors the
+        // half's +0x1e9 while the bike still sits on the marked sample and
+        // the unsigned tick gap stays below 12, advancing as (gap>>2)+1.
+        // A crashed player still ticks nitro (0x0040b1a0 before the crash
+        // branch); expiry and sample mismatch clear the mark.
+        {
+            auto& me = race.riders()[0];
+            me.crash_active = true;
+            me.bike.i32(0x2f4) = 3;
+            me.bike.i32(0x1c) = int32_t(me.sample) * 256;
+            me.half_object.u8(0x1e9) = 1;
+            me.half_object.i32(0x1ec) = int32_t(me.sample);
+            me.half_object.i32(0x1f0) = race.ticks();
+            me.bike.u8(0x81) = 0;
+            me.nitro_charge = 0;
+            me.crash_actor.motion.i32(0x1c) = me.bike.i32(0x1c) + 0x10000;
+            me.crash_actor.motion.i32(0x28) = me.bike.i32(0x28) + 0x10000;
+            race.step(0);
+            if(me.bike.u8(0x81) != 1 || me.half_object.u8(0x1e9) != 1)throw std::runtime_error("Pickup flash did not mirror the mark (gap 1 -> 1)");
+            if(me.nitro_charge <= 0)throw std::runtime_error("Crashed player did not tick nitro");
+            me.crash_active = true; me.bike.i32(0x2f4) = 3;
+            me.bike.i32(0x1c) = int32_t(me.sample) * 256;
+            me.half_object.u8(0x1e9) = 5;
+            me.half_object.i32(0x1ec) = int32_t(me.sample);
+            me.half_object.i32(0x1f0) = race.ticks() - 20;
+            me.crash_actor.motion.i32(0x1c) = me.bike.i32(0x1c) + 0x10000;
+            race.step(0);
+            if(me.bike.u8(0x81) != 0 || me.half_object.u8(0x1e9) != 0)throw std::runtime_error("Stale flash mark did not expire");
+            me.crash_active = true; me.bike.i32(0x2f4) = 3;
+            me.bike.i32(0x1c) = int32_t(me.sample) * 256;
+            me.half_object.u8(0x1e9) = 2;
+            me.half_object.i32(0x1ec) = int32_t(me.sample) + 1;
+            me.half_object.i32(0x1f0) = race.ticks();
+            me.crash_actor.motion.i32(0x1c) = me.bike.i32(0x1c) + 0x10000;
+            race.step(0);
+            if(me.bike.u8(0x81) != 0 || me.half_object.u8(0x1e9) != 0)throw std::runtime_error("Off-sample flash mark did not clear");
+            std::cout<<"Pickup flash mirrors, expires and clears on sample mismatch; crashed player ticks nitro\n";
+        }
         const int motion_offsets[]={0x18,0x1c,0x20,0x24,0x28,0x2c,0x30,0x34,0x38,0x3c,0x40,0xec,0xf0,0xf4,0x108,0x10c,0x128,0x12c,0x130,0x134,0x138,0x13c,0x140,0x184,0x188,0x18c,0x19c};
         for(int c=0;c<values.at("actor.motion.count");++c) {
             const auto root="actor.motion."+std::to_string(c)+".";rr::Bike actor;

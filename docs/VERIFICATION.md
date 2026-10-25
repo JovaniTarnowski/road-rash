@@ -1,5 +1,30 @@
 # Verification log (all sessions September 28, 2026)
 
+## Crash-think flash and player-only nitro (October 25, 2026)
+
+- Baseline `ec7f0c1`. Disassembly evidence: `analysis/original-disassembly.txt`
+  `407a91-407b0b` (player check, +0x7c clear, flash words), `40b1a0-40b1fa`
+  (global charge `DAT_004c5f10`, dt = bike +0x18), `437e69-437e6f` (+0x10
+  stored before think). REA has no `0x00407a90` procedure entry (known gap
+  #8); no fresh REA fetch was used for this slice (limitation recorded).
+- `race-test`: new player-only nitro pin (AI charge stays 0 while the player
+  recharges over 10 ticks). `crash-test`: new pickup-flash pin on the live
+  Napa race (gap-1 mirror to 1, 20-tick staleness expiry, off-sample clear)
+  plus crashed-player nitro tick. Both pins fail before the fix by
+  construction (AI recharged; +0x81 stayed 0) and pass after.
+- Owned Debug build `build-agent-crash-flash`: configure/build exit 0.
+  Focused `race-test`/`crash-test` pass. Full
+  `ctest --test-dir build-agent-crash-flash --parallel 8`: **105/105 passed,
+  zero skips**. `make verify-sim BUILD_DIR=build-agent-crash-flash`: exit 0
+  (strict human 1431 ticks identical; field replays green, no new divergence
+  pin). No Android/sanitizer/oracle-capture run in this slice.
+- Live parity note: the run_bike_node flash was first rewritten to the exact
+  bike words (position>>8, +0x10) and the field replays diverged at tick 1301
+  (`rider.3.raw_1e8` 896 vs 128: mark kept vs cleared); the think was
+  restored to the accepted sample form and the helper flash was gated to the
+  non-live loop only, after which all three field replays pass. Exact-word
+  follow-up remains open (see PROGRESS).
+
 ## Crash pickup and walk-back render (October 24, 2026)
 
 - Baseline `1a43c5e`. `crash` test gained live-Napa checks: the riderless bike

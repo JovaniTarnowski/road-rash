@@ -53,6 +53,35 @@ Detailed evidence is in [REVERSE_ENGINEERING.md](REVERSE_ENGINEERING.md) and tes
 
 ## Timeline
 
+### October 25, 2026: Crash-think flash and player-only nitro from disassembly
+
+- `0x00407a90` head (disassembly `407a91-407aa7`): nitro `0x0040b1a0` runs
+  only when the bike pointer equals `DAT_004642d8` (the player). The native
+  every-tick loop called it for every rider and skipped it for a crashed
+  player; `step_rider` now ticks nitro for the player only, including on the
+  crash branch. A `race_test` pin fails before (AI recharges) and passes after.
+- State-3 flash (disassembly `407abc-407b0b`): outside crash states 1/2 the
+  think clears bike +0x7c, then refreshes the scenery mark from the half
+  (+0x1e9 survives only while bike +0x1c>>8 equals half +0x1ec and the
+  unsigned bike +0x10 minus half +0x1f0 stays below 12, advancing as
+  (gap>>2)+1; bike +0x81 copies the half). `0x00437e60` stores the current
+  tick into +0x10 just before think (`437e69-437e6f`), so +0x10 already equals
+  the tick there. The live scheduler already did this copy in bike think;
+  `crash_bike_animation` now does it for the every-tick loop only (gated on
+  `!live_schedule_`), keeping live field parity bit-identical. A `crash_test`
+  pin covers mirror (gap 1 -> 1), 12-tick expiry and sample mismatch.
+- REA limit recorded: `0x00407a90` has no REA procedure entry (known gap #8,
+  scheduler-dispatched); the port rests on `analysis/decompiled/00407a90.c`
+  plus the disassembly above, not on a fresh REA fetch. `0x0040b1a0` was read
+  from the project export (global `DAT_004c5f10` charge, dt = bike +0x18).
+- Live parity preserved: full Debug `ctest` 105/105 and `make verify-sim`
+  (strict human 1431 ticks identical) pass with these changes; the three
+  field replays are green with no new known-divergence pin.
+- Remaining: the live think uses the route-sample word where the disassembly
+  reads bike +0x1c>>8 (kept: the sample form is what the 2400-tick field
+  parity was accepted against); the uncrashed every-tick path still has no
+  flash copy (live-only concern, game uses the scheduler).
+
 ### October 24, 2026: Crash pickup draws one bike; walk-back faces the bike
 
 - Pickup double bike: `0x00407a90` clears the riderless bike's frame pointer
@@ -68,8 +97,11 @@ Detailed evidence is in [REVERSE_ENGINEERING.md](REVERSE_ENGINEERING.md) and tes
   at speed 1200 with no keys; accelerate/brake step only toward the bike
   longitudinally, left/right move sideways, and any key resets the 1200-tick
   timeout. The native port already matches this (`recover_crash_actor`).
-- Remaining: `0x00407a90`'s state-3 flash copy (+0x81 from half +0x1e9) and
-  the player-only `0x0040b1a0` call are not ported.
+- Remaining (October 25 update): the state-3 flash copy and the player-only
+  `0x0040b1a0` call are now ported (flash in scheduler think plus the
+  every-tick crash helper; nitro gated to the player in both loops, including
+  while crashed). Open is only the exact-word form in live think (route
+  sample vs bike +0x1c>>8) and flash on the uncrashed every-tick path.
 
 ### October 14, 2026: Plan10 SIM captures restored; frozen-state replay
 

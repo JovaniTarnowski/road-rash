@@ -820,6 +820,17 @@ int main() {
         for (int i = 0; i < 600; ++i) n.step(rr::control_accelerate);
         check(n.riders()[0].nitro_charge >= low, "nitro recharges while boosting off");
     }
+    // 0x0040b1a0 is player-only (DAT_004642d8 check at 407a91-407aa7): AI
+    // riders never tick nitro, even while the player recharges.
+    {
+        rr::Opponent opp{spec, 90, 95, 90, 1, 1};
+        rr::Race p(straight(4000), straight(4000), t, spec, 90, {opp});
+        auto& me = p.riders()[0]; auto& ai = p.riders()[1];
+        me.nitro_charge = 0; ai.nitro_charge = 0;
+        for (int i = 0; i < 10; ++i) p.step(0);
+        check(me.nitro_charge > 0, "player nitro recharges");
+        check(ai.nitro_charge == 0, "AI nitro never ticks (0x0040b1a0 player-only)");
+    }
     // Animation state advances in the Race tick: ride_animation selected is
     // set before snapshots without a render owner.
     {

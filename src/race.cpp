@@ -1747,8 +1747,28 @@ void Race::crash_bike_animation(Rider& r) {
     Bike& bike=r.bike;const auto& library=*crash_library_;
     // 0x00407a90: outside states 1/2 (the state-3 pickup) the bike clears
     // its frame pointer +0x7c and skips the advance; rider animation 41
-    // draws the bike being lifted.
-    if(bike.i32(0x2f4)!=1 && bike.i32(0x2f4)!=2){r.crash_bike_animation.selected.reset();return;}
+    // draws the bike being lifted. The disassembly (407abc-407b0b) then
+    // refreshes the scenery-mark flash: when the half's +0x1e9 is set, it
+    // survives only while the bike still sits on the marked sample
+    // (bike +0x1c arithmetic >>8 == half +0x1ec) and the unsigned tick gap
+    // (bike +0x10 - half +0x1f0) stays below 12, advancing as (gap>>2)+1;
+    // bike +0x81 copies the half's byte. That copy already runs in the live
+    // scheduler's bike think (run_bike_node); it runs here only for the
+    // every-tick loop, where that think never runs. 0x00437e60 stores the
+    // current tick into +0x10 just before think, so ticks_ is exact here.
+    if(bike.i32(0x2f4)!=1 && bike.i32(0x2f4)!=2) {
+        r.crash_bike_animation.selected.reset();
+        if(!live_schedule_) {
+            auto& half=r.half_object;
+            if(half.u8(0x1e9)) {
+                const int32_t pos_sample=bike.i32(0x1c)>>8;
+                const uint32_t elapsed=uint32_t(ticks_)-uint32_t(half.i32(0x1f0));
+                half.u8(0x1e9)=(pos_sample==half.i32(0x1ec) && elapsed<12) ? uint8_t((elapsed>>2)+1) : 0;
+            }
+            bike.u8(0x81)=half.u8(0x1e9);
+        }
+        return;
+    }
     advance_crash_bike_animation(r.crash_bike_animation,library.playback[0],library.fallback,bike.i32(0xec),uint32_t(ticks_),[&]{return random();});
 }
 void Race::crash_bike_motion(Rider& r,bool player) {
@@ -2620,13 +2640,20 @@ void Race::step_rider(Rider& r, uint32_t controls, bool player) {
         integrate_speed(b, tables_, 0);
         return;
     }
-    if(crash_library_ && b.i32(0x2f4)) {if(!r.crash_active)crash(r);step_crash(r,player,controls);if(player)police_think(r);return;}
+    if(crash_library_ && b.i32(0x2f4)) {
+        if(!r.crash_active)crash(r);
+        // 0x00407a90 calls 0x0040b1a0 for the player (DAT_004642d8 check at
+        // 407a91-407aa7) before the crash-state branch, so a crashed player
+        // still ticks nitro while AI riders never do.
+        if(player)nitro_charge_tick(r);
+        step_crash(r,player,controls);if(player)police_think(r);return;
+    }
     // 0x00434660 head: demo hold (or race-not-started) takes the AI branch;
     // the control word is ignored. fight() with zero controls is exactly the
     // branch's stamina regen with no attacks started.
     const bool demo_player = demo_hold_ && player;
     fight(r, demo_player ? 0 : controls, size_t(&r - riders_.data()));
-    nitro_charge_tick(r);
+    if(player)nitro_charge_tick(r);
     rider_think(r, controls, player);
     rider_move(r, player);
 }

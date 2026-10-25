@@ -902,6 +902,22 @@ In `0x0040a600`, a rider with `+0x324 == −1` (remote network) goes to `0x0040a
     copying half +0x1e9 to +0x81. During state 3 the bike is therefore not
     drawn; rider animation 41 shows the lift. Ported in
     `Race::crash_bike_animation`.
+  - Bike-think disassembly (October 25, 2026; `original-disassembly.txt`):
+    `407a91-407aa7` calls `0x0040b1a0` only when the bike equals
+    `DAT_004642d8` (player identity; native: `&r == &riders_[0]`).
+    `407abc-407b0b`: +0x7c clear, then if half +0x1e9 is nonzero, keep it
+    only while bike +0x1c arithmetic `>>8` equals half +0x1ec and the
+    unsigned bike +0x10 minus half +0x1f0 is below 12, setting
+    +0x1e9 = (gap>>2)+1 else 0; bike +0x81 copies the half byte.
+    `437e69-437e6f` stores the current tick into node +0x10 immediately
+    before think, so +0x10 already equals the tick inside `0x00407a90`.
+    `0x0040b1a0` (`40b1a0-40b1fa`) drains `DAT_004c5f10` by `dt<<8`
+    (dt = bike +0x18) while boosting (stop at <1 via `0x0040b170`) and
+    recharges by `dt * DAT_00465a28` while the
+    `(charge + signbias)>>8 < DAT_00465a30`; native `nitro_charge_tick`
+    matches this on the per-rider charge (player only, so equivalent).
+    REA has no `0x00407a90` procedure entry (gap #8); this slice rests on
+    the project export plus the disassembly above.
   - Remount-gate disassembly verification (October 12, 2026; plan 24 Task 3 input — no REA needed): `40a990–40a9b4` show the walk-function exit — state-3 (`cmpl $0x3`) + anim-frame `0x29` gate, then `call 0x00404560` (remount reset) and return; the `0x26`-anim early-return branch sits just above (`40a992–40a9a5`). With this, `0x0040a600` is verified end-to-end: entry/network/contact branches (REA parent), timer/police, bounds-wreck, proximity, steer-gate, and now the remount exit. The Task-3 porter owns the full function body; only captures + port remain.
 
 ### Rider–vehicle contact (October 12, 2026, plan 11a Task 1)
