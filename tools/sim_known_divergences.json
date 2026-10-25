@@ -22,5 +22,11 @@
     "divergence": "first divergence at frame 2001 (tick 2002): ring.13e2038.position original 87859 native 87575",
     "reason": "Plan 10 Task 6 scenario napa-field-l5 re-captured with the w2c/we8 proxy (per-tick car +0x2c/+0xe8 diagnostics): 14 opponents, display level 5, demo driver, single green anchor; countdown closes on the green anchor and every compared field matches through tick 2001. Tick 2002 is a behind-back car removal run (pos-back -761 < 0x800, front-pos 33529): original moves +70, zeroes speed 1328->0 and steps lane -2->-1 with pause1f8=0/signal=0/dt=60 and next==last==tick+100; w2c nonzero (window branch taken) and we8=0 (00437c10 mark path, which writes no motion). Native continues without the stop/lane-step (native 87575): the missing 0x0044e710 lane-validity stop sub-path (lines 208-212) is the remaining candidate. Second instance at tick 2255 (13e2248, +70, 2140->0, lane 1->0, pos-back -2402). Diagnostic only, not acceptance.",
     "output_sha256": "e268edcce3c3f05ad3114baa36326b295820099f1d168506668d549aa1bac714"
+  },
+  "napa-field-l5e.tsv": {
+    "trace_sha256": "dd197744632159360c34a081f8e679399245c7818a2fb4958354a4f06a3625a0",
+    "divergence": "first divergence at frame 2398 (tick 2399): ring.13e2248.position original 101105 native 101567",
+    "reason": "Plan 10 Task 6 scenario napa-field-l5 re-captured with the slice-word proxy (per-tick car +0x140/+0x2c/+0x30/link-selector/linked-slice diagnostics): 14 opponents, display level 5, demo driver, single green anchor; countdown closes on the green anchor and every compared field matches through tick 2398. Tick 2399 is a behind-back car removal run (pos-back -2308): original moves +70, zeroes speed 1940->0 and steps lane 1->0 with pause1f8=0/signal=0/dt=60; dumped block inputs (sl2c=sl30=256, s28v=0, linked 256/256) verify the 0x0044e710 lane-validity stop sub-path end to end. Native skips the block because the static route reads 512/512 at sample 394 while the original's ring slot holds stale 256/256 words; without the stale input there is no stop (native 101567). Modeling the slot staleness is plan-17 ring work. Diagnostic only, not acceptance.",
+    "output_sha256": "f3c401e7dc8f65aebb1cb4f2f370bc11138c8499da0c76894298df0746870843"
   }
 }
