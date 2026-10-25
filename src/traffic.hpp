@@ -232,8 +232,10 @@ class TrafficSystem {
               const std::function<uint32_t()>& random);
     // 0x0044e710 speed target before the move: obstacle following, signal
     // latch and stop line. Returns the 0x00449880 target speed (x100) and
-    // acceleration.
-    std::pair<int32_t, int32_t> plan_speed(TrafficCar&, const std::vector<RouteSample>& route);
+    // acceleration. front_q8 selects the ring slot the car reads its lane
+    // words from (newest same-residue sample at/under the ring front).
+    std::pair<int32_t, int32_t> plan_speed(TrafficCar&, const std::vector<RouteSample>& route,
+                                           int32_t front_q8);
     const VehicleLibrary& library_;
     PhysicsTables physics_;
     std::array<int32_t, 26> car_template_{};

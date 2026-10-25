@@ -253,8 +253,8 @@ int32_t TrafficSystem::schedule_interval(const TrafficCar& car, int32_t camera_q
     return d < 0x26 && d > -3 ? std::min(interval, 6) : std::min(interval * 4, 60);
 }
 
-std::pair<int32_t, int32_t> TrafficSystem::plan_speed(TrafficCar& car,
-                                                      const std::vector<RouteSample>& route) {
+std::pair<int32_t, int32_t> TrafficSystem::plan_speed(TrafficCar& car, const std::vector<RouteSample>& route,
+                                                      int32_t front_q8) {
     // 0x0044e710: scheduler dt participates in the stop-line lookahead.
     if (car.motion.i32(0x1f8) != 0)
         car.motion.i32(0x1f8) = std::max(0, int32_t(car.motion.i32(0x1f8)) - car.dt);
@@ -368,28 +368,42 @@ std::pair<int32_t, int32_t> TrafficSystem::plan_speed(TrafficCar& car,
     // stops (target 0, gap 0). Lane words come from NALR via
     // 0x004528f0 and equal the native PathSample lane Q8 (see
     // REVERSE_ENGINEERING.md): +0x2c is the right-lane word, +0x30
-    // the left-lane word. The +0x28 slot selects the linked slice
-    // (+0x08 forward unless it reads 3, +0x18 oncoming unless 1):
-    // the oracle slot always reads 0 with linked counts equal to
-    // current counts in every dumped tick (L5e, all 53880 slice
-    // keys), so the linked reads use the current sample here; see
+    // the left-lane word. The car reads them from a scrolling-window
+    // ring slot (+0x140): the newest same-residue sample at/under the
+    // ring front (128-sample window, mod-128 slots; verified against
+    // dumped proxy words on L5e). The +0x28 slot always reads 0 in
+    // every dumped tick, so the linked slice (+0x08 forward,
+    // +0x18 oncoming) is always taken here; see
     // docs/agent-handoffs/l5-tick1995-trace-20261026.md. The block
     // never touches the obstacle lane_changed flag. Kind 0 uses a
     // non-strict bound (count <= lane is outside); kind 2 uses a
     // strict bound (count < -lane is outside).
     if (!(kind & 1)) {
-        const int32_t right = div256(at.path.right_q8); // +0x2c
-        const int32_t left = div256(at.path.left_q8);   // +0x30
+        const int32_t nsamples = int32_t(route.size());
+        const int32_t front_sample = std::clamp(front_q8 >> 8, int32_t(0), nsamples - 1);
+        // Newest sample with residue r at/under the ring front.
+        auto slot_sample = [&](int32_t s) {
+            int32_t d = front_sample - s;
+            int32_t k = d >= 0 ? d / 128 : 0;
+            return std::clamp(s + 128 * k, int32_t(0), nsamples - 1);
+        };
+        const RouteSample& slot_at = route[size_t(slot_sample(int32_t(sample)))];
+        const RouteSample& link_at = route[size_t(slot_sample(int32_t(sample) + (kind == 0 ? 1 : -1)))];
+        const int32_t right = div256(slot_at.path.right_q8); // +0x2c
+        const int32_t left = div256(slot_at.path.left_q8);   // +0x30
+        const int32_t link_right = div256(link_at.path.right_q8);
+        const int32_t link_left = div256(link_at.path.left_q8);
         const int lane = int(car.lane);
         const bool bad_first = kind == 0 ? (lane < 0 || right <= lane) : (lane >= 0 || left < -lane);
         if (bad_first) {
             const int step = kind == 0 ? -1 : 1;
             const int stepped = lane + step;
             const bool step_ok =
-                kind == 0 ? (stepped >= 0 && right > stepped) : (stepped < 0 && left >= -stepped);
+                kind == 0 ? (stepped >= 0 && link_right > stepped) : (stepped < 0 && link_left >= -stepped);
             if (step_ok) car.lane = int8_t(stepped);
             const int prev = int(car.lane) - step;
-            const bool prev_ok = kind == 0 ? (prev >= 0 && right > prev) : (prev < 0 && left >= -prev);
+            const bool prev_ok =
+                kind == 0 ? (prev >= 0 && link_right > prev) : (prev < 0 && link_left >= -prev);
             if (!prev_ok) {
                 target = 0;
                 gap = 0;
@@ -476,7 +490,7 @@ void TrafficSystem::move(TrafficCar& car, const std::vector<RouteSample>& route,
         }
         car.collides = uint32_t(car.position - camera_q8 + 0x400) < 0x2801;
     }
-    const auto [target, rate] = plan_speed(car, route);
+    const auto [target, rate] = plan_speed(car, route, front_q8);
     // 0x0044e710 -> 0x00449880/0x004498c0: set heading and approach the
     // target BEFORE the mover applies drag. The target is not a post-move cap.
     // 0x0044edfc: +0x1dc = lane-centre error, halfway from its previous
