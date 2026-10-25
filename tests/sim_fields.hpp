@@ -66,6 +66,14 @@ inline constexpr SimField car_fields[] = {
     {"lateral", 0x28, 4, true},
     {"speed", 0xec, 4, true},
     {"phase", 0x1c4, 4, true},
+    {"sched_next", 0x0c, 4, true},
+    {"sched_last", 0x10, 4, true},
+    {"sched_interval", 0x14, 4, true},
+    {"sched_dt", 0x18, 4, true},
+    {"vel108", 0x108, 4, true},
+    {"pause1f8", 0x1f8, 4, true},
+    {"signal", 0x1ec, 4, true},
+    {"x1e9", 0x1e9, 1, false},
 };
 
 }  // namespace sim

@@ -54,7 +54,22 @@ static const rr_sim_field rr_sim_car_fields[] = {
     {"position", 0x1c, 4, 1},
     {"lateral", 0x28, 4, 1},
     {"speed", 0xec, 4, 1},
-    {"phase", 0x1c4, 4, 1}
+    {"phase", 0x1c4, 4, 1},
+    /* Scheduler cadence (0x00437e60 words): verifies run ticks without a
+     * new capture hook. pause1f8 = 0x0044e710 contact pause (target forced
+     * to 0 while >0); vel108 = signed road-velocity image used by the
+     * lane scans; signal = +0x1ec latch word (0 = none, else the signal
+     * record pointer — native stores an index, so compare presence and
+     * identity via position, not the raw word); x1e9 = byte after lane,
+     * to detect word-sized writes clobbering the lane byte. */
+    {"sched_next", 0x0c, 4, 1},
+    {"sched_last", 0x10, 4, 1},
+    {"sched_interval", 0x14, 4, 1},
+    {"sched_dt", 0x18, 4, 1},
+    {"vel108", 0x108, 4, 1},
+    {"pause1f8", 0x1f8, 4, 1},
+    {"signal", 0x1ec, 4, 1},
+    {"x1e9", 0x1e9, 1, 0},
 };
 
 #define RR_SIM_RIDER_FIELD_COUNT (sizeof rr_sim_rider_fields / sizeof rr_sim_rider_fields[0])
