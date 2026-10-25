@@ -49,7 +49,9 @@
   `ctest --test-dir build-agent-crash-flash --parallel 8`: **105/105 passed,
   zero skips**. `make verify-sim BUILD_DIR=build-agent-crash-flash`: exit 0
   (strict human 1431 ticks identical; field replays green, no new divergence
-  pin). No Android/sanitizer/oracle-capture run in this slice.
+  pin). Owned ASan+UBSan build `build-agent-crash-asan`: focused
+  `crash-test`/`race-test` and all four sim/field tests pass, then the full
+  suite **106/106 passed, zero skips**. No Android/oracle-capture run.
 - Live parity note: the run_bike_node flash was first rewritten to the exact
   bike words (position>>8, +0x10) and the field replays diverged at tick 1301
   (`rider.3.raw_1e8` 896 vs 128: mark kept vs cleared); the think was
