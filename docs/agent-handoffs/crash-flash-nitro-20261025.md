@@ -19,12 +19,14 @@ Owned files:
 
 ## Progress / evidence
 
-Disassembly (not REA: `0x00407a90` has no REA procedure entry, known gap #8):
-`407a91-407aa7` player check (`DAT_004642d8`), `407abc-407b0b` +0x7c clear
-and flash words (bike +0x1c>>8 vs half +0x1ec, unsigned bike +0x10 minus
-half +0x1f0 < 12, `(gap>>2)+1`, bike +0x81 copy), `437e69-437e6f` (+0x10
-stored before think), `40b1a0-40b1fa` (global `DAT_004c5f10` charge,
-dt = bike +0x18).
+Disassembly (not REA for `0x00407a90`: no REA procedure entry, known
+gap #8): `407a91-407aa7` player check (`DAT_004642d8`), `407abc-407b0b`
++0x7c clear and flash words (bike +0x1c>>8 vs half +0x1ec, unsigned bike
++0x10 minus half +0x1f0 < 12, `(gap>>2)+1`, bike +0x81 copy),
+`437e69-437e6f` (+0x10 stored before think), `40b1a0-40b1fa` (global
+`DAT_004c5f10` charge, dt = bike +0x18). REA 6.4.0 `function 0x0040b1a0`
+is whitespace-identical to the project export (438 chars), independently
+confirming the drain/recharge law.
 
 Live parity preserved by construction: the scheduler think keeps its
 accepted sample form; the helper flash runs only when `!live_schedule_`

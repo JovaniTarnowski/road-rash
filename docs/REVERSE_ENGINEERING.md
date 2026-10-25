@@ -917,8 +917,9 @@ In `0x0040a600`, a rider with `+0x324 == −1` (remote network) goes to `0x0040a
     recharges by `dt * DAT_00465a28` while the
     `(charge + signbias)>>8 < DAT_00465a30`; native `nitro_charge_tick`
     matches this on the per-rider charge (player only, so equivalent).
-    REA has no `0x00407a90` procedure entry (gap #8); this slice rests on
-    the project export plus the disassembly above.
+    REA 6.4.0 `function 0x0040b1a0` is whitespace-identical to the project
+    export (438 chars); `0x00407a90` has no REA procedure entry (gap #8),
+    so that slice rests on the project export plus the disassembly above.
   - Scheduler-word lineage (October 25, 2026): the raw Bike word +0x10 is
     never stored in native (no `i32(0x10)` write exists); the +0x10 image
     is `Rider::sched_last`, which the field replay compares against golden
