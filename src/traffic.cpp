@@ -363,6 +363,42 @@ std::pair<int32_t, int32_t> TrafficSystem::plan_speed(TrafficCar& car,
             following = true;
         }
     }
+    // 0x0044e710 lane-validity (lines 122-215): a lane outside the
+    // slice's lane count is stepped toward validity, else the car
+    // stops (target 0, gap 0). Lane words come from NALR via
+    // 0x004528f0 and equal the native PathSample lane Q8 (see
+    // REVERSE_ENGINEERING.md): +0x2c is the right-lane word, +0x30
+    // the left-lane word. The +0x28 slot selects the linked slice
+    // (+0x08 forward unless it reads 3, +0x18 oncoming unless 1):
+    // the oracle slot always reads 0 with linked counts equal to
+    // current counts in every dumped tick (L5e, all 53880 slice
+    // keys), so the linked reads use the current sample here; see
+    // docs/agent-handoffs/l5-tick1995-trace-20261026.md. The block
+    // never touches the obstacle lane_changed flag. Kind 0 uses a
+    // non-strict bound (count <= lane is outside); kind 2 uses a
+    // strict bound (count < -lane is outside).
+    if (!(kind & 1)) {
+        const int32_t right = div256(at.path.right_q8); // +0x2c
+        const int32_t left = div256(at.path.left_q8);   // +0x30
+        const int lane = int(car.lane);
+        const bool bad_first = kind == 0 ? (lane < 0 || right <= lane) : (lane >= 0 || left < -lane);
+        if (bad_first) {
+            const int step = kind == 0 ? -1 : 1;
+            const int stepped = lane + step;
+            const bool step_ok =
+                kind == 0 ? (stepped >= 0 && right > stepped) : (stepped < 0 && left >= -stepped);
+            if (step_ok) car.lane = int8_t(stepped);
+            const int prev = int(car.lane) - step;
+            const bool prev_ok = kind == 0 ? (prev >= 0 && right > prev) : (prev < 0 && left >= -prev);
+            if (!prev_ok) {
+                target = 0;
+                gap = 0;
+                following = true; // 0x0044e710 bVar3: follow/stop applied
+            } else {
+                car.lane = int8_t(prev);
+            }
+        }
+    }
     // Signal: stop line and phase.
     if (car.signal >= 0 && target >= 1) {
         const auto& s = signals_[size_t(car.signal)];

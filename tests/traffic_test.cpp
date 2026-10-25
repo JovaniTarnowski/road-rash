@@ -177,6 +177,80 @@ static std::vector<uint8_t> synthetic_exe() {
     return exe;
 }
 
+// 0x0044e710 lane-validity (lines 122-215): a lane outside the slice's
+// lane count steps toward validity on the linked slice, else the car
+// stops (target 0). Verified against the L5e removal run (kind-0 lane 1
+// with one right lane -> lane 0, speed 0). Kind 0 uses a non-strict
+// bound (count <= lane is outside); kind 2 uses a strict bound
+// (count < -lane is outside).
+static void test_lane_validity_stop() {
+    rr::VehicleLibrary library(synthetic_container(0));
+    rr::TrafficSystem system(library, synthetic_exe());
+    system.configure(6);
+    system.set_spawn_enabled(false);
+    auto random = [] { return 1u; };
+    const int32_t back = 0x10000, front = back + 0x8000, camera = front - 0x5000;
+    auto drive = [&](uint8_t kind, int8_t lane, int32_t left_q8, int32_t right_q8,
+                     int32_t speed) -> rr::TrafficCar {
+        std::vector<rr::RouteSample> route(800, lane_sample(left_q8, right_q8));
+        system.begin_schedule(route, front, random, 1);
+        auto& car = system.cars_mut()[0];
+        car = rr::TrafficCar{};
+        car.active = true;
+        car.kind = kind;
+        car.lane = lane;
+        car.phase = 0x100;
+        car.position = back + 0x4000;
+        car.lateral = 0;
+        car.speed = speed;
+        car.motion.u8(0xc0) = 7;
+        car.last_tick = 0;
+        car.next_tick = 1;
+        system.run_car(0, route, camera, front, camera, 0, random, 1, 8000);
+        return car;
+    };
+    // L5e tick-2399 shape: kind-0 lane 1 with one right lane steps to
+    // lane 0 and stops (approach clamps to target 0, drag is identity
+    // on zeroed motion words). The block never sets lane_changed.
+    {
+        const auto car = drive(0, 1, 0x100, 0x100, 1000);
+        if (car.lane != 0 || car.speed != 0 || car.lane_changed)
+            throw std::runtime_error("kind-0 lane 1 of 1 must step to 0 and stop");
+    }
+    // Kind-0 negative lanes pull to lane 0 without stopping: lane -1
+    // fails the first check, fails the step validation, then the
+    // recheck (prev 0) passes and restores... lane 0 with cruise intact.
+    {
+        const auto car = drive(0, -1, 0x100, 0x100, 1000);
+        if (car.lane != 0 || car.speed != 1036 || car.lane_changed)
+            throw std::runtime_error("kind-0 lane -1 must pull to 0 without stopping");
+    }
+    // Kind-0 lane 0 with one right lane is valid: cruise approach only.
+    {
+        const auto car = drive(0, 0, 0x100, 0x100, 1000);
+        if (car.lane != 0 || car.speed != 1036 || car.lane_changed)
+            throw std::runtime_error("kind-0 lane 0 of 1 must hold cruise");
+    }
+    // Kind-2 lane -2 with one left lane steps to -1 and stops.
+    {
+        const auto car = drive(2, -2, 0x100, 0x100, 1000);
+        if (car.lane != -1 || car.speed != 0 || car.lane_changed)
+            throw std::runtime_error("kind-2 lane -2 of 1 must step to -1 and stop");
+    }
+    // Kind-2 lane -1 with one left lane is valid (strict bound).
+    {
+        const auto car = drive(2, -1, 0x100, 0x100, 1000);
+        if (car.lane != -1 || car.speed != 1036 || car.lane_changed)
+            throw std::runtime_error("kind-2 lane -1 of 1 must hold cruise");
+    }
+    // Kind-2 lane -2 with two left lanes is valid (L5-1995 probe pin).
+    {
+        const auto car = drive(2, -2, 0x200, 0x200, 1000);
+        if (car.lane != -2 || car.speed != 1036 || car.lane_changed)
+            throw std::runtime_error("kind-2 lane -2 of 2 must hold cruise");
+    }
+}
+
 static void test_deferred_car_teardown() {
     rr::VehicleLibrary library(synthetic_container(0));
     rr::TrafficSystem traffic(library, synthetic_exe());
@@ -1002,6 +1076,7 @@ int main() {
         test_countdown_initial_fill();
         test_countdown_disabled_spawn_expiry();
         test_car_schedule_motion();
+        test_lane_validity_stop();
         test_spawn_and_move();
         test_zone_events();
         test_intersections();

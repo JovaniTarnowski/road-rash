@@ -705,6 +705,55 @@ static void dump_sim_tick(void) {
                     rr_log(key, sim_field_value(node, 0x2c, 4, 0));
                     snprintf(key, sizeof key, "ring.%x.we8", node);
                     rr_log(key, sim_field_value(node, 0xe8, 4, 0));
+                    /* 0x0044e710 lane-validity inputs (diagnostic-only):
+                     * +0x140 slice pointer, slice +0x2c/+0x30 lane words,
+                     * +0x28 slot pointer and *(slot+0x2c) link selector,
+                     * +0x08/+0x18 linked slices and their +0x2c/+0x30.
+                     * Pointers are process-specific (golden-only, never
+                     * compared); the lane words decide the block. */
+                    {
+                        const uintptr_t slice = (uint32_t)sim_field_value(node, 0x140, 4, 0);
+                        const int sok = slice && readable(slice + 0x30, 4);
+                        long long sl2c = -1, sl30 = -1;
+                        uintptr_t slot = 0, lk8 = 0, lk18 = 0;
+                        long long s28v = -1, lk8_2c = -1, lk8_30 = -1, lk18_2c = -1, lk18_30 = -1;
+                        if (sok) {
+                            sl2c = sim_field_value(slice, 0x2c, 4, 1);
+                            sl30 = sim_field_value(slice, 0x30, 4, 1);
+                            slot = readable(slice + 0x28, 4) ? (uint32_t)*(uint32_t*)(slice + 0x28) : 0;
+                            lk8 = readable(slice + 0x8, 4) ? (uint32_t)*(uint32_t*)(slice + 0x8) : 0;
+                            lk18 = readable(slice + 0x18, 4) ? (uint32_t)*(uint32_t*)(slice + 0x18) : 0;
+                            if (slot && readable(slot + 0x2c, 4)) s28v = sim_field_value(slot, 0x2c, 4, 1);
+                            if (lk8 && readable(lk8 + 0x30, 4)) {
+                                lk8_2c = sim_field_value(lk8, 0x2c, 4, 1);
+                                lk8_30 = sim_field_value(lk8, 0x30, 4, 1);
+                            }
+                            if (lk18 && readable(lk18 + 0x30, 4)) {
+                                lk18_2c = sim_field_value(lk18, 0x2c, 4, 1);
+                                lk18_30 = sim_field_value(lk18, 0x30, 4, 1);
+                            }
+                        }
+                        snprintf(key, sizeof key, "ring.%x.w140", node);
+                        rr_log(key, (long long)slice);
+                        snprintf(key, sizeof key, "ring.%x.sl2c", node);
+                        rr_log(key, sl2c);
+                        snprintf(key, sizeof key, "ring.%x.sl30", node);
+                        rr_log(key, sl30);
+                        snprintf(key, sizeof key, "ring.%x.s28v", node);
+                        rr_log(key, s28v);
+                        snprintf(key, sizeof key, "ring.%x.lk8", node);
+                        rr_log(key, (long long)lk8);
+                        snprintf(key, sizeof key, "ring.%x.lk8_2c", node);
+                        rr_log(key, lk8_2c);
+                        snprintf(key, sizeof key, "ring.%x.lk8_30", node);
+                        rr_log(key, lk8_30);
+                        snprintf(key, sizeof key, "ring.%x.lk18", node);
+                        rr_log(key, (long long)lk18);
+                        snprintf(key, sizeof key, "ring.%x.lk18_2c", node);
+                        rr_log(key, lk18_2c);
+                        snprintf(key, sizeof key, "ring.%x.lk18_30", node);
+                        rr_log(key, lk18_30);
+                    }
                 }
                 ++node_index;
             }
