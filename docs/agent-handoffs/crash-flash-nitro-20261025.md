@@ -39,6 +39,21 @@ Checks (owned build):
 - `make verify-sim BUILD_DIR=build-agent-crash-flash`: exit 0 (strict human
   1431 identical; field replays green).
 
+## Follow-up: exact-word lineage (same day, same build)
+
+Rewriting the think to the literal bike words (`b.i32(0x1c)>>8`,
+`b.i32(0x10)`) diverged field L1 at tick 1301 (`rider.3.raw_1e8` 896 vs
+128). The rider was uncrashed, ruling out the helper double-run. A scratch
+`DESYNC` probe in bike think (reverted, never committed) showed
+`r.sample == bike+0x1c>>8` at every bike think over all 2400 ticks (0
+mismatches). Root cause: no `i32(0x10)` write exists anywhere in native
+code, so the rewrite read a dead word (always 0) and the gap never stayed
+below 12. The +0x10 image is `Rider::sched_last` (compared against golden
+`bike_10` in field replay), stored to `ticks_` immediately above the think.
+The think now reads `r.sched_last`; behavior identical, all replays green
+(verified: 105/105 + field trio after the change). No exact-word gap
+remains on this path.
+
 ## Remaining
 
 - Live think exact-word form (route sample vs bike +0x1c>>8): kept the

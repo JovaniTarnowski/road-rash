@@ -918,6 +918,14 @@ In `0x0040a600`, a rider with `+0x324 == −1` (remote network) goes to `0x0040a
     matches this on the per-rider charge (player only, so equivalent).
     REA has no `0x00407a90` procedure entry (gap #8); this slice rests on
     the project export plus the disassembly above.
+  - Scheduler-word lineage (October 25, 2026): the raw Bike word +0x10 is
+    never stored in native (no `i32(0x10)` write exists); the +0x10 image
+    is `Rider::sched_last`, which the field replay compares against golden
+    `bike_10` tick-for-tick and which bike think stores to `ticks_` just
+    before use. Native `r.sample` equals bike +0x1c>>8 at every bike think
+    over the 2400-tick field replay (scratch probe, 0 mismatches, reverted).
+    The flash therefore reads `r.sched_last`/`r.sample`: behavior-identical
+    to the disassembly words at think time.
   - Remount-gate disassembly verification (October 12, 2026; plan 24 Task 3 input — no REA needed): `40a990–40a9b4` show the walk-function exit — state-3 (`cmpl $0x3`) + anim-frame `0x29` gate, then `call 0x00404560` (remount reset) and return; the `0x26`-anim early-return branch sits just above (`40a992–40a9a5`). With this, `0x0040a600` is verified end-to-end: entry/network/contact branches (REA parent), timer/police, bounds-wreck, proximity, steer-gate, and now the remount exit. The Task-3 porter owns the full function body; only captures + port remain.
 
 ### Rider–vehicle contact (October 12, 2026, plan 11a Task 1)

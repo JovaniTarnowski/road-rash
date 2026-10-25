@@ -307,10 +307,17 @@ void Race::run_bike_node(Rider& r, uint32_t controls, bool countdown) {
     r.sched_last = ticks_;
     // 0x00407a90: scenery-mark animation on the bike mirrors the half's
     // +0x1e9, advances once per four absolute ticks and expires after12.
+    // Disassembly words (407acd-407b0b): sample check bike +0x1c>>8 vs half
+    // +0x1ec, gap unsigned bike +0x10 minus half +0x1f0. Native keeps the
+    // +0x10 image in Rider::sched_last (the raw Bike word +0x10 is never
+    // stored; it must not be read), stored to ticks_ two lines above, and
+    // r.sample equals bike +0x1c>>8 at every bike think (0 mismatches over
+    // the 2400-tick field replay, October 25 probe), so these forms are
+    // behavior-identical to the disassembly here.
     if (!r.parked && b.i32(0x2f4) != 1 && b.i32(0x2f4) != 2) {
         auto& half = r.half_object;
         if (half.u8(0x1e9)) {
-            const uint32_t elapsed = uint32_t(ticks_) - uint32_t(half.i32(0x1f0));
+            const uint32_t elapsed = uint32_t(r.sched_last) - uint32_t(half.i32(0x1f0));
             half.u8(0x1e9) = int32_t(r.sample) == half.i32(0x1ec) && elapsed < 12 ? uint8_t((elapsed >> 2) + 1) : 0;
         }
         b.u8(0x81) = half.u8(0x1e9);

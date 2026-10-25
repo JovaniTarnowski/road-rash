@@ -77,10 +77,20 @@ Detailed evidence is in [REVERSE_ENGINEERING.md](REVERSE_ENGINEERING.md) and tes
 - Live parity preserved: full Debug `ctest` 105/105 and `make verify-sim`
   (strict human 1431 ticks identical) pass with these changes; the three
   field replays are green with no new known-divergence pin.
-- Remaining: the live think uses the route-sample word where the disassembly
-  reads bike +0x1c>>8 (kept: the sample form is what the 2400-tick field
-  parity was accepted against); the uncrashed every-tick path still has no
-  flash copy (live-only concern, game uses the scheduler).
+- Remaining: the uncrashed every-tick path still has no flash copy
+  (live-only concern, game uses the scheduler).
+- Follow-up closed the same day: rewriting the think to the literal bike
+  words first diverged field L1 at tick 1301 (`rider.3.raw_1e8` 896 vs 128:
+  mark kept vs cleared). The rider was uncrashed, ruling out the helper
+  double-run. A scratch probe showed native `r.sample` equals bike +0x1c>>8
+  at every bike think over the full 2400 ticks (0 mismatches), ruling out
+  the sample half. Root cause was the tick half: the raw Bike word +0x10
+  is never stored in native (no `i32(0x10)` write exists anywhere); the
+  +0x10 image lives in `Rider::sched_last`, stored to `ticks_` just above
+  the think. The rewrite had read the dead word (always 0), so the gap was
+  always huge and the mark always cleared. The think now reads
+  `r.sched_last` with that lineage documented; behavior is identical to the
+  accepted form and all replays stay green. No exact-word gap remains.
 
 ### October 24, 2026: Crash pickup draws one bike; walk-back faces the bike
 
@@ -100,8 +110,10 @@ Detailed evidence is in [REVERSE_ENGINEERING.md](REVERSE_ENGINEERING.md) and tes
 - Remaining (October 25 update): the state-3 flash copy and the player-only
   `0x0040b1a0` call are now ported (flash in scheduler think plus the
   every-tick crash helper; nitro gated to the player in both loops, including
-  while crashed). Open is only the exact-word form in live think (route
-  sample vs bike +0x1c>>8) and flash on the uncrashed every-tick path.
+  while crashed). A same-day follow-up also closed the exact-word lineage:
+  the think reads `Rider::sched_last` (the maintained +0x10 image) with the
+  sample/position equivalence proven (0 mismatches over 2400 ticks). Open is
+  only flash on the uncrashed every-tick path (live-only concern).
 
 ### October 14, 2026: Plan10 SIM captures restored; frozen-state replay
 

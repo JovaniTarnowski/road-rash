@@ -22,8 +22,17 @@
   bike words (position>>8, +0x10) and the field replays diverged at tick 1301
   (`rider.3.raw_1e8` 896 vs 128: mark kept vs cleared); the think was
   restored to the accepted sample form and the helper flash was gated to the
-  non-live loop only, after which all three field replays pass. Exact-word
-  follow-up remains open (see PROGRESS).
+  non-live loop only, after which all three field replays pass.
+- Exact-word follow-up closed (same day, same build): the rider was
+  uncrashed, ruling out the helper. A scratch `DESYNC` probe in bike think
+  (reverted after the run, never committed) showed native `r.sample` equals
+  bike +0x1c>>8 at every bike think over the full 2400-tick L1 replay (0
+  mismatches). Root cause was the tick word: no `i32(0x10)` write exists
+  anywhere in native code, so the rewrite read a dead word (always 0) and
+  the gap never stayed below 12. The +0x10 image is `Rider::sched_last`
+  (the field replay compares it against golden `bike_10` tick-for-tick),
+  stored to `ticks_` immediately above the think. The think now reads
+  `r.sched_last`; behavior identical, all replays green.
 
 ## Crash pickup and walk-back render (October 24, 2026)
 
