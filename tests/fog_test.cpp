@@ -7,11 +7,16 @@ namespace {
 double luminance(uint32_t c) {
     return 0.2126 * ((c >> 16) & 0xff) + 0.7152 * ((c >> 8) & 0xff) + 0.0722 * (c & 0xff);
 }
-}  // namespace
+} // namespace
 
 int main() {
     int failures = 0;
-    auto check = [&](bool v, const char* what) { if (!v) { ++failures; std::cerr << "FAIL " << what << "\n"; } };
+    auto check = [&](bool v, const char* what) {
+        if (!v) {
+            ++failures;
+            std::cerr << "FAIL " << what << "\n";
+        }
+    };
     check(rr::fog_factor_q8(0, 33, 100) == 0, "fog is 0 at the camera");
     {
         bool mono = true;
@@ -61,7 +66,10 @@ int main() {
         // Full-lattice validity (not just the grey axis).
         for (uint32_t c : lut) {
             const int r = (c >> 16) & 0xff, g = (c >> 8) & 0xff, b = c & 0xff;
-            if (r < 0 || r > 255 || g < 0 || g > 255 || b < 0 || b > 255) { valid = false; break; }
+            if (r < 0 || r > 255 || g < 0 || g > 255 || b < 0 || b > 255) {
+                valid = false;
+                break;
+            }
         }
         check(valid, "grade entries are valid colours");
         check(mono, "grade is luminance-monotonic on the grey axis");

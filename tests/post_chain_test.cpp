@@ -15,7 +15,12 @@
 
 int main() {
     int failures = 0;
-    auto check = [&](bool v, const char* what) { if (!v) { ++failures; std::cerr << "FAIL " << what << "\n"; } };
+    auto check = [&](bool v, const char* what) {
+        if (!v) {
+            ++failures;
+            std::cerr << "FAIL " << what << "\n";
+        }
+    };
     check(rr::motion_blur_factor(0, 20000) == 0.0f, "no blur at speed 0");
     check(rr::motion_blur_factor(20000, 20000) <= 0.5f, "blur capped at max speed");
     check(rr::motion_blur_factor(20000, 20000) > 0.0f, "blur positive at speed");
@@ -64,7 +69,8 @@ int main() {
         check(frame[32 * 64 + 24] != 0xff101010u, "bloom spills beside the bar");
         bool dimmed = false;
         for (uint32_t p : frame)
-            if (int(p & 0xff) < 0x10 || int((p >> 8) & 0xff) < 0x10 || int((p >> 16) & 0xff) < 0x10) dimmed = true;
+            if (int(p & 0xff) < 0x10 || int((p >> 8) & 0xff) < 0x10 || int((p >> 16) & 0xff) < 0x10)
+                dimmed = true;
         check(!dimmed, "bloom never dims");
     }
     {
@@ -74,7 +80,7 @@ int main() {
         e.motion_blur = true;
         chain.configure(e);
         std::vector<uint32_t> frame(16 * 16, 0xffff0000u);
-        chain.apply(frame.data(), 16, 16, 20000.0f, false);  // seeds previous, blends 0?
+        chain.apply(frame.data(), 16, 16, 20000.0f, false); // seeds previous, blends 0?
         std::vector<uint32_t> blue(16 * 16, 0xff0000ffu);
         chain.apply(blue.data(), 16, 16, 20000.0f, false);
         const uint32_t p = blue[0];
@@ -90,11 +96,14 @@ int main() {
         inline_chain.configure(e);
         pooled_chain.configure(e);
         rr::RenderThreads pool(5);
-        const int w = 213, h = 97;   // odd sizes: uneven bands and 4x bloom edges
+        const int w = 213, h = 97; // odd sizes: uneven bands and 4x bloom edges
         uint32_t seed = 12345;
         for (int f = 0; f < 4; ++f) {
             std::vector<uint32_t> frame(size_t(w) * h);
-            for (auto& p : frame) { seed = seed * 1103515245u + 12345u; p = 0xff000000u | (seed >> 8); }
+            for (auto& p : frame) {
+                seed = seed * 1103515245u + 12345u;
+                p = 0xff000000u | (seed >> 8);
+            }
             std::vector<uint32_t> pooled = frame;
             inline_chain.apply(frame.data(), w, h, 12000.0f, f == 2);
             pooled_chain.apply(pooled.data(), w, h, 12000.0f, f == 2, 20000.0f, &pool);

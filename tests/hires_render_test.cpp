@@ -25,12 +25,15 @@ std::vector<uint8_t> read_file(const std::string& path) {
     if (!in) return {};
     return {std::istreambuf_iterator<char>(in), {}};
 }
-}
+} // namespace
 
 int main(int argc, char** argv) {
     int failures = 0;
     auto check = [&](bool ok, const char* what) {
-        if (!ok) { ++failures; std::cerr << "FAIL " << what << '\n'; }
+        if (!ok) {
+            ++failures;
+            std::cerr << "FAIL " << what << '\n';
+        }
     };
     std::string assets_root = RR_SOURCE_DIR "/../cdrom/ROADRASH";
     for (int i = 1; i < argc; ++i) {
@@ -59,14 +62,18 @@ int main(int argc, char** argv) {
         const auto dump = rr::scene::load(stem + "-scene" + std::to_string(file) + ".raw");
         const auto pixels = read_file(stem + "-f" + std::to_string(long(f.at("pixels.file"))) + ".raw");
         const int width = int(f.at("pixels.width")), height = int(f.at("pixels.height"));
-        if (pixels.size() != size_t(width) * size_t(height)) { ++failures; continue; }
+        if (pixels.size() != size_t(width) * size_t(height)) {
+            ++failures;
+            continue;
+        }
         std::vector<rr::DrawNode> nodes;
         std::vector<std::unique_ptr<rr::CelTexture>> dynamic;
         int unmatched = 0;
         for (const auto& s : dump.nodes) {
             rr::DrawNode n;
             for (int k = 0; k < 4; ++k)
-                n.view_points[size_t(k)] = {int32_t(s.u32(0x44 + 8 * size_t(k))), int32_t(s.u32(0x48 + 8 * size_t(k)))};
+                n.view_points[size_t(k)] = {int32_t(s.u32(0x44 + 8 * size_t(k))),
+                                            int32_t(s.u32(0x48 + 8 * size_t(k)))};
             n.flip_u = s.bytes[0x64] != 0;
             n.flip_v = s.bytes[0x65] != 0;
             if (s.u32(8) == 0x00466684) {
@@ -74,17 +81,27 @@ int main(int argc, char** argv) {
                 if (!t) continue;
                 dynamic.push_back(std::make_unique<rr::CelTexture>(std::move(*t)));
                 n.texture = dynamic.back().get();
-            } else if (s.bytes[0x66]) n.flat_index = s.bytes[0x67];
-            else if (!(n.texture = lib.find(s.hash, s.size))) { ++unmatched; continue; }
+            } else if (s.bytes[0x66])
+                n.flat_index = s.bytes[0x67];
+            else if (!(n.texture = lib.find(s.hash, s.size))) {
+                ++unmatched;
+                continue;
+            }
             nodes.push_back(n);
         }
-        if (unmatched) { std::cerr << "frame " << file << ": " << unmatched << " unmatched\n"; ++failures; continue; }
+        if (unmatched) {
+            std::cerr << "frame " << file << ": " << unmatched << " unmatched\n";
+            ++failures;
+            continue;
+        }
         // s=1 must equal the golden exactly (today's oracle-scene behaviour).
         rr::Framebuffer one(width, height);
-        for (int y = 0; y < height; ++y) std::memcpy(one.row(y), pixels.data() + size_t(y) * size_t(width), size_t(width));
+        for (int y = 0; y < height; ++y)
+            std::memcpy(one.row(y), pixels.data() + size_t(y) * size_t(width), size_t(width));
         {
             rr::Framebuffer check_fb(width, height);
-            for (int y = 0; y < height; ++y) std::memcpy(check_fb.row(y), pixels.data() + size_t(y) * size_t(width), size_t(width));
+            for (int y = 0; y < height; ++y)
+                std::memcpy(check_fb.row(y), pixels.data() + size_t(y) * size_t(width), size_t(width));
             rr::render_nodes(check_fb, nodes, rr::view_mode(true), uint32_t(f.at("view.quality_mask")));
             size_t differ = 0;
             for (int y = 0; y < height; ++y)
@@ -116,7 +133,11 @@ int main(int argc, char** argv) {
                     for (int dy = -2; dy <= 2 && !edge; ++dy)
                         for (int dx = -2; dx <= 2; ++dx) {
                             const int nx = x + dx, ny = y + dy;
-                            if (nx < 0 || ny < 0 || nx >= 640 || ny >= 480 || one.row(ny)[nx] != one.row(y)[x]) { edge = true; break; }
+                            if (nx < 0 || ny < 0 || nx >= 640 || ny >= 480 ||
+                                one.row(ny)[nx] != one.row(y)[x]) {
+                                edge = true;
+                                break;
+                            }
                         }
                     if (edge) continue;
                     ++interior;
@@ -140,10 +161,15 @@ int main(int argc, char** argv) {
                 int x0 = 640, x1 = -1, y0 = 480, y1 = -1;
                 for (int y = 0; y < 480; ++y)
                     for (int x = 0; x < 640; ++x)
-                        if (f1.row(y)[x]) { x0 = std::min(x0, x); x1 = std::max(x1, x); y0 = std::min(y0, y); y1 = std::max(y1, y); }
-                if (x1 < 0) continue;   // invisible at s=1: nothing to preserve
+                        if (f1.row(y)[x]) {
+                            x0 = std::min(x0, x);
+                            x1 = std::max(x1, x);
+                            y0 = std::min(y0, y);
+                            y1 = std::max(y1, y);
+                        }
+                if (x1 < 0) continue; // invisible at s=1: nothing to preserve
                 const int w1 = x1 - x0 + 1, h1 = y1 - y0 + 1;
-                if (w1 * h1 > 400) continue;   // large quads covered by the % test
+                if (w1 * h1 > 400) continue; // large quads covered by the % test
                 ++sampled;
                 for (int s = 2; s <= 4; ++s) {
                     rr::Framebuffer fs(640 * s, 480 * s);
@@ -152,7 +178,12 @@ int main(int argc, char** argv) {
                     int sx0 = 640 * s, sx1 = -1, sy0 = 480 * s, sy1 = -1;
                     for (int y = 0; y < 480 * s; ++y)
                         for (int x = 0; x < 640 * s; ++x)
-                            if (fs.row(y)[x]) { sx0 = std::min(sx0, x); sx1 = std::max(sx1, x); sy0 = std::min(sy0, y); sy1 = std::max(sy1, y); }
+                            if (fs.row(y)[x]) {
+                                sx0 = std::min(sx0, x);
+                                sx1 = std::max(sx1, x);
+                                sy0 = std::min(sy0, y);
+                                sy1 = std::max(sy1, y);
+                            }
                     if (sx1 < 0) {
                         std::cerr << "frame 0 s=" << s << ": small node vanishes\n";
                         ++failures;
@@ -160,7 +191,8 @@ int main(int argc, char** argv) {
                     }
                     const int ws = sx1 - sx0 + 1, hs = sy1 - sy0 + 1;
                     if (ws < s * w1 - s || hs < s * h1 - s) {
-                        std::cerr << "frame 0 s=" << s << ": bbox " << w1 << "x" << h1 << " -> " << ws << "x" << hs << '\n';
+                        std::cerr << "frame 0 s=" << s << ": bbox " << w1 << "x" << h1 << " -> " << ws << "x"
+                                  << hs << '\n';
                         ++failures;
                     }
                 }
@@ -204,7 +236,8 @@ int main(int argc, char** argv) {
         for (const auto& s : dump.nodes) {
             rr::DrawNode n;
             for (int k = 0; k < 4; ++k)
-                n.view_points[size_t(k)] = {int32_t(s.u32(0x44 + 8 * size_t(k))), int32_t(s.u32(0x48 + 8 * size_t(k)))};
+                n.view_points[size_t(k)] = {int32_t(s.u32(0x44 + 8 * size_t(k))),
+                                            int32_t(s.u32(0x48 + 8 * size_t(k)))};
             n.flip_u = s.bytes[0x64] != 0;
             n.flip_v = s.bytes[0x65] != 0;
             if (s.u32(8) == 0x00466684) {
@@ -212,8 +245,10 @@ int main(int argc, char** argv) {
                 if (!t) continue;
                 dynamic.push_back(std::make_unique<rr::CelTexture>(std::move(*t)));
                 n.texture = dynamic.back().get();
-            } else if (s.bytes[0x66]) n.flat_index = s.bytes[0x67];
-            else if (!(n.texture = lib.find(s.hash, s.size))) continue;
+            } else if (s.bytes[0x66])
+                n.flat_index = s.bytes[0x67];
+            else if (!(n.texture = lib.find(s.hash, s.size)))
+                continue;
             nodes.push_back(n);
         }
         for (int s = 1; s <= 4; ++s) {
@@ -229,7 +264,9 @@ int main(int argc, char** argv) {
                 size_t differ = 0;
                 for (int y = 0; y < fb.height(); ++y)
                     for (int x = 0; x < fb.width(); ++x) differ += fb.row(y)[x] != ref.row(y)[x];
-                if (differ) std::cerr << "s=" << s << " threads=" << threads << ": " << differ << " band pixels differ\n";
+                if (differ)
+                    std::cerr << "s=" << s << " threads=" << threads << ": " << differ
+                              << " band pixels differ\n";
                 check(differ == 0, "band rendering is bit-identical");
             }
         }

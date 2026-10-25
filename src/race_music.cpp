@@ -39,7 +39,7 @@ std::vector<Chunk> riff_chunks(const std::vector<uint8_t>& b, size_t first, size
         size_t last = first + 8 + size;
         if (last > end) throw std::runtime_error("MIDS/SF1: chunk overruns parent");
         out.push_back({tag, first + 8, size});
-        first = last + (size & 1);  // word-aligned
+        first = last + (size & 1); // word-aligned
         if (first > end) throw std::runtime_error("MIDS/SF1: truncated chunk pad");
     }
     if (first != end) throw std::runtime_error("MIDS/SF1: chunk list overrun");
@@ -53,7 +53,7 @@ bool ieq_prefix(const std::string& s, const char* prefix, size_t n) {
     return true;
 }
 
-}  // namespace
+} // namespace
 
 bool race_song_is_klown(const std::string& alias) {
     // 0x00433bb0: strnicmp(alias, "krusty", 6) / strnicmp(alias, "bozo", 4).
@@ -98,8 +98,7 @@ MidsSong read_mids(const std::vector<uint8_t>& bytes) {
     const uint32_t max_buffer = u32le(bytes, fmt_off + 4);
     const uint32_t flags = u32le(bytes, fmt_off + 8);
     if (song.division == 0 || song.division > 32768) throw std::runtime_error("MIDS: bad division");
-    if (max_buffer == 0 || max_buffer > (1 << 24))
-        throw std::runtime_error("MIDS: bad max_buffer");
+    if (max_buffer == 0 || max_buffer > (1 << 24)) throw std::runtime_error("MIDS: bad max_buffer");
     if (flags & ~1u) throw std::runtime_error("MIDS: unknown flags");
 
     size_t p = data_off;
@@ -113,7 +112,7 @@ MidsSong read_mids(const std::vector<uint8_t>& bytes) {
     uint32_t tick = 0;
     for (uint32_t i = 0; i < blocks; ++i) {
         if (p + 8 > data_end) throw std::runtime_error("MIDS: truncated block header");
-        const uint32_t size = u32le(bytes, p + 4);  // p[0..4): start tick (informational)
+        const uint32_t size = u32le(bytes, p + 4); // p[0..4): start tick (informational)
         p += 8;
         if (size > max_buffer) throw std::runtime_error("MIDS: block exceeds max_buffer");
         if (p + size > data_end) throw std::runtime_error("MIDS: truncated block");
@@ -130,7 +129,7 @@ MidsSong read_mids(const std::vector<uint8_t>& bytes) {
                 const uint32_t length = event & 0xffffffu;
                 const size_t padded = (size_t(length) + 3) & ~size_t(3);
                 if (p + padded > end) throw std::runtime_error("MIDS: truncated long event");
-                p += padded;  // SysEx/meta payload: counted, not sequenced
+                p += padded; // SysEx/meta payload: counted, not sequenced
             } else if (kind == 1) {
                 song.tempo.emplace_back(tick, event & 0xffffffu);
             } else if (kind == 0) {
@@ -194,8 +193,8 @@ std::shared_ptr<const Sf1Bank> read_sf1(const std::vector<uint8_t>& bytes, bool 
     if (ifil->size != 4) throw std::runtime_error("SF1: bad ifil");
     if (u16le(bytes, ifil->off) != 1) throw std::runtime_error("SF1: not SoundFont 1");
     if (smpl->size % 2 != 0) throw std::runtime_error("SF1: odd smpl size");
-    if (phdr->size % 38 != 0 || pbag->size % 4 != 0 || pgen->size % 4 != 0 ||
-        inst->size % 22 != 0 || ibag->size % 4 != 0 || igen->size % 4 != 0)
+    if (phdr->size % 38 != 0 || pbag->size % 4 != 0 || pgen->size % 4 != 0 || inst->size % 22 != 0 ||
+        ibag->size % 4 != 0 || igen->size % 4 != 0)
         throw std::runtime_error("SF1: bad pdta alignment");
 
     auto bank = std::make_shared<Sf1Bank>();
@@ -278,11 +277,10 @@ std::shared_ptr<const Sf1Bank> read_sf1(const std::vector<uint8_t>& bytes, bool 
         for (uint32_t bi = bag_lo; bi < bag_hi; ++bi) {
             const uint32_t g_lo = (bi < pbags.size()) ? pbags[bi].first : 0;
             const uint32_t g_hi = (bi + 1 < pbags.size()) ? pbags[bi + 1].first : uint32_t(pgens.size());
-            if (g_lo > g_hi || g_hi > pgens.size())
-                throw std::runtime_error("SF1: pgen out of range");
+            if (g_lo > g_hi || g_hi > pgens.size()) throw std::runtime_error("SF1: pgen out of range");
             const auto pzone = collect(pgens, g_lo, g_hi);
-            auto it_inst = pzone.find(41);  // instrument
-            if (it_inst == pzone.end()) continue;  // global preset zone
+            auto it_inst = pzone.find(41);        // instrument
+            if (it_inst == pzone.end()) continue; // global preset zone
             const uint32_t inst_id = it_inst->second;
             if (inst_id >= n_inst) throw std::runtime_error("SF1: instrument out of range");
             const uint16_t ib_lo = u16le(bytes, inst->off + 22 * size_t(inst_id) + 20);
@@ -296,13 +294,11 @@ std::shared_ptr<const Sf1Bank> read_sf1(const std::vector<uint8_t>& bytes, bool 
             const int16_t preset_att = pzone.count(48) ? int16_t(pzone.at(48)) : int16_t(0);
             for (uint32_t bj = ib_lo; bj < ib_hi; ++bj) {
                 const uint32_t h_lo = (bj < ibags.size()) ? ibags[bj].first : 0;
-                const uint32_t h_hi =
-                    (bj + 1 < ibags.size()) ? ibags[bj + 1].first : uint32_t(igens.size());
-                if (h_lo > h_hi || h_hi > igens.size())
-                    throw std::runtime_error("SF1: igen out of range");
+                const uint32_t h_hi = (bj + 1 < ibags.size()) ? ibags[bj + 1].first : uint32_t(igens.size());
+                if (h_lo > h_hi || h_hi > igens.size()) throw std::runtime_error("SF1: igen out of range");
                 const auto izone = collect(igens, h_lo, h_hi);
-                auto it_s = izone.find(53);  // sampleID
-                if (it_s == izone.end()) continue;  // global instrument zone
+                auto it_s = izone.find(53);        // sampleID
+                if (it_s == izone.end()) continue; // global instrument zone
                 const auto r = sample_range(it_s->second);
                 Sf1Zone z;
                 z.program = uint8_t(program & 127);
@@ -312,18 +308,15 @@ std::shared_ptr<const Sf1Bank> read_sf1(const std::vector<uint8_t>& bytes, bool 
                 z.high_key = izone.count(43) ? uint8_t(izone.at(43) >> 8) : uint8_t(127);
                 if (z.low_key > z.high_key) throw std::runtime_error("SF1: inverted key range");
                 z.root_key = izone.count(58) ? uint8_t(izone.at(58) & 127) : uint8_t(60);
-                const int16_t coarse =
-                    int16_t(izone.count(51) ? int16_t(izone.at(51)) : 0) + preset_coarse;
-                const int16_t fine =
-                    int16_t(izone.count(52) ? int16_t(izone.at(52)) : 0) + preset_fine;
+                const int16_t coarse = int16_t(izone.count(51) ? int16_t(izone.at(51)) : 0) + preset_coarse;
+                const int16_t fine = int16_t(izone.count(52) ? int16_t(izone.at(52)) : 0) + preset_fine;
                 z.coarse_tune = int8_t(std::clamp(coarse, int16_t(-127), int16_t(127)));
                 z.fine_tune = int8_t(std::clamp(fine, int16_t(-127), int16_t(127)));
-                z.volume_db_cb =
-                    int16_t(izone.count(48) ? int16_t(izone.at(48)) : 0) + preset_att;
+                z.volume_db_cb = int16_t(izone.count(48) ? int16_t(izone.at(48)) : 0) + preset_att;
                 z.sample_start = r.s;
                 z.sample_end = r.e;
                 z.loop_start = (r.le > r.ls && r.ls >= r.s && r.le <= r.e) ? r.ls : r.s;
-                z.loop_end = (r.le > r.ls) ? r.le : r.s;  // <= start: no loop
+                z.loop_end = (r.le > r.ls) ? r.le : r.s; // <= start: no loop
                 z.sample_rate = 22050;
                 bank->zones.push_back(z);
             }
@@ -357,9 +350,9 @@ const Sf1Zone* pick_zone(const Sf1Bank& melodic, const Sf1Bank& drums, const Sf1
             if (key >= z.low_key && key <= z.high_key) return &z;
         }
     }
-    return nullptr;  // unmapped (program,key): silent without factory presets.
+    return nullptr; // unmapped (program,key): silent without factory presets.
 }
-}  // namespace
+} // namespace
 
 // Synthesized factory timbres (no disc bytes): one looped waveform per
 // census-observed missing melodic program. Waveforms are deliberately plain
@@ -422,7 +415,7 @@ size_t count_factory_notes(const MidsSong& song, const Sf1Bank& melodic, const S
 
 float note_gain(uint8_t velocity, int16_t cb) {
     const float vel = velocity / 127.0f;
-    return vel * float(pow(10.0, -double(cb) / 200.0));  // centibels -> amplitude
+    return vel * float(pow(10.0, -double(cb) / 200.0)); // centibels -> amplitude
 }
 namespace {
 void render_song(const MidsSong& song, const Sf1Bank& melodic, const Sf1Bank& drums,
@@ -459,7 +452,7 @@ void render_song(const MidsSong& song, const Sf1Bank& melodic, const Sf1Bank& dr
             const Sf1Zone* z = pick_zone(melodic, drums, factory, program, ch, e.data0);
             if (z) active[{ch, e.data0}] = {e.tick, e.data1, e.data0, z};
             // Unmapped notes stay silent (nullptr factory).
-        } else if (op == 0x90 || op == 0x80) {  // note off (incl. vel-0 on)
+        } else if (op == 0x90 || op == 0x80) { // note off (incl. vel-0 on)
             auto it = active.find({ch, e.data0});
             if (it == active.end()) continue;
             const uint32_t s = tick_to_frames(it->second.tick);
@@ -471,7 +464,7 @@ void render_song(const MidsSong& song, const Sf1Bank& melodic, const Sf1Bank& dr
     }
     uint32_t total = 0;
     for (const Note& n : notes) total = std::max(total, n.start_frame + n.frames);
-    if (!total || total > uint32_t(kRate * 1200)) return;  // cap 20 minutes
+    if (!total || total > uint32_t(kRate * 1200)) return; // cap 20 minutes
     std::vector<double> mix(total, 0.0);
     for (const Note& n : notes) {
         const Sf1Zone* z = n.zone;
@@ -485,7 +478,7 @@ void render_song(const MidsSong& song, const Sf1Bank& melodic, const Sf1Bank& dr
         const double step = double(z->sample_rate) / kRate * pow(2.0, semis / 12.0);
         const bool loop = z->loop_end > z->loop_start;
         const float gain = note_gain(n.velocity, z->volume_db_cb);
-        const uint32_t rel = uint32_t(kRate * 0.005);  // 5 ms release ramp
+        const uint32_t rel = uint32_t(kRate * 0.005); // 5 ms release ramp
         double pos = 0.0;
         for (uint32_t i = 0; i < n.frames; ++i) {
             uint32_t idx = z->sample_start + uint32_t(pos);
@@ -506,10 +499,9 @@ void render_song(const MidsSong& song, const Sf1Bank& melodic, const Sf1Bank& dr
         }
     }
     mono.resize(total);
-    for (uint32_t i = 0; i < total; ++i)
-        mono[i] = int16_t(lrint(std::clamp(mix[i], -1.0, 1.0) * 32767.0));
+    for (uint32_t i = 0; i < total; ++i) mono[i] = int16_t(lrint(std::clamp(mix[i], -1.0, 1.0) * 32767.0));
 }
-}  // namespace
+} // namespace
 
 // Offline render entry point shared with the test (no audio hardware).
 bool render_race_song(const MidsSong& song, const Sf1Bank& melodic, const Sf1Bank& drums,
@@ -518,10 +510,11 @@ bool render_race_song(const MidsSong& song, const Sf1Bank& melodic, const Sf1Ban
     return !mono.empty();
 }
 
-RaceMusicPlayer::RaceMusicPlayer(const Assets& assets, Mixer& mixer)
-    : assets_(assets), mixer_(mixer) {}
+RaceMusicPlayer::RaceMusicPlayer(const Assets& assets, Mixer& mixer) : assets_(assets), mixer_(mixer) {}
 
-RaceMusicPlayer::~RaceMusicPlayer() { stop(); }
+RaceMusicPlayer::~RaceMusicPlayer() {
+    stop();
+}
 
 void RaceMusicPlayer::play_race(int original_course_index, const std::string& alias) {
     stop();
@@ -543,10 +536,8 @@ void RaceMusicPlayer::play_race(int original_course_index, const std::string& al
             // bank for best effort; notes outside those programs stay silent.
             auto merged = std::make_shared<Sf1Bank>();
             for (int n = 1; n <= 5; ++n) {
-                auto b = read_sf1(
-                    assets_.read("AUDIO/MUSIC/GRUNGE" + std::to_string(n) + ".SBK"), true);
-                merged->samples.insert(merged->samples.end(), b->samples.begin(),
-                                       b->samples.end());
+                auto b = read_sf1(assets_.read("AUDIO/MUSIC/GRUNGE" + std::to_string(n) + ".SBK"), true);
+                merged->samples.insert(merged->samples.end(), b->samples.begin(), b->samples.end());
                 const uint32_t off = uint32_t(merged->samples.size() - b->samples.size());
                 for (const Sf1Zone& z : b->zones) {
                     Sf1Zone shifted = z;
@@ -559,9 +550,8 @@ void RaceMusicPlayer::play_race(int original_course_index, const std::string& al
             }
             melodic_ = std::move(merged);
         } else {
-            melodic_ = read_sf1(assets_.read("AUDIO/MUSIC/GRUNGE" +
-                                            std::to_string(original_course_index) + ".SBK"),
-                                true);
+            melodic_ = read_sf1(
+                assets_.read("AUDIO/MUSIC/GRUNGE" + std::to_string(original_course_index) + ".SBK"), true);
         }
         drums_ = read_sf1(assets_.read("AUDIO/MUSIC/RRDRUMS.SBK"), false);
     } catch (const std::runtime_error&) {
@@ -580,7 +570,7 @@ void RaceMusicPlayer::play_race(int original_course_index, const std::string& al
 void RaceMusicPlayer::stop() {
     if (stream_voice_ >= 0) mixer_.stop(stream_voice_);
     if (stream_) mixer_.retire_stream(stream_);
-    if (stream_) stream_->stop();  // generation handshake: no stale frames
+    if (stream_) stream_->stop(); // generation handshake: no stale frames
     delete stream_;
     stream_ = nullptr;
     stream_voice_ = -1;
@@ -599,7 +589,9 @@ void RaceMusicPlayer::stop() {
     tick_frac_ = 0.0;
 }
 
-void RaceMusicPlayer::pause(bool value) { paused_ = value; }
+void RaceMusicPlayer::pause(bool value) {
+    paused_ = value;
+}
 
 void RaceMusicPlayer::test_play(const MidsSong& song, std::shared_ptr<const Sf1Bank> melodic,
                                 std::shared_ptr<const Sf1Bank> drums) {
@@ -625,127 +617,128 @@ void RaceMusicPlayer::update() {
     // Backpressure: never advance the sequencer past PCM refused by the ring.
     // Keep a short buffer and fill it on each game-frame pump.
     for (int refill = 0; refill < 8 && stream_->available() < 2048; ++refill) {
-    // Current tempo (microseconds per quarter note) at the playhead tick.
-    uint32_t usec = 500000;
-    for (const auto& t : song_data_.tempo) {
-        if (t.first > tick_) break;
-        if (t.second) usec = t.second;
-    }
-    const double frames_per_tick =
-        double(usec) / 1e6 / double(song_data_.division ? song_data_.division : 480) * kRate;
-    double advance = double(kBlock);
-    int16_t block[2 * kBlock] = {};
-    // Loop the song (0x00433e30 enables looping on the MIDI stream).
-    auto reset_loop = [&] {
-        tick_ = 0;
-        tick_frac_ = 0.0;
-        event_cursor_ = 0;
-        voices_.clear();
-        live_on_.clear();
-        memset(live_program_, 0, sizeof(live_program_));
-    };
-    if (event_cursor_ >= song_data_.events.size()) reset_loop();
-    const double start_tick = double(tick_) + tick_frac_;
-    const double end_tick = start_tick + double(kBlock) / (frames_per_tick > 0 ? frames_per_tick : 1.0);
-    // Fire events whose tick falls inside this block.
-    while (event_cursor_ < song_data_.events.size() &&
-           double(song_data_.events[event_cursor_].tick) <= end_tick) {
-        const MidsEvent& e = song_data_.events[event_cursor_];
-        const uint8_t op = e.status & 0xf0, ch = e.status & 0x0f;
-        if (op == 0xC0) {
-            live_program_[ch] = e.data0 & 127;
-        } else if (op == 0x90 && e.data1 != 0u) {
-            const Sf1Zone* z =
-                pick_zone(*melodic_, *drums_, &factory_bank(), live_program_, ch, e.data0);
-            if (z) {
-                const double semis = double(int(e.data0) - int(z->root_key));
-                LiveVoice v;
-                v.zone = z;
-                v.step = double(z->sample_rate) / kRate * pow(2.0, semis / 12.0);
-                v.gain = note_gain(e.data1, z->volume_db_cb);
-                v.channel = ch;
-                v.key = e.data0;
-                // Note length unknown yet; voice ends at note-off (or song loop).
+        // Current tempo (microseconds per quarter note) at the playhead tick.
+        uint32_t usec = 500000;
+        for (const auto& t : song_data_.tempo) {
+            if (t.first > tick_) break;
+            if (t.second) usec = t.second;
+        }
+        const double frames_per_tick =
+            double(usec) / 1e6 / double(song_data_.division ? song_data_.division : 480) * kRate;
+        double advance = double(kBlock);
+        int16_t block[2 * kBlock] = {};
+        // Loop the song (0x00433e30 enables looping on the MIDI stream).
+        auto reset_loop = [&] {
+            tick_ = 0;
+            tick_frac_ = 0.0;
+            event_cursor_ = 0;
+            voices_.clear();
+            live_on_.clear();
+            memset(live_program_, 0, sizeof(live_program_));
+        };
+        if (event_cursor_ >= song_data_.events.size()) reset_loop();
+        const double start_tick = double(tick_) + tick_frac_;
+        const double end_tick = start_tick + double(kBlock) / (frames_per_tick > 0 ? frames_per_tick : 1.0);
+        // Fire events whose tick falls inside this block.
+        while (event_cursor_ < song_data_.events.size() &&
+               double(song_data_.events[event_cursor_].tick) <= end_tick) {
+            const MidsEvent& e = song_data_.events[event_cursor_];
+            const uint8_t op = e.status & 0xf0, ch = e.status & 0x0f;
+            if (op == 0xC0) {
+                live_program_[ch] = e.data0 & 127;
+            } else if (op == 0x90 && e.data1 != 0u) {
+                const Sf1Zone* z = pick_zone(*melodic_, *drums_, &factory_bank(), live_program_, ch, e.data0);
+                if (z) {
+                    const double semis = double(int(e.data0) - int(z->root_key));
+                    LiveVoice v;
+                    v.zone = z;
+                    v.step = double(z->sample_rate) / kRate * pow(2.0, semis / 12.0);
+                    v.gain = note_gain(e.data1, z->volume_db_cb);
+                    v.channel = ch;
+                    v.key = e.data0;
+                    // Note length unknown yet; voice ends at note-off (or song loop).
+                    auto it = live_on_.find({ch, e.data0});
+                    if (it != live_on_.end() && it->second < voices_.size())
+                        voices_[it->second].has_off = true;
+                    live_on_[{ch, e.data0}] = voices_.size();
+                    voices_.push_back(v);
+                }
+            } else if (op == 0x90 || op == 0x80) {
                 auto it = live_on_.find({ch, e.data0});
-                if (it != live_on_.end() && it->second < voices_.size()) voices_[it->second].has_off = true;
-                live_on_[{ch, e.data0}] = voices_.size();
-                voices_.push_back(v);
-            }
-        } else if (op == 0x90 || op == 0x80) {
-            auto it = live_on_.find({ch, e.data0});
-            if (it != live_on_.end()) {
-                if (it->second < voices_.size()) voices_[it->second].has_off = true;
-                live_on_.erase(it);
-            }
-        }
-        ++event_cursor_;
-    }
-    (void)advance;
-    tick_frac_ += double(kBlock) / (frames_per_tick > 0 ? frames_per_tick : 1.0);
-    while (tick_frac_ >= 1.0) {
-        tick_frac_ -= 1.0;
-        ++tick_;
-    }
-    // Mix live voices (linear interpolation; factory zones read the factory
-    // bank, disc zones the melodic/drum banks). Voices flagged off decay
-    // over 5 ms; looped samples sustain until note-off.
-    const float level = float(music_level_) / 80.0f;
-    const uint32_t rel = uint32_t(kRate * 0.005);
-    for (size_t vi = 0; vi < voices_.size();) {
-        LiveVoice& v = voices_[vi];
-        const Sf1Zone* z = v.zone;
-        const Sf1Bank* bank = &factory_bank();
-        bool is_factory = z >= bank->zones.data() && z < bank->zones.data() + bank->zones.size();
-        const std::vector<int16_t>& smp =
-            is_factory ? bank->samples : ((z->bank == 128) ? drums_->samples : melodic_->samples);
-        bool dead = false;
-        for (size_t i = 0; i < kBlock; ++i) {
-            double sample = 0.0;
-            if (!smp.empty() && z->sample_end <= smp.size()) {
-                const bool loop = z->loop_end > z->loop_start;
-                uint32_t idx = z->sample_start + uint32_t(v.pos);
-                const double frac = v.pos - floor(v.pos);
-                auto at = [&](uint32_t k) -> double {
-                    if (k >= z->sample_end) {
-                        if (!loop) return 0.0;
-                        k = z->loop_start + (k - z->loop_start) % (z->loop_end - z->loop_start);
-                    }
-                    return double(smp[k]) / 32768.0;
-                };
-                sample = at(idx) * (1.0 - frac) + at(idx + 1) * frac;
-                v.pos += v.step;
-                if (!loop && z->sample_start + uint32_t(v.pos) >= z->sample_end) {
-                    dead = true;
-                    sample = 0.0;
+                if (it != live_on_.end()) {
+                    if (it->second < voices_.size()) voices_[it->second].has_off = true;
+                    live_on_.erase(it);
                 }
-                if (v.has_off) {
-                    if (v.off_frame >= rel)
+            }
+            ++event_cursor_;
+        }
+        (void)advance;
+        tick_frac_ += double(kBlock) / (frames_per_tick > 0 ? frames_per_tick : 1.0);
+        while (tick_frac_ >= 1.0) {
+            tick_frac_ -= 1.0;
+            ++tick_;
+        }
+        // Mix live voices (linear interpolation; factory zones read the factory
+        // bank, disc zones the melodic/drum banks). Voices flagged off decay
+        // over 5 ms; looped samples sustain until note-off.
+        const float level = float(music_level_) / 80.0f;
+        const uint32_t rel = uint32_t(kRate * 0.005);
+        for (size_t vi = 0; vi < voices_.size();) {
+            LiveVoice& v = voices_[vi];
+            const Sf1Zone* z = v.zone;
+            const Sf1Bank* bank = &factory_bank();
+            bool is_factory = z >= bank->zones.data() && z < bank->zones.data() + bank->zones.size();
+            const std::vector<int16_t>& smp =
+                is_factory ? bank->samples : ((z->bank == 128) ? drums_->samples : melodic_->samples);
+            bool dead = false;
+            for (size_t i = 0; i < kBlock; ++i) {
+                double sample = 0.0;
+                if (!smp.empty() && z->sample_end <= smp.size()) {
+                    const bool loop = z->loop_end > z->loop_start;
+                    uint32_t idx = z->sample_start + uint32_t(v.pos);
+                    const double frac = v.pos - floor(v.pos);
+                    auto at = [&](uint32_t k) -> double {
+                        if (k >= z->sample_end) {
+                            if (!loop) return 0.0;
+                            k = z->loop_start + (k - z->loop_start) % (z->loop_end - z->loop_start);
+                        }
+                        return double(smp[k]) / 32768.0;
+                    };
+                    sample = at(idx) * (1.0 - frac) + at(idx + 1) * frac;
+                    v.pos += v.step;
+                    if (!loop && z->sample_start + uint32_t(v.pos) >= z->sample_end) {
                         dead = true;
-                    else
-                        sample *= 1.0 - double(v.off_frame++) / double(rel ? rel : 1);
+                        sample = 0.0;
+                    }
+                    if (v.has_off) {
+                        if (v.off_frame >= rel)
+                            dead = true;
+                        else
+                            sample *= 1.0 - double(v.off_frame++) / double(rel ? rel : 1);
+                    }
                 }
+                const float g = v.gain * level;
+                const int32_t s = int32_t(lrint(std::clamp(sample * g, -1.0, 1.0) * 32767.0));
+                block[2 * i] = int16_t(std::clamp<int32_t>(int32_t(block[2 * i]) + (s >> 1), -32768, 32767));
+                block[2 * i + 1] =
+                    int16_t(std::clamp<int32_t>(int32_t(block[2 * i + 1]) + (s >> 1), -32768, 32767));
             }
-            const float g = v.gain * level;
-            const int32_t s = int32_t(lrint(std::clamp(sample * g, -1.0, 1.0) * 32767.0));
-            block[2 * i] = int16_t(std::clamp<int32_t>(int32_t(block[2 * i]) + (s >> 1), -32768, 32767));
-            block[2 * i + 1] = int16_t(std::clamp<int32_t>(int32_t(block[2 * i + 1]) + (s >> 1), -32768, 32767));
-        }
-        if (dead) {
-            for (auto it = live_on_.begin(); it != live_on_.end();) {
-                if (it->second == vi)
-                    it = live_on_.erase(it);
-                else {
-                    if (it->second > vi) --it->second;
-                    ++it;
+            if (dead) {
+                for (auto it = live_on_.begin(); it != live_on_.end();) {
+                    if (it->second == vi)
+                        it = live_on_.erase(it);
+                    else {
+                        if (it->second > vi) --it->second;
+                        ++it;
+                    }
                 }
+                voices_.erase(voices_.begin() + int64_t(vi));
+            } else {
+                ++vi;
             }
-            voices_.erase(voices_.begin() + int64_t(vi));
-        } else {
-            ++vi;
         }
-    }
-    stream_->push(block, kBlock);
-    position_frames_ += kBlock;
+        stream_->push(block, kBlock);
+        position_frames_ += kBlock;
     }
     if (stream_voice_ >= 0) mixer_.set(stream_voice_, 127 * music_level_ / 80, 0, 256);
 }
@@ -756,7 +749,7 @@ void RaceMusicPlayer::update() {
 namespace {
 RaceMusicPlayer* g_race_player = nullptr;
 int g_race_music_level = 80;
-}  // namespace
+} // namespace
 void pump_race_music() {
     if (g_race_player) {
         g_race_player->set_music_level(g_race_music_level);
@@ -767,7 +760,9 @@ void set_race_music_level(int level_0_100) {
     g_race_music_level = std::clamp(level_0_100, 0, 100);
     if (g_race_player) g_race_player->set_music_level(g_race_music_level);
 }
-void register_race_player(RaceMusicPlayer* player) { g_race_player = player; }
+void register_race_player(RaceMusicPlayer* player) {
+    g_race_player = player;
+}
 
 // Jukebox music videos: EXE table 0x00473f98 (census `jukebox_videos`).
 std::string jukebox_video_path(int slot) {
@@ -775,7 +770,8 @@ std::string jukebox_video_path(int slot) {
     if (slot == 1) return "VIDEO/DUEL.AVI";
     return "";
 }
-int jukebox_video_count() { return 2; }
+int jukebox_video_count() {
+    return 2;
+}
 
-}  // namespace rr
-
+} // namespace rr

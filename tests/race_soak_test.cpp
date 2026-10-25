@@ -42,11 +42,14 @@ static SoakResult soak(rr::RaceSetup& setup, uint32_t controls) {
         // Pool bounds (original sizes) every tick.
         if (setup.instance.traffic) {
             size_t cars = 0;
-            for (const auto& c : setup.instance.traffic->cars()) if (c.active) ++cars;
+            for (const auto& c : setup.instance.traffic->cars())
+                if (c.active) ++cars;
             if (cars > 16) throw std::runtime_error("traffic pool exceeds 16");
             size_t ctl = 0, sig = 0;
-            for (const auto& c : setup.instance.traffic->controllers()) if (c.active) ++ctl;
-            for (const auto& s : setup.instance.traffic->signals()) if (s.active) ++sig;
+            for (const auto& c : setup.instance.traffic->controllers())
+                if (c.active) ++ctl;
+            for (const auto& s : setup.instance.traffic->signals())
+                if (s.active) ++sig;
             if (ctl > 10 || sig > 40) throw std::runtime_error("intersection pools exceed 10/40");
         }
         const auto& riders = setup.instance.race->riders();
@@ -73,7 +76,8 @@ static SoakResult soak(rr::RaceSetup& setup, uint32_t controls) {
 // controls: once rendering every tick at s = 1, once at s = 4 with frames
 // skipped randomly (render on ~50% of ticks). Per-tick snapshot hashes must
 // be identical (Task 1 Step 3 found no render-time RNG to relocate).
-static uint64_t render_soak(rr::RaceSetup& setup, const std::vector<uint8_t>& exe, uint32_t controls, int scale, uint64_t render_mask) {
+static uint64_t render_soak(rr::RaceSetup& setup, const std::vector<uint8_t>& exe, uint32_t controls,
+                            int scale, uint64_t render_mask) {
     if (!setup.assets.scene) throw std::runtime_error("render soak needs the course scene");
     const auto depths = rr::read_depth_table(exe);
     uint64_t hash = 1469598103934665603ULL;
@@ -85,11 +89,13 @@ static uint64_t render_soak(rr::RaceSetup& setup, const std::vector<uint8_t>& ex
         setup.instance.race->step(controls);
         lcg = lcg * 1103515245u + 12345u;
         if ((lcg & render_mask) == 0) {
-            const auto slices = rr::project_road(setup.instance.race->route(), setup.instance.race->camera_position(),
-                                                 setup.instance.race->camera(), depths);
+            const auto slices =
+                rr::project_road(setup.instance.race->route(), setup.instance.race->camera_position(),
+                                 setup.instance.race->camera(), depths);
             setup.assets.scene->draw_horizon(fb, setup.instance.race->horizon_scroll());
-            rr::render_nodes_threaded(fb, setup.assets.scene->draw_nodes(setup.instance.race->route(), slices,
-                                                                  setup.instance.race->camera(), depths),
+            rr::render_nodes_threaded(fb,
+                                      setup.assets.scene->draw_nodes(setup.instance.race->route(), slices,
+                                                                     setup.instance.race->camera(), depths),
                                       mode, 16, pool);
         }
         const auto snap = setup.instance.race->snapshot();
@@ -127,10 +133,12 @@ int main() {
         const SoakResult first = soak(a, controls);
         auto b = rr::make_race_setup(assets, exe, config);
         const SoakResult second = soak(b, controls);
-        if (first.hash != second.hash) throw std::runtime_error(course + " L" + std::to_string(level) + ": soak not deterministic");
+        if (first.hash != second.hash)
+            throw std::runtime_error(course + " L" + std::to_string(level) + ": soak not deterministic");
         if (first.ticks != second.ticks) throw std::runtime_error("tick count diverged");
         std::cout << course << " L" << level << ": " << first.ticks << " ticks"
-                  << (first.finished ? " finished" : "") << " hash=" << std::hex << first.hash << std::dec << "\n";
+                  << (first.finished ? " finished" : "") << " hash=" << std::hex << first.hash << std::dec
+                  << "\n";
     }
     // Plan 19 Task 7: same controls, s = 1 rendering every tick vs s = 4
     // rendering ~50% of ticks — snapshot hashes must be identical.
@@ -174,7 +182,8 @@ int main() {
                     const auto slices = rr::project_road(c.instance.race->route(), drawn.camera_position_q8,
                                                          drawn.camera, depths);
                     (void)slices;
-                } catch (const std::runtime_error&) {}
+                } catch (const std::runtime_error&) {
+                }
             }
             const auto snap = c.instance.race->snapshot();
             hash = fnv(hash, uint64_t(snap.tick));
@@ -219,13 +228,17 @@ int main() {
                     for (const auto& p : drawn.actors) {
                         const rr::ActorPose* pa = nullptr;
                         const rr::ActorPose* pb = nullptr;
-                        for (const auto& q : cur.actors) if (q.id == p.id) pa = &q;
-                        for (const auto& q : after.actors) if (q.id == p.id) pb = &q;
-                        if (!pa || !pb) continue;  // new/gone: drawn at b by rule
-                        const uint32_t da = p.position_q8 >= pa->position_q8 ? p.position_q8 - pa->position_q8
-                                                                             : pa->position_q8 - p.position_q8;
-                        const uint32_t db = p.position_q8 >= pb->position_q8 ? p.position_q8 - pb->position_q8
-                                                                             : pb->position_q8 - p.position_q8;
+                        for (const auto& q : cur.actors)
+                            if (q.id == p.id) pa = &q;
+                        for (const auto& q : after.actors)
+                            if (q.id == p.id) pb = &q;
+                        if (!pa || !pb) continue; // new/gone: drawn at b by rule
+                        const uint32_t da = p.position_q8 >= pa->position_q8
+                                                ? p.position_q8 - pa->position_q8
+                                                : pa->position_q8 - p.position_q8;
+                        const uint32_t db = p.position_q8 >= pb->position_q8
+                                                ? p.position_q8 - pb->position_q8
+                                                : pb->position_q8 - p.position_q8;
                         if (da > teleport_q8 && db > teleport_q8)
                             throw std::runtime_error("drawn actor floats between endpoints at transition");
                     }
@@ -233,7 +246,7 @@ int main() {
                 ++checks;
             }
             was_crashed = crashed;
-            if (!crashed && t > 10 && checks >= 2) break;  // crash + remount seen
+            if (!crashed && t > 10 && checks >= 2) break; // crash + remount seen
         }
         if (checks < 2) throw std::runtime_error("crash/remount transitions not observed");
         std::cout << "crash/remount teleport rule holds (" << checks << " transitions)\n";

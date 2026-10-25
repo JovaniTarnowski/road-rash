@@ -1,0 +1,71 @@
+#!/bin/sh
+# Pre-commit hook: format staged first-party C/C++ files with clang-format 22.
+# Installed by tools/git-hooks/install.sh (symlinked to .git/hooks/pre-commit).
+# Re-formats in place and re-stages, so the commit always lands formatted.
+set -eu
+
+root=$(git rev-parse --show-toplevel)
+cd "$root"
+
+# Staged first-party sources (added/copied/modified/renamed; deletions excluded).
+staged=$(git diff --cached --name-only -z --diff-filter=ACMR | tr '\0' '\n' | grep -E '^(src|tests|fuzz|oracle)/.*\.(cpp|hpp|cc|h|cxx|hh|c)$' || true)
+if [ -z "$staged" ]; then
+    exit 0
+fi
+
+# Resolve clang-format 22.x like tools/cpp_quality.py does.
+find_clang_format() {
+    if [ -n "${CLANG_FORMAT:-}" ] && [ -f "$CLANG_FORMAT" ]; then
+        printf '%s\n' "$CLANG_FORMAT"
+        return 0
+    fi
+    for candidate in "$(command -v clang-format || true)" \
+            "/opt/homebrew/opt/llvm/bin/clang-format" \
+            "/usr/local/opt/llvm/bin/clang-format" \
+            "$(command -v clang-format-22 || true)"; do
+        if [ -n "$candidate" ] && [ -f "$candidate" ] && \
+                "$candidate" --version 2>/dev/null | grep -q "version 22\."; then
+            printf '%s\n' "$candidate"
+            return 0
+        fi
+    done
+    return 1
+}
+
+tool=$(find_clang_format || true)
+if [ -z "$tool" ]; then
+    printf '%s\n' 'pre-commit: clang-format 22.x required; install LLVM 22 or set $CLANG_FORMAT' >&2
+    exit 1
+fi
+
+format_one() {
+    "$tool" --style=file --fallback-style=none -i "$1"
+}
+
+check_clean() {
+    # Exit 0 only when every staged file is clang-format clean.
+    clean=0
+    printf '%s\n' "$staged" | while IFS= read -r f; do
+        if ! "$tool" --style=file --fallback-style=none --dry-run --Werror "$f" >/dev/null 2>&1; then
+            printf '%s\n' "$f"
+        fi
+    done | grep -q . && clean=1 || true
+    return "$clean"
+}
+
+printf '%s\n' "$staged" | while IFS= read -r f; do format_one "$f"; done
+# clang-format 22.1.4 is not idempotent on some trailing-comment alignment;
+# iterate to a fixpoint (bounded).
+for _ in 1 2 3; do
+    if check_clean; then
+        break
+    fi
+    printf '%s\n' "$staged" | while IFS= read -r f; do format_one "$f"; done
+done
+if ! check_clean; then
+    printf '%s\n' 'pre-commit: clang-format did not converge; run `make format` and inspect the diff' >&2
+    exit 1
+fi
+
+printf '%s\n' "$staged" | while IFS= read -r f; do git add -- "$f"; done
+printf '%s\n' 'pre-commit: clang-format 22 applied to staged C/C++ files'

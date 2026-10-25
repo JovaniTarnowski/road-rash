@@ -15,18 +15,19 @@
 #include "session.hpp"
 
 namespace rr {
-constexpr int race_end_delay = 0xb4;   // 0x00416010: ticks the race keeps running after it is decided
+constexpr int race_end_delay = 0xb4; // 0x00416010: ticks the race keeps running after it is decided
 
 // Loop helpers shared between the screen and game_main.cpp's driver.
 // SpriteCache/CourseCanvas stay in game_main.cpp (used by menus/video too);
 // the screen holds pointers borrowed from the driver.
 class RaceScreen {
-public:
+  public:
     RaceScreen(Game&, SDL_Renderer*, const RaceOptions&, DisplayDriver&);
     void event(const SDL_Event&);
-    bool iterate(uint64_t now_ns);   // false when the race loop would have exited
+    bool iterate(uint64_t now_ns); // false when the race loop would have exited
     RaceEnd result() const { return result_; }
-private:
+
+  private:
     Game& g_;
     SDL_Renderer* renderer_;
     const RaceOptions& opt_;
@@ -52,9 +53,9 @@ private:
     // driven at 14 ms per upload; presentation only (Game::fade_lut).
     enum class Fade { none, in, out };
     Fade fade_ = Fade::none;
-    uint64_t fade_start_ = 0;   // 0: starts on the next iterate
-    bool fade_from_half_ = false;   // quit-confirm leaves the half palette up
-    bool hold_frame_ = false;       // fade-in before its first upload: keep the old screen
+    uint64_t fade_start_ = 0;     // 0: starts on the next iterate
+    bool fade_from_half_ = false; // quit-confirm leaves the half palette up
+    bool hold_frame_ = false;     // fade-in before its first upload: keep the old screen
     void update_fade(uint64_t now);
 
     RaceActionContext ctx_now() const;
@@ -63,4 +64,4 @@ private:
     void step_sim(uint64_t now);
     void render(uint64_t now);
 };
-}
+} // namespace rr

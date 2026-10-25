@@ -14,7 +14,7 @@ JAVA_HOME  ?= /opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home
         import app apk apk-release decompile inventory ci clean distclean \
         doctor gate-native gate-sanitizers verify-sim gate-android-debug \
         gate-android-release gate-package agent-status analysis-index agent-sessions lsp-check agent-tools-test \
-        format format-check lint
+        format format-check lint hooks
 
 help:
 	@echo "Targets:"
@@ -45,8 +45,9 @@ help:
 	@echo "  agent-sessions inventory retained local histories into analysis/agent-sessions.json"
 	@echo "  lsp-check    read-only compile database freshness check"
 	@echo "  agent-tools-test synthetic tooling regressions (no native build)"
-	@echo "  format       clang-format 22 (FILES='src/foo.cpp src/foo.hpp'; default all src/tests C++)"
+	@echo "  format       clang-format 22 (FILES='src/foo.cpp src/foo.hpp'; default all src/tests/fuzz/oracle C/C++)"
 	@echo "  format-check read-only formatting gate (same FILES selection)"
+	@echo "  hooks        install the clang-format pre-commit hook into .git/hooks"
 	@echo "  lint         clang-tidy 22 (FILES='src/foo.cpp'; configured BUILD_DIR required)"
 
 all: build
@@ -59,6 +60,9 @@ format-check:
 
 lint:
 	python3 tools/cpp_quality.py lint --build-dir "$(BUILD_DIR)" $(FILES)
+
+hooks:
+	sh tools/git-hooks/install.sh
 
 configure:
 	cmake -S . -B $(BUILD_DIR) -DCMAKE_BUILD_TYPE=$(BUILD_TYPE)

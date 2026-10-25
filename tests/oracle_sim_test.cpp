@@ -43,18 +43,23 @@ int32_t exe_i32(const std::vector<uint8_t>& exe, uint32_t va) {
     if (va < data_va || va + 4 > data_va + data_size || data_raw + (va - data_va) + 4 > exe.size())
         throw std::runtime_error("EXE word outside mapped sections");
     const size_t p = data_raw + (va - data_va);
-    return int32_t(uint32_t(exe[p]) | uint32_t(exe[p + 1]) << 8 |
-                   uint32_t(exe[p + 2]) << 16 | uint32_t(exe[p + 3]) << 24);
+    return int32_t(uint32_t(exe[p]) | uint32_t(exe[p + 1]) << 8 | uint32_t(exe[p + 2]) << 16 |
+                   uint32_t(exe[p + 3]) << 24);
 }
 // Rider-table row (0x00463c78, 0x40 bytes): weight +0xc, weapon base +0x18,
 // fight stats +0x30..+0x3c. Returns {value, weapon0, stats}.
-struct RiderRow { int32_t value; int32_t weapon0; rr::RiderStats stats; };
+struct RiderRow {
+    int32_t value;
+    int32_t weapon0;
+    rr::RiderStats stats;
+};
 RiderRow read_rider_row(const std::vector<uint8_t>& exe, int rider) {
     if (rider < 0 || rider > 9) throw std::runtime_error("Rider index out of range");
     const uint32_t row = 0x00463c78 + 0x40u * uint32_t(rider);
-    return {exe_i32(exe, row + 0xc) / 2, exe_i32(exe, row + 0x18),
-            {exe_i32(exe, row + 0x30), exe_i32(exe, row + 0x34),
-             exe_i32(exe, row + 0x38), exe_i32(exe, row + 0x3c)}};
+    return {exe_i32(exe, row + 0xc) / 2,
+            exe_i32(exe, row + 0x18),
+            {exe_i32(exe, row + 0x30), exe_i32(exe, row + 0x34), exe_i32(exe, row + 0x38),
+             exe_i32(exe, row + 0x3c)}};
 }
 // The intended per-tick comparison set (plan 10 acceptance): every native
 // snapshot field for every live rider plus every traffic pool slot, plus
@@ -70,18 +75,16 @@ RiderRow read_rider_row(const std::vector<uint8_t>& exe, int rider) {
 // accumulate from absolute ticks; no local-zero rebase). Golden-only
 // extras (raw_/bike_ windows, node.*, probes) are diagnostic context,
 // counted, never skipped.
-const char* golden_key_for(const std::string& slot_prefix,
-                           const std::string& suffix,
-                           const std::map<std::string, int64_t>& golden,
-                           std::string& out) {
+const char* golden_key_for(const std::string& slot_prefix, const std::string& suffix,
+                           const std::map<std::string, int64_t>& golden, std::string& out) {
     // Direct bike-half fields share names across eras. REQUIRED whenever
     // the proxy dumps that era's schema: the golden MUST carry the key or
     // the run FAILS (missing field = FAIL, never skip-green). The solo
     // golden's think/raw era predates lat_vel (bike +0x10c): the proxy
     // must add it (with car/police/animation fields) before acceptance.
     // Until then the era-gap rule in compare_fields counts it uncovered.
-    static const char* direct[] = {"position", "lateral", "height", "velocity",
-        "speed", "gear", "condition", "crash", "flags", "lat_vel", nullptr};
+    static const char* direct[] = {"position",  "lateral", "height", "velocity", "speed", "gear",
+                                   "condition", "crash",   "flags",  "lat_vel",  nullptr};
     if (suffix == "slice") {
         // Era rename: the oracle dumps bike +0x140 as slice_ptr (a host
         // pointer in current captures, a debug-only value). The sample
@@ -90,14 +93,13 @@ const char* golden_key_for(const std::string& slot_prefix,
         out = slot_prefix + "slice_ptr";
         return out.c_str();
     }
-    if (suffix == "steer" || suffix == "steer_rate" || suffix == "ground" ||
-        false) {
+    if (suffix == "steer" || suffix == "steer_rate" || suffix == "ground" || false) {
         return nullptr;
     }
     // Animation/combat/nitro fields (plan 16): direct golden keys when the
     // proxy dumps them, else uncovered (reported, never failing).
-    static const char* passthrough[] = {"anim", "anim_frame", "anim_queued", "anim_loops",
-        "anim_deadline", "stamina_current", "stamina_max", nullptr};
+    static const char* passthrough[] = {"anim",          "anim_frame",      "anim_queued", "anim_loops",
+                                        "anim_deadline", "stamina_current", "stamina_max", nullptr};
     for (const char** d = passthrough; *d; ++d)
         if (suffix == *d) {
             out = slot_prefix + suffix;
@@ -106,8 +108,13 @@ const char* golden_key_for(const std::string& slot_prefix,
         }
     // Rider-half words (0x00434660/0x004096f0, object *(bike+0x2fc)): the
     // raw window rider.N.raw_<hex> covers +0x180..+0x1fc in the full era.
-    static const struct { const char* suffix; const char* key; } half_map[] = {
-        {"weapon", "raw_1c8"}, {"steal_until", "raw_1cc"}, {"hit_until", "raw_1d0"},
+    static const struct {
+        const char* suffix;
+        const char* key;
+    } half_map[] = {
+        {"weapon", "raw_1c8"},
+        {"steal_until", "raw_1cc"},
+        {"hit_until", "raw_1d0"},
         {"attack_weapon", "raw_1d4"},
     };
     for (const auto& m : half_map)
@@ -125,11 +132,14 @@ const char* golden_key_for(const std::string& slot_prefix,
     }
     // AI offsets live in the brain window (rider.N.brain_<hex>, brain
     // +0x138..+0x1c4) in the full era; earlier eras lack them.
-    static const struct { const char* suffix; const char* hex; } ai_map[] = {
-        {"ai_target_x", "194"}, {"ai_target_position", "198"},
+    static const struct {
+        const char* suffix;
+        const char* hex;
+    } ai_map[] = {
+        {"ai_target_x", "194"},     {"ai_target_position", "198"},
         {"ai_target_speed", "19c"}, {"ai_current_speed", "1a4"},
-        {"ai_base_speed", "1bc"}, {"ai_replan", "188"},
-        {"ai_lane", "18c"}, {"ai_bias", "190"},
+        {"ai_base_speed", "1bc"},   {"ai_replan", "188"},
+        {"ai_lane", "18c"},         {"ai_bias", "190"},
     };
     for (const auto& m : ai_map)
         if (suffix == m.suffix) {
@@ -143,15 +153,23 @@ const char* golden_key_for(const std::string& slot_prefix,
 std::map<std::string, size_t> g_uncovered_names;
 // Golden keys some comparison consumed (acceptance coverage ledger).
 std::set<std::string> g_used_keys;
-bool g_solo_nulled_cars = false;   // solo capture whose frames carry no car.* rows
+bool g_solo_nulled_cars = false; // solo capture whose frames carry no car.* rows
 std::string fold_digits(const std::string& n) {
-    std::string out; bool in = false;
-    for (char c : n) { if (c >= '0' && c <= '9') { if (!in) out += 'N'; in = true; } else { out += c; in = false; } }
+    std::string out;
+    bool in = false;
+    for (char c : n) {
+        if (c >= '0' && c <= '9') {
+            if (!in) out += 'N';
+            in = true;
+        } else {
+            out += c;
+            in = false;
+        }
+    }
     return out;
 }
-int compare_fields(const std::map<std::string, int64_t>& golden,
-                   const std::vector<rr::FieldValue>& native, size_t frame, int64_t tick,
-                   const std::vector<std::pair<int64_t, uint64_t>>& rng_history,
+int compare_fields(const std::map<std::string, int64_t>& golden, const std::vector<rr::FieldValue>& native,
+                   size_t frame, int64_t tick, const std::vector<std::pair<int64_t, uint64_t>>& rng_history,
                    size_t& uncovered, std::string& missing) {
     for (const auto& f : native) {
         const auto dot = f.name.rfind('.');
@@ -161,8 +179,8 @@ int compare_fields(const std::map<std::string, int64_t>& golden,
         if (it != golden.end()) {
             g_used_keys.insert(f.name);
             if (it->second != f.value) {
-                std::cout << "first divergence at frame " << frame << " (tick " << tick
-                          << "): " << f.name << " original " << it->second << " native " << f.value << '\n';
+                std::cout << "first divergence at frame " << frame << " (tick " << tick << "): " << f.name
+                          << " original " << it->second << " native " << f.value << '\n';
                 std::cout << "rng history (last " << rng_history.size() << " ticks, golden vs native):";
                 for (const auto& e : rng_history) std::cout << " (" << e.first << "," << e.second << ")";
                 std::cout << '\n';
@@ -180,7 +198,11 @@ int compare_fields(const std::map<std::string, int64_t>& golden,
         // and an active one is a divergence.
         if (prefix.rfind("car.", 0) == 0 && g_solo_nulled_cars) {
             int64_t active = 0;
-            for (const auto& n : native) if (n.name == prefix + "active") { active = n.value; break; }
+            for (const auto& n : native)
+                if (n.name == prefix + "active") {
+                    active = n.value;
+                    break;
+                }
             if (active != 0) {
                 std::cout << "first divergence at frame " << frame << " (tick " << tick << "): " << prefix
                           << "active native " << active << " (solo capture has no cars)\n";
@@ -188,8 +210,8 @@ int compare_fields(const std::map<std::string, int64_t>& golden,
             }
             continue;
         }
-        if (prefix.rfind("car.", 0) == 0 && (suffix == "vehicle" || suffix == "lane" ||
-            suffix == "speed" || suffix == "phase")) {
+        if (prefix.rfind("car.", 0) == 0 &&
+            (suffix == "vehicle" || suffix == "lane" || suffix == "speed" || suffix == "phase")) {
             auto car_field = [&](const std::string& addr, const char* field) -> const int64_t* {
                 auto jt = golden.find("ring." + addr + "." + field);
                 return jt == golden.end() ? nullptr : &jt->second;
@@ -200,10 +222,13 @@ int compare_fields(const std::map<std::string, int64_t>& golden,
                 auto jp = golden.find(prefix + "position");
                 auto jl = golden.find(prefix + "lateral");
                 if (jk == golden.end() || jp == golden.end() || jl == golden.end()) {
-                    ++uncovered; ++g_uncovered_names[fold_digits(f.name)];
+                    ++uncovered;
+                    ++g_uncovered_names[fold_digits(f.name)];
                     continue;
                 }
-                kind = jk->second; position = jp->second; lateral = jl->second;
+                kind = jk->second;
+                position = jp->second;
+                lateral = jl->second;
             }
             std::string match_addr;
             for (const auto& kv : golden) {
@@ -211,19 +236,27 @@ int compare_fields(const std::map<std::string, int64_t>& golden,
                 const size_t dot = kv.first.find('.', 5);
                 if (dot == std::string::npos) continue;
                 const std::string addr = kv.first.substr(5, dot - 5);
-                auto k = car_field(addr, "kind"), p = car_field(addr, "position"), l = car_field(addr, "lateral");
+                auto k = car_field(addr, "kind"), p = car_field(addr, "position"),
+                     l = car_field(addr, "lateral");
                 if (k && p && l && *k == kind && *p == position && *l == lateral) {
-                    if (!match_addr.empty()) { match_addr.clear(); break; }   // ambiguous
+                    if (!match_addr.empty()) {
+                        match_addr.clear();
+                        break;
+                    } // ambiguous
                     match_addr = addr;
                 }
             }
             auto want = match_addr.empty() ? nullptr : car_field(match_addr, suffix.c_str());
             if (want) g_used_keys.insert("ring." + match_addr + "." + suffix);
-            if (!want) { ++uncovered; ++g_uncovered_names[fold_digits(f.name)]; continue; }
+            if (!want) {
+                ++uncovered;
+                ++g_uncovered_names[fold_digits(f.name)];
+                continue;
+            }
             if (*want != f.value) {
-                std::cout << "first divergence at frame " << frame << " (tick " << tick
-                          << "): " << f.name << " original " << *want << " native " << f.value
-                          << " (via ring." << match_addr << "." << suffix << ")\n";
+                std::cout << "first divergence at frame " << frame << " (tick " << tick << "): " << f.name
+                          << " original " << *want << " native " << f.value << " (via ring." << match_addr
+                          << "." << suffix << ")\n";
                 std::cout << "rng history (last " << rng_history.size() << " ticks, golden vs native):";
                 for (const auto& e : rng_history) std::cout << " (" << e.first << "," << e.second << ")";
                 std::cout << '\n';
@@ -244,30 +277,38 @@ int compare_fields(const std::map<std::string, int64_t>& golden,
         // acceptance; then this carve-out shrinks to car-rows-absent only.
         const bool car_row = prefix.rfind("car.", 0) == 0;
         const bool era_gap = mapped == nullptr || golden.find(key) == golden.end();
-        if (era_gap && (car_row || suffix == "lat_vel" || suffix == "steer" || suffix == "steer_rate" || suffix == "ground" ||
-                        suffix == "stamina_current" || suffix == "stamina_max" || suffix == "weapon" ||
-                        suffix == "slice" || suffix.rfind("ai_", 0) == 0 ||
+        if (era_gap && (car_row || suffix == "lat_vel" || suffix == "steer" || suffix == "steer_rate" ||
+                        suffix == "ground" || suffix == "stamina_current" || suffix == "stamina_max" ||
+                        suffix == "weapon" || suffix == "slice" || suffix.rfind("ai_", 0) == 0 ||
                         suffix.rfind("anim", 0) == 0 || suffix == "attack_weapon" ||
-                        suffix == "steal_until" || suffix == "hit_until" ||
-                        suffix.rfind("nitro_", 0) == 0)) {
-            ++uncovered; ++g_uncovered_names[fold_digits(f.name)];
+                        suffix == "steal_until" || suffix == "hit_until" || suffix.rfind("nitro_", 0) == 0)) {
+            ++uncovered;
+            ++g_uncovered_names[fold_digits(f.name)];
             continue;
         }
-        if (!mapped) { missing = f.name + " (no golden key in any era)"; return 1; }
+        if (!mapped) {
+            missing = f.name + " (no golden key in any era)";
+            return 1;
+        }
         auto jt = golden.find(key);
-        if (jt == golden.end()) { missing = f.name + " (via " + key + ": absent)"; return 1; }
+        if (jt == golden.end()) {
+            missing = f.name + " (via " + key + ": absent)";
+            return 1;
+        }
         g_used_keys.insert(key);
         int64_t want = jt->second;
         if (suffix == "slice") {
             // Pointer-valued slice_ptr: derive the sample from position.
             auto pos = golden.find(prefix + "position");
-            if (pos == golden.end()) { missing = f.name + " (no position for slice derive)"; return 1; }
+            if (pos == golden.end()) {
+                missing = f.name + " (no position for slice derive)";
+                return 1;
+            }
             want = pos->second >> 8;
         }
         if (want != f.value) {
-            std::cout << "first divergence at frame " << frame << " (tick " << tick
-                      << "): " << f.name << " original " << want << " native " << f.value
-                      << " (via " << key << ")\n";
+            std::cout << "first divergence at frame " << frame << " (tick " << tick << "): " << f.name
+                      << " original " << want << " native " << f.value << " (via " << key << ")\n";
             std::cout << "rng history (last " << rng_history.size() << " ticks, golden vs native):";
             for (const auto& e : rng_history) std::cout << " (" << e.first << "," << e.second << ")";
             std::cout << '\n';
@@ -276,7 +317,7 @@ int compare_fields(const std::map<std::string, int64_t>& golden,
     }
     return 0;
 }
-}  // namespace
+} // namespace
 int main(int argc, char** argv) {
     bool reanchor = false;
     std::string driver_cli;
@@ -285,9 +326,12 @@ int main(int argc, char** argv) {
     bool coverage = false;
     for (int i = 1; i < argc; ++i) {
         const std::string a = argv[i];
-        if (a == "--reanchor") reanchor = true;
-        else if (a == "--coverage") coverage = true;
-        else if (a.rfind("--ring-pre-draws=", 0) == 0) ring_pre_cli = std::stoll(a.substr(17));   // diagnostic search only
+        if (a == "--reanchor")
+            reanchor = true;
+        else if (a == "--coverage")
+            coverage = true;
+        else if (a.rfind("--ring-pre-draws=", 0) == 0)
+            ring_pre_cli = std::stoll(a.substr(17)); // diagnostic search only
         else if (a.rfind("--driver=", 0) == 0) {
             driver_cli = a.substr(9);
             if (driver_cli != "human" && driver_cli != "demo")
@@ -302,25 +346,37 @@ int main(int argc, char** argv) {
             std::cout << "green-pre-step-anchor\n";
             std::cout << "strict-field-set\n";
             return 0;
-        } else args.push_back(a);
+        } else
+            args.push_back(a);
     }
     const std::string file = args.size() > 0 ? args[0] : rr::golden::oracle_dir() + "/sim-napa-solo.tsv";
-    if (!std::filesystem::exists(file)) { std::cout << "SKIP missing " << file << '\n'; return rr::golden::skip; }
+    if (!std::filesystem::exists(file)) {
+        std::cout << "SKIP missing " << file << '\n';
+        return rr::golden::skip;
+    }
     const auto g = rr::golden::load(file);
-    if (g.exe != "73d7f9744b5b1a9482b3909950cdf3fe34119fe13d023b031e9c6739a60f18a2") throw std::runtime_error("different executable");
+    if (g.exe != "73d7f9744b5b1a9482b3909950cdf3fe34119fe13d023b031e9c6739a60f18a2")
+        throw std::runtime_error("different executable");
     if (g.frames.empty()) throw std::runtime_error("no frames");
     const auto& h = g.frames.at(0);
-    const auto ring_schema=h.find("ring.terrain.schema");
-    const bool ring_terrain=ring_schema!=h.end();
-    if(ring_terrain && ring_schema->second!=1)
-        throw std::runtime_error("unsupported ring.terrain.schema");
-    auto get = [&](const char* k) { auto it = h.find(k); if (it == h.end()) throw std::runtime_error(std::string("header lacks ") + k); return it->second; };
-    static const char* original_courses[] = {"CITY", "HIWAY", "MEDLY", "NAPA", "CANYN"};  // 0x0046df58
+    const auto ring_schema = h.find("ring.terrain.schema");
+    const bool ring_terrain = ring_schema != h.end();
+    if (ring_terrain && ring_schema->second != 1) throw std::runtime_error("unsupported ring.terrain.schema");
+    auto get = [&](const char* k) {
+        auto it = h.find(k);
+        if (it == h.end()) throw std::runtime_error(std::string("header lacks ") + k);
+        return it->second;
+    };
+    static const char* original_courses[] = {"CITY", "HIWAY", "MEDLY", "NAPA", "CANYN"}; // 0x0046df58
     const int course_entry = int(get("course"));
     if (course_entry < 1 || course_entry > 5) throw std::runtime_error("course out of range");
     const int level = int(get("level"));
-    const std::string assets_root = args.size() > 1 ? args[1] : std::string(RR_SOURCE_DIR) + "/../cdrom/ROADRASH";
-    if (!std::filesystem::exists(assets_root + "/ROADRASH.EXE")) { std::cout << "SKIP no disc\n"; return rr::golden::skip; }
+    const std::string assets_root =
+        args.size() > 1 ? args[1] : std::string(RR_SOURCE_DIR) + "/../cdrom/ROADRASH";
+    if (!std::filesystem::exists(assets_root + "/ROADRASH.EXE")) {
+        std::cout << "SKIP no disc\n";
+        return rr::golden::skip;
+    }
     // driver=human|demo is an axis independent of solo: solo isolates the
     // field (scheduler freeze), driver selects the 0x00434660 branch.
     // --driver defaults to the golden's measured player.demo_hold header
@@ -328,7 +384,7 @@ int main(int argc, char** argv) {
     // STOP: neither the solo flag, the filename, nor nonzero recorded input
     // proves the branch. All current captures predate the demo_hold probe
     // and carry no measurement: without --driver they are unverified.
-    int measured_hold = -1;  // player.demo_hold sampled across frames; -1 = unmeasured
+    int measured_hold = -1; // player.demo_hold sampled across frames; -1 = unmeasured
     {
         bool any = false, all0 = true, all1 = true;
         for (const auto& f : g.frames) {
@@ -338,7 +394,7 @@ int main(int argc, char** argv) {
             if (it->second != 0) all0 = false;
             if (it->second != 1) all1 = false;
         }
-        if (any) measured_hold = all0 ? 0 : all1 ? 1 : -2;  // -2 = mixed (mid-capture transition)
+        if (any) measured_hold = all0 ? 0 : all1 ? 1 : -2; // -2 = mixed (mid-capture transition)
     }
     // 0x00434660 player-think evidence: entry address + invocation counter
     // when the probe recorded them (player.think / player.think_count).
@@ -347,20 +403,32 @@ int main(int argc, char** argv) {
     // the player-think entry 0x00434660 (= 4408928) shows as rider.1.think
     // (the frozen opponent keeps the player-think dispatch word). New
     // captures MUST record player.think/player.think_count directly.
-    auto hfind = [&](const char* k) { auto it = h.find(k); return it == h.end() ? -1 : it->second; };
+    auto hfind = [&](const char* k) {
+        auto it = h.find(k);
+        return it == h.end() ? -1 : it->second;
+    };
     const int64_t think_entry = hfind("player.think");
     const int64_t think_count = hfind("player.think_count");
     const int64_t r0_think = hfind("rider.0.think"), r1_think = hfind("rider.1.think");
-    const bool demo = !driver_cli.empty() ? driver_cli == "demo"
-                                          : measured_hold == 1 ? true
-                                          : measured_hold == 0 ? false
-                                          : throw std::runtime_error("golden has no player.demo_hold measurement: pass --driver=human|demo");
+    const bool demo = !driver_cli.empty()  ? driver_cli == "demo"
+                      : measured_hold == 1 ? true
+                      : measured_hold == 0
+                          ? false
+                          : throw std::runtime_error(
+                                "golden has no player.demo_hold measurement: pass --driver=human|demo");
     if (measured_hold == -2 && driver_cli.empty())
         throw std::runtime_error("golden player.demo_hold changes mid-capture: pass --driver=human|demo");
     const bool solo = h.find("solo") != h.end() && h.at("solo") != 0;
     if (solo) {
         bool any_car = false;
-        for (const auto& fr : g.frames) { for (const auto& kv : fr) if (kv.first.rfind("car.", 0) == 0) { any_car = true; break; } if (any_car) break; }
+        for (const auto& fr : g.frames) {
+            for (const auto& kv : fr)
+                if (kv.first.rfind("car.", 0) == 0) {
+                    any_car = true;
+                    break;
+                }
+            if (any_car) break;
+        }
         g_solo_nulled_cars = !any_car;
     }
     rr::Assets assets(assets_root);
@@ -385,8 +453,8 @@ int main(int argc, char** argv) {
             const int32_t grid_word = exe_i32(exe, 0x00464218 + 8u * uint32_t(level));
             if (sample < ref.size())
                 road_base = rr::race_road_base_q8(int32_t(hlad->second), ref[sample].offset, grid_word);
-            std::cout << "road_base: " << road_base << " (golden lat " << hlad->second
-                      << " - route[" << sample << "].offset*256 - grid " << grid_word << ")\n";
+            std::cout << "road_base: " << road_base << " (golden lat " << hlad->second << " - route["
+                      << sample << "].offset*256 - grid " << grid_word << ")\n";
         }
     }
     rr::RaceConfig config;
@@ -394,7 +462,7 @@ int main(int argc, char** argv) {
     config.level = level;
     config.character = 1;
     config.career = true;
-    config.bike_from_table = true;   // default-bike setup stream (finding 1, 2026-10-13)
+    config.bike_from_table = true; // default-bike setup stream (finding 1, 2026-10-13)
     // Original setup row identity is not purely character 1: derive it from
     // the recorded rider-half table pointer when it lands in 0x00463c78..+0x280
     // on a 0x40 boundary.
@@ -422,7 +490,9 @@ int main(int argc, char** argv) {
     // the rider build (0x00405600) draw before green. The factory loads this
     // state just before ring setup (0x004552e0).
     {
-        const int64_t pre = ring_pre_cli >= 0 ? ring_pre_cli : h.count("ring.pre_draws") ? h.at("ring.pre_draws") : 0;
+        const int64_t pre = ring_pre_cli >= 0           ? ring_pre_cli
+                            : h.count("ring.pre_draws") ? h.at("ring.pre_draws")
+                                                        : 0;
         uint32_t state = uint32_t(h.count("seed") ? h.at("seed") : 1);
         for (int64_t k = 0; k < pre; ++k) state = state * 0x343fdu + 0x269ec3u;
         config.ring_rng_state = state;
@@ -455,27 +525,37 @@ int main(int argc, char** argv) {
             int brain_row = 0;
             if (dbase >= 0 && !personalities.empty()) {
                 for (size_t k = 0; k < personalities.size(); ++k)
-                    if (personalities[k].cur_levels[0] == int(dbase)) { brain_row = int(k); break; }
+                    if (personalities[k].cur_levels[0] == int(dbase)) {
+                        brain_row = int(k);
+                        break;
+                    }
             }
-            const int base = dbase >= 0 ? int(dbase)
-                : !personalities.empty() ? personalities[size_t(brain_row)].cur_levels[0] : 95;
+            const int base = dbase >= 0               ? int(dbase)
+                             : !personalities.empty() ? personalities[size_t(brain_row)].cur_levels[0]
+                                                      : 95;
             const int lane = dlane >= 0 ? int(dlane) : 1;
             // Unmeasured: the grid offset the ctor stored (0x00405990 -> +0x190;
             // the human-era golden reads brain_190 = 16384 = the level-0 word).
             const int32_t bias = dbias >= 0 ? int32_t(dbias) : rr.riders().at(0).brain.bias;
             const int weapon = dweapon >= 0 ? int(dweapon) : row.weapon0;
             const rr::RiderStats stats{dstr >= 0 ? int32_t(dstr) : row.stats.strength,
-                                      dbas >= 0 ? int32_t(dbas) : row.stats.base,
-                                      dmax >= 0 ? int32_t(dmax) : row.stats.max,
-                                      dcur_st >= 0 ? int32_t(dcur_st) : row.stats.current};
+                                       dbas >= 0 ? int32_t(dbas) : row.stats.base,
+                                       dmax >= 0 ? int32_t(dmax) : row.stats.max,
+                                       dcur_st >= 0 ? int32_t(dcur_st) : row.stats.current};
             // Seed the player brain tables from the measured row BEFORE
             // set_demo_hold (the ctor loaded personalities[0]; correct it when
             // the measurement points elsewhere).
             if (!personalities.empty() && brain_row != 0 && !rr.riders().empty()) {
                 auto& brain = rr.riders()[0].brain;
                 const auto& p = personalities[size_t(brain_row)];
-                for (int i = 0; i < 5; ++i) { brain.spd_a[i] = p.cur2_levels[i]; brain.spd_b[i] = p.cur_levels[i]; }
-                for (int i = 0; i < 30; ++i) { brain.rating[i] = p.rating[i]; brain.rating_tgt[i] = p.rating_tgt[i]; }
+                for (int i = 0; i < 5; ++i) {
+                    brain.spd_a[i] = p.cur2_levels[i];
+                    brain.spd_b[i] = p.cur_levels[i];
+                }
+                for (int i = 0; i < 30; ++i) {
+                    brain.rating[i] = p.rating[i];
+                    brain.rating_tgt[i] = p.rating_tgt[i];
+                }
                 for (int i = 0; i < 3; ++i) brain.ease[i] = p.ease[i];
                 brain.overtake_index = p.overtake_index;
                 brain.reach = p.reach;
@@ -503,7 +583,8 @@ int main(int argc, char** argv) {
                 if (index < 9 || index > 14 || size_t(index) >= rr.riders().size()) continue;
                 auto& brain = rr.riders()[size_t(index)].brain;
                 for (int level = 0; level < 5; ++level) {
-                    char key[32]; std::snprintf(key, sizeof key, "brain_%x", 0x1bc + 4 * level);
+                    char key[32];
+                    std::snprintf(key, sizeof key, "brain_%x", 0x1bc + 4 * level);
                     const auto it = h.find(p + key);
                     if (it != h.end()) brain.spd_b[level] = int32_t(it->second);
                 }
@@ -532,46 +613,53 @@ int main(int argc, char** argv) {
     // Optional original walker-state diagnostics are required in every frame
     // once declared. Read the initialized walkers before any countdown replay;
     // comparing value snapshots neither advances them nor consumes randomness.
-    auto compare_ring_terrain=[&](size_t frame) {
-        if(!ring_terrain)return false;
+    auto compare_ring_terrain = [&](size_t frame) {
+        if (!ring_terrain) return false;
         std::string difference;
-        auto compare=[&](const std::string& key,int64_t native) {
-            if(!difference.empty())return;
-            const auto found=g.frames.at(frame).find(key);
-            if(found==g.frames.at(frame).end())difference="missing required "+key;
-            else if(found->second!=native)
-                difference=key+" original "+std::to_string(found->second)+" native "+std::to_string(native);
+        auto compare = [&](const std::string& key, int64_t native) {
+            if (!difference.empty()) return;
+            const auto found = g.frames.at(frame).find(key);
+            if (found == g.frames.at(frame).end())
+                difference = "missing required " + key;
+            else if (found->second != native)
+                difference =
+                    key + " original " + std::to_string(found->second) + " native " + std::to_string(native);
         };
-        if(!setup.instance.ring)difference="native track ring unavailable";
+        if (!setup.instance.ring)
+            difference = "native track ring unavailable";
         else {
-            const auto state=setup.instance.ring->diagnostic_state();
-            auto walker=[&](const char* name,const rr::TrackWalkerState& walk) {
-                const std::string prefix=std::string("ring.walk.")+name+".";
-                compare(prefix+"position",walk.position);
-                compare(prefix+"terrain.available",walk.terrain.has_value());
-                if(!walk.terrain)return;
-                const auto& terrain=*walk.terrain;
-                compare(prefix+"terrain.position",terrain.position);
-                compare(prefix+"terrain.last_sample",terrain.last_sample);
-                compare(prefix+"terrain.record",int64_t(terrain.record));
-                for(size_t i=0;i<terrain.points.size();++i) {
-                    const auto& point=terrain.points[i];
-                    const std::string key=prefix+"terrain.point."+std::to_string(i)+".";
-                    compare(key+"start",point.start);compare(key+"end",point.end);
-                    compare(key+"x",point.x);compare(key+"height",point.height);
-                    compare(key+"dx",point.dx);compare(key+"dh",point.dh);
+            const auto state = setup.instance.ring->diagnostic_state();
+            auto walker = [&](const char* name, const rr::TrackWalkerState& walk) {
+                const std::string prefix = std::string("ring.walk.") + name + ".";
+                compare(prefix + "position", walk.position);
+                compare(prefix + "terrain.available", walk.terrain.has_value());
+                if (!walk.terrain) return;
+                const auto& terrain = *walk.terrain;
+                compare(prefix + "terrain.position", terrain.position);
+                compare(prefix + "terrain.last_sample", terrain.last_sample);
+                compare(prefix + "terrain.record", int64_t(terrain.record));
+                for (size_t i = 0; i < terrain.points.size(); ++i) {
+                    const auto& point = terrain.points[i];
+                    const std::string key = prefix + "terrain.point." + std::to_string(i) + ".";
+                    compare(key + "start", point.start);
+                    compare(key + "end", point.end);
+                    compare(key + "x", point.x);
+                    compare(key + "height", point.height);
+                    compare(key + "dx", point.dx);
+                    compare(key + "dh", point.dh);
                 }
             };
-            walker("front",state.front);walker("back",state.back);
+            walker("front", state.front);
+            walker("back", state.back);
         }
-        if(difference.empty())return false;
-        const auto tick=g.frames.at(frame).find("tick");
-        std::cout<<"first divergence at frame "<<frame<<" (tick "
-                 <<(tick==g.frames.at(frame).end()?tick0+int64_t(frame):tick->second)
-                 <<", ring terrain): "<<difference<<'\n';
+        if (difference.empty()) return false;
+        const auto tick = g.frames.at(frame).find("tick");
+        std::cout << "first divergence at frame " << frame << " (tick "
+                  << (tick == g.frames.at(frame).end() ? tick0 + int64_t(frame) : tick->second)
+                  << ", ring terrain): " << difference << '\n';
         return true;
     };
-    if(compare_ring_terrain(0))return 1;
+    if (compare_ring_terrain(0)) return 1;
     std::function<std::string(const std::map<std::string, int64_t>&)> brain_line;
     // Start-hold: the golden's leading frames run during the original's
     // pre-green countdown (menu-layer, wall-clock); rider state is frozen and
@@ -595,9 +683,13 @@ int main(int argc, char** argv) {
             const auto& f = g.frames[i];
             auto p = f.find("rider.0.position"), s = f.find("rider.0.speed");
             if ((p != f.end() && pos0 != f0.end() && p->second != pos0->second) ||
-                (s != f.end() && spd0 != f0.end() && s->second != spd0->second)) { green = i; break; }
+                (s != f.end() && spd0 != f0.end() && s->second != spd0->second)) {
+                green = i;
+                break;
+            }
         }
-        if (green == 0 || green >= g.frames.size()) throw std::runtime_error("no green frame: player state never moves");
+        if (green == 0 || green >= g.frames.size())
+            throw std::runtime_error("no green frame: player state never moves");
         const auto& fg = g.frames.at(green);
         const auto& fp = g.frames.at(green - 1);
         auto frg = fg.find("rng");
@@ -612,11 +704,18 @@ int main(int argc, char** argv) {
         for (size_t i = 0; i < green; ++i) {
             const auto& f = g.frames[i];
             auto fr = f.find("rng"), fc = f.find("rng_calls");
-            if (fr == f.end() || fr->second != anchor) { proven = false; break; }
-            if (fc != f.end() && fc->second != 0) { proven = false; break; }
+            if (fr == f.end() || fr->second != anchor) {
+                proven = false;
+                break;
+            }
+            if (fc != f.end() && fc->second != 0) {
+                proven = false;
+                break;
+            }
         }
         if (!proven) {
-            std::cout << "green pre-step anchor unproven at frame " << green << " (tick " << tick0 + int64_t(green)
+            std::cout << "green pre-step anchor unproven at frame " << green << " (tick "
+                      << tick0 + int64_t(green)
                       << "): hold frames consume rng or vary; capture pre-step RNG to proceed\n";
             return 1;
         }
@@ -637,29 +736,38 @@ int main(int argc, char** argv) {
                     field_anchor = uint32_t(anchor);
                     field_ring_post = ring_post;
                 } else {
-                // Report how far off the setup ends, so ring.pre_draws can be
-                // corrected when a setup consumer changes its draw count.
-                int64_t off = 0;
-                uint32_t a = *ring_end_state, b = uint32_t(anchor);
-                for (int64_t n = 1; n <= 200000 && !off; ++n) {
-                    a = a * 0x343fdu + 0x269ec3u;
-                    b = b * 0x343fdu + 0x269ec3u;
-                    if (a == uint32_t(anchor)) off = n;               // setup ends n draws early
-                    else if (b == *ring_end_state) off = -n;         // setup ends n draws late
-                }
-                std::cout << "ring setup does not close on the green anchor (" << ring_post << " post draws";
-                if (off) std::cout << "; setup end is " << off << " draws before green";
-                std::cout << ")\n";
-                return 1;
+                    // Report how far off the setup ends, so ring.pre_draws can be
+                    // corrected when a setup consumer changes its draw count.
+                    int64_t off = 0;
+                    uint32_t a = *ring_end_state, b = uint32_t(anchor);
+                    for (int64_t n = 1; n <= 200000 && !off; ++n) {
+                        a = a * 0x343fdu + 0x269ec3u;
+                        b = b * 0x343fdu + 0x269ec3u;
+                        if (a == uint32_t(anchor))
+                            off = n; // setup ends n draws early
+                        else if (b == *ring_end_state)
+                            off = -n; // setup ends n draws late
+                    }
+                    std::cout << "ring setup does not close on the green anchor (" << ring_post
+                              << " post draws";
+                    if (off) std::cout << "; setup end is " << off << " draws before green";
+                    std::cout << ")\n";
+                    return 1;
                 }
             }
-            if (!field_anchor) std::cout << "ring setup closes on the green anchor (+" << ring_post << " draws)\n";
+            if (!field_anchor)
+                std::cout << "ring setup closes on the green anchor (+" << ring_post << " draws)\n";
         }
         if (!field_anchor) race.set_rng_state(uint32_t(anchor));
-        std::cout << (reanchor ? "[reanchor] " : "[single-anchor] ") << "start-hold: " << green << " frozen frames, green at tick " << (tick0 + int64_t(green))
-                  << " driver=" << (demo ? "demo" : "human") << (driver_cli.empty() ? " (measured player.demo_hold=" + std::to_string(measured_hold) + ")" : " (cli override)")
+        std::cout << (reanchor ? "[reanchor] " : "[single-anchor] ") << "start-hold: " << green
+                  << " frozen frames, green at tick " << (tick0 + int64_t(green))
+                  << " driver=" << (demo ? "demo" : "human")
+                  << (driver_cli.empty()
+                          ? " (measured player.demo_hold=" + std::to_string(measured_hold) + ")"
+                          : " (cli override)")
                   << " think=0x" << std::hex << think_entry << std::dec << " count=" << think_count
-                  << " rider.0.think=" << r0_think << " rider.1.think=" << r1_think << " (0x00434660=4408928)\n";
+                  << " rider.0.think=" << r0_think << " rider.1.think=" << r1_think
+                  << " (0x00434660=4408928)\n";
     }
     // Field captures: live scheduler replay with list-order slot identity
     // (tests/field_replay.hpp). Solo captures continue below.
@@ -683,7 +791,7 @@ int main(int argc, char** argv) {
     // Golden object pointers (brain +0x168/+0x16c/+0x170/+0x180) resolve
     // through the frame-0 node dump to a (position, type) pair; native riders
     // are matched by bike position.
-    std::map<int64_t, std::pair<int64_t, int64_t>> node_at;   // address -> (position, type)
+    std::map<int64_t, std::pair<int64_t, int64_t>> node_at; // address -> (position, type)
     for (const auto& kv : h) {
         if (kv.first.rfind("nodeaddr.", 0) != 0) continue;
         const std::string n = kv.first.substr(9);
@@ -709,9 +817,12 @@ int main(int argc, char** argv) {
         return n == node_at.end() ? it->second : n->second.first;
     };
     auto gval = [](const std::map<std::string, int64_t>& f, const std::string& key) -> int64_t {
-        auto it = f.find(key); return it == f.end() ? -2 : it->second;
+        auto it = f.find(key);
+        return it == f.end() ? -2 : it->second;
     };
-    auto pos_of = [&](int idx) -> int64_t { return idx < 0 ? -1 : race.riders()[size_t(idx)].bike.i32(0x1c); };
+    auto pos_of = [&](int idx) -> int64_t {
+        return idx < 0 ? -1 : race.riders()[size_t(idx)].bike.i32(0x1c);
+    };
     brain_line = [&](const std::map<std::string, int64_t>& frame) {
         const auto& br = race.riders()[0].brain;
         std::ostringstream o;
@@ -719,15 +830,16 @@ int main(int argc, char** argv) {
           << " target=" << pos_of(br.target_rider) << "/" << gpos(frame, "rider.0.brain_168")
           << " ahead=" << pos_of(br.nbr_ahead) << "/" << gpos(frame, "rider.0.brain_16c")
           << " behind=" << pos_of(br.nbr_behind) << "/" << gpos(frame, "rider.0.brain_170")
-          << " latched=" << (br.overtake_type ? br.overtake_position : -1) << "/" << gpos(frame, "rider.0.brain_180")
-          << " step=" << br.target_step << "/" << gval(frame, "rider.0.brain_174")
-          << " ov=" << br.ov_ahead << "," << br.ov_behind << "/" << gval(frame, "rider.0.brain_178") << "," << gval(frame, "rider.0.brain_17c")
-          << " cur2=" << br.current2 << "/" << gval(frame, "rider.0.brain_1a0")
-          << " cur=" << br.current_speed << "/" << gval(frame, "rider.0.brain_1a4")
-          << " tx=" << br.target_x << "/" << gval(frame, "rider.0.brain_194")
-          << " tpos=" << br.target_position << "/" << gval(frame, "rider.0.brain_198")
-          << " tspd=" << br.target_speed << "/" << gval(frame, "rider.0.brain_19c")
-          << " replan=" << br.replan_ticks << "/" << gval(frame, "rider.0.brain_188");
+          << " latched=" << (br.overtake_type ? br.overtake_position : -1) << "/"
+          << gpos(frame, "rider.0.brain_180") << " step=" << br.target_step << "/"
+          << gval(frame, "rider.0.brain_174") << " ov=" << br.ov_ahead << "," << br.ov_behind << "/"
+          << gval(frame, "rider.0.brain_178") << "," << gval(frame, "rider.0.brain_17c")
+          << " cur2=" << br.current2 << "/" << gval(frame, "rider.0.brain_1a0") << " cur=" << br.current_speed
+          << "/" << gval(frame, "rider.0.brain_1a4") << " tx=" << br.target_x << "/"
+          << gval(frame, "rider.0.brain_194") << " tpos=" << br.target_position << "/"
+          << gval(frame, "rider.0.brain_198") << " tspd=" << br.target_speed << "/"
+          << gval(frame, "rider.0.brain_19c") << " replan=" << br.replan_ticks << "/"
+          << gval(frame, "rider.0.brain_188");
         return o.str();
     };
     // First brain word that differs from the golden window (empty if the
@@ -736,27 +848,39 @@ int main(int argc, char** argv) {
         if (f.find("rider.0.brain_160") == f.end()) return {};
         const auto& br = race.riders()[0].brain;
         const std::pair<const char*, int64_t> words[] = {
-            {"160", br.state}, {"174", br.target_step}, {"178", br.ov_ahead}, {"17c", br.ov_behind},
-            {"188", br.replan_ticks}, {"18c", br.lane}, {"190", br.bias}, {"194", br.target_x},
-            {"198", br.target_position}, {"19c", br.target_speed}, {"1a0", br.current2}, {"1a4", br.current_speed}};
+            {"160", br.state},        {"174", br.target_step},  {"178", br.ov_ahead},
+            {"17c", br.ov_behind},    {"188", br.replan_ticks}, {"18c", br.lane},
+            {"190", br.bias},         {"194", br.target_x},     {"198", br.target_position},
+            {"19c", br.target_speed}, {"1a0", br.current2},     {"1a4", br.current_speed}};
         for (const auto& w : words) {
             const int64_t want = gval(f, std::string("rider.0.brain_") + w.first);
-            if (want != w.second) return std::string("brain +0x") + w.first + " original " + std::to_string(want) + " native " + std::to_string(w.second);
+            if (want != w.second)
+                return std::string("brain +0x") + w.first + " original " + std::to_string(want) + " native " +
+                       std::to_string(w.second);
         }
         for (int st = 0; st < 10; ++st) {
-            char key[32]; std::snprintf(key, sizeof key, "rider.0.brain_%x", 0x138 + 4 * st);
+            char key[32];
+            std::snprintf(key, sizeof key, "rider.0.brain_%x", 0x138 + 4 * st);
             const int64_t want = gval(f, key);
             if (want != -2 && want != br.state_ticks[size_t(st)])
-                return std::string("brain +0x") + (key + 14) + " original " + std::to_string(want) + " native " + std::to_string(br.state_ticks[size_t(st)]);
+                return std::string("brain +0x") + (key + 14) + " original " + std::to_string(want) +
+                       " native " + std::to_string(br.state_ticks[size_t(st)]);
         }
-        const std::pair<const char*, int> ptrs[] = {{"rider.0.brain_168", br.target_rider}, {"rider.0.brain_16c", br.nbr_ahead}, {"rider.0.brain_170", br.nbr_behind}};
+        const std::pair<const char*, int> ptrs[] = {{"rider.0.brain_168", br.target_rider},
+                                                    {"rider.0.brain_16c", br.nbr_ahead},
+                                                    {"rider.0.brain_170", br.nbr_behind}};
         for (const auto& p : ptrs) {
             const int want = golden_rider(f, p.first);
-            if (want != p.second) return std::string(p.first + 8) + " original rider " + std::to_string(want) + " native " + std::to_string(p.second);
+            if (want != p.second)
+                return std::string(p.first + 8) + " original rider " + std::to_string(want) + " native " +
+                       std::to_string(p.second);
         }
         const int64_t latched = gpos(f, "rider.0.brain_180");
-        const int64_t mine = race.riders()[0].brain.overtake_type ? race.riders()[0].brain.overtake_position : -1;
-        if (latched != -2 && latched != mine) return "brain_180 original position " + std::to_string(latched) + " native " + std::to_string(mine);
+        const int64_t mine =
+            race.riders()[0].brain.overtake_type ? race.riders()[0].brain.overtake_position : -1;
+        if (latched != -2 && latched != mine)
+            return "brain_180 original position " + std::to_string(latched) + " native " +
+                   std::to_string(mine);
         return {};
     };
     // Whole player brain window (rider.0.brain_138..1c4) against the native
@@ -765,41 +889,65 @@ int main(int argc, char** argv) {
     auto brain_window_diff = [&](const std::map<std::string, int64_t>& f) -> std::string {
         const auto& br = race.riders()[0].brain;
         for (uint32_t off = 0x138; off <= 0x1c4; off += 4) {
-            char key[32]; std::snprintf(key, sizeof key, "rider.0.brain_%x", off);
+            char key[32];
+            std::snprintf(key, sizeof key, "rider.0.brain_%x", off);
             const auto it = f.find(key);
             if (it == f.end()) continue;
             g_used_keys.insert(key);
             if (off == 0x168 || off == 0x16c || off == 0x170) {
                 const int want = golden_rider(f, key);
                 const int mine = off == 0x168 ? br.target_rider : off == 0x16c ? br.nbr_ahead : br.nbr_behind;
-                if (want != mine) return std::string(key + 8) + " original rider " + std::to_string(want) + " native " + std::to_string(mine);
+                if (want != mine)
+                    return std::string(key + 8) + " original rider " + std::to_string(want) + " native " +
+                           std::to_string(mine);
                 continue;
             }
             if (off == 0x180) {
                 const int64_t latched = gpos(f, key);
                 const int64_t mine = br.overtake_type ? br.overtake_position : -1;
-                if (latched != mine) return std::string(key + 8) + " original position " + std::to_string(latched) + " native " + std::to_string(mine);
+                if (latched != mine)
+                    return std::string(key + 8) + " original position " + std::to_string(latched) +
+                           " native " + std::to_string(mine);
                 continue;
             }
             int64_t mine;
-            if (off < 0x160) mine = br.state_ticks[size_t((off - 0x138) / 4)];
-            else if (off == 0x160) mine = br.state;
-            else if (off == 0x164) mine = int64_t(br.state_flag) | int64_t(uint8_t(br.overtake_index)) << 8;
-            else if (off == 0x174) mine = br.target_step;
-            else if (off == 0x178) mine = br.ov_ahead;
-            else if (off == 0x17c) mine = br.ov_behind;
-            else if (off == 0x184) mine = br.word_184;
-            else if (off == 0x188) mine = br.replan_ticks;
-            else if (off == 0x18c) mine = br.lane;
-            else if (off == 0x190) mine = br.bias;
-            else if (off == 0x194) mine = br.target_x;
-            else if (off == 0x198) mine = br.target_position;
-            else if (off == 0x19c) mine = br.target_speed;
-            else if (off == 0x1a0) mine = br.current2;
-            else if (off == 0x1a4) mine = br.current_speed;
-            else if (off < 0x1bc) mine = br.spd_a[(off - 0x1a8) / 4];
-            else mine = br.spd_b[(off - 0x1bc) / 4];
-            if (mine != it->second) return std::string(key + 8) + " original " + std::to_string(it->second) + " native " + std::to_string(mine);
+            if (off < 0x160)
+                mine = br.state_ticks[size_t((off - 0x138) / 4)];
+            else if (off == 0x160)
+                mine = br.state;
+            else if (off == 0x164)
+                mine = int64_t(br.state_flag) | int64_t(uint8_t(br.overtake_index)) << 8;
+            else if (off == 0x174)
+                mine = br.target_step;
+            else if (off == 0x178)
+                mine = br.ov_ahead;
+            else if (off == 0x17c)
+                mine = br.ov_behind;
+            else if (off == 0x184)
+                mine = br.word_184;
+            else if (off == 0x188)
+                mine = br.replan_ticks;
+            else if (off == 0x18c)
+                mine = br.lane;
+            else if (off == 0x190)
+                mine = br.bias;
+            else if (off == 0x194)
+                mine = br.target_x;
+            else if (off == 0x198)
+                mine = br.target_position;
+            else if (off == 0x19c)
+                mine = br.target_speed;
+            else if (off == 0x1a0)
+                mine = br.current2;
+            else if (off == 0x1a4)
+                mine = br.current_speed;
+            else if (off < 0x1bc)
+                mine = br.spd_a[(off - 0x1a8) / 4];
+            else
+                mine = br.spd_b[(off - 0x1bc) / 4];
+            if (mine != it->second)
+                return std::string(key + 8) + " original " + std::to_string(it->second) + " native " +
+                       std::to_string(mine);
         }
         return {};
     };
@@ -822,13 +970,15 @@ int main(int argc, char** argv) {
         for (const auto& [key, value] : h) {
             if (key.rfind("nodeaddr.", 0) != 0 || key.find('.', 9) != std::string::npos) continue;
             const auto t = h.find(key + ".type"), p = h.find(key + ".position"), l = h.find(key + ".lateral");
-            if (t != h.end() && p != h.end() && l != h.end() && t->second == 4) captured[p->second] = l->second;
+            if (t != h.end() && p != h.end() && l != h.end() && t->second == 4)
+                captured[p->second] = l->second;
         }
         for (const auto& r : race.riders()) {
             if (!r.frozen) continue;
             const auto c = captured.find(r.bike.i32(0x1c));
             if (c == captured.end() || c->second != r.bike.i32(0x28)) {
-                std::cout << "first divergence at spawn: rider at " << r.bike.i32(0x1c) << " lateral original "
+                std::cout << "first divergence at spawn: rider at " << r.bike.i32(0x1c)
+                          << " lateral original "
                           << (c == captured.end() ? std::string("missing") : std::to_string(c->second))
                           << " native " << r.bike.i32(0x28) << '\n';
                 return 1;
@@ -836,8 +986,9 @@ int main(int argc, char** argv) {
         }
     }
     if (solo) {
-        try { rr::golden::apply_frozen_state(h, race.riders(), demo); }
-        catch (const std::runtime_error& error) {
+        try {
+            rr::golden::apply_frozen_state(h, race.riders(), demo);
+        } catch (const std::runtime_error& error) {
             std::cout << error.what() << '\n';
             return 1;
         }
@@ -862,10 +1013,11 @@ int main(int argc, char** argv) {
         const int64_t* s_next = skey("c");
         const int64_t* s_interval = skey("14");
         const int64_t* s_dt = skey("18");
-        if (s_last && s_next && s_interval && s_dt &&
-            *s_last >= std::numeric_limits<int32_t>::min() && *s_last <= std::numeric_limits<int32_t>::max() &&
-            *s_next >= std::numeric_limits<int32_t>::min() && *s_next <= std::numeric_limits<int32_t>::max() &&
-            *s_interval >= 1 && *s_interval <= std::numeric_limits<int32_t>::max() &&
+        if (s_last && s_next && s_interval && s_dt && *s_last >= std::numeric_limits<int32_t>::min() &&
+            *s_last <= std::numeric_limits<int32_t>::max() &&
+            *s_next >= std::numeric_limits<int32_t>::min() &&
+            *s_next <= std::numeric_limits<int32_t>::max() && *s_interval >= 1 &&
+            *s_interval <= std::numeric_limits<int32_t>::max() &&
             *s_dt >= std::numeric_limits<int32_t>::min() && *s_dt <= std::numeric_limits<int32_t>::max()) {
             p.sched_last = int32_t(*s_last);
             p.sched_next = int32_t(*s_next);
@@ -902,12 +1054,25 @@ int main(int argc, char** argv) {
     if (solo && brain_window && demo) {
         auto& br = race.riders()[0].brain;
         auto w = [&](const char* k) { return int32_t(gval(h, std::string("rider.0.brain_") + k)); };
-        br.state = w("160"); br.target_step = w("174"); br.ov_ahead = w("178"); br.ov_behind = w("17c");
-        br.replan_ticks = w("188"); br.lane = w("18c"); br.bias = w("190"); br.target_x = w("194");
-        br.target_position = w("198"); br.target_speed = w("19c"); br.current2 = w("1a0"); br.current_speed = w("1a4");
+        br.state = w("160");
+        br.target_step = w("174");
+        br.ov_ahead = w("178");
+        br.ov_behind = w("17c");
+        br.replan_ticks = w("188");
+        br.lane = w("18c");
+        br.bias = w("190");
+        br.target_x = w("194");
+        br.target_position = w("198");
+        br.target_speed = w("19c");
+        br.current2 = w("1a0");
+        br.current_speed = w("1a4");
         br.base_speed = w("1bc");
         br.state_flag = uint8_t(w("164"));
-        for (int st = 0; st < 10; ++st) { char key[16]; std::snprintf(key, sizeof key, "%x", 0x138 + 4 * st); br.state_ticks[size_t(st)] = w(key); }
+        for (int st = 0; st < 10; ++st) {
+            char key[16];
+            std::snprintf(key, sizeof key, "%x", 0x138 + 4 * st);
+            br.state_ticks[size_t(st)] = w(key);
+        }
         br.target_rider = golden_rider(h, "rider.0.brain_168");
         br.nbr_ahead = golden_rider(h, "rider.0.brain_16c");
         br.nbr_behind = golden_rider(h, "rider.0.brain_170");
@@ -918,9 +1083,10 @@ int main(int argc, char** argv) {
     if (solo && setup.instance.traffic) {
         const size_t timer_frames = demo ? (brain_window ? 1 : 0) : green;
         for (size_t i = 0; i < timer_frames; ++i)
-            setup.instance.traffic->countdown_step(race.route_for(race.riders()[0].route),
-                int32_t(race.camera_position()) + 0x5100,
-                []() -> uint32_t { throw std::runtime_error("hydrated hold frame consumed RNG"); }, uint32_t(tick0 + int64_t(i)));
+            setup.instance.traffic->countdown_step(
+                race.route_for(race.riders()[0].route), int32_t(race.camera_position()) + 0x5100,
+                []() -> uint32_t { throw std::runtime_error("hydrated hold frame consumed RNG"); },
+                uint32_t(tick0 + int64_t(i)));
     }
     if (demo && solo) {
         // Frame 0 is post tick 1: seeded captures resume at tick 2, others
@@ -930,35 +1096,48 @@ int main(int argc, char** argv) {
         if (!brain_window) race.countdown_step();
         for (size_t i = 1; i < green; ++i) {
             race.countdown_step();
-            if(compare_ring_terrain(i))return 1;
-            if (std::getenv("RR_SIM_TRACE")) std::cout << "countdown tick " << tick0 + int64_t(i) << ": " << brain_line(g.frames[i]) << '\n';
+            if (compare_ring_terrain(i)) return 1;
+            if (std::getenv("RR_SIM_TRACE"))
+                std::cout << "countdown tick " << tick0 + int64_t(i) << ": " << brain_line(g.frames[i])
+                          << '\n';
             const std::string d = brain_diff(g.frames[i]);
             if (!d.empty()) {
-                std::cout << "first divergence at frame " << i << " (tick " << tick0 + int64_t(i) << ", countdown): " << d << '\n';
+                std::cout << "first divergence at frame " << i << " (tick " << tick0 + int64_t(i)
+                          << ", countdown): " << d << '\n';
                 if (!std::getenv("RR_SIM_CONTINUE")) return 1;
             }
         }
-        if (race.rng_state() != rng_before) { std::cout << "countdown consumed draws\n"; return 1; }
-        if (std::getenv("RR_SIM_SIZES")) for (const auto& r : race.riders())
-            std::cout << "sizes slot " << r.slot << " pos " << r.bike.i32(0x1c) << " w " << r.bike.i32(0x174) << " l " << r.bike.i32(0x178) << " h " << r.bike.i32(0x17c) << '\n';
+        if (race.rng_state() != rng_before) {
+            std::cout << "countdown consumed draws\n";
+            return 1;
+        }
+        if (std::getenv("RR_SIM_SIZES"))
+            for (const auto& r : race.riders())
+                std::cout << "sizes slot " << r.slot << " pos " << r.bike.i32(0x1c) << " w "
+                          << r.bike.i32(0x174) << " l " << r.bike.i32(0x178) << " h " << r.bike.i32(0x17c)
+                          << '\n';
         std::cout << "countdown: " << green - 1 << " native ticks, brain equal\n";
     } else {
         // These replay modes hold the race outside Race::countdown_step.
         // The walkers remain still, but each declared hold frame is required.
-        for(size_t i=1;i<green;++i)if(compare_ring_terrain(i))return 1;
+        for (size_t i = 1; i < green; ++i)
+            if (compare_ring_terrain(i)) return 1;
         race.set_ticks(int32_t(tick0 + int64_t(green) - 1));
     }
-    std::vector<std::pair<int64_t, uint64_t>> rng_history;  // (golden, native)
-    size_t uncovered = 0;  // native fields no golden era dumps (acceptance gaps, counted not skipped)
+    std::vector<std::pair<int64_t, uint64_t>> rng_history; // (golden, native)
+    size_t uncovered = 0; // native fields no golden era dumps (acceptance gaps, counted not skipped)
     for (size_t i = green; i < g.frames.size(); ++i) {
         const auto& frame = g.frames[i];
         auto fc = frame.find("controls");
         if (fc == frame.end()) throw std::runtime_error("frame lacks controls");
-        if (reanchor && i > green) { auto fp = g.frames[i - 1].find("rng"); if (fp != g.frames[i - 1].end()) race.set_rng_state(uint32_t(fp->second)); }
+        if (reanchor && i > green) {
+            auto fp = g.frames[i - 1].find("rng");
+            if (fp != g.frames[i - 1].end()) race.set_rng_state(uint32_t(fp->second));
+        }
         // Demo goldens ignore control words (AI branch never reads them);
         // human goldens consume them through apply_controls (0x00434660).
         race.step(demo ? 0 : uint32_t(fc->second));
-        if(compare_ring_terrain(i))return 1;
+        if (compare_ring_terrain(i)) return 1;
         auto snap = race.snapshot();
         // Frozen opponents never move and the solo dump names only the
         // player's bike and half (rider.0/rider.1): drop their rows.
@@ -999,7 +1178,8 @@ int main(int argc, char** argv) {
         static const bool keep_going = std::getenv("RR_SIM_CONTINUE") != nullptr;
         if (keep_going) continue;
         if (want_rng != snap.rng) {
-            std::cout << "first divergence at frame " << i << " (tick " << tick0 + int64_t(i) << "): rng original " << want_rng << " native " << snap.rng << '\n';
+            std::cout << "first divergence at frame " << i << " (tick " << tick0 + int64_t(i)
+                      << "): rng original " << want_rng << " native " << snap.rng << '\n';
             std::cout << "rng history (last " << rng_history.size() << " ticks, golden vs native):";
             for (const auto& e : rng_history) std::cout << " (" << e.first << "," << e.second << ")";
             std::cout << '\n';
@@ -1007,17 +1187,23 @@ int main(int argc, char** argv) {
         }
         if (solo && !demo && brain_window) {
             if (const std::string d = brain_window_diff(frame); !d.empty()) {
-                std::cout << "first divergence at frame " << i << " (tick " << tick0 + int64_t(i) << "): " << d << " (player brain)\n";
+                std::cout << "first divergence at frame " << i << " (tick " << tick0 + int64_t(i)
+                          << "): " << d << " (player brain)\n";
                 return 1;
             }
         }
-        if (const std::string d = brain_diff(frame); !d.empty() && h.find("rider.0.brain_160") != h.end() && demo && solo) {
-            std::cout << "first divergence at frame " << i << " (tick " << tick0 + int64_t(i) << "): " << d << '\n';
+        if (const std::string d = brain_diff(frame);
+            !d.empty() && h.find("rider.0.brain_160") != h.end() && demo && solo) {
+            std::cout << "first divergence at frame " << i << " (tick " << tick0 + int64_t(i) << "): " << d
+                      << '\n';
             return 1;
         }
         std::string missing;
-        if (int rc = compare_fields(frame, snap.fields, i, tick0 + int64_t(i), rng_history, uncovered, missing)) {
-            if (!missing.empty()) std::cout << "missing required field at frame " << i << " (tick " << tick0 + int64_t(i) << "): " << missing << '\n';
+        if (int rc =
+                compare_fields(frame, snap.fields, i, tick0 + int64_t(i), rng_history, uncovered, missing)) {
+            if (!missing.empty())
+                std::cout << "missing required field at frame " << i << " (tick " << tick0 + int64_t(i)
+                          << "): " << missing << '\n';
             return rc;
         }
         // Player bike-image words the proxy dumps beside the field set
@@ -1031,22 +1217,32 @@ int main(int argc, char** argv) {
                 const std::string& k = kv.first;
                 int64_t native;
                 if (k == "rider.0.raw_1f8" || k == "rider.0.raw_1fc" || k == "rider.0.raw_1f4") {
-                    native = k == "rider.0.raw_1f8" ? pr.finish_distance : k == "rider.0.raw_1fc" ? pr.place : pr.place_refresh;
+                    native = k == "rider.0.raw_1f8"   ? pr.finish_distance
+                             : k == "rider.0.raw_1fc" ? pr.place
+                                                      : pr.place_refresh;
                     g_used_keys.insert(k);
                     if (native != kv.second) {
-                        std::cout << "first divergence at frame " << i << " (tick " << tick0 + int64_t(i) << "): " << k
-                                  << " original " << kv.second << " native " << native << " (standings)\n";
+                        std::cout << "first divergence at frame " << i << " (tick " << tick0 + int64_t(i)
+                                  << "): " << k << " original " << kv.second << " native " << native
+                                  << " (standings)\n";
                         return 1;
                     }
                     continue;
                 }
-                if (k == "rider.0.bike_c") native = pr.sched_next;
-                else if (k == "rider.0.bike_10") native = pr.sched_last;
-                else if (k == "rider.0.bike_14") native = pr.sched_interval;
-                else if (k == "rider.0.bike_44") continue;
-                else if (k.rfind("rider.0.bike_", 0) == 0) native = pr.bike.i32(uint32_t(std::stoul(k.substr(13), nullptr, 16)));
-                else if (k.rfind("rider.0.lat1", 0) == 0) native = pr.bike.i32(uint32_t(std::stoul(k.substr(11), nullptr, 16)));
-                else if (k == "rider.0.yaw60") native = pr.bike.i32(0x60);
+                if (k == "rider.0.bike_c")
+                    native = pr.sched_next;
+                else if (k == "rider.0.bike_10")
+                    native = pr.sched_last;
+                else if (k == "rider.0.bike_14")
+                    native = pr.sched_interval;
+                else if (k == "rider.0.bike_44")
+                    continue;
+                else if (k.rfind("rider.0.bike_", 0) == 0)
+                    native = pr.bike.i32(uint32_t(std::stoul(k.substr(13), nullptr, 16)));
+                else if (k.rfind("rider.0.lat1", 0) == 0)
+                    native = pr.bike.i32(uint32_t(std::stoul(k.substr(11), nullptr, 16)));
+                else if (k == "rider.0.yaw60")
+                    native = pr.bike.i32(0x60);
                 // Rider-half raw window (+0x180..+0x1fc of *(bike+0x2fc)):
                 // the half's own words come from its object image; weapon
                 // (+0x1c8..+0x1d4) and standings words compare elsewhere,
@@ -1055,12 +1251,13 @@ int main(int argc, char** argv) {
                     const uint32_t off = uint32_t(std::stoul(k.substr(12), nullptr, 16));
                     if ((off >= 0x1c4 && off <= 0x1d8) || off == 0x1a4 || off == 0x1e0) continue;
                     native = pr.half_object.i32(int(off));
-                }
-                else continue;
+                } else
+                    continue;
                 g_used_keys.insert(k);
                 if (native != kv.second) {
-                    std::cout << "first divergence at frame " << i << " (tick " << tick0 + int64_t(i) << "): " << k
-                              << " original " << kv.second << " native " << native << " (bike image)\n";
+                    std::cout << "first divergence at frame " << i << " (tick " << tick0 + int64_t(i)
+                              << "): " << k << " original " << kv.second << " native " << native
+                              << " (bike image)\n";
                     return 1;
                 }
             }
@@ -1076,34 +1273,57 @@ int main(int argc, char** argv) {
                 if (k.rfind("rider.1.", 0) != 0) continue;
                 const std::string f = k.substr(8);
                 int64_t native;
-                if (f == "position") native = m.position;
-                else if (f == "lateral") native = m.lateral;
-                else if (f == "height") native = m.height;
-                else if (f == "velocity") native = m.velocity;
-                else if (f == "speed" || f == "lat108") native = f == "speed" ? m.speed : m.lat108;
-                else if (f == "steer_rate") native = m.steer_rate;
-                else if (f == "lat_vel" || f == "lat10c") native = m.lat_vel;
-                else if (f == "yaw60") native = m.yaw;
-                else if (f == "bike_c") native = pr.sched_next;
-                else if (f == "bike_10") native = pr.sched_last;
-                else if (f == "bike_14") native = pr.sched_interval;
-                else if (f == "bike_18") native = pr.bike.i32(0x18);
+                if (f == "position")
+                    native = m.position;
+                else if (f == "lateral")
+                    native = m.lateral;
+                else if (f == "height")
+                    native = m.height;
+                else if (f == "velocity")
+                    native = m.velocity;
+                else if (f == "speed" || f == "lat108")
+                    native = f == "speed" ? m.speed : m.lat108;
+                else if (f == "steer_rate")
+                    native = m.steer_rate;
+                else if (f == "lat_vel" || f == "lat10c")
+                    native = m.lat_vel;
+                else if (f == "yaw60")
+                    native = m.yaw;
+                else if (f == "bike_c")
+                    native = pr.sched_next;
+                else if (f == "bike_10")
+                    native = pr.sched_last;
+                else if (f == "bike_14")
+                    native = pr.sched_interval;
+                else if (f == "bike_18")
+                    native = pr.bike.i32(0x18);
                 // The half's own object words (0x004387a0 from 0x00463c10)
                 // at the bike-layout offsets the proxy dumps for every slot.
-                else if (f == "flags") native = pr.half_object.u8(0xc0);
-                else if (f == "ground") native = pr.half_object.i32(0x160);
-                else if (f == "gear") native = pr.half_object.i32(0x23c);
-                else if (f == "condition") native = pr.half_object.i32(0x2f0);
-                else if (f == "crash") native = pr.half_object.i32(0x2f4);
-                else if (f == "steer") native = pr.half_object.i32(0x288);
-                else if (f == "lat104") native = pr.half_object.i32(0x104);
-                else if (f == "bike_44") continue;   // 0x00438450 render-prep copy (non-state)
-                else if (f.rfind("bike_", 0) == 0) native = pr.half_object.i32(int(std::stoul(f.substr(5), nullptr, 16)));
-                else continue;
+                else if (f == "flags")
+                    native = pr.half_object.u8(0xc0);
+                else if (f == "ground")
+                    native = pr.half_object.i32(0x160);
+                else if (f == "gear")
+                    native = pr.half_object.i32(0x23c);
+                else if (f == "condition")
+                    native = pr.half_object.i32(0x2f0);
+                else if (f == "crash")
+                    native = pr.half_object.i32(0x2f4);
+                else if (f == "steer")
+                    native = pr.half_object.i32(0x288);
+                else if (f == "lat104")
+                    native = pr.half_object.i32(0x104);
+                else if (f == "bike_44")
+                    continue; // 0x00438450 render-prep copy (non-state)
+                else if (f.rfind("bike_", 0) == 0)
+                    native = pr.half_object.i32(int(std::stoul(f.substr(5), nullptr, 16)));
+                else
+                    continue;
                 g_used_keys.insert(k);
                 if (native != kv.second) {
-                    std::cout << "first divergence at frame " << i << " (tick " << tick0 + int64_t(i) << "): " << k
-                              << " original " << kv.second << " native " << native << " (rider half)\n";
+                    std::cout << "first divergence at frame " << i << " (tick " << tick0 + int64_t(i)
+                              << "): " << k << " original " << kv.second << " native " << native
+                              << " (rider half)\n";
                     return 1;
                 }
             }
@@ -1119,7 +1339,7 @@ int main(int argc, char** argv) {
         // reconstructed from its frozen slice flags (apply_frozen_state), so a
         // legacy demo capture without them cannot rebuild the original list.
         if (solo && h.find("probe.frozen_words") != h.end()) {
-            std::vector<std::pair<int64_t,int64_t>> want, have;
+            std::vector<std::pair<int64_t, int64_t>> want, have;
             for (const auto& kv : frame) {
                 if (kv.first.rfind("node.", 0) != 0) continue;
                 const size_t dot = kv.first.rfind('.');
@@ -1128,7 +1348,8 @@ int main(int argc, char** argv) {
                 const auto pos = frame.find(base + ".position");
                 if (pos == frame.end()) continue;
                 want.push_back({kv.second, pos->second});
-                g_used_keys.insert(kv.first); g_used_keys.insert(base + ".position");
+                g_used_keys.insert(kv.first);
+                g_used_keys.insert(base + ".position");
             }
             if (!want.empty()) {
                 const auto& riders = race.riders();
@@ -1143,12 +1364,16 @@ int main(int argc, char** argv) {
                     for (const auto& p : setup.instance.pedestrians->pool())
                         if (p.active) have.push_back({0x00440680, p.body.bike.i32(0x1c)});
                 if (setup.instance.traffic) {
-                    for (const auto& c : setup.instance.traffic->controllers()) if (c.active) have.push_back({0, c.position_q8});
-                    for (const auto& sg : setup.instance.traffic->signals()) if (sg.active) have.push_back({0, sg.position_q8});
+                    for (const auto& c : setup.instance.traffic->controllers())
+                        if (c.active) have.push_back({0, c.position_q8});
+                    for (const auto& sg : setup.instance.traffic->signals())
+                        if (sg.active) have.push_back({0, sg.position_q8});
                 }
-                std::sort(want.begin(), want.end()); std::sort(have.begin(), have.end());
+                std::sort(want.begin(), want.end());
+                std::sort(have.begin(), have.end());
                 if (want != have) {
-                    std::cout << "first divergence at frame " << i << " (tick " << tick0 + int64_t(i) << "): node list original";
+                    std::cout << "first divergence at frame " << i << " (tick " << tick0 + int64_t(i)
+                              << "): node list original";
                     for (const auto& w : want) std::cout << " (" << w.first << "," << w.second << ")";
                     std::cout << " native";
                     for (const auto& w : have) std::cout << " (" << w.first << "," << w.second << ")";
@@ -1165,24 +1390,30 @@ int main(int argc, char** argv) {
                 int64_t native = 0;
                 if (k == "ring.front" || k == "ring.back" || k == "ring.camera") {
                     if (!setup.instance.ring) continue;
-                    native = k == "ring.front" ? setup.instance.ring->front_q8()
-                           : k == "ring.back" ? setup.instance.ring->back_q8()
-                           : int64_t(setup.instance.ring->front_q8()) - 0x5000;   // DAT_004b6e5c ring camera
+                    native = k == "ring.front"  ? setup.instance.ring->front_q8()
+                             : k == "ring.back" ? setup.instance.ring->back_q8()
+                                                : int64_t(setup.instance.ring->front_q8()) -
+                                                      0x5000; // DAT_004b6e5c ring camera
                 } else if (k.rfind("sched.", 0) == 0) {
                     const size_t dot = k.find('.', 6);
                     if (dot == std::string::npos) continue;
-                    const auto who = rider_by_address.find(int64_t(std::stoul(k.substr(6, dot - 6), nullptr, 16)));
+                    const auto who =
+                        rider_by_address.find(int64_t(std::stoul(k.substr(6, dot - 6), nullptr, 16)));
                     if (who == rider_by_address.end() || who->second < 0) continue;
                     const rr::Rider& fr = race.riders()[size_t(who->second)];
                     const std::string f = k.substr(dot + 1);
-                    native = f == "next" ? fr.sched_next : f == "last" ? fr.sched_last
-                           : f == "interval" ? fr.sched_interval : f == "dt" ? fr.bike.i32(0x18) : INT64_MIN;
+                    native = f == "next"       ? fr.sched_next
+                             : f == "last"     ? fr.sched_last
+                             : f == "interval" ? fr.sched_interval
+                             : f == "dt"       ? fr.bike.i32(0x18)
+                                               : INT64_MIN;
                     if (native == INT64_MIN) continue;
-                } else continue;
+                } else
+                    continue;
                 g_used_keys.insert(k);
                 if (native != kv.second) {
-                    std::cout << "first divergence at frame " << i << " (tick " << tick0 + int64_t(i) << "): " << k
-                              << " original " << kv.second << " native " << native << '\n';
+                    std::cout << "first divergence at frame " << i << " (tick " << tick0 + int64_t(i)
+                              << "): " << k << " original " << kv.second << " native " << native << '\n';
                     return 1;
                 }
             }
@@ -1199,7 +1430,8 @@ int main(int argc, char** argv) {
         if (i + 1 < g.frames.size()) {
             const auto next44 = g.frames[i + 1].find("rider.0.bike_44");
             const auto pos = frame.find("rider.0.position");
-            if (next44 != g.frames[i + 1].end() && pos != frame.end()) frame_ends = next44->second == pos->second;
+            if (next44 != g.frames[i + 1].end() && pos != frame.end())
+                frame_ends = next44->second == pos->second;
         }
         if (frame_ends) rr::update_engine_rpm(race.riders()[0].bike);
     }
@@ -1213,18 +1445,34 @@ int main(int argc, char** argv) {
         // process-specific code/object pointers (think callbacks are checked
         // at green; slice_ptr is compared through the derived sample).
         auto non_state = [](const std::string& k) {
-            static const std::set<std::string> exact = {"tick", "rng_calls", "controls", "riders", "course",
-                "level", "bike", "character", "seed", "solo", "tick1_caller", "probe.S", "probe.end",
-                "probe.player", "player.demo_hold", "player.think", "player.think_count", "grid.bias",
-                "demo.base_speed", "demo.lane"};
+            static const std::set<std::string> exact = {"tick",
+                                                        "rng_calls",
+                                                        "controls",
+                                                        "riders",
+                                                        "course",
+                                                        "level",
+                                                        "bike",
+                                                        "character",
+                                                        "seed",
+                                                        "solo",
+                                                        "tick1_caller",
+                                                        "probe.S",
+                                                        "probe.end",
+                                                        "probe.player",
+                                                        "player.demo_hold",
+                                                        "player.think",
+                                                        "player.think_count",
+                                                        "grid.bias",
+                                                        "demo.base_speed",
+                                                        "demo.lane"};
             if (exact.count(k)) return true;
             if (k.rfind("rider.", 0) != 0 && k.rfind("node.", 0) != 0) return false;
             const std::string suffix = k.substr(k.rfind('.') + 1);
             if (k.rfind("node.", 0) == 0) return suffix == "kind";
-            return suffix == "think" || suffix == "slice_ptr" || suffix == "bike_44" ||
-                   suffix == "raw_1a4" || suffix == "raw_1c4" || suffix == "raw_1d8" || suffix == "raw_1e0";
+            return suffix == "think" || suffix == "slice_ptr" || suffix == "bike_44" || suffix == "raw_1a4" ||
+                   suffix == "raw_1c4" || suffix == "raw_1d8" || suffix == "raw_1e0";
         };
-        g_used_keys.insert("rng");   // compared every tick before the fields
+        g_used_keys.insert("rng"); // compared every tick before the fields
         std::map<std::string, size_t> fam;
         size_t extras = 0;
         for (const auto& kv : g.frames.back()) {
@@ -1235,15 +1483,20 @@ int main(int argc, char** argv) {
         std::string uncovered_names;
         for (const auto& kv : g_uncovered_names) {
             const std::string suffix = kv.first.substr(kv.first.rfind('.') + 1);
-            if (uncovered_names.find(suffix) == std::string::npos) uncovered_names += (uncovered_names.empty() ? "" : ",") + suffix;
+            if (uncovered_names.find(suffix) == std::string::npos)
+                uncovered_names += (uncovered_names.empty() ? "" : ",") + suffix;
         }
         if (coverage) {
-            for (const auto& kv : g_uncovered_names) std::cout << "uncovered " << kv.first << ' ' << kv.second << '\n';
+            for (const auto& kv : g_uncovered_names)
+                std::cout << "uncovered " << kv.first << ' ' << kv.second << '\n';
             for (const auto& kv : fam) std::cout << "golden-only " << kv.first << ' ' << kv.second << '\n';
         }
-        if (uncovered == 0 && extras == 0) std::cout << g.frames.size() << " ticks identical\n";
-        else std::cout << g.frames.size() << " ticks identical (" << extras << " golden-only fields not compared; "
-                       << uncovered << " field-comparisons uncovered: " << uncovered_names << ")\n";
+        if (uncovered == 0 && extras == 0)
+            std::cout << g.frames.size() << " ticks identical\n";
+        else
+            std::cout << g.frames.size() << " ticks identical (" << extras
+                      << " golden-only fields not compared; " << uncovered
+                      << " field-comparisons uncovered: " << uncovered_names << ")\n";
     }
     return 0;
 }

@@ -20,7 +20,12 @@
 
 int main() {
     int failures = 0;
-    auto check = [&](bool v, const std::string& what) { if (!v) { ++failures; std::cerr << "FAIL " << what << '\n'; } };
+    auto check = [&](bool v, const std::string& what) {
+        if (!v) {
+            ++failures;
+            std::cerr << "FAIL " << what << '\n';
+        }
+    };
     const std::string assets_root = std::string(RR_SOURCE_DIR) + "/../cdrom/ROADRASH";
     if (!std::filesystem::exists(assets_root + "/ROADRASH.EXE")) {
         std::cout << "SKIP no disc\n";
@@ -50,23 +55,27 @@ int main() {
                 check(race.riders().size() == (big ? 14u : 15u), "mode field count");
                 const int selected = rr::character_rider(character);
                 const auto names = rr::race_rider_names(exe, config, race, strings, "Player");
-                check(names.size() == race.riders().size() && names[0] == "Player", "names follow compact field");
+                check(names.size() == race.riders().size() && names[0] == "Player",
+                      "names follow compact field");
                 for (size_t i = 1; i < race.riders().size(); ++i) {
                     const auto& rider = race.riders()[i];
                     check(!big || rider.rider_idx != selected, "Big Game omits selected AI row");
                     check(!names[i].empty(), "every racer has a name");
                     if (rider.rider_idx >= 9) {
                         const auto& speeds = career.spare_levels[size_t(rider.rider_idx - 9)];
-                        check(std::equal(speeds.begin(), speeds.end(), rider.brain.spd_b), "all spare level speeds reach built field");
+                        check(std::equal(speeds.begin(), speeds.end(), rider.brain.spd_b),
+                              "all spare level speeds reach built field");
                         check(rider.brain.base_speed == speeds[0], "spare row uses jittered current level");
                     }
                     race.riders()[i].bike.i32(0x1c) = race.bike().i32(0x1c) + int32_t(i * 256);
                 }
                 check(race.place(0) == int(race.riders().size()), "place reaches last racer");
-                check(loaded.hud->state(race, "Player", names).place == int(race.riders().size()), "HUD accepts two-digit last place");
+                check(loaded.hud->state(race, "Player", names).place == int(race.riders().size()),
+                      "HUD accepts two-digit last place");
                 // Select row 14 as the nearest target, across the compacted Big Game field.
                 race.riders().back().bike.i32(0x1c) = race.bike().i32(0x1c) + 1;
-                check(loaded.hud->state(race, "Player", names).target == names.back(), "HUD resolves row fourteen target");
+                check(loaded.hud->state(race, "Player", names).target == names.back(),
+                      "HUD resolves row fourteen target");
             }
         }
         config.career = false;
@@ -85,18 +94,26 @@ int main() {
                 const auto rng = instance.race->rng_state();
                 const auto names = rr::race_rider_names(exe, config, *instance.race, strings, "Player");
                 check(instance.race->rng_state() == rng, "name resolution preserves RNG");
-                if (roll == 42) { phil = true; check(names[9] == "Honest Phil", "42 selects Honest Phil table"); }
-                else if (roll == 69) { veldaar = true; check(names[9] == "Veldaar", "69 selects Veldaar table"); }
-                else {
+                if (roll == 42) {
+                    phil = true;
+                    check(names[9] == "Honest Phil", "42 selects Honest Phil table");
+                } else if (roll == 69) {
+                    veldaar = true;
+                    check(names[9] == "Veldaar", "69 selects Veldaar table");
+                } else {
                     ordinary = true;
-                    const size_t base = 320 + size_t(std::find(std::begin(courses), std::end(courses), name) - std::begin(courses)) * 6;
-                    for (size_t i = 9; i < 15; ++i) check(names[i] == strings[base + i - 9], "course spare-name slot");
+                    const size_t base = 320 + size_t(std::find(std::begin(courses), std::end(courses), name) -
+                                                     std::begin(courses)) *
+                                                  6;
+                    for (size_t i = 9; i < 15; ++i)
+                        check(names[i] == strings[base + i - 9], "course spare-name slot");
                 }
             }
             check(ordinary && phil && veldaar, "exercised every name-roll branch");
         }
         config.opponents = 7;
-        check(rr::build_race(loaded, exe, config).race->riders().size() == 8, "explicit small diagnostic field retained");
+        check(rr::build_race(loaded, exe, config).race->riders().size() == 8,
+              "explicit small diagnostic field retained");
     }
     size_t races = 0;
     for (const char* name : courses) {
@@ -116,29 +133,36 @@ int main() {
             if (uint32_t(setup.instance.race->bike().i32(0x1c)) != setup.assets.bounds.start_position_q8)
                 throw std::runtime_error(std::string(name) + ": player not at bounds.start_position_q8");
             for (int t = 0; t < 600; ++t) setup.instance.race->step(0);
-            const auto slices = rr::project_road(setup.instance.race->route(), setup.instance.race->camera_position(),
-                                                 setup.instance.race->camera(), depths);
-            const auto nodes = setup.assets.scene->draw_nodes(setup.instance.race->route(), slices, setup.instance.race->camera(), depths);
+            const auto slices =
+                rr::project_road(setup.instance.race->route(), setup.instance.race->camera_position(),
+                                 setup.instance.race->camera(), depths);
+            const auto nodes = setup.assets.scene->draw_nodes(setup.instance.race->route(), slices,
+                                                              setup.instance.race->camera(), depths);
             std::cout << name << " L" << level << ": 600 ticks, " << nodes.size() << " draw nodes\n";
             ++races;
         }
     }
     std::cout << races << " race setups built\n";
     for (const char* course : {"NAPA", "CITY", "HIWAY", "CANYN", "MEDLY"}) {
-        rr::RaceConfig config; config.course = course; config.character = 1; config.bike_from_table = true;
+        rr::RaceConfig config;
+        config.course = course;
+        config.character = 1;
+        config.bike_from_table = true;
         rr::RaceSetup setup = rr::make_race_setup(assets, exe, config);
         const rr::RaceWiring w = setup.instance.race->wiring();
         const std::string c = course;
-        check(w.terrain && w.pedestrians && w.ring && w.crash_library && w.ride_library &&
-              w.nitro && w.finish && w.personalities, c + ": every hook attached");
+        check(w.terrain && w.pedestrians && w.ring && w.crash_library && w.ride_library && w.nitro &&
+                  w.finish && w.personalities,
+              c + ": every hook attached");
         check(w.traffic == bool(setup.assets.vehicles), c + ": traffic iff vehicles");
-        rr::RaceSetup moved = std::move(setup);           // pointers must survive a move
+        rr::RaceSetup moved = std::move(setup); // pointers must survive a move
         for (int t = 0; t < 600; ++t) moved.instance.race->step(0x1);
-        rr::RaceInstance again = rr::build_race(moved.assets, exe, config);   // restart path
+        rr::RaceInstance again = rr::build_race(moved.assets, exe, config); // restart path
         check(again.race->ticks() == 0, c + ": fresh race");
         check(!again.traffic || again.traffic->cars().empty() ||
-              std::none_of(again.traffic->cars().begin(), again.traffic->cars().end(),
-                           [](const auto& car) { return car.active; }), c + ": no cars carried over");
+                  std::none_of(again.traffic->cars().begin(), again.traffic->cars().end(),
+                               [](const auto& car) { return car.active; }),
+              c + ": no cars carried over");
     }
     // DZHR roadside wiring (plan 16 Task 2): the factory attaches solid
     // spans from the scene's placed billboards on both roads, deterministically
@@ -164,7 +188,7 @@ int main() {
         config.level = 0;
         config.character = 1;
         config.career = true;
-        config.bike = 7;   // differs from the level-0 table default
+        config.bike = 7; // differs from the level-0 table default
         config.opponents = 0;
         rr::RaceSetup setup = rr::make_race_setup(assets, exe, config);
         check(setup.assets.bike_index == 7, "career keeps the purchased bike");
@@ -185,22 +209,21 @@ int main() {
         check(row0.assets.bike_index == row8.assets.bike_index, "row 0/8 select the same bike");
         check(row0.assets.rider_value == 90 && row8.assets.rider_value == 91,
               "explicit rider row selects original halved weight");
-        check(row0.instance.race->bike().i32(0x260) == 9188 &&
-              row8.instance.race->bike().i32(0x260) == 9160,
+        check(row0.instance.race->bike().i32(0x260) == 9188 && row8.instance.race->bike().i32(0x260) == 9160,
               "explicit rider row controls mass-scaled throttle cap");
-        check(row0.instance.race->bike().i32(0x264) == 918 &&
-              row0.instance.race->bike().i32(0x268) == 612,
+        check(row0.instance.race->bike().i32(0x264) == 918 && row0.instance.race->bike().i32(0x268) == 612,
               "row 0 preserves original throttle ramp rates");
         config.player_rider = -1;
         rr::RaceSetup mapped = rr::make_race_setup(assets, exe, config);
         check(mapped.assets.rider_value == row8.assets.rider_value &&
-              mapped.instance.race->bike().i32(0x260) == row8.instance.race->bike().i32(0x260),
+                  mapped.instance.race->bike().i32(0x260) == row8.instance.race->bike().i32(0x260),
               "unset player row retains character mapping");
         for (int invalid : {-2, 10}) {
             config.player_rider = invalid;
             bool rejected = false;
-            try { (void)rr::load_race_assets(assets, exe, config); }
-            catch (const std::runtime_error& e) {
+            try {
+                (void)rr::load_race_assets(assets, exe, config);
+            } catch (const std::runtime_error& e) {
                 rejected = std::string(e.what()) == "race setup: player rider out of range";
             }
             check(rejected, "reject invalid explicit rider row " + std::to_string(invalid));

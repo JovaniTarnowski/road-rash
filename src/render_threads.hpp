@@ -10,26 +10,28 @@
 #include <functional>
 namespace rr {
 class RenderThreads {
-public:
-    explicit RenderThreads(int threads);          // 1 = run inline, no threads created
+  public:
+    explicit RenderThreads(int threads); // 1 = run inline, no threads created
     ~RenderThreads();
     RenderThreads(const RenderThreads&) = delete;
     RenderThreads& operator=(const RenderThreads&) = delete;
     // Calls job(band, top_row, bottom_row_inclusive) for `bands` equal row
     // ranges and waits. Bands split rows [0, height) as evenly as possible.
-    void run(int bands, int height, const std::function<void(int,int,int)>& job);
+    void run(int bands, int height, const std::function<void(int, int, int)>& job);
     // Scratch overload: job(band, top, bottom, scratch) gets the band's
     // persistent scratch (pool-owned). Keeps the plan 25 exception propagation.
-    void run(int bands, int height, const std::function<void(int,int,int,RasterScratch64&)>& job);
+    void run(int bands, int height, const std::function<void(int, int, int, RasterScratch64&)>& job);
     int count() const { return threads_; }
-private:
+
+  private:
     struct Impl;
     Impl* impl_ = nullptr;
-    mutable Impl* inline_holder_ = nullptr;   // Task 4: scratch for the threads_==1 path (pool-affine)
+    mutable Impl* inline_holder_ = nullptr; // Task 4: scratch for the threads_==1 path (pool-affine)
     Impl& inline_scratch() const;
     int threads_ = 1;
     static void run_impl(Impl&, int bands, int height,
-                         const std::function<void(int,int,int,RasterScratch64&)>& job);
+                         const std::function<void(int, int, int, RasterScratch64&)>& job);
 };
-void render_nodes_threaded(Framebuffer&, const std::vector<DrawNode>&, const ViewMode&, uint32_t flat_mask, RenderThreads&, bool perspective = false);
-}
+void render_nodes_threaded(Framebuffer&, const std::vector<DrawNode>&, const ViewMode&, uint32_t flat_mask,
+                           RenderThreads&, bool perspective = false);
+} // namespace rr

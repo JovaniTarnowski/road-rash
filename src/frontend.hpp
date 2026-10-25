@@ -13,41 +13,43 @@ class Assets;
 
 // One 0x38-byte menu item (screen tables at 0x0046a390).
 struct MenuItem {
-    int32_t target = 0;      // +4 screen to enter when activated without a handler
-    int32_t caption = 0;     // +8 string slot
-    int32_t x = 0, y = 0, w = 0, h = 0;   // +0xc..+0x18, 640x480 coordinates
-    std::array<uint8_t, 8> nav{};         // +0x1c left, right, up, down, tab, shift-tab (0x004227d0)
-    uint32_t flags = 0;      // +0x24
-    bool enabled = false;    // +0x28
-    uint32_t handler = 0;    // +0x2c original handler address
-    int32_t desc = 0;        // +0x30 description string slot
-    uint32_t format = 0;     // +0x34 DrawText format of the title/description boxes
+    int32_t target = 0;                 // +4 screen to enter when activated without a handler
+    int32_t caption = 0;                // +8 string slot
+    int32_t x = 0, y = 0, w = 0, h = 0; // +0xc..+0x18, 640x480 coordinates
+    std::array<uint8_t, 8> nav{};       // +0x1c left, right, up, down, tab, shift-tab (0x004227d0)
+    uint32_t flags = 0;                 // +0x24
+    bool enabled = false;               // +0x28
+    uint32_t handler = 0;               // +0x2c original handler address
+    int32_t desc = 0;                   // +0x30 description string slot
+    uint32_t format = 0;                // +0x34 DrawText format of the title/description boxes
 };
 
 // Item flags.
 namespace item_flag {
-constexpr uint32_t title_caption = 0x1, title_desc = 0x2, description = 0x4, popup_item = 0x10, keep_background = 0x20,
-                   light = 0x40, course_length = 0x4000, price = 0x2000, escape = 0x8000, skip = 0x40000, dimmed = 0x80000,
-                   native_slider = 0x01000000;   // plan 18 Task 6: native slider row (bit never set by the original)
+constexpr uint32_t title_caption = 0x1, title_desc = 0x2, description = 0x4, popup_item = 0x10,
+                   keep_background = 0x20, light = 0x40, course_length = 0x4000, price = 0x2000,
+                   escape = 0x8000, skip = 0x40000, dimmed = 0x80000,
+                   native_slider =
+                       0x01000000; // plan 18 Task 6: native slider row (bit never set by the original)
 }
 
 struct MenuScreen {
     std::vector<MenuItem> items;
-    int32_t title = 0;            // screen title string slot (0x0041f770)
+    int32_t title = 0; // screen title string slot (0x0041f770)
     uint32_t title_format = 0;
 };
 
 // Everything the front end reads from the user's executable.
 struct FrontendData {
     std::array<MenuScreen, screen_id::screen_count> screens;
-    std::map<uint32_t, std::vector<MenuItem>> popups;     // by original address
-    std::array<MenuItem, 3> course_extra{};               // 6th course-select item: Thrash, mano, Big Game templates
-    std::array<std::string, 8> restroom_patterns;         // 0x00473598: 'Y'/'N' per restroom item
-    std::array<uint32_t, 25> course_length{};             // 0x00468f58: tenths of miles [course*5 + level]
-    std::array<std::array<uint16_t, 14>, 40> schmooze{};  // 0x0046a6e0: [level*8 + rider]
-    std::array<uint8_t, 4> attitude{};                    // 0x0046ab44
-    std::array<uint32_t, 24> schmooze_format{};           // 0x0046a680
-    std::array<std::array<int32_t, 2>, 10> body{};        // rider table 0x00463c78 +8 height (in), +0xc weight (lb)
+    std::map<uint32_t, std::vector<MenuItem>> popups; // by original address
+    std::array<MenuItem, 3> course_extra{};       // 6th course-select item: Thrash, mano, Big Game templates
+    std::array<std::string, 8> restroom_patterns; // 0x00473598: 'Y'/'N' per restroom item
+    std::array<uint32_t, 25> course_length{};     // 0x00468f58: tenths of miles [course*5 + level]
+    std::array<std::array<uint16_t, 14>, 40> schmooze{}; // 0x0046a6e0: [level*8 + rider]
+    std::array<uint8_t, 4> attitude{};                   // 0x0046ab44
+    std::array<uint32_t, 24> schmooze_format{};          // 0x0046a680
+    std::array<std::array<int32_t, 2>, 10> body{}; // rider table 0x00463c78 +8 height (in), +0xc weight (lb)
 };
 FrontendData read_frontend_data(const std::vector<uint8_t>& exe);
 // Game string table (0x0042f5d0) plus the unit formats 4000..4003 the front end loads directly.
@@ -58,26 +60,37 @@ std::array<std::vector<std::string>, 2> credit_lines(const std::map<uint32_t, st
 struct MenuInput {
     bool left = false, right = false, up = false, down = false, tab = false, shift_tab = false;
     bool home = false, end = false, select = false, back = false, backspace = false;
-    bool alternate_artwork = false;      // 'A' key (0x004227d0)
-    bool opponent_key = false;           // '/' key toggles the opponent list (0x00423777)
-    int capture_scancode = 0;            // plan 18 Task 7: raw SDL scancode of this keydown (0 none)
+    bool alternate_artwork = false; // 'A' key (0x004227d0)
+    bool opponent_key = false;      // '/' key toggles the opponent list (0x00423777)
+    int capture_scancode = 0;       // plan 18 Task 7: raw SDL scancode of this keydown (0 none)
     bool pointer_moved = false, pointer_click = false;
-    int pointer_x = -1, pointer_y = -1;  // 640x480 coordinates
-    std::string text;                    // typed characters (Windows-1252)
+    int pointer_x = -1, pointer_y = -1; // 640x480 coordinates
+    std::string text;                   // typed characters (Windows-1252)
 };
 
 struct FrontendEvent {
-    enum class Kind { none, play_video, start_race, quit, select_soundtrack, apply_display, apply_mixer, resume_race, quit_race } kind = Kind::none;
-    std::string video;   // path relative to the ROADRASH directory, e.g. VIDEO/START3.AVI
-    int course = 0;      // 1..5
-    int group = 0, track = 0;      // select_soundtrack: 0-based group (menu caption - 0xe1) and track (caption - 0xf1)
-    bool demo = false;               // start_race: AI attract demo (any input exits, no results)
+    enum class Kind {
+        none,
+        play_video,
+        start_race,
+        quit,
+        select_soundtrack,
+        apply_display,
+        apply_mixer,
+        resume_race,
+        quit_race
+    } kind = Kind::none;
+    std::string video; // path relative to the ROADRASH directory, e.g. VIDEO/START3.AVI
+    int course = 0;    // 1..5
+    int group = 0,
+        track = 0;     // select_soundtrack: 0-based group (menu caption - 0xe1) and track (caption - 0xf1)
+    bool demo = false; // start_race: AI attract demo (any input exits, no results)
 };
 
 // One finisher in the race results (0x00420e30 rows).
 struct Standing {
-    std::string name;      // Windows-1252
-    int32_t tenths = -1;   // race time in tenths of a second, -1 for none
+    std::string name;    // Windows-1252
+    int32_t tenths = -1; // race time in tenths of a second, -1 for none
     bool player = false;
 };
 
@@ -85,25 +98,26 @@ struct Standing {
 // 0x004227d0, item handlers, and the GDI drawing of 0x0041fc90 / 0x0041f770 / 0x00420470,
 // drawn into a 640x480 RGB image.
 class Frontend {
-public:
+  public:
     // credits: the scrolling string tables at 1000 (opening) and 2000 (finale), see credit_lines().
-    Frontend(const Assets&, const TextRenderer&, std::vector<std::string> strings, std::array<std::vector<std::string>, 2> credits,
-             FrontendData, CareerTables, Career&, Settings&, std::string save_directory);
-    void start();                                 // intro video, then the Credits screen
+    Frontend(const Assets&, const TextRenderer&, std::vector<std::string> strings,
+             std::array<std::vector<std::string>, 2> credits, FrontendData, CareerTables, Career&, Settings&,
+             std::string save_directory);
+    void start(); // intro video, then the Credits screen
     void update(const MenuInput&, uint64_t now_ms);
     bool poll(FrontendEvent&);                    // next host action
-    void draw(RgbImage&, int scale = 1) const;      // 640s x 480s; scale = 1 keeps today's output exactly
-    void draw_scale1(RgbImage&) const;                 // original 640x480 path, bit-identical
-    void draw_scaled(RgbImage&, int scale) const;        // 640s x 480s, s = 2..4
+    void draw(RgbImage&, int scale = 1) const;    // 640s x 480s; scale = 1 keeps today's output exactly
+    void draw_scale1(RgbImage&) const;            // original 640x480 path, bit-identical
+    void draw_scaled(RgbImage&, int scale) const; // 640s x 480s, s = 2..4
     void race_finished(RaceOutcome, int place, const std::vector<Standing>&);
-    void enter(int screen);                       // 0x00421df0
+    void enter(int screen); // 0x00421df0
     int screen() const { return screen_; }
     int focus() const { return focus_; }
     const std::vector<MenuItem>& items() const { return items_; }
     bool dialog_open() const { return !dialog_.text.empty(); }
     std::string caption_text(const MenuItem&) const;
     const std::string& current_save() const { return save_file_; }
-    std::string player_name() const;               // 0x0041c140
+    std::string player_name() const; // 0x0041c140
     bool editing_text() const { return editing_name_; }
     const std::string& string_slot(int slot) const { return str(slot); }
     // In-race toggles: F10 cycles MiniDash 0->1->2->0 (0x004431d0 pump); the menu `/`
@@ -114,7 +128,7 @@ public:
     // apply_rebind (0x0040fbf0 conflict rule: unbind, never swap/refuse),
     // marks settings custom, and refreshes the 0x12 current-key labels.
     void rebind_key(size_t action, uint16_t code);
-    void reset_keys(bool joystick);   // 0x0040fdf0: copy a default table in
+    void reset_keys(bool joystick); // 0x0040fdf0: copy a default table in
     // In-race pause menu (plan 18 Task 8): darken the captured race frame and
     // enter native_pause. Back/B/Escape on the pause screen resumes. Sub-screens'
     // Back returns to the pause screen, not to Graphics Options, when entered
@@ -122,11 +136,21 @@ public:
     void open_pause(const RgbImage& race_frame);
     bool pause_open() const;
     int menu_width(int display_w = 0, int display_h = 0) const;
-    int side_offset(int display_w = 0, int display_h = 0) const { return (menu_width(display_w, display_h) - 640) / 2; }
-    void set_display_size(int w, int h) { display_w_ = w; display_h_ = h; }
+    int side_offset(int display_w = 0, int display_h = 0) const {
+        return (menu_width(display_w, display_h) - 640) / 2;
+    }
+    void set_display_size(int w, int h) {
+        display_w_ = w;
+        display_h_ = h;
+    }
 
-private:
-    struct Dialog { std::string text; std::vector<std::pair<int, int>> buttons; int focus = 0; int kind = 0; };
+  private:
+    struct Dialog {
+        std::string text;
+        std::vector<std::pair<int, int>> buttons;
+        int focus = 0;
+        int kind = 0;
+    };
     const std::string& str(int slot) const;
     void activate(size_t index);
     int run_handler(size_t index);
@@ -134,17 +158,17 @@ private:
     void navigate(int direction);
     void open_popup(const std::vector<MenuItem>&, int current, int setter);
     void close_popup();
-    void open_native_popup(uint32_t popup);   // plan 18 Task 5: value item -> native popup
+    void open_native_popup(uint32_t popup); // plan 18 Task 5: value item -> native popup
     int native_current(uint32_t popup) const;
-    int visual_style_current() const;  // plan 21 Task 9: 1 Original, 2 Enhanced, 3 Custom
+    int visual_style_current() const; // plan 21 Task 9: 1 Original, 2 Enhanced, 3 Custom
     std::string native_value_text(int caption) const;
-    void apply_native_setting();              // persist + emit apply_display
-    int slider_value(int caption) const;      // plan 18 Task 6: 0..100 for slider rows
+    void apply_native_setting();         // persist + emit apply_display
+    int slider_value(int caption) const; // plan 18 Task 6: 0..100 for slider rows
     void set_slider_value(int caption, int v);
-    void adjust_slider(int delta);            // Left/Right (+-10) on the focused slider row
-    void slider_home_end(bool home);          // Home/End: 0/100 on the focused slider row
-    void apply_mixer_setting();               // persist + emit apply_mixer
-    std::string key_name(int action) const;   // plan 18 Task 7: 0x12 label text
+    void adjust_slider(int delta);          // Left/Right (+-10) on the focused slider row
+    void slider_home_end(bool home);        // Home/End: 0/100 on the focused slider row
+    void apply_mixer_setting();             // persist + emit apply_mixer
+    std::string key_name(int action) const; // plan 18 Task 7: 0x12 label text
     void apply_restroom_pattern();
     void set_background(const std::string& name);
     std::string background_for(int previous, int screen, int title);
@@ -157,13 +181,14 @@ private:
     void describe(const MenuItem&);
     void show_dialog(const std::string& text, int kind, std::vector<std::pair<int, int>> buttons);
     void finish_dialog(int choice);
-    bool confirm_unsaved(int then);                // 0x004450e0; false while a dialog is pending
+    bool confirm_unsaved(int then); // 0x004450e0; false while a dialog is pending
     void save_current();
     void save_new();
     void open_load_list();
     void queue_video(const std::string& base, int variants);
     std::string format_standing(size_t place, const Standing&) const;
-    void draw_text_box(RgbImage&, const TextRect&, Face, int height, const std::string&, unsigned flags, uint32_t colour) const;
+    void draw_text_box(RgbImage&, const TextRect&, Face, int height, const std::string&, unsigned flags,
+                       uint32_t colour) const;
 
     const Assets& assets_;
     const TextRenderer& text_;
@@ -173,34 +198,36 @@ private:
     Career& career_;
     Settings& settings_;
     std::string save_dir_, save_file_;
-    int capture_action_ = -1;              // plan 18 Task 7: press-a-key arming (-1 idle)
-    bool pause_open_ = false;              // plan 18 Task 8: in-race pause menu showing
-    bool pause_return_ = false;            // plan 18 Task 8: sub-screen Back returns to native_pause
+    int capture_action_ = -1;   // plan 18 Task 7: press-a-key arming (-1 idle)
+    bool pause_open_ = false;   // plan 18 Task 8: in-race pause menu showing
+    bool pause_return_ = false; // plan 18 Task 8: sub-screen Back returns to native_pause
     std::deque<FrontendEvent> events_;
 
     int screen_ = 0, previous_ = 0, focus_ = -1;
-    std::vector<MenuItem> items_;          // current items including an open popup
-    size_t popup_base_ = 0;                // 0x00496020
-    int popup_setter_ = 0;                 // 0x0049e0a8
-    std::array<int, screen_id::screen_count> last_focus_{};   // 0x0046a3a0
-    int character_return_ = screen_id::street;   // 0x0049705c
-    int schmooze_target_ = 0x19, schmooze_count_ = 0;   // 0x00469e1c, 0x0046ab40
-    uint8_t schmooze_used_ = 0;            // 0x00485ce4
-    int rest_picture_ = 1;                 // 0x00485ce8
+    std::vector<MenuItem> items_;                           // current items including an open popup
+    size_t popup_base_ = 0;                                 // 0x00496020
+    int popup_setter_ = 0;                                  // 0x0049e0a8
+    std::array<int, screen_id::screen_count> last_focus_{}; // 0x0046a3a0
+    int character_return_ = screen_id::street;              // 0x0049705c
+    int schmooze_target_ = 0x19, schmooze_count_ = 0;       // 0x00469e1c, 0x0046ab40
+    uint8_t schmooze_used_ = 0;                             // 0x00485ce4
+    int rest_picture_ = 1;                                  // 0x00485ce8
     RgbImage background_, dark_;
     std::string background_name_;
     int display_w_ = 0, display_h_ = 0;
     mutable RgbImage wide_bg_;
     mutable bool wide_bg_dirty_ = true;
     void ensure_wide_bg(int wide_w) const;
-    int title_slot_ = 0; uint32_t title_format_ = 0;
-    int desc_slot_ = 0; uint32_t desc_format_ = 0, desc_flags_ = 0;
+    int title_slot_ = 0;
+    uint32_t title_format_ = 0;
+    int desc_slot_ = 0;
+    uint32_t desc_format_ = 0, desc_flags_ = 0;
     std::string price_text_;
     bool qualified_overlay_ = false;
-    bool dark_screen_ = false;             // standings: the darkened copy fills the screen
+    bool dark_screen_ = false; // standings: the darkened copy fills the screen
     uint64_t now_ = 0, timer_at_ = 0;
-    uint64_t attract_at_ = 0;            // 0x00421df0/WM_TIMER 9: 60 s main-menu idle starts the demo
-    int attract_course_ = 0;             // 0x46aff0: cycles 1..5 across idle windows
+    uint64_t attract_at_ = 0; // 0x00421df0/WM_TIMER 9: 60 s main-menu idle starts the demo
+    int attract_course_ = 0;  // 0x46aff0: cycles 1..5 across idle windows
     // Scrolling credits (0x00424140 / 0x00424230): lines, y, first line, speed (0x00468f50), timer ticks.
     std::array<std::vector<std::string>, 2> credits_;
     int credit_set_ = -1, credit_y_ = 0, credit_line_ = 1, credit_speed_ = 1, credit_ticks_ = 0;
@@ -215,4 +242,4 @@ private:
     RaceReport report_;
     uint32_t next_random();
 };
-}
+} // namespace rr

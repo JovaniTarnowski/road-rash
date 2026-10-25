@@ -13,7 +13,8 @@ RaceAction race_action(const SDL_Event& e, const RaceActionContext& c) {
     // 0x004431d0 pump with string 317: key-up of any key (other than F10 /
     // PrintScreen), a joystick button or (native) a tap resumes.
     if (c.pause_message) {
-        if ((e.type == SDL_EVENT_KEY_DOWN && !e.key.repeat && e.key.key != SDLK_F10 && e.key.key != SDLK_PRINTSCREEN) ||
+        if ((e.type == SDL_EVENT_KEY_DOWN && !e.key.repeat && e.key.key != SDLK_F10 &&
+             e.key.key != SDLK_PRINTSCREEN) ||
             e.type == SDL_EVENT_GAMEPAD_BUTTON_DOWN || e.type == SDL_EVENT_FINGER_DOWN)
             return RaceAction::resume_message;
         return RaceAction::none;
@@ -44,7 +45,8 @@ RaceAction race_action(const SDL_Event& e, const RaceActionContext& c) {
         }
         if (e.gbutton.button == SDL_GAMEPAD_BUTTON_START)
             return c.has_menu ? RaceAction::open_pause : RaceAction::toggle_pause;
-        if (e.gbutton.button == SDL_GAMEPAD_BUTTON_BACK && c.career && !c.paused) return RaceAction::request_quit;
+        if (e.gbutton.button == SDL_GAMEPAD_BUTTON_BACK && c.career && !c.paused)
+            return RaceAction::request_quit;
         if (e.gbutton.button == SDL_GAMEPAD_BUTTON_SOUTH && !c.paused && c.finished && !c.career)
             return RaceAction::restart;
         return RaceAction::none;
@@ -60,4 +62,4 @@ RaceAction race_action(const SDL_Event& e, const RaceActionContext& c) {
     }
     return RaceAction::none;
 }
-}
+} // namespace rr

@@ -17,4 +17,4 @@ bool menu_image_exists(const Assets&, const std::string& name);
 // the picture surface itself is 565 (0x0041e090 table proof).
 uint32_t darken555(uint32_t rgb);
 uint32_t quantise565(uint32_t rgb);
-}
+} // namespace rr

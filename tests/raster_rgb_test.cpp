@@ -29,7 +29,12 @@ const char* const course_files[5] = {"CITY", "HIWAY", "MEDLY", "NAPA", "CANYN"};
 
 int main(int argc, char** argv) {
     int failures = 0;
-    auto check = [&](bool v, const char* what) { if (!v) { ++failures; std::cerr << "FAIL " << what << "\n"; } };
+    auto check = [&](bool v, const char* what) {
+        if (!v) {
+            ++failures;
+            std::cerr << "FAIL " << what << "\n";
+        }
+    };
     std::string assets_root = RR_SOURCE_DIR "/../cdrom/ROADRASH";
     for (int i = 1; i < argc; ++i) {
         const std::string a = argv[i];
@@ -38,7 +43,9 @@ int main(int argc, char** argv) {
     rr::Assets assets(assets_root);
     // Halo fixture: white disc on index 0.
     rr::CelMip disc;
-    disc.width = 16; disc.height = 16; disc.stride_shift = 4;
+    disc.width = 16;
+    disc.height = 16;
+    disc.stride_shift = 4;
     disc.pixels.assign(256, 0);
     for (int y = 0; y < 16; ++y)
         for (int x = 0; x < 16; ++x) {
@@ -47,12 +54,17 @@ int main(int argc, char** argv) {
         }
     rr::Palette white;
     white.rgbx.fill(0);
-    white.rgbx[4 * 255] = 255; white.rgbx[4 * 255 + 1] = 255; white.rgbx[4 * 255 + 2] = 255;
+    white.rgbx[4 * 255] = 255;
+    white.rgbx[4 * 255 + 1] = 255;
+    white.rgbx[4 * 255 + 2] = 255;
     {
         rr::FramebufferRgb fb(128, 128);
         fb.clear(0);
         std::array<rr::RgbVertex, 4> q{{{0, 0, 0, 0}, {128, 0, 16, 0}, {128, 128, 16, 16}, {0, 128, 0, 16}}};
-        { auto m = rr::rgba_mips_for_test(disc, white); rr::draw_rgb_quad_bilinear(fb, q, m.data(), m.size(), false, {0, 0, 128, 127}); }
+        {
+            auto m = rr::rgba_mips_for_test(disc, white);
+            rr::draw_rgb_quad_bilinear(fb, q, m.data(), m.size(), false, {0, 0, 128, 127});
+        }
         int dark_inside = 0, colour_outside = 0;
         for (int y = 0; y < 128; ++y)
             for (int x = 0; x < 128; ++x) {
@@ -70,19 +82,29 @@ int main(int argc, char** argv) {
     // Bilinear value fixture.
     {
         rr::CelMip checker;
-        checker.width = 2; checker.height = 2; checker.stride_shift = 1;
+        checker.width = 2;
+        checker.height = 2;
+        checker.stride_shift = 1;
         checker.pixels = {1, 2, 2, 1};
         rr::Palette bw;
         bw.rgbx.fill(0);
-        bw.rgbx[4] = 0; bw.rgbx[5] = 0; bw.rgbx[6] = 0;
-        bw.rgbx[8] = 255; bw.rgbx[9] = 255; bw.rgbx[10] = 255;
+        bw.rgbx[4] = 0;
+        bw.rgbx[5] = 0;
+        bw.rgbx[6] = 0;
+        bw.rgbx[8] = 255;
+        bw.rgbx[9] = 255;
+        bw.rgbx[10] = 255;
         rr::FramebufferRgb fb(64, 64);
         fb.clear(0);
         std::array<rr::RgbVertex, 4> q{{{0, 0, 0, 0}, {64, 0, 2, 0}, {64, 64, 2, 2}, {0, 64, 0, 2}}};
-        { auto m = rr::rgba_mips_for_test(checker, bw); rr::draw_rgb_quad_bilinear(fb, q, m.data(), m.size(), false, {0, 0, 64, 63}); }
+        {
+            auto m = rr::rgba_mips_for_test(checker, bw);
+            rr::draw_rgb_quad_bilinear(fb, q, m.data(), m.size(), false, {0, 0, 64, 63});
+        }
         const uint32_t c = fb.row(32)[32];
         const int r = (c >> 16) & 0xff, g = (c >> 8) & 0xff, b = c & 0xff;
-        check(std::abs(r - 128) <= 2 && std::abs(g - 128) <= 2 && std::abs(b - 128) <= 2, "centre is mid-grey");
+        check(std::abs(r - 128) <= 2 && std::abs(g - 128) <= 2 && std::abs(b - 128) <= 2,
+              "centre is mid-grey");
         if (!(std::abs(r - 128) <= 2 && std::abs(g - 128) <= 2 && std::abs(b - 128) <= 2))
             std::cerr << "centre=" << r << "," << g << "," << b << "\n";
     }
@@ -111,7 +133,8 @@ int main(int argc, char** argv) {
             for (const auto& sn : dump.nodes) {
                 rr::DrawNode n;
                 for (int k = 0; k < 4; ++k)
-                    n.view_points[size_t(k)] = {int32_t(sn.u32(0x44 + 8 * size_t(k))), int32_t(sn.u32(0x48 + 8 * size_t(k)))};
+                    n.view_points[size_t(k)] = {int32_t(sn.u32(0x44 + 8 * size_t(k))),
+                                                int32_t(sn.u32(0x48 + 8 * size_t(k)))};
                 n.flip_u = sn.bytes[0x64] != 0;
                 n.flip_v = sn.bytes[0x65] != 0;
                 if (sn.u32(8) == 0x00466684) {
@@ -119,8 +142,10 @@ int main(int argc, char** argv) {
                     if (!t) continue;
                     dynamic.push_back(std::make_unique<rr::CelTexture>(std::move(*t)));
                     n.texture = dynamic.back().get();
-                } else if (sn.bytes[0x66]) n.flat_index = sn.bytes[0x67];
-                else if (!(n.texture = lib.find(sn.hash, sn.size))) continue;
+                } else if (sn.bytes[0x66])
+                    n.flat_index = sn.bytes[0x67];
+                else if (!(n.texture = lib.find(sn.hash, sn.size)))
+                    continue;
                 nodes.push_back(n);
             }
             const rr::ViewMode mode = s == 1 ? rr::view_mode(true) : rr::view_mode_scaled(s);
@@ -129,7 +154,7 @@ int main(int argc, char** argv) {
             rr::render_nodes(idx, nodes, mode, uint32_t(f.at("view.quality_mask")));
             rr::FramebufferRgb rgb(mode.surface_width, mode.surface_height);
             rgb.clear(0);
-            rr::Enhancements e;  // all off, nearest
+            rr::Enhancements e; // all off, nearest
             rr::render_nodes_rgb(rgb, nodes, mode, uint32_t(f.at("view.quality_mask")), palette, e, pool);
             size_t differ = 0;
             std::vector<uint8_t> rgba(size_t(mode.surface_width) * mode.surface_height * 4);

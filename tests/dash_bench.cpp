@@ -31,8 +31,8 @@ int main() {
     const std::string assets_root = std::string(RR_SOURCE_DIR) + "/../cdrom/ROADRASH";
     rr::Assets assets(assets_root);
     const std::vector<uint8_t> exe = assets.read("ROADRASH.EXE");
-    rr::Settings settings = rr::load_settings(
-        (std::filesystem::path(rr::pref_directory()) / "settings.txt").string());
+    rr::Settings settings =
+        rr::load_settings((std::filesystem::path(rr::pref_directory()) / "settings.txt").string());
     rr::Game g;
     g.depth = rr::read_depth_table(exe);
     g.config.course = "NAPA";
@@ -54,18 +54,19 @@ int main() {
     }
     rr::CourseCanvas canvas;
     // Same projection as RaceScreen: slices centre on the Hor+ logical width.
-    const auto slices = rr::project_road(g.race().route(), g.blend_camera_position(),
-                                         g.blend_camera(), g.depth, g.logical_width());
+    const auto slices = rr::project_road(g.race().route(), g.blend_camera_position(), g.blend_camera(),
+                                         g.depth, g.logical_width());
     const int s = 2, threads = 8;
-    canvas.draw(renderer, g, slices, s, threads);   // warm-up (workers, caches, texture)
+    canvas.draw(renderer, g, slices, s, threads); // warm-up (workers, caches, texture)
     const int frames = 10;
     const auto start = std::chrono::steady_clock::now();
     for (int f = 0; f < frames; ++f) canvas.draw(renderer, g, slices, s, threads);
-    const double ms = std::chrono::duration<double, std::milli>(
-                          std::chrono::steady_clock::now() - start).count() / frames;
+    const double ms =
+        std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count() / frames;
     std::printf("draw_ms=%.2f scale=%d logical_width=%d wide=%d filter=%d fog=%d grade=%d bloom=%d\n", ms, s,
-                int(g.logical_width()), int(settings.widescreen), int(settings.enhancements.filter), settings.enhancements.fog,
-                int(settings.enhancements.grade), int(settings.enhancements.bloom));
+                int(g.logical_width()), int(settings.widescreen), int(settings.enhancements.filter),
+                settings.enhancements.fog, int(settings.enhancements.grade),
+                int(settings.enhancements.bloom));
     SDL_DestroyRenderer(renderer);
     SDL_DestroyWindow(window);
     SDL_Quit();

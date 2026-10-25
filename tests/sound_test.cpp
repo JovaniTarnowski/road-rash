@@ -14,30 +14,56 @@ static std::vector<rr::RouteSample> straight(size_t n) {
 
 int main(int argc, char** argv) {
     int failures = 0;
-    auto check = [&](bool v, const char* what) { if (!v) { ++failures; std::cerr << "FAIL " << what << "\n"; } };
+    auto check = [&](bool v, const char* what) {
+        if (!v) {
+            ++failures;
+            std::cerr << "FAIL " << what << "\n";
+        }
+    };
     // DirectSound conversions (0x004141c0): volume 16384 is 0 dB, 0 is -100 dB; linear in dB.
-    check(rr::ds_attenuation(16384) == 0 && rr::ds_attenuation(30000) == 0 && rr::ds_attenuation(0) == -10000, "attenuation range");
+    check(rr::ds_attenuation(16384) == 0 && rr::ds_attenuation(30000) == 0 && rr::ds_attenuation(0) == -10000,
+          "attenuation range");
     check(rr::ds_attenuation(8192) == -5000, "attenuation linear in dB");
-    check(rr::mixer_volume(0) == 127 && rr::mixer_volume(-600) == 64 && rr::mixer_volume(-10000) == 0, "amplitude from hundredths of dB");
-    check(rr::mixer_pan(0, false) == 0 && rr::mixer_pan(10000, false) == 63 && rr::mixer_pan(10000, true) == -63, "pan and speaker swap");
-    check(rr::pitch_q8(11025, 11025) == 256 && rr::pitch_q8(22050, 11025) == 512 && rr::pitch_q8(1, 11025) == rr::pitch_q8(100, 11025), "frequency clamp and pitch");
+    check(rr::mixer_volume(0) == 127 && rr::mixer_volume(-600) == 64 && rr::mixer_volume(-10000) == 0,
+          "amplitude from hundredths of dB");
+    check(rr::mixer_pan(0, false) == 0 && rr::mixer_pan(10000, false) == 63 &&
+              rr::mixer_pan(10000, true) == -63,
+          "pan and speaker swap");
+    check(rr::pitch_q8(11025, 11025) == 256 && rr::pitch_q8(22050, 11025) == 512 &&
+              rr::pitch_q8(1, 11025) == rr::pitch_q8(100, 11025),
+          "frequency clamp and pitch");
 
     rr::Assets assets(argc > 1 ? argv[1] : RR_SOURCE_DIR "/../cdrom/ROADRASH");
-    if (!assets.exists("ROADRASH.EXE")) { std::cout << "skip: no disc\n"; return failures ? 1 : 77; }
+    if (!assets.exists("ROADRASH.EXE")) {
+        std::cout << "skip: no disc\n";
+        return failures ? 1 : 77;
+    }
     const auto exe = assets.read("ROADRASH.EXE");
     const auto curve = rr::read_volume_curve(exe);
-    check(curve[0] == 0 && curve[100] == 100 && curve[11] == 4 && curve[50] == 0x45, "volume curve parsed from 0x004362e0");
+    check(curve[0] == 0 && curve[100] == 100 && curve[11] == 4 && curve[50] == 0x45,
+          "volume curve parsed from 0x004362e0");
     rr::Mixer mixer(48);
     {
         rr::SoundSystem sound(assets, mixer, curve, 2);
-        for (int i = 1; i < 0x45; ++i) check(assets.exists(std::string("AUDIO/EFFECTS/") + rr::SoundSystem::effect_name(i) + ".WAV") ||
-                                              assets.exists("AUDIO/EFFECTS/" + [&] { std::string u; for (char c : std::string(rr::SoundSystem::effect_name(i))) u.push_back(char(std::toupper(static_cast<unsigned char>(c)))); return u; }() + ".WAV"),
-                                              "effect file present");
+        for (int i = 1; i < 0x45; ++i)
+            check(assets.exists(std::string("AUDIO/EFFECTS/") + rr::SoundSystem::effect_name(i) + ".WAV") ||
+                      assets.exists("AUDIO/EFFECTS/" +
+                                    [&] {
+                                        std::string u;
+                                        for (char c : std::string(rr::SoundSystem::effect_name(i)))
+                                            u.push_back(char(std::toupper(static_cast<unsigned char>(c))));
+                                        return u;
+                                    }() +
+                                    ".WAV"),
+                  "effect file present");
         sound.start_race(7, 3);
         const auto t = rr::read_physics_tables(exe);
         const auto specs = rr::read_bike_specs(assets.read("DATA/BIKESPEC.RSC"));
         rr::Race race(straight(4000), straight(4000), t, specs.at(7), 90);
-        for (int i = 0; i < 120; ++i) { race.step(rr::control_accelerate); sound.update(race); }
+        for (int i = 0; i < 120; ++i) {
+            race.step(rr::control_accelerate);
+            sound.update(race);
+        }
         std::vector<int16_t> out(2 * 2048);
         mixer.render(out.data(), 2048);
         double energy = 0;
@@ -64,7 +90,8 @@ int main(int argc, char** argv) {
         {
             // Siren (0x00435ae0): its own channel; SIREN loops 0x259 updates, then
             // SIRENFST 0x79; an empty record (cop crashed or gone) silences it.
-            sound.stop_race(); sound.start_race(7, 3);   // drop the engine voices
+            sound.stop_race();
+            sound.start_race(7, 3); // drop the engine voices
             rr::SoundLevels siren_only;
             siren_only.effects = siren_only.engine = siren_only.others = 0;
             sound.set_levels(siren_only);
@@ -84,7 +111,10 @@ int main(int argc, char** argv) {
             for (int i = 0; i < 3; ++i) siren_at(true);
             check(audible_now(), "siren audible near the camera");
             bool always = true;
-            for (int i = 0; i < 0x259 + 0x79 + 300; ++i) { siren_at(true); if (i % 50 == 0) always &= audible_now(); }
+            for (int i = 0; i < 0x259 + 0x79 + 300; ++i) {
+                siren_at(true);
+                if (i % 50 == 0) always &= audible_now();
+            }
             check(always, "siren keeps sounding across the buffer alternation");
             const double with_siren = energy_now();
             for (int i = 0; i < 3; ++i) siren_at(false);
@@ -98,13 +128,23 @@ int main(int argc, char** argv) {
             // by two. Compare complete PCM with the equivalent translated
             // same-road emitter, so both attenuation and pan are exercised.
             auto a = straight(4000), b = straight(4000);
-            for (auto& sample : a) { sample.dual = true; sample.half = 0; }
-            for (auto& sample : b) { sample.dual = true; sample.half = 1; }
-            a[49].x_sep = 200; a[50].x_sep = 195;
-            b[51].x_sep = 1000; b[52].x_sep = 1513;
+            for (auto& sample : a) {
+                sample.dual = true;
+                sample.half = 0;
+            }
+            for (auto& sample : b) {
+                sample.dual = true;
+                sample.half = 1;
+            }
+            a[49].x_sep = 200;
+            a[50].x_sep = 195;
+            b[51].x_sep = 1000;
+            b[52].x_sep = 1513;
             // A negative separation with odd sums catches signed rounding.
-            a[53].x_sep = -200; a[54].x_sep = -195;
-            b[55].x_sep = -1001; b[56].x_sep = -1514;
+            a[53].x_sep = -200;
+            a[54].x_sep = -195;
+            b[55].x_sep = -1001;
+            b[56].x_sep = -1514;
             // Large separation must take the siren outside hearing range.
             a[57].x_sep = a[58].x_sep = 9000;
             b[59].x_sep = b[60].x_sep = 9000;
@@ -124,7 +164,8 @@ int main(int argc, char** argv) {
                 split_mixer.render(block.data(), 64);
                 split_sound.start_race(7, 3);
                 split.riders().back().route = road;
-                if (split.live_schedule()) split.riders().back().half_mirror.route = half_road < 0 ? road : half_road;
+                if (split.live_schedule())
+                    split.riders().back().half_mirror.route = half_road < 0 ? road : half_road;
                 split_sound.post({rr::SoundEvent::siren, lateral * 256, 0,
                                   int32_t(split.camera_position()) + 0x400, 0, 0});
                 split_sound.update(split);
@@ -159,11 +200,13 @@ int main(int argc, char** argv) {
             split.riders().back().sample = 200;
             split.riders().back().bike.i32(0x1c) = 200 * 256;
             check(pcm(1, 0) == pcm(0, 791), "live siren uses cop half slice and position");
-            check(pcm(0, 0, 1) == pcm(0, 791, 0), "live siren keeps cop half branch after bike changes route");
+            check(pcm(0, 0, 1) == pcm(0, 791, 0),
+                  "live siren keeps cop half branch after bike changes route");
             split.riders()[0].half_mirror.route = 1;
             const auto player_half_other = pcm(0, 0, 0);
             split.riders()[0].half_mirror.route = 0;
-            check(player_half_other == pcm(0, 99, 0), "player half mask and camera separation use their own routes");
+            check(player_half_other == pcm(0, 99, 0),
+                  "player half mask and camera separation use their own routes");
             split.set_live_schedule(false);
             position(49, 51);
             split.riders()[0].crash_active = true;
@@ -194,7 +237,9 @@ int main(int argc, char** argv) {
     double energy = 0;
     for (auto s : out) energy += double(s) * s;
     check(energy > 0, "soundtrack audible");
-    check(std::string(rr::MusicPlayer::track_name(0)) == "HB_Trip" && std::string(rr::MusicPlayer::track_name(14)).empty(), "track names");
+    check(std::string(rr::MusicPlayer::track_name(0)) == "HB_Trip" &&
+              std::string(rr::MusicPlayer::track_name(14)).empty(),
+          "track names");
     music.stop();
     std::cout << failures << " failures\n";
     return failures ? 1 : 0;

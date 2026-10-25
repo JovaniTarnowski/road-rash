@@ -7,34 +7,61 @@
 
 int main() {
     int failures = 0;
-    auto check = [&](bool v, const char* what) { if (!v) { ++failures; std::cerr << "FAIL " << what << "\n"; } };
+    auto check = [&](bool v, const char* what) {
+        if (!v) {
+            ++failures;
+            std::cerr << "FAIL " << what << "\n";
+        }
+    };
     rr::Settings s;
-    s.language = rr::Language::italian; s.metric = true; s.high_resolution = true; s.video_mode = 1;
-    s.master_volume = 37; s.alias = "Rasher"; s.alternate_artwork = true;
+    s.language = rr::Language::italian;
+    s.metric = true;
+    s.high_resolution = true;
+    s.video_mode = 1;
+    s.master_volume = 37;
+    s.alias = "Rasher";
+    s.alternate_artwork = true;
     const rr::Settings r = rr::parse_settings(rr::format_settings(s));
-    check(r.language == s.language && r.metric && r.high_resolution && r.video_mode == 1 && r.master_volume == 37 &&
-          r.alias == "Rasher" && r.alternate_artwork, "round trip");
-    const rr::Settings g = rr::parse_settings("video_mode=9\nmaster_volume=-1\nhires=yes\nnonsense\n=\nalias=" + std::string(40, 'x') + "\n");
+    check(r.language == s.language && r.metric && r.high_resolution && r.video_mode == 1 &&
+              r.master_volume == 37 && r.alias == "Rasher" && r.alternate_artwork,
+          "round trip");
+    const rr::Settings g = rr::parse_settings(
+        "video_mode=9\nmaster_volume=-1\nhires=yes\nnonsense\n=\nalias=" + std::string(40, 'x') + "\n");
     const rr::Settings d = rr::default_settings();
-    check(g.video_mode == d.video_mode && g.master_volume == d.master_volume && g.high_resolution == d.high_resolution && g.alias.empty(), "invalid values ignored");
-    const auto path = (std::filesystem::temp_directory_path() / ("rr-settings-test-" + std::to_string(::getpid()) + ".txt")).string();
+    check(g.video_mode == d.video_mode && g.master_volume == d.master_volume &&
+              g.high_resolution == d.high_resolution && g.alias.empty(),
+          "invalid values ignored");
+    const auto path =
+        (std::filesystem::temp_directory_path() / ("rr-settings-test-" + std::to_string(::getpid()) + ".txt"))
+            .string();
     check(rr::save_settings(path, s) && rr::load_settings(path).alias == "Rasher", "file round trip");
     std::remove(path.c_str());
     check(rr::load_settings(path).video_mode == d.video_mode, "missing file gives defaults");
     {
         rr::Settings n;
-        n.display_mode = rr::DisplayMode::fullscreen; n.window_scale = 3; n.scale_mode = rr::ScaleMode::integer;
-        n.filter = rr::FilterMode::smooth; n.vsync = false; n.show_fps = true; n.touch_opacity = 20; n.haptics = false;
+        n.display_mode = rr::DisplayMode::fullscreen;
+        n.window_scale = 3;
+        n.scale_mode = rr::ScaleMode::integer;
+        n.filter = rr::FilterMode::smooth;
+        n.vsync = false;
+        n.show_fps = true;
+        n.touch_opacity = 20;
+        n.haptics = false;
         const rr::Settings m = rr::parse_settings(rr::format_settings(n));
-        check(m.display_mode == rr::DisplayMode::fullscreen && m.window_scale == 3 && m.scale_mode == rr::ScaleMode::integer &&
-              m.filter == rr::FilterMode::smooth && !m.vsync && m.show_fps && m.touch_opacity == 20 && !m.haptics,
+        check(m.display_mode == rr::DisplayMode::fullscreen && m.window_scale == 3 &&
+                  m.scale_mode == rr::ScaleMode::integer && m.filter == rr::FilterMode::smooth && !m.vsync &&
+                  m.show_fps && m.touch_opacity == 20 && !m.haptics,
               "native fields round trip");
-        const rr::Settings bad = rr::parse_settings("window_scale=99\nscale_mode=7\nfilter=-1\ndisplay_mode=2\ntouch_opacity=101\nvsync=");
-        check(bad.window_scale == d.window_scale && bad.scale_mode == d.scale_mode && bad.filter == d.filter &&
-              bad.display_mode == d.display_mode && bad.touch_opacity == d.touch_opacity && bad.vsync == d.vsync,
+        const rr::Settings bad = rr::parse_settings(
+            "window_scale=99\nscale_mode=7\nfilter=-1\ndisplay_mode=2\ntouch_opacity=101\nvsync=");
+        check(bad.window_scale == d.window_scale && bad.scale_mode == d.scale_mode &&
+                  bad.filter == d.filter && bad.display_mode == d.display_mode &&
+                  bad.touch_opacity == d.touch_opacity && bad.vsync == d.vsync,
               "native fields reject out-of-range values");
-        const rr::Settings old = rr::parse_settings("hires=1\nmaster_volume=40\n");   // a file written before this task
-        check(old.high_resolution && old.master_volume == 40 && old.window_scale == d.window_scale, "old files still load");
+        const rr::Settings old =
+            rr::parse_settings("hires=1\nmaster_volume=40\n"); // a file written before this task
+        check(old.high_resolution && old.master_volume == 40 && old.window_scale == d.window_scale,
+              "old files still load");
         // Review Focus 2: hand-edited file with a truncated last line (no '=',
         // no trailing newline) keeps the good keys and ignores the bad line.
         const rr::Settings trunc = rr::parse_settings("show_fps=1\ntouch_opacity=20\nhaptics=1");
@@ -51,7 +78,7 @@ int main() {
         b.custom_controls = true;
         const rr::Settings r = rr::parse_settings(rr::format_settings(b));
         check(r.controls == b.controls && r.custom_controls, "bindings round trip");
-        rr::Settings u = rr::parse_settings("controls=fffffffffffffffffffff");   // 21 chars
+        rr::Settings u = rr::parse_settings("controls=fffffffffffffffffffff"); // 21 chars
         check(!u.custom_controls, "malformed controls ignored");
         std::string unknown = "controls=";
         for (int i = 0; i < 11; ++i) unknown += i == 4 ? "00ff" : "0000";
@@ -62,7 +89,9 @@ int main() {
     {
         // Plan 18 Task 7: gamepad/touch page fields round-trip with clamping.
         rr::Settings p;
-        p.swap_punch_kick = true; p.stick_deadzone = 10; p.left_handed = true;
+        p.swap_punch_kick = true;
+        p.stick_deadzone = 10;
+        p.left_handed = true;
         const rr::Settings q = rr::parse_settings(rr::format_settings(p));
         check(q.swap_punch_kick && q.stick_deadzone == 10 && q.left_handed, "page fields round trip");
         const rr::Settings c = rr::parse_settings("stick_deadzone=9\nstick_deadzone=41\n");
@@ -72,16 +101,25 @@ int main() {
         // Plan 21 Task 1: enhancement options round-trip; out-of-range falls back.
         // (widescreen maps to the existing Widescreen enum from Task 8.)
         rr::Settings e;
-        e.enhancements.interpolate = true; e.enhancements.filter = rr::TextureFilter::trilinear; e.enhancements.fog = 40;
-        e.enhancements.grade = rr::Grade::dusk; e.enhancements.draw_slices = 64; e.widescreen = rr::Widescreen::mode16x9;
+        e.enhancements.interpolate = true;
+        e.enhancements.filter = rr::TextureFilter::trilinear;
+        e.enhancements.fog = 40;
+        e.enhancements.grade = rr::Grade::dusk;
+        e.enhancements.draw_slices = 64;
+        e.widescreen = rr::Widescreen::mode16x9;
         const rr::Settings f = rr::parse_settings(rr::format_settings(e));
-        check(f.enhancements.interpolate && f.enhancements.filter == rr::TextureFilter::trilinear && f.enhancements.fog == 40 &&
-              f.enhancements.grade == rr::Grade::dusk && f.enhancements.draw_slices == 64 && f.widescreen == rr::Widescreen::mode16x9,
+        check(f.enhancements.interpolate && f.enhancements.filter == rr::TextureFilter::trilinear &&
+                  f.enhancements.fog == 40 && f.enhancements.grade == rr::Grade::dusk &&
+                  f.enhancements.draw_slices == 64 && f.widescreen == rr::Widescreen::mode16x9,
               "enhancements round trip");
-        const rr::Settings g2 = rr::parse_settings("enh_draw_slices=40\nenh_fog=101\nenh_filter=3\nenh_widescreen=9\n");
-        check(g2.enhancements.draw_slices == 33 && g2.enhancements.fog == 0 && g2.enhancements.filter == rr::TextureFilter::nearest &&
-              g2.widescreen == rr::Widescreen::off, "only 33/48/64 slices and in-range values accepted");
-        check(rr::parse_settings("enh_widescreen=2\n").widescreen == rr::Widescreen::mode16x9, "old enh_widescreen migrates");
+        const rr::Settings g2 =
+            rr::parse_settings("enh_draw_slices=40\nenh_fog=101\nenh_filter=3\nenh_widescreen=9\n");
+        check(g2.enhancements.draw_slices == 33 && g2.enhancements.fog == 0 &&
+                  g2.enhancements.filter == rr::TextureFilter::nearest &&
+                  g2.widescreen == rr::Widescreen::off,
+              "only 33/48/64 slices and in-range values accepted");
+        check(rr::parse_settings("enh_widescreen=2\n").widescreen == rr::Widescreen::mode16x9,
+              "old enh_widescreen migrates");
         check(!rr::default_settings().enhancements.any(), "defaults are the original renderer");
         // Review 2026-10-13 item 1: widescreen is a display choice, independent
         // of Visual Style. Enhanced preset, then Display -> Off, stays 4:3.
@@ -97,9 +135,8 @@ int main() {
         // Plan 21 Task 9: measured preset (all-on except draw_slices/full_colour).
         const rr::Enhancements preset = rr::enhanced_preset();
         check(preset.interpolate && preset.perspective && preset.filter == rr::TextureFilter::trilinear &&
-              preset.fog == 40 && preset.grade == rr::Grade::dusk && preset.bloom && preset.vignette &&
-              preset.motion_blur &&
-              preset.draw_slices == 33 && !preset.full_colour,
+                  preset.fog == 40 && preset.grade == rr::Grade::dusk && preset.bloom && preset.vignette &&
+                  preset.motion_blur && preset.draw_slices == 33 && !preset.full_colour,
               "enhanced preset matches the measured set");
     }
     {
@@ -109,7 +146,8 @@ int main() {
         const rr::Settings q = rr::parse_settings(rr::format_settings(p));
         check(q.render_scale == 3, "render_scale round trips");
         const rr::Settings bad = rr::parse_settings("render_scale=5\nrender_scale=-1\n");
-        check(bad.render_scale == rr::default_settings().render_scale, "render_scale rejects out-of-range values");
+        check(bad.render_scale == rr::default_settings().render_scale,
+              "render_scale rejects out-of-range values");
     }
     std::cout << failures << " failures\n";
     return failures ? 1 : 0;

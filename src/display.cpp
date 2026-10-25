@@ -12,9 +12,9 @@ DisplayConfig display_config(const Settings& s, int logical_h, bool mobile) {
     c.logical_h = logical_h;
     c.window_w = c.logical_w * s.window_scale;
     c.window_h = logical_h * s.window_scale;
-    c.presentation = s.scale_mode == ScaleMode::integer ? SDL_LOGICAL_PRESENTATION_INTEGER_SCALE
-                   : s.scale_mode == ScaleMode::stretch ? SDL_LOGICAL_PRESENTATION_STRETCH
-                                                        : SDL_LOGICAL_PRESENTATION_LETTERBOX;
+    c.presentation = s.scale_mode == ScaleMode::integer   ? SDL_LOGICAL_PRESENTATION_INTEGER_SCALE
+                     : s.scale_mode == ScaleMode::stretch ? SDL_LOGICAL_PRESENTATION_STRETCH
+                                                          : SDL_LOGICAL_PRESENTATION_LETTERBOX;
     c.texture_scale = s.filter == FilterMode::smooth ? SDL_SCALEMODE_LINEAR : SDL_SCALEMODE_NEAREST;
     c.vsync = s.vsync ? 1 : 0;
     return c;
@@ -22,11 +22,14 @@ DisplayConfig display_config(const Settings& s, int logical_h, bool mobile) {
 
 int effective_render_scale(const Settings& s, int drawable_w, int drawable_h, bool mobile) {
     (void)mobile;
-    if (!s.high_resolution || s.inset) return 1;   // original Low/Inset choice
+    if (!s.high_resolution || s.inset) return 1; // original Low/Inset choice
     if (s.render_scale >= 1 && s.render_scale <= 4) return s.render_scale;
     int best = 1;
     for (int q = 4; q >= 1; --q)
-        if (640 * q <= drawable_w && 480 * q <= drawable_h) { best = q; break; }
+        if (640 * q <= drawable_w && 480 * q <= drawable_h) {
+            best = q;
+            break;
+        }
     return best;
 }
 
@@ -49,4 +52,4 @@ void apply_display(SDL_Window* window, SDL_Renderer* renderer, const DisplayConf
 void apply_texture_scale(SDL_Texture* texture, const DisplayConfig& c) {
     if (texture) SDL_SetTextureScaleMode(texture, c.supersampling ? SDL_SCALEMODE_LINEAR : c.texture_scale);
 }
-}
+} // namespace rr

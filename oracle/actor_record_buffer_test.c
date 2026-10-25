@@ -39,8 +39,8 @@ static void mock_select(uint32_t bike, int ctx) {
     /* Post-call actor fields must be sampled after the real selector. */
     *(uint32_t*)(memory + 0xa8) = 0x12345678;
 }
-static void mock_billboard(int* p1, unsigned* p2, int size, int lateral,
-                           int ground, unsigned pos, char clip) {
+static void mock_billboard(int* p1, unsigned* p2, int size, int lateral, int ground, unsigned pos,
+                           char clip) {
     assert(p1 == expected_p1 && p2 == expected_p2);
     assert(size == 17 && lateral == -23 && ground == -41);
     assert(pos == 0xfedcba98u && clip == -7);
@@ -73,7 +73,9 @@ int main(void) {
     *(int32_t*)(bike + 0x44) = -103;
     *(int32_t*)(bike + 0x50) = -104;
     context[2] = 0x20000700u;
-    context[4] = -201; context[5] = 202; context[6] = -203;
+    context[4] = -201;
+    context[5] = 202;
+    context[6] = -203;
     owner[4] = 0xabcdef01;
     for (unsigned i = 0; i < 6; ++i) emu[i] = 300 + i;
     g_out = stdout;
@@ -100,7 +102,8 @@ int main(void) {
     assert(g_bb[511].nbefore == 511 && g_bb[511].nafter == 512);
     assert(g_bb[511].emuw[0] == 811);
     unsigned char saved_bb[sizeof g_bb], saved_sel[sizeof g_sel];
-    memcpy(saved_bb, g_bb, sizeof g_bb); memcpy(saved_sel, g_sel, sizeof g_sel);
+    memcpy(saved_bb, g_bb, sizeof g_bb);
+    memcpy(saved_sel, g_sel, sizeof g_sel);
     hook_select(expected_bike, expected_ctx);
     hook_billboard(context, emu, 17, -23, -41, 0xfedcba98u, -7);
     assert(!memcmp(saved_bb, g_bb, sizeof g_bb));

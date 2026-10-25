@@ -26,4 +26,4 @@ void attach_upscaled_content(CelTexture& tex, const UpscaleCache& cache);
 // Batch attach from one index walk (same semantics, no repeated walks).
 using UpscaleIndex = std::map<std::pair<std::array<uint8_t, 32>, int>, UpscaledImage>;
 void attach_upscaled_indexed(CelTexture& tex, const UpscaleIndex& index);
-}  // namespace rr
+} // namespace rr

@@ -15,17 +15,22 @@ struct Huffman {
     std::vector<uint16_t> symbol;
     explicit Huffman(std::initializer_list<uint8_t> compact) {
         std::vector<uint8_t> length;
-        for (uint8_t b : compact) for (int n = (b >> 4) + 1; n > 0; --n) length.push_back(b & 15);
+        for (uint8_t b : compact)
+            for (int n = (b >> 4) + 1; n > 0; --n) length.push_back(b & 15);
         for (uint8_t l : length) ++count[l];
         std::array<uint16_t, 14> offset{};
         for (size_t l = 1; l < 13; ++l) offset[l + 1] = uint16_t(offset[l] + count[l]);
         symbol.resize(length.size());
-        for (size_t s = 0; s < length.size(); ++s) if (length[s]) symbol[offset[length[s]]++] = uint16_t(s);
+        for (size_t s = 0; s < length.size(); ++s)
+            if (length[s]) symbol[offset[length[s]]++] = uint16_t(s);
     }
 };
 
 struct Bits {
-    const uint8_t* data; size_t size, pos = 0; uint32_t buffer = 0; int left = 0;
+    const uint8_t* data;
+    size_t size, pos = 0;
+    uint32_t buffer = 0;
+    int left = 0;
     uint32_t get(int n) {
         while (left < n) {
             if (pos >= size) throw std::runtime_error("Compressed data ends early");
@@ -33,7 +38,8 @@ struct Bits {
             left += 8;
         }
         const uint32_t v = buffer & ((1u << n) - 1);
-        buffer >>= n; left -= n;
+        buffer >>= n;
+        left -= n;
         return v;
     }
     int decode(const Huffman& h) {
@@ -42,25 +48,35 @@ struct Bits {
             code |= int(get(1) ^ 1);
             const int c = h.count[size_t(len)];
             if (code < first + c) return h.symbol[size_t(index + code - first)];
-            index += c; first += c;
-            first <<= 1; code <<= 1;
+            index += c;
+            first += c;
+            first <<= 1;
+            code <<= 1;
         }
         throw std::runtime_error("Invalid compressed code");
     }
 };
 
 const Huffman& literal_code() {
-    static const Huffman h{11, 124, 8, 7, 28, 7, 188, 13, 76, 4, 10, 8, 12, 10, 12, 10, 8, 23, 8, 9, 7, 6, 7, 8, 7, 6, 55, 8,
-                           23, 24, 12, 11, 7, 9, 11, 12, 6, 7, 22, 5, 7, 24, 6, 11, 9, 6, 7, 22, 7, 11, 38, 7, 9, 8, 25, 11, 8,
-                           11, 9, 12, 8, 12, 5, 38, 5, 38, 5, 11, 7, 5, 6, 21, 6, 10, 53, 8, 7, 24, 10, 27, 44, 253, 253, 253,
-                           252, 252, 252, 13, 12, 45, 12, 45, 12, 61, 12, 45, 44, 173};
+    static const Huffman h{11,  124, 8,  7,  28, 7,  188, 13, 76, 4,  10, 8,  12, 10,  12,  10,  8,
+                           23,  8,   9,  7,  6,  7,  8,   7,  6,  55, 8,  23, 24, 12,  11,  7,   9,
+                           11,  12,  6,  7,  22, 5,  7,   24, 6,  11, 9,  6,  7,  22,  7,   11,  38,
+                           7,   9,   8,  25, 11, 8,  11,  9,  12, 8,  12, 5,  38, 5,   38,  5,   11,
+                           7,   5,   6,  21, 6,  10, 53,  8,  7,  24, 10, 27, 44, 253, 253, 253, 252,
+                           252, 252, 13, 12, 45, 12, 45,  12, 61, 12, 45, 44, 173};
     return h;
 }
-const Huffman& length_code() { static const Huffman h{2, 35, 36, 53, 38, 23}; return h; }
-const Huffman& distance_code() { static const Huffman h{2, 20, 53, 230, 247, 151, 248}; return h; }
+const Huffman& length_code() {
+    static const Huffman h{2, 35, 36, 53, 38, 23};
+    return h;
+}
+const Huffman& distance_code() {
+    static const Huffman h{2, 20, 53, 230, 247, 151, 248};
+    return h;
+}
 constexpr uint16_t length_base[16] = {3, 2, 4, 5, 6, 7, 8, 9, 10, 12, 16, 24, 40, 72, 136, 264};
 constexpr uint8_t length_extra[16] = {0, 0, 0, 0, 0, 0, 0, 0, 1, 2, 3, 4, 5, 6, 7, 8};
-}
+} // namespace
 
 std::vector<uint8_t> explode(const uint8_t* data, size_t size, size_t expected) {
     if (expected > max_unpacked_resource_size) throw std::runtime_error("Unpacked size too large");
@@ -92,7 +108,11 @@ std::vector<uint8_t> explode(const uint8_t* data, size_t size, size_t expected) 
 uint32_t crc32_update(uint32_t crc, const uint8_t* p, size_t n) {
     static const auto table = [] {
         std::array<uint32_t, 256> t{};
-        for (uint32_t i = 0; i < 256; ++i) { uint32_t c = i; for (int k = 0; k < 8; ++k) c = c & 1 ? 0xedb88320u ^ (c >> 1) : c >> 1; t[i] = c; }
+        for (uint32_t i = 0; i < 256; ++i) {
+            uint32_t c = i;
+            for (int k = 0; k < 8; ++k) c = c & 1 ? 0xedb88320u ^ (c >> 1) : c >> 1;
+            t[i] = c;
+        }
         return t;
     }();
     for (size_t i = 0; i < n; ++i) crc = table[(crc ^ p[i]) & 0xff] ^ (crc >> 8);
@@ -102,8 +122,8 @@ uint32_t crc32_update(uint32_t crc, const uint8_t* p, size_t n) {
 std::vector<uint8_t> unpack_resource(const std::vector<uint8_t>& b) {
     if (b.size() < 16) throw std::runtime_error("Truncated resource header");
     const ByteReader r(b);
-    const uint32_t unpacked = r.le<uint32_t>(0), stored = r.le<uint32_t>(4),
-                   crc = r.le<uint32_t>(8), compressed = r.le<uint32_t>(12);
+    const uint32_t unpacked = r.le<uint32_t>(0), stored = r.le<uint32_t>(4), crc = r.le<uint32_t>(8),
+                   compressed = r.le<uint32_t>(12);
     if (unpacked > max_unpacked_resource_size) throw std::runtime_error("Unpacked size too large");
     const auto payload = r.bytes(16, stored);
     if (!compressed) {
@@ -112,7 +132,8 @@ std::vector<uint8_t> unpack_resource(const std::vector<uint8_t>& b) {
         return std::vector<uint8_t>(payload.begin(), payload.end());
     }
     auto out = explode(payload.data(), payload.size(), unpacked);
-    if (~crc32_update(0xffffffffu, out.data(), out.size()) != crc) throw std::runtime_error("Resource CRC mismatch");
+    if (~crc32_update(0xffffffffu, out.data(), out.size()) != crc)
+        throw std::runtime_error("Resource CRC mismatch");
     return out;
 }
-}
+} // namespace rr

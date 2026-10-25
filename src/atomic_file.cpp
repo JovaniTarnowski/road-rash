@@ -18,7 +18,10 @@ bool write_file_atomic(const std::filesystem::path& path, const void* data, size
     ok = std::fclose(f) == 0 && ok;
     std::error_code ec;
     if (ok) std::filesystem::rename(tmp, path, ec);
-    if (!ok || ec) { std::filesystem::remove(tmp, ec); return false; }
+    if (!ok || ec) {
+        std::filesystem::remove(tmp, ec);
+        return false;
+    }
     return true;
 }
-}
+} // namespace rr

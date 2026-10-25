@@ -32,35 +32,35 @@
 #include <vector>
 
 namespace rr {
-using AttackCodes = std::array<std::array<std::array<int8_t,4>,2>,2>;
-AttackCodes read_attack_codes(const std::vector<uint8_t>& exe);   // 0x004644f8 / 0x00464518, 8 words each
-NitroConfig nitro_from_spec(const BikeSpec&);                     // words 77..82 (+0x14c); all zero -> NitroConfig{}
+using AttackCodes = std::array<std::array<std::array<int8_t, 4>, 2>, 2>;
+AttackCodes read_attack_codes(const std::vector<uint8_t>& exe); // 0x004644f8 / 0x00464518, 8 words each
+NitroConfig nitro_from_spec(const BikeSpec&); // words 77..82 (+0x14c); all zero -> NitroConfig{}
 
 struct RaceConfig {
-    std::string course = "NAPA"; // original file name: "CITY", "HIWAY", "MEDLY", "NAPA", "CANYN"
-    int level = 0;               // 0..4 (DAT_004b8a12)
-    int bike = 0;                // quick-race bike index; career's purchased bike (shop)
-    bool bike_from_table = false;  // true: career level table overrides bike (oracle/sweeps only)
-    int character = 0;           // 1..8 front-end character (0x00415fc0); career only
-    int player_rider = -1;       // [0..9] row in 0x00463c78; -1 means character_rider(character)
+    std::string course = "NAPA";  // original file name: "CITY", "HIWAY", "MEDLY", "NAPA", "CANYN"
+    int level = 0;                // 0..4 (DAT_004b8a12)
+    int bike = 0;                 // quick-race bike index; career's purchased bike (shop)
+    bool bike_from_table = false; // true: career level table overrides bike (oracle/sweeps only)
+    int character = 0;            // 1..8 front-end character (0x00415fc0); career only
+    int player_rider = -1;        // [0..9] row in 0x00463c78; -1 means character_rider(character)
     bool career = true;
-    int opponents = 14;          // last AI row, 0..14; smaller fields are diagnostic overrides
+    int opponents = 14;               // last AI row, 0..14; smaller fields are diagnostic overrides
     GameMode mode = GameMode::thrash; // Big Game omits the selected character's AI row
-    bool high_resolution = true; // Settings::high_resolution (plan 18 Task 4)
+    bool high_resolution = true;      // Settings::high_resolution (plan 18 Task 4)
     bool metric = false;
-    bool solo = false;                         // freeze opponents + scheduler actors (oracle)
-    bool live_schedule = true;                 // live rider scheduler 0x00438170 (Race::set_live_schedule)
-    int pedestrian_setup_tick = 2;             // Race::set_pedestrian_setup_tick
-    int32_t road_base_q8 = 0;                  // Race ctor anchor (game 0; replay measured)
-    bool track_ring = true;                    // ring-driven DZHR pedestrians (0x004552e0)
-    bool optional_scene = false;               // plan 26 Task 3: game fallback keeps a null scene
-    bool optional_traffic = false;             // finding 2 (2026-10-13): bad .CAR keeps null vehicles
-    std::optional<uint32_t> ring_rng_state;    // RNG state loaded just before ring setup
-    uint32_t ring_setup_tick = 2;              // TrafficSystem::set_setup_tick
+    bool solo = false;                      // freeze opponents + scheduler actors (oracle)
+    bool live_schedule = true;              // live rider scheduler 0x00438170 (Race::set_live_schedule)
+    int pedestrian_setup_tick = 2;          // Race::set_pedestrian_setup_tick
+    int32_t road_base_q8 = 0;               // Race ctor anchor (game 0; replay measured)
+    bool track_ring = true;                 // ring-driven DZHR pedestrians (0x004552e0)
+    bool optional_scene = false;            // plan 26 Task 3: game fallback keeps a null scene
+    bool optional_traffic = false;          // finding 2 (2026-10-13): bad .CAR keeps null vehicles
+    std::optional<uint32_t> ring_rng_state; // RNG state loaded just before ring setup
+    uint32_t ring_setup_tick = 2;           // TrafficSystem::set_setup_tick
     // +0x1bc level speeds of rider rows 9..14 (Career::spare_levels, jittered at launch by
     // 0x004078f0 from the time-seeded stream); unset keeps personality 0's unjittered words.
     std::optional<std::array<std::array<int32_t, 5>, 6>> spare_levels;
-    std::function<void(Race&)> prepare;        // runs after ctor, before ring (demo hold)
+    std::function<void(Race&)> prepare; // runs after ctor, before ring (demo hold)
 };
 // Original per-course/per-level start and finish (plan 17 Task 1 traces the
 // exact nodes; until then the grid slot-0 position and the route finish).
@@ -70,7 +70,7 @@ struct RaceBounds {
     uint32_t finish_position_q8 = 0;
     int route_hint = 0;
 };
-struct RaceAssets {             // course-scoped: loaded once per course
+struct RaceAssets { // course-scoped: loaded once per course
     // Heap-owned: TrackRing holds a const Course& into it, so the Course
     // itself must not move when a RaceSetup moves (the spec test moves the
     // setup and steps the race). Deviation from the spec's `Course course;`
@@ -79,7 +79,7 @@ struct RaceAssets {             // course-scoped: loaded once per course
     std::unique_ptr<CourseScene> scene;
     std::unique_ptr<Hud> hud;
     std::unique_ptr<ActorNodes> actors;
-    std::unique_ptr<VehicleLibrary> vehicles;  // null when the course has no .CAR
+    std::unique_ptr<VehicleLibrary> vehicles; // null when the course has no .CAR
     std::unique_ptr<AttackCodes> attack_codes;
     CrashConfig crash;
     PoliceConfig police;
@@ -90,7 +90,7 @@ struct RaceAssets {             // course-scoped: loaded once per course
     int bike_index = 0;
     int32_t rider_value = 0;
 };
-struct RaceInstance {           // race-scoped: rebuilt on restart
+struct RaceInstance { // race-scoped: rebuilt on restart
     std::unique_ptr<TrafficSystem> traffic;
     std::unique_ptr<PedestrianSystem> pedestrians;
     std::unique_ptr<TrackRing> ring;
@@ -100,10 +100,12 @@ RaceAssets load_race_assets(const Assets&, const std::vector<uint8_t>& exe, cons
 RaceInstance build_race(const RaceAssets&, const std::vector<uint8_t>& exe, const RaceConfig&);
 // 0x00446bf0 / 0x00437860: resolve built riders, including the six course
 // names (0x00402d60) and name-roll easter eggs (0x00402e10).
-std::vector<std::string> race_rider_names(const std::vector<uint8_t>& exe, const RaceConfig&,
-                                        const Race&, const std::vector<std::string>& strings,
-                                        const std::string& player);
-struct RaceSetup { RaceAssets assets; RaceInstance instance; };
+std::vector<std::string> race_rider_names(const std::vector<uint8_t>& exe, const RaceConfig&, const Race&,
+                                          const std::vector<std::string>& strings, const std::string& player);
+struct RaceSetup {
+    RaceAssets assets;
+    RaceInstance instance;
+};
 // The only production/replay constructor of Race; tests with synthetic routes may build Race directly.
-RaceSetup make_race_setup(const Assets&, const std::vector<uint8_t>& exe, const RaceConfig&);  // load + build
-}
+RaceSetup make_race_setup(const Assets&, const std::vector<uint8_t>& exe, const RaceConfig&); // load + build
+} // namespace rr

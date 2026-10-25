@@ -53,18 +53,18 @@ std::vector<uint8_t> minimal_mids() {
     u32(12);
     u32(480);
     u32(4096);
-    u32(0);  // flags: 12-byte stride
+    u32(0); // flags: 12-byte stride
     put("data", 4);
     u32(data_bytes);
-    u32(1);  // one block
+    u32(1); // one block
     u32(0);
-    u32(ev_bytes);  // start tick, size
+    u32(ev_bytes); // start tick, size
     u32(0);
     u32(0);
-    u32(0x00402190u);  // delta 0, kind 0, vel 0x40 key 0x21 status 0x90
+    u32(0x00402190u); // delta 0, kind 0, vel 0x40 key 0x21 status 0x90
     u32(480);
     u32(0);
-    u32(0x00002180u);  // delta 480, kind 0, vel 0 key 0x21 status 0x80
+    u32(0x00002180u); // delta 480, kind 0, vel 0 key 0x21 status 0x80
     return b;
 }
 
@@ -220,7 +220,7 @@ std::vector<uint8_t> minimal_sf1(int bank_id) {
     out.insert(out.end(), body.begin(), body.end());
     return out;
 }
-}  // namespace
+} // namespace
 
 int main(int argc, char** argv) {
     // Selection rule (0x00433bb0).
@@ -243,8 +243,8 @@ int main(int argc, char** argv) {
     const rr::MidsSong song = rr::read_mids(mids);
     check(song.division == 480, "synthetic division");
     check(song.events.size() == 2, "synthetic event count");
-    check(song.events[0].tick == 0 && song.events[0].status == 0x90 &&
-              song.events[0].data0 == 0x21 && song.events[0].data1 == 0x40,
+    check(song.events[0].tick == 0 && song.events[0].status == 0x90 && song.events[0].data0 == 0x21 &&
+              song.events[0].data1 == 0x40,
           "synthetic note-on");
     check(song.events[1].tick == 480 && song.events[1].status == 0x80, "synthetic note-off");
     for (size_t i = 0; i < mids.size(); ++i) {
@@ -316,8 +316,7 @@ int main(int argc, char** argv) {
         double energy = 0;
         for (int16_t v : mono) energy += double(v) * v;
         check(energy > 0, "program-18 note audible through factory presets");
-        for (uint8_t p : {18, 35, 56, 12, 71, 11, 21})
-            check(rr::factory_covers(p), "factory covers program");
+        for (uint8_t p : {18, 35, 56, 12, 71, 11, 21}) check(rr::factory_covers(p), "factory covers program");
         check(rr::factory_covers(33), "factory covers GRUNGE1 program 33");
     }
 
@@ -413,7 +412,6 @@ int main(int argc, char** argv) {
         check(rr::jukebox_video_count() == 2, "jukebox video count matches 0x00473f98");
     }
 
-
     // Player with no assets: silent no-op, never throws.
     {
         rr::Mixer mixer(8);
@@ -436,9 +434,8 @@ int main(int argc, char** argv) {
     // All eleven disc songs (research music.md: corpus acceptance is eleven
     // files, not five): five generic GRUNGE mixes + five AWE SBKGRNG mixes +
     // KLOWN. Generic mixes parse with the same reader but never play.
-    const char* songs[] = {"GRUNGE1", "GRUNGE2", "GRUNGE3", "GRUNGE4", "GRUNGE5",
-                           "SBKGRNG1", "SBKGRNG2", "SBKGRNG3",
-                           "SBKGRNG4", "SBKGRNG5", "KLOWN"};
+    const char* songs[] = {"GRUNGE1",  "GRUNGE2",  "GRUNGE3",  "GRUNGE4",  "GRUNGE5", "SBKGRNG1",
+                           "SBKGRNG2", "SBKGRNG3", "SBKGRNG4", "SBKGRNG5", "KLOWN"};
     for (const char* name : songs) {
         const std::string path = std::string("AUDIO/MUSIC/") + name + ".MID";
         if (!assets.exists(path)) {
@@ -447,8 +444,8 @@ int main(int argc, char** argv) {
         }
         rr::MidsSong s = rr::read_mids(assets.read(path));
         check(!s.events.empty(), "corpus song has events");
-        std::cout << name << ": " << s.events.size() << " events, division " << s.division
-                  << ", tempos " << s.tempo.size() << "\n";
+        std::cout << name << ": " << s.events.size() << " events, division " << s.division << ", tempos "
+                  << s.tempo.size() << "\n";
     }
     // Research spot values: Klown division 120 with 112 tempos; Grunge
     // divisions 480 with a single tempo each.
@@ -460,8 +457,7 @@ int main(int argc, char** argv) {
         check(g2.division == 480 && g2.tempo.size() == 1, "SBKGRNG2 single tempo");
     }
     for (int n = 1; n <= 5; ++n) {
-        auto b = rr::read_sf1(
-            assets.read("AUDIO/MUSIC/GRUNGE" + std::to_string(n) + ".SBK"), true);
+        auto b = rr::read_sf1(assets.read("AUDIO/MUSIC/GRUNGE" + std::to_string(n) + ".SBK"), true);
         check(!b->zones.empty() && !b->samples.empty(), "corpus melodic bank loads");
         std::cout << "GRUNGE" << n << ": " << b->zones.size() << " zones, " << b->samples.size()
                   << " samples\n";
@@ -473,17 +469,14 @@ int main(int argc, char** argv) {
         // no disc zone. SbkGrng1 must show program 18 (research census).
         const char* awe[] = {"SBKGRNG1", "SBKGRNG2", "SBKGRNG3", "SBKGRNG4", "SBKGRNG5"};
         for (int n = 1; n <= 5; ++n) {
-            rr::MidsSong s = rr::read_mids(
-                assets.read(std::string("AUDIO/MUSIC/") + awe[n - 1] + ".MID"));
-            auto mel = rr::read_sf1(
-                assets.read("AUDIO/MUSIC/GRUNGE" + std::to_string(n) + ".SBK"), true);
+            rr::MidsSong s = rr::read_mids(assets.read(std::string("AUDIO/MUSIC/") + awe[n - 1] + ".MID"));
+            auto mel = rr::read_sf1(assets.read("AUDIO/MUSIC/GRUNGE" + std::to_string(n) + ".SBK"), true);
             const size_t missing = rr::count_factory_notes(s, *mel, *kit);
             std::vector<int16_t> mono;
             check(rr::render_race_song(s, *mel, *kit, mono), "AWE song renders");
             double energy = 0;
             for (size_t i = 0; i < mono.size(); i += 7) energy += double(mono[i]) * mono[i];
-            std::cout << awe[n - 1] << ": factory notes " << missing << ", frames "
-                      << mono.size() << "\n";
+            std::cout << awe[n - 1] << ": factory notes " << missing << ", frames " << mono.size() << "\n";
             check(energy > 0, "AWE render audible with factory presets");
             if (n == 1) check(missing > 0, "SBKGRNG1 has factory notes (program 18)");
         }
@@ -492,8 +485,7 @@ int main(int argc, char** argv) {
         rr::MidsSong klown = rr::read_mids(assets.read("AUDIO/MUSIC/KLOWN.MID"));
         auto merged = std::make_shared<rr::Sf1Bank>();
         for (int n = 1; n <= 5; ++n) {
-            auto b = rr::read_sf1(
-                assets.read("AUDIO/MUSIC/GRUNGE" + std::to_string(n) + ".SBK"), true);
+            auto b = rr::read_sf1(assets.read("AUDIO/MUSIC/GRUNGE" + std::to_string(n) + ".SBK"), true);
             merged->samples.insert(merged->samples.end(), b->samples.begin(), b->samples.end());
             const uint32_t off = uint32_t(merged->samples.size() - b->samples.size());
             for (const rr::Sf1Zone& z : b->zones) {
@@ -509,8 +501,7 @@ int main(int argc, char** argv) {
         std::cout << "KLOWN: factory notes " << klown_missing << "\n";
         check(klown_missing > 0, "KLOWN has factory notes (35/56/12/71/11/21)");
         // Full corpus render of the Napa song: must be audible.
-        rr::MidsSong s =
-            rr::read_mids(assets.read(std::string("AUDIO/MUSIC/") + "SBKGRNG4.MID"));
+        rr::MidsSong s = rr::read_mids(assets.read(std::string("AUDIO/MUSIC/") + "SBKGRNG4.MID"));
         auto mel = rr::read_sf1(assets.read("AUDIO/MUSIC/GRUNGE4.SBK"), true);
         std::vector<int16_t> mono;
         check(rr::render_race_song(s, *mel, *kit, mono), "corpus Napa song renders");
@@ -540,12 +531,14 @@ int main(int argc, char** argv) {
         for (int i = 0; i < 1800; ++i) {
             player.update();
             mixer.render(out.data(), 368);
-            if (std::any_of(out.begin(), out.begin() + 736, [](int16_t v) { return v != 0; })) ++sounding_blocks;
+            if (std::any_of(out.begin(), out.begin() + 736, [](int16_t v) { return v != 0; }))
+                ++sounding_blocks;
         }
         check(sounding_blocks > 900, "live Napa music continues for thirty seconds");
         player.stop();
         mixer.render(out.data(), 2048);
-        check(std::all_of(out.begin(), out.end(), [](int16_t v) { return v == 0; }), "stop detaches stream before freeing it");
+        check(std::all_of(out.begin(), out.end(), [](int16_t v) { return v == 0; }),
+              "stop detaches stream before freeing it");
         check(!player.active(), "stop silences");
         player.play_race(1, "krusty");
         check(player.active() && player.song() == "KLOWN", "krusty loads KLOWN");

@@ -22,7 +22,10 @@ namespace rr {
 // walker (unsupported() reports it) until dual walkers are ported.
 // One DZHR actor record fired by a slice build: ring_sample is the slice's
 // route sample (ring position >> 8), position_q8 the record's position.
-struct RingActor { int32_t ring_sample=0; uint32_t position_q8=0, word0=0, word1=0, section=0, local=0; };
+struct RingActor {
+    int32_t ring_sample = 0;
+    uint32_t position_q8 = 0, word0 = 0, word1 = 0, section = 0, local = 0;
+};
 // Value-only walker snapshots for optional original terrain diagnostics.
 // Collidable roadside objects of one ring slice (0x00454240): the BORR
 // slots of its second 0x00451cb0 walk (+0x60 count, +0x63 selector, +0x6c
@@ -30,23 +33,26 @@ struct RingActor { int32_t ring_sample=0; uint32_t position_q8=0, word0=0, word1
 // Laterals are units relative to the road centre (slice +0xcc).
 struct RingStatics {
     uint8_t borr_count = 0, borr_selector = 0x3f;
-    std::array<int32_t,8> borr{};
+    std::array<int32_t, 8> borr{};
     uint8_t billboards = 0;
-    struct Billboard { uint8_t type = 0, selector = 0; int32_t offset = 0; };
-    std::array<Billboard,2> billboard{};
+    struct Billboard {
+        uint8_t type = 0, selector = 0;
+        int32_t offset = 0;
+    };
+    std::array<Billboard, 2> billboard{};
 };
 struct TrackWalkerState {
-    int32_t position=0;
-    uint32_t node=0;
-    int32_t borr_position=0, borr_record=0, borr_start=0, borr_end=0;
-    int32_t dzhr_position=0, dzhr_index=0;
+    int32_t position = 0;
+    uint32_t node = 0;
+    int32_t borr_position = 0, borr_record = 0, borr_start = 0, borr_end = 0;
+    int32_t dzhr_position = 0, dzhr_index = 0;
     std::optional<TerrainIteratorState> terrain;
 };
 struct TrackRingState {
-    TrackWalkerState front,back;
+    TrackWalkerState front, back;
 };
 class TrackRing {
-public:
+  public:
     using Random = std::function<uint32_t()>;
     // Called for each DZHR actor record 0x004520d0 fires, with its lateral
     // jitter draw (lateral = (centre + signed 12 bits) * 256 - 2s + jitter %
@@ -56,12 +62,14 @@ public:
     // Called at each slice build with the front walker's terrain slice
     // (0x00451910 into the ring slice, 0x00454240), keyed by section and
     // local sample. The race reads ground heights from these slices.
-    using SliceSink = std::function<void(uint32_t section, uint32_t local, const PathSample&, const TerrainSlice&)>;
+    using SliceSink =
+        std::function<void(uint32_t section, uint32_t local, const PathSample&, const TerrainSlice&)>;
     TrackRing(const Course&, int level);
     void set_slice_sink(SliceSink sink) { slice_sink_ = std::move(sink); }
     // Called at each slice build with its collidable statics, keyed by the
     // slice's route sample.
-    using StaticSink = std::function<void(int32_t ring_sample, uint32_t section, uint32_t local, const RingStatics&)>;
+    using StaticSink =
+        std::function<void(int32_t ring_sample, uint32_t section, uint32_t local, const RingStatics&)>;
     void set_static_sink(StaticSink sink) { static_sink_ = std::move(sink); }
     TrackRing(const TrackRing&) = delete;
     TrackRing& operator=(const TrackRing&) = delete;
@@ -78,57 +86,61 @@ public:
     TrackRingState diagnostic_state() const;
     // Terrain slice exported by a walker at its current sample.
     TerrainSlice front_terrain(int32_t left_edge, int32_t right_edge) const;
-private:
+
+  private:
     struct Borr {
         const std::vector<uint32_t>* words = nullptr;
-        int32_t position = 0;            // [2] Q8
-        int32_t record = 0;              // [3]
-        int32_t start = 0, end = 0;      // [9], [10] samples
-        int32_t current = 0;             // [11] sample
+        int32_t position = 0;       // [2] Q8
+        int32_t record = 0;         // [3]
+        int32_t start = 0, end = 0; // [9], [10] samples
+        int32_t current = 0;        // [11] sample
         uint8_t alternate = 0, left = 0, selector = 0x3f, random = 0, count = 0, units = 0, period = 0;
-        int32_t spacing = 0;             // [8]
-        void load(int32_t index);        // 0x00451a90
-        void init(const std::vector<uint32_t>*, int32_t samples, bool start);   // 0x00451b60
-        void step(int32_t delta);        // 0x00451e20
-        void slots(const PathSample&, const Random&, RingStatics&) const;   // 0x00451cb0
+        int32_t spacing = 0;                                                  // [8]
+        void load(int32_t index);                                             // 0x00451a90
+        void init(const std::vector<uint32_t>*, int32_t samples, bool start); // 0x00451b60
+        void step(int32_t delta);                                             // 0x00451e20
+        void slots(const PathSample&, const Random&, RingStatics&) const;     // 0x00451cb0
     };
     struct Dzhr {
-        size_t node = 0;                 // index into events_ (per course node)
-        int32_t position = 0;            // [1] Q8
-        int32_t index = 0;               // [2]
+        size_t node = 0;      // index into events_ (per course node)
+        int32_t position = 0; // [1] Q8
+        int32_t index = 0;    // [2]
     };
     struct Walker {
         uint32_t node = 0;
-        int32_t position = 0;            // Q8 within the node's section
+        int32_t position = 0; // Q8 within the node's section
         std::optional<TerrainIterator> terrain;
         Borr borr;
         Dzhr dzhr;
         bool stopped = false;
     };
-    struct Events { uint32_t section = 0; std::vector<std::array<uint32_t,2>> records; };
+    struct Events {
+        uint32_t section = 0;
+        std::vector<std::array<uint32_t, 2>> records;
+    };
     // Terrain part of one section walker inside a 0x00453b60 window probe.
     struct ProbeHalf {
         uint32_t node = 0;
-        int32_t position = 0;            // Q8 within the node's section
+        int32_t position = 0; // Q8 within the node's section
         std::optional<TerrainIterator> terrain;
     };
-    void probe_enter(ProbeHalf&, uint32_t node, bool start);    // 0x00452cb0 terrain init
-    int probe_step(ProbeHalf&, int32_t delta);                  // 0x00452e10 (0/1/2/3)
-    void probe_window(uint32_t node, int32_t direction);        // 0x00453b60 draws
-    void jitter_events(uint32_t node, std::vector<uint32_t>& visited, const Random&);   // 0x00453e60
-    void enter(Walker&, uint32_t node, bool start = true);      // 0x00452cb0
-    void step(Walker&, int32_t delta);                          // 0x00453030 -> 0x00452e10
-    void build_slice(Walker&, int32_t ring_q8, const ActorSink&);   // 0x00454c80 -> 0x00454240
+    void probe_enter(ProbeHalf&, uint32_t node, bool start); // 0x00452cb0 terrain init
+    int probe_step(ProbeHalf&, int32_t delta);               // 0x00452e10 (0/1/2/3)
+    void probe_window(uint32_t node, int32_t direction);     // 0x00453b60 draws
+    void jitter_events(uint32_t node, std::vector<uint32_t>& visited, const Random&); // 0x00453e60
+    void enter(Walker&, uint32_t node, bool start = true);                            // 0x00452cb0
+    void step(Walker&, int32_t delta);                            // 0x00453030 -> 0x00452e10
+    void build_slice(Walker&, int32_t ring_q8, const ActorSink&); // 0x00454c80 -> 0x00454240
     const Course& course_;
     int level_;
-    std::vector<Events> events_;                                // one per node, DFS order
-    std::vector<std::pair<uint32_t,size_t>> event_index_;       // node offset -> events_
-    const Random* random_ = nullptr;                            // stream for the current call
-    Random forward_;                                            // TerrainIterator's source
+    std::vector<Events> events_;                           // one per node, DFS order
+    std::vector<std::pair<uint32_t, size_t>> event_index_; // node offset -> events_
+    const Random* random_ = nullptr;                       // stream for the current call
+    Random forward_;                                       // TerrainIterator's source
     Walker front_walker_, back_walker_;
     int32_t front_ = 0, back_ = 0;
     bool unsupported_ = false;
     SliceSink slice_sink_;
     StaticSink static_sink_;
 };
-}
+} // namespace rr

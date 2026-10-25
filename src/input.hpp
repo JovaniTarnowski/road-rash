@@ -8,7 +8,7 @@ namespace rr {
 struct PlayerInput {
     bool accelerate = false, brake = false, left = false, right = false;
     bool punch = false, kick = false, backhand = false;
-    int steer_axis = 0;   // gamepad stick, -32768..32767
+    int steer_axis = 0; // gamepad stick, -32768..32767
 };
 // Analog-control path as traced (0x0044f880 joystick branch): the original picks
 // dead zones 0x3fff/0xbffd when the binding row's analog flag (0x00476c04) is set
@@ -23,10 +23,11 @@ struct MenuDirections {
 // Native menu convenience: one dominant stick direction, with bounded repeat.
 // After interruption, require neutral before accepting a held stick again.
 class MenuStickInput {
-public:
+  public:
     MenuDirections update(int x, int y, uint64_t now_ms);
     void suspend();
-private:
+
+  private:
     enum class Direction { none, left, right, up, down } direction_ = Direction::none;
     uint64_t next_repeat_ = 0;
     bool require_neutral_ = false;
@@ -44,13 +45,14 @@ uint32_t bound_control_bits(const std::array<uint16_t, 11>& codes, bool custom, 
 PlayerInput touch_input(float x, float y, float width, float height, bool left_handed = false);
 // Each finger keeps its own intent; releasing one cannot release another.
 class TouchInput {
-public:
+  public:
     void handle(const SDL_Event&);
     void clear() { fingers_.clear(); }
     void set_left_handed(bool v) { left_handed_ = v; }
     PlayerInput current() const;
-private:
+
+  private:
     std::map<std::pair<SDL_TouchID, SDL_FingerID>, PlayerInput> fingers_;
     bool left_handed_ = false;
 };
-}
+} // namespace rr

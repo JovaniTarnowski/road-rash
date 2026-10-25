@@ -23,7 +23,7 @@ struct ByteRange {
 // Where verified files go: native writes to the staging directory; web
 // writes to browser storage.
 class ImportSink {
-public:
+  public:
     virtual ~ImportSink() = default;
     virtual void begin_file(const std::string& path, uint64_t size) = 0;
     virtual void write(const uint8_t*, size_t) = 0;
@@ -33,7 +33,7 @@ public:
 };
 
 class ImportJob {
-public:
+  public:
     // source_kind: an ISO image, or a folder whose files are read by path.
     ImportJob(std::vector<ReferenceHash> hashes, ImportSink& sink, bool iso);
     ~ImportJob();
@@ -45,17 +45,18 @@ public:
     // path (folder imports).
     std::optional<ByteRange> need_range() const;
     std::optional<std::string> need_file() const;
-    void supply(const uint8_t* data, size_t size);  // answer to the current need
-    void missing_file(const std::string& message);  // folder file absent/unreadable: records missing, continues
-    void fail_source(const std::string& message);   // the host could not read
+    void supply(const uint8_t* data, size_t size); // answer to the current need
+    void
+    missing_file(const std::string& message);     // folder file absent/unreadable: records missing, continues
+    void fail_source(const std::string& message); // the host could not read
     bool done() const;
     const ImportResult& result() const;
     ImportProgress progress() const;
     void cancel();
 
-private:
+  private:
     struct Impl;
     std::unique_ptr<Impl> impl_;
 };
 
-}  // namespace rr
+} // namespace rr

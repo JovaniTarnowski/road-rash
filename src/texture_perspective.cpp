@@ -11,23 +11,39 @@
 
 namespace rr {
 namespace {
-int32_t p_signed(uint32_t v) { int32_t r; std::memcpy(&r, &v, 4); return r; }
-int32_t p_wrap_add(int32_t a, int32_t b) { return p_signed(uint32_t(a) + uint32_t(b)); }
-int32_t p_wrap_mul(int32_t a, int32_t b) { return p_signed(uint32_t(a) * uint32_t(b)); }
-int32_t p_fixed(int32_t a) { return p_signed(uint32_t(a) << 16); }
-int32_t p_product_q16(int32_t a, int32_t b) { return p_signed(uint32_t(uint64_t(int64_t(a) * b) >> 16)); }
-int32_t p_floor(int32_t a) { return a >= 0 ? a / 65536 : int32_t((int64_t(a) - 65535) / 65536); }
-}  // namespace
+int32_t p_signed(uint32_t v) {
+    int32_t r;
+    std::memcpy(&r, &v, 4);
+    return r;
+}
+int32_t p_wrap_add(int32_t a, int32_t b) {
+    return p_signed(uint32_t(a) + uint32_t(b));
+}
+int32_t p_wrap_mul(int32_t a, int32_t b) {
+    return p_signed(uint32_t(a) * uint32_t(b));
+}
+int32_t p_fixed(int32_t a) {
+    return p_signed(uint32_t(a) << 16);
+}
+int32_t p_product_q16(int32_t a, int32_t b) {
+    return p_signed(uint32_t(uint64_t(int64_t(a) * b) >> 16));
+}
+int32_t p_floor(int32_t a) {
+    return a >= 0 ? a / 65536 : int32_t((int64_t(a) - 65535) / 65536);
+}
+} // namespace
 
 void draw_textured_quad_perspective(Framebuffer& fb, const std::array<PerspectiveVertex, 4>& vertices,
                                     const CelMip& mip, bool transparent, RasterClip clip) {
-    if (mip.pixels.empty() || mip.width <= 0 || mip.height <= 0) throw std::runtime_error("Invalid perspective mip");
+    if (mip.pixels.empty() || mip.width <= 0 || mip.height <= 0)
+        throw std::runtime_error("Invalid perspective mip");
     // Equal depths: the affine path (bit-identical to the original).
     if (vertices[0].inv_z == vertices[1].inv_z && vertices[0].inv_z == vertices[2].inv_z &&
         vertices[0].inv_z == vertices[3].inv_z) {
         std::array<TextureVertex, 4> av;
         for (int i = 0; i < 4; ++i) {
-            if (vertices[i].x < -32768 || vertices[i].x > 32767 || vertices[i].y < -32768 || vertices[i].y > 32767)
+            if (vertices[i].x < -32768 || vertices[i].x > 32767 || vertices[i].y < -32768 ||
+                vertices[i].y > 32767)
                 throw std::runtime_error("Perspective affine fallback outside int16 range");
             av[size_t(i)] = {int16_t(vertices[i].x), int16_t(vertices[i].y),
                              uint16_t(std::max(0, std::min(65535, int(std::lround(vertices[i].u))))),
@@ -45,7 +61,10 @@ void draw_textured_quad_perspective(Framebuffer& fb, const std::array<Perspectiv
     }
     if (bottom == vertices[first].y) return;
     // Integer X edges (affine-identical) + double u/z, v/z, 1/z edges.
-    struct PEdge { int32_t x = 0; double uoz = 0, voz = 0, oz = 0; };
+    struct PEdge {
+        int32_t x = 0;
+        double uoz = 0, voz = 0, oz = 0;
+    };
     auto chain = [&](std::vector<PEdge>& rows, std::vector<char>& set, int direction) {
         int index = first;
         for (int guard = 0; guard < 4; ++guard) {
@@ -66,12 +85,16 @@ void draw_textured_quad_perspective(Framebuffer& fb, const std::array<Perspectiv
                 const int y0 = std::max(0, a.y), y1 = std::min(fb.height() - 1, b.y);
                 const int skip = y0 - a.y;
                 x = p_wrap_add(x, p_wrap_mul(sx, skip));
-                uoz += su * skip; voz += sv * skip; oz += so * skip;
+                uoz += su * skip;
+                voz += sv * skip;
+                oz += so * skip;
                 for (int y = y0; y <= y1; ++y) {
                     rows[size_t(y)] = {x, uoz, voz, oz};
                     set[size_t(y)] = 1;
                     x = p_wrap_add(x, sx);
-                    uoz += su; voz += sv; oz += so;
+                    uoz += su;
+                    voz += sv;
+                    oz += so;
                 }
             }
             index = next;
@@ -88,7 +111,7 @@ void draw_textured_quad_perspective(Framebuffer& fb, const std::array<Perspectiv
     for (int y = top; y <= last; ++y) {
         if (!lset[size_t(y)] || !rset[size_t(y)]) continue;
         auto l = left[size_t(y)], r = right[size_t(y)];
-        if (p_floor(r.x) <= 0) continue;  // original pre-swap test
+        if (p_floor(r.x) <= 0) continue; // original pre-swap test
         if (p_floor(r.x) < p_floor(l.x)) std::swap(l, r);
         int start = p_floor(l.x), end = p_floor(r.x);
         const int full = end - start;
@@ -120,4 +143,4 @@ void draw_textured_quad_perspective(Framebuffer& fb, const std::array<Perspectiv
         }
     }
 }
-}  // namespace rr
+} // namespace rr

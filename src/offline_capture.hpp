@@ -16,7 +16,8 @@ class OfflineCapture {
     static void write(FILE* f, const void* data, size_t size) {
         if (std::fwrite(data, 1, size, f) != size) throw std::runtime_error("Offline capture write failed");
     }
-public:
+
+  public:
     static constexpr int width = 1280, height = 960, fps = 60;
     std::string video_path, audio_path;
     long frames = 0, warmup = 360, written = 0;
@@ -36,7 +37,8 @@ public:
         if (ticks_++ < warmup) return;
         SurfacePtr captured(SDL_RenderReadPixels(renderer, nullptr));
         SurfacePtr rgb(SDL_CreateSurface(width, height, SDL_PIXELFORMAT_RGB24));
-        if (!captured || !rgb || !SDL_BlitSurfaceScaled(captured.get(), nullptr, rgb.get(), nullptr, SDL_SCALEMODE_NEAREST))
+        if (!captured || !rgb ||
+            !SDL_BlitSurfaceScaled(captured.get(), nullptr, rgb.get(), nullptr, SDL_SCALEMODE_NEAREST))
             throw std::runtime_error(SDL_GetError());
         for (int y = 0; y < height; ++y)
             write(video_.get(), static_cast<const uint8_t*>(rgb->pixels) + y * rgb->pitch, width * 3);
@@ -52,7 +54,8 @@ public:
     }
     void finish() {
         if (!done()) throw std::runtime_error("Offline capture interrupted before requested frame count");
-        if (std::fflush(video_.get()) || std::fflush(audio_.get())) throw std::runtime_error("Offline capture flush failed");
+        if (std::fflush(video_.get()) || std::fflush(audio_.get()))
+            throw std::runtime_error("Offline capture flush failed");
     }
 };
-}
+} // namespace rr

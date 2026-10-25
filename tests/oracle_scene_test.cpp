@@ -34,14 +34,15 @@
 #include <tuple>
 
 namespace {
-const char* const course_files[5] = {"CITY", "HIWAY", "MEDLY", "NAPA", "CANYN"};   // 0x0046df58
+const char* const course_files[5] = {"CITY", "HIWAY", "MEDLY", "NAPA", "CANYN"}; // 0x0046df58
 std::vector<uint8_t> read_file(const std::string& path) {
     std::ifstream in(path, std::ios::binary);
     if (!in) return {};
     return {std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>()};
 }
 int32_t blob_i32(const std::vector<uint8_t>& b, size_t p) {
-    return int32_t(uint32_t(b[p]) | uint32_t(b[p + 1]) << 8 | uint32_t(b[p + 2]) << 16 | uint32_t(b[p + 3]) << 24);
+    return int32_t(uint32_t(b[p]) | uint32_t(b[p + 1]) << 8 | uint32_t(b[p + 2]) << 16 |
+                   uint32_t(b[p + 3]) << 24);
 }
 int64_t key(const std::map<std::string, int64_t>& f, const std::string& k, int64_t dflt = 0) {
     const auto it = f.find(k);
@@ -62,7 +63,7 @@ int32_t actor_colour(uint32_t bike_addr, const rr::scene::Memory& mem, uint8_t p
         if (!mem.has(entry)) continue;
         if (mem.u32(entry) == bike_addr) return slot == player_row_byte ? 0 : slot;
     }
-    return -1;   // bike not on the grid: caller reports it
+    return -1; // bike not on the grid: caller reports it
 }
 
 // Rider-table row byte (+5) for the player: the player half (+0x2fc of the
@@ -73,7 +74,7 @@ uint8_t player_row_byte(const rr::scene::Dump& dump, const std::vector<uint8_t>&
         if (r.address != player || r.half.empty()) continue;
         const uint32_t row = uint32_t(blob_i32(r.half, 0x1e0));
         if (dump.memory.has(row + 5)) return dump.memory.u8(row + 5);
-        const size_t raw = 0x61600 + (row - 0x00463000) + 5;   // .data file offset
+        const size_t raw = 0x61600 + (row - 0x00463000) + 5; // .data file offset
         if (row >= 0x00463000 && raw < exe.size()) return exe[raw];
     }
     return 0;
@@ -89,7 +90,8 @@ int native_actors(const std::string& tsv, const rr::Assets& assets) {
     const int course = int(golden.frames.at(0).at("course"));
     const auto exe = assets.read("ROADRASH.EXE");
     const auto depths = rr::read_depth_table(exe);
-    const auto course_data = rr::read_course(assets.read(std::string("DATA/COURSES/") + course_files[course] + ".CRS"));
+    const auto course_data =
+        rr::read_course(assets.read(std::string("DATA/COURSES/") + course_files[course] + ".CRS"));
     const auto routes = {rr::make_route(course_data, false), rr::make_route(course_data, true)};
     rr::ActorNodes actors(assets, exe, true);
     const auto& bank = actors.library().playback[0];
@@ -124,7 +126,8 @@ int native_actors(const std::string& tsv, const rr::Assets& assets) {
                 if (r.bike.size() < 0x300 || blob_i32(r.bike, 0xc4) != 4) continue;
                 bike_of_half[uint32_t(blob_i32(r.bike, 0x2fc))] = r.address;
             }
-            const size_t nsel = size_t(key(frame, "actor.sel.count")), nbb = size_t(key(frame, "actor.bb.count"));
+            const size_t nsel = size_t(key(frame, "actor.sel.count")),
+                         nbb = size_t(key(frame, "actor.bb.count"));
             bool usable = true;
             std::string diff;
             int checked = 0;
@@ -135,24 +138,37 @@ int native_actors(const std::string& tsv, const rr::Assets& assets) {
                 const int32_t lateral = int32_t(key(frame, "actor.bb." + std::to_string(b) + ".lateral"));
                 const int32_t ground = int32_t(key(frame, "actor.bb." + std::to_string(b) + ".ground"));
                 const int64_t nafter = key(frame, "actor.bb." + std::to_string(b) + ".nafter", -1);
-                if (nafter < 1 || nafter > int64_t(dump.nodes.size())) continue;   // flushed: in photo, not dump
+                if (nafter < 1 || nafter > int64_t(dump.nodes.size()))
+                    continue; // flushed: in photo, not dump
                 // Find the half with this position (scheduler halves mirror +0x1c).
                 const rr::scene::RiderObjects* half = nullptr;
                 for (const auto& r : dump.riders) {
                     if (r.bike.size() < 0x30) continue;
-                    if (blob_i32(r.bike, 0x1c) == pos && blob_i32(r.bike, 0xc4) == 8) { half = &r; break; }
+                    if (blob_i32(r.bike, 0x1c) == pos && blob_i32(r.bike, 0xc4) == 8) {
+                        half = &r;
+                        break;
+                    }
                 }
-                if (!half) { usable = false; diff = "no half for bb pos " + std::to_string(pos); break; }
+                if (!half) {
+                    usable = false;
+                    diff = "no half for bb pos " + std::to_string(pos);
+                    break;
+                }
                 // The half's sel records (shadow then body): find by bike address.
                 size_t sel = nsel;
                 int seen = 0;
                 for (size_t s = 0; s < nsel; ++s) {
-                    if (uint32_t(key(frame, "actor.sel." + std::to_string(s) + ".bike")) != half->address) continue;
+                    if (uint32_t(key(frame, "actor.sel." + std::to_string(s) + ".bike")) != half->address)
+                        continue;
                     if ((seen++ == 0) != (clip == 0)) continue;
                     sel = s;
                     break;
                 }
-                if (sel >= nsel) { usable = false; diff = "no sel for half pos " + std::to_string(pos); break; }
+                if (sel >= nsel) {
+                    usable = false;
+                    diff = "no sel for half pos " + std::to_string(pos);
+                    break;
+                }
                 const std::string sp = "actor.sel." + std::to_string(sel) + ".";
                 // (1) Descriptor import parity: sel 20B vs native bank bytes.
                 // The dump's +0x80/+0x81 is post-draw and may lag dispatch by
@@ -171,24 +187,37 @@ int native_actors(const std::string& tsv, const rr::Assets& assets) {
                 int found = -1, hits = 0;
                 for (size_t di = 0; di < seq->size(); ++di) {
                     const uint8_t* cb = seq->at(di).render.data();
-                    if (d0 == (int64_t(uint32_t(cb[0]) | uint32_t(cb[1]) << 8 | uint32_t(cb[2]) << 16 | uint32_t(cb[3]) << 24)) &&
-                        d1 == (int64_t(uint32_t(cb[4]) | uint32_t(cb[5]) << 8 | uint32_t(cb[6]) << 16 | uint32_t(cb[7]) << 24)) &&
+                    if (d0 == (int64_t(uint32_t(cb[0]) | uint32_t(cb[1]) << 8 | uint32_t(cb[2]) << 16 |
+                                       uint32_t(cb[3]) << 24)) &&
+                        d1 == (int64_t(uint32_t(cb[4]) | uint32_t(cb[5]) << 8 | uint32_t(cb[6]) << 16 |
+                                       uint32_t(cb[7]) << 24)) &&
                         (d2 & 0xffff) == (int64_t(cb[8]) | (int64_t(cb[9]) << 8)) &&
-                        (d3 & 0xff) == int64_t(seq->at(di).duration) && ((d3 >> 8) & 0xff) == int64_t(seq->at(di).control)) {
-                        found = int(di); ++hits;
+                        (d3 & 0xff) == int64_t(seq->at(di).duration) &&
+                        ((d3 >> 8) & 0xff) == int64_t(seq->at(di).control)) {
+                        found = int(di);
+                        ++hits;
                     }
                 }
-                if (hits != 1) { usable = false; diff = "descriptor import pos " + std::to_string(pos); break; }
+                if (hits != 1) {
+                    usable = false;
+                    diff = "descriptor import pos " + std::to_string(pos);
+                    break;
+                }
                 const auto& descriptor = seq->at(size_t(found));
                 // (2) Input consistency: bb lateral == (sel f50 + sign-rounding) >> 8.
                 const int32_t f50 = int32_t(key(frame, sp + "f50"));
                 const int32_t want_lat = (f50 + ((f50 >> 31) & 0xff)) >> 8;
-                if (want_lat != lateral) { usable = false; diff = "lateral consistency pos " + std::to_string(pos); break; }
+                if (want_lat != lateral) {
+                    usable = false;
+                    diff = "lateral consistency pos " + std::to_string(pos);
+                    break;
+                }
                 // (3) Orientation: native view angle vs sel view (+0xd0).
                 auto sit = by_sample.find(uint32_t(pos) >> 8);
-                if (sit == by_sample.end() || sit->second >= slices.size() - 1) continue;   // not in slice window
-                const auto& near = slices[sit->second], far = slices[sit->second + 1];
-                if (near.count == 2) continue;   // split roadways: game path only
+                if (sit == by_sample.end() || sit->second >= slices.size() - 1)
+                    continue; // not in slice window
+                const auto &near = slices[sit->second], far = slices[sit->second + 1];
+                if (near.count == 2) continue; // split roadways: game path only
                 const auto& sample = route.at(near.sample);
                 rr::ActorOrientation orientation;
                 orientation.depth = near.depth;
@@ -198,11 +227,12 @@ int native_actors(const std::string& tsv, const rr::Assets& assets) {
                 orientation.road_heading = near.road[0].heading;
                 orientation.heading = blob_i32(half->bike, 0x5c);
                 orientation.roll = blob_i32(half->bike, 0x60);
-                orientation.rider = true;   // halves are type 8 (0x00413ae0 rider rule)
+                orientation.rider = true; // halves are type 8 (0x00413ae0 rider rule)
                 const auto angles = rr::actor_angles(orientation, camera.x);
                 if (angles.view_angle != int32_t(key(frame, sp + "view"))) {
                     usable = false;
-                    diff = "view angle pos " + std::to_string(pos) + " native=" + std::to_string(angles.view_angle) +
+                    diff = "view angle pos " + std::to_string(pos) +
+                           " native=" + std::to_string(angles.view_angle) +
                            " orig=" + std::to_string(key(frame, sp + "view"));
                     break;
                 }
@@ -214,10 +244,17 @@ int native_actors(const std::string& tsv, const rr::Assets& assets) {
                 uint32_t bike_addr = 0;
                 for (const auto& r : dump.riders) {
                     if (r.bike.size() < 0x300 || blob_i32(r.bike, 0xc4) != 4) continue;
-                    if (uint32_t(blob_i32(r.bike, 0x2fc)) == half->address) { bike_addr = r.address; break; }
+                    if (uint32_t(blob_i32(r.bike, 0x2fc)) == half->address) {
+                        bike_addr = r.address;
+                        break;
+                    }
                 }
                 const int32_t colour = actor_colour(bike_addr, dump.memory, prow);
-                if (colour < 0) { usable = false; diff = "colour rule pos " + std::to_string(pos); break; }
+                if (colour < 0) {
+                    usable = false;
+                    diff = "colour rule pos " + std::to_string(pos);
+                    break;
+                }
                 rr::ActorProjection projection;
                 projection.road_x = orientation.road_x;
                 projection.far_x = far.road[0].road_x + camera.x;
@@ -234,12 +271,21 @@ int native_actors(const std::string& tsv, const rr::Assets& assets) {
                 const auto made = actors.rider(descriptor, 0, colour, orientation, projection, camera, depths,
                                                blob_i32(half->bike, 0x20), &sel_roll);
                 const bool is_shadow = clip == 0;
-                if (made.size() != 2) { usable = false; diff = "dispatch node count pos " + std::to_string(pos); break; }
+                if (made.size() != 2) {
+                    usable = false;
+                    diff = "dispatch node count pos " + std::to_string(pos);
+                    break;
+                }
                 const auto& node = made[is_shadow ? 0 : 1];
                 const auto& dumped = dump.nodes[size_t(nafter - 1)];
-                const auto& cell = actors.library().views[0].at(
-                    rr::select_actor_view(descriptor, actors.library().views[0], angles.yaw, angles.roll).group).at(
-                    rr::select_actor_view(descriptor, actors.library().views[0], angles.yaw, angles.roll).subframe);
+                const auto& cell = actors.library()
+                                       .views[0]
+                                       .at(rr::select_actor_view(descriptor, actors.library().views[0],
+                                                                 angles.yaw, angles.roll)
+                                               .group)
+                                       .at(rr::select_actor_view(descriptor, actors.library().views[0],
+                                                                 angles.yaw, angles.roll)
+                                               .subframe);
                 if (dumped.u32(8) != 0x00466684 || int32_t(dumped.u32(0x34)) != int32_t(cell.frame)) {
                     usable = false;
                     diff = "frame/bank pos " + std::to_string(pos);
@@ -268,7 +314,12 @@ int native_actors(const std::string& tsv, const rr::Assets& assets) {
                 }
                 ++checked;
             }
-            if (usable && checked > 0) { frame_ok = true; frame_checked = checked; nodes += checked; break; }
+            if (usable && checked > 0) {
+                frame_ok = true;
+                frame_checked = checked;
+                nodes += checked;
+                break;
+            }
             if (frame_error.empty()) frame_error = diff + " (checked " + std::to_string(checked) + ")";
         }
         ++frames;
@@ -298,11 +349,14 @@ int native_terrain(const std::string& tsv, const rr::Assets& assets, bool check_
     const int course = int(golden.frames.at(0).at("course"));
     const auto exe = assets.read("ROADRASH.EXE");
     const auto depths = rr::read_depth_table(exe);
-    const auto data = rr::read_course(assets.read(std::string("DATA/COURSES/") + course_files[course] + ".CRS"));
+    const auto data =
+        rr::read_course(assets.read(std::string("DATA/COURSES/") + course_files[course] + ".CRS"));
     rr::CourseScene scene(assets, exe, data, course_files[course]);
     const auto lib = rr::testlib::load_texture_library(assets, course_files[course]);
-    const std::array<std::vector<rr::RouteSample>, 2> routes = {rr::make_route(data, false), rr::make_route(data, true)};
-    std::set<std::string> terrain = {"PLAIN", "WHITE", "YELLOW", "START160", "START162", "SIDCRSS0", "SIDLANE0", "SIDLANE1", "FINISH", "WATER128"};
+    const std::array<std::vector<rr::RouteSample>, 2> routes = {rr::make_route(data, false),
+                                                                rr::make_route(data, true)};
+    std::set<std::string> terrain = {"PLAIN",    "WHITE",    "YELLOW",   "START160", "START162",
+                                     "SIDCRSS0", "SIDLANE0", "SIDLANE1", "FINISH",   "WATER128"};
     for (const auto& [id, family] : scene.families()) {
         std::function<void(uint32_t, int)> walk = [&](uint32_t offset, int depth) {
             if (const auto g = family.groups.find(offset); g != family.groups.end())
@@ -335,12 +389,22 @@ int native_terrain(const std::string& tsv, const rr::Assets& assets, bool check_
             const int type = dump.memory.u8(sub + 0x3c);
             if (cc != rs.offset) return false;
             t = scene.terrain(rs.section, rs.local);
-            if (type != t.type) throw std::runtime_error("Sub-slice type differs at sample " + std::to_string(sample));
-            if (type == 4) for (int i = 0; i < 6; ++i) { t.points[size_t(i)] = {I(0xf0 + 8 * uint32_t(i)) - cc, I(0xf4 + 8 * uint32_t(i))}; t.shades[size_t(i)] = I(0x120 + 4 * uint32_t(i)); }
+            if (type != t.type)
+                throw std::runtime_error("Sub-slice type differs at sample " + std::to_string(sample));
+            if (type == 4)
+                for (int i = 0; i < 6; ++i) {
+                    t.points[size_t(i)] = {I(0xf0 + 8 * uint32_t(i)) - cc, I(0xf4 + 8 * uint32_t(i))};
+                    t.shades[size_t(i)] = I(0x120 + 4 * uint32_t(i));
+                }
             if (type == 1 || type == 3) {
                 const int32_t l = -rs.path.left, r = rs.path.right;
                 int32_t el = l - rs.path.shoulder_left, er = r + rs.path.shoulder_right;
-                if (type == 3) { if (I(0x160) < 1) er = 2 * er - r; else el = 2 * el - l; }
+                if (type == 3) {
+                    if (I(0x160) < 1)
+                        er = 2 * er - r;
+                    else
+                        el = 2 * el - l;
+                }
                 t.walls[0] = {el - (I(0x14c) - cc), el - (I(0x150) - cc), I(0x154) >= 1 ? I(0x154) : 0};
                 t.walls[1] = {(I(0x158) - cc) - er, (I(0x15c) - cc) - er, I(0x160) >= 1 ? I(0x160) : 0};
             }
@@ -352,67 +416,100 @@ int native_terrain(const std::string& tsv, const rr::Assets& assets, bool check_
             if (!dump.memory.has(strip + 0x14)) continue;
             const uint32_t record = dump.memory.u32(strip + 0x14);
             if (!dump.memory.has(record + 0xc)) continue;
-            rr::TerrainSlice t; size_t sample = 0;
-            if (load(dump.memory.u32(record + 0xc), t, sample)) scene.set_terrain(route[sample].section, route[sample].local, t);
+            rr::TerrainSlice t;
+            size_t sample = 0;
+            if (load(dump.memory.u32(record + 0xc), t, sample))
+                scene.set_terrain(route[sample].section, route[sample].local, t);
         }
         const uint32_t position = uint32_t(f.at("camera.position"));
-        const rr::Camera camera{int32_t(f.at("camera.x")) - route[position >> 8].offset, int32_t(f.at("camera.height"))};
+        const rr::Camera camera{int32_t(f.at("camera.x")) - route[position >> 8].offset,
+                                int32_t(f.at("camera.height"))};
         std::multimap<Key, rr::DrawNode> native;
-        for (const auto& n : scene.draw_nodes(route, rr::project_road(route, position, camera, depths), camera, depths)) {
+        for (const auto& n :
+             scene.draw_nodes(route, rr::project_road(route, position, camera, depths), camera, depths)) {
             std::array<int32_t, 8> v{};
-            for (size_t k = 0; k < 4; ++k) { v[2 * k] = n.view_points[k].x; v[2 * k + 1] = n.view_points[k].y; }
+            for (size_t k = 0; k < 4; ++k) {
+                v[2 * k] = n.view_points[k].x;
+                v[2 * k + 1] = n.view_points[k].y;
+            }
             native.insert({{v, n.flip_u, n.flip_v}, n});
         }
         size_t frame_missing = 0;
         for (const auto& s : dump.nodes) {
-            if (s.u32(8) == 0x00466684) continue;   // dynamic rider resource
+            if (s.u32(8) == 0x00466684) continue; // dynamic rider resource
             std::string name = s.bytes[0x66] ? "flat" + std::to_string(s.bytes[0x67]) : "";
-            if (name.empty()) { const auto* t = lib.find(s.hash, s.size); name = t ? t->name : "?"; }
-            if (!terrain.count(name) && name != "flat253") { ++others; continue; }
+            if (name.empty()) {
+                const auto* t = lib.find(s.hash, s.size);
+                name = t ? t->name : "?";
+            }
+            if (!terrain.count(name) && name != "flat253") {
+                ++others;
+                continue;
+            }
             std::array<int32_t, 8> v{};
-            for (size_t k = 0; k < 4; ++k) { v[2 * k] = int32_t(s.u32(0x44 + 8 * k)); v[2 * k + 1] = int32_t(s.u32(0x48 + 8 * k)); }
+            for (size_t k = 0; k < 4; ++k) {
+                v[2 * k] = int32_t(s.u32(0x44 + 8 * k));
+                v[2 * k + 1] = int32_t(s.u32(0x48 + 8 * k));
+            }
             const auto range = native.equal_range({v, s.bytes[0x64] != 0, s.bytes[0x65] != 0});
             auto it = range.first;
             for (; it != range.second; ++it) {
                 const auto& n = it->second;
                 if (s.bytes[0x66] ? (!n.texture && n.flat_index && *n.flat_index == s.bytes[0x67])
-                                  : (n.texture && !n.texture->mips.empty() && s.size && n.texture->mips[0].pixels.size() >= s.size &&
-                                     rr::testlib::fnv(n.texture->mips[0].pixels.data(), s.size) == s.hash)) break;
+                                  : (n.texture && !n.texture->mips.empty() && s.size &&
+                                     n.texture->mips[0].pixels.size() >= s.size &&
+                                     rr::testlib::fnv(n.texture->mips[0].pixels.data(), s.size) == s.hash))
+                    break;
             }
             if (it == range.second) {
                 ++frame_missing;
                 if (std::getenv("RR_TERRAIN_VERBOSE")) {
                     std::cout << "  missing " << name << " hash " << s.hash << " size " << s.size << " at";
                     for (auto value : v) std::cout << ' ' << value;
-                    for (auto j = range.first; j != range.second; ++j) std::cout << " | native " << (j->second.texture ? j->second.texture->name : "flat");
+                    for (auto j = range.first; j != range.second; ++j)
+                        std::cout << " | native " << (j->second.texture ? j->second.texture->name : "flat");
                     std::cout << '\n';
                 }
                 continue;
             }
-            native.erase(it); ++matched;
+            native.erase(it);
+            ++matched;
         }
         // Riders' ground: 0x0043a190 -> 0x00439b10(+0x140 sub-slice, +0x28, +0x138).
         for (const auto& r : dump.riders) {
             if (r.bike.size() < 0x340) continue;
             const uint32_t sub = uint32_t(r.bike_i32(0x140));
-            rr::TerrainSlice t, tn; size_t sample = 0, next_sample = 0;
+            rr::TerrainSlice t, tn;
+            size_t sample = 0, next_sample = 0;
             if (!load(sub, t, sample)) continue;
-            if (!dump.memory.has(sub + 8) || !load(dump.memory.u32(sub + 8), tn, next_sample)) { tn = t; next_sample = sample; }
+            if (!dump.memory.has(sub + 8) || !load(dump.memory.u32(sub + 8), tn, next_sample)) {
+                tn = t;
+                next_sample = sample;
+            }
             const auto& rs = route[sample];
             const auto& rn = route[next_sample];
-            const int32_t got = rr::terrain_height(t, rs.path, tn, rn.path, r.bike_i32(0x28) - rs.offset * 256, uint8_t(r.bike_i32(0x138)), rn.offset - rs.offset, rs.offset);
+            const int32_t got =
+                rr::terrain_height(t, rs.path, tn, rn.path, r.bike_i32(0x28) - rs.offset * 256,
+                                   uint8_t(r.bike_i32(0x138)), rn.offset - rs.offset, rs.offset);
             ++grounds;
             if (got != r.bike_i32(0x24)) ++ground_failures;
         }
-        ++frames; missing += frame_missing;
-        if (frame_missing) std::cout << "frame " << f.at("scene.file") << ": " << frame_missing << " original terrain nodes without a native match\n";
+        ++frames;
+        missing += frame_missing;
+        if (frame_missing)
+            std::cout << "frame " << f.at("scene.file") << ": " << frame_missing
+                      << " original terrain nodes without a native match\n";
     }
-    if (!frames) { std::cout << "skip: capture has no scene frames\n"; return rr::golden::skip; }
-    std::cout << frames << " frames: " << matched << " terrain nodes match, " << missing << " missing, " << others
-              << " scenery/actor nodes not compared; " << grounds << " rider grounds, " << ground_failures << " differ\n";
+    if (!frames) {
+        std::cout << "skip: capture has no scene frames\n";
+        return rr::golden::skip;
+    }
+    std::cout << frames << " frames: " << matched << " terrain nodes match, " << missing << " missing, "
+              << others << " scenery/actor nodes not compared; " << grounds << " rider grounds, "
+              << ground_failures << " differ\n";
     return missing || (check_ground && ground_failures) ? 1 : 0;
 }
-}   // namespace
+} // namespace
 
 int main(int argc, char** argv) {
     bool actors_mode = false, terrain_mode = false, check_ground = true;
@@ -421,15 +518,23 @@ int main(int argc, char** argv) {
     std::string assets_root = RR_SOURCE_DIR "/../cdrom/ROADRASH";
     for (int i = 1; i < argc; ++i) {
         const std::string a = argv[i];
-        if (a == "--native-actors") actors_mode = true;
-        else if (a == "--native-terrain") terrain_mode = true;
-        else if (a == "--nodes-only") check_ground = false;   // report rider grounds without gating
-        else if (a == "--assets" && i + 1 < argc) assets_root = argv[++i];
-        else if (a[0] != '-') tsv = a;
+        if (a == "--native-actors")
+            actors_mode = true;
+        else if (a == "--native-terrain")
+            terrain_mode = true;
+        else if (a == "--nodes-only")
+            check_ground = false; // report rider grounds without gating
+        else if (a == "--assets" && i + 1 < argc)
+            assets_root = argv[++i];
+        else if (a[0] != '-')
+            tsv = a;
     }
     rr::Assets assets(assets_root);
     std::ifstream probe(tsv);
-    if (!probe || !assets.exists("DATA/GLOBAL.RSC")) { std::cout << "skip: no scene capture or disc\n"; return rr::golden::skip; }
+    if (!probe || !assets.exists("DATA/GLOBAL.RSC")) {
+        std::cout << "skip: no scene capture or disc\n";
+        return rr::golden::skip;
+    }
     if (actors_mode) return native_actors(tsv, assets);
     if (terrain_mode) return native_terrain(tsv, assets, check_ground);
     const auto golden = rr::golden::load(tsv);
@@ -445,49 +550,73 @@ int main(int argc, char** argv) {
         const auto dump = rr::scene::load(stem + "-scene" + std::to_string(f.at("scene.file")) + ".raw");
         const auto pixels = read_file(stem + "-f" + std::to_string(f.at("pixels.file")) + ".raw");
         const int width = int(f.at("pixels.width")), height = int(f.at("pixels.height"));
-        if (pixels.size() != size_t(width) * size_t(height)) { ++failures; continue; }
+        if (pixels.size() != size_t(width) * size_t(height)) {
+            ++failures;
+            continue;
+        }
         rr::Framebuffer fb(width, height);
-        for (int y = 0; y < height; ++y) std::memcpy(fb.row(y), pixels.data() + size_t(y) * size_t(width), size_t(width));
+        for (int y = 0; y < height; ++y)
+            std::memcpy(fb.row(y), pixels.data() + size_t(y) * size_t(width), size_t(width));
         std::vector<rr::DrawNode> nodes;
         std::vector<std::unique_ptr<rr::CelTexture>> dynamic;
         int unmatched = 0;
         for (const auto& s : dump.nodes) {
             rr::DrawNode n;
-            for (int k = 0; k < 4; ++k) n.view_points[size_t(k)] = {int32_t(s.u32(0x44 + 8 * size_t(k))), int32_t(s.u32(0x48 + 8 * size_t(k)))};
+            for (int k = 0; k < 4; ++k)
+                n.view_points[size_t(k)] = {int32_t(s.u32(0x44 + 8 * size_t(k))),
+                                            int32_t(s.u32(0x48 + 8 * size_t(k)))};
             n.flip_u = s.bytes[0x64] != 0;
             n.flip_v = s.bytes[0x65] != 0;
-            if (s.u32(8) == 0x00466684) {   // dynamic "Bob" resource (0x00466688 holds its address)
+            if (s.u32(8) == 0x00466684) { // dynamic "Bob" resource (0x00466688 holds its address)
                 auto t = rr::rider_texture(sprites, int32_t(s.u32(0x38)), int32_t(s.u32(0x34)));
                 if (!t) continue;
                 dynamic.push_back(std::make_unique<rr::CelTexture>(std::move(*t)));
                 n.texture = dynamic.back().get();
-            } else if (s.bytes[0x66]) n.flat_index = s.bytes[0x67];
-            else if (!(n.texture = lib.find(s.hash, s.size))) { ++unmatched; continue; }
+            } else if (s.bytes[0x66])
+                n.flat_index = s.bytes[0x67];
+            else if (!(n.texture = lib.find(s.hash, s.size))) {
+                ++unmatched;
+                continue;
+            }
             nodes.push_back(n);
         }
         try {
-            for(size_t i=0;i<nodes.size();++i) {
-                try {rr::render_nodes(fb,{nodes[i]},rr::view_mode(f.at("view.high") != 0),uint32_t(f.count("view.quality_mask") ? f.at("view.quality_mask") : 16));}
-                catch(const std::exception& e) {
-                    const auto* t=nodes[i].texture;
-                    if(t)std::cerr<<"texture "<<t->name<<" bounds "<<t->bounds[0]<<','<<t->bounds[1]<<','<<t->bounds[2]<<','<<t->bounds[3]<<" mip0 "<<t->mips[0].width<<'x'<<t->mips[0].height<<'\n';
-                    throw std::runtime_error("node "+std::to_string(i)+": "+e.what());
+            for (size_t i = 0; i < nodes.size(); ++i) {
+                try {
+                    rr::render_nodes(fb, {nodes[i]}, rr::view_mode(f.at("view.high") != 0),
+                                     uint32_t(f.count("view.quality_mask") ? f.at("view.quality_mask") : 16));
+                } catch (const std::exception& e) {
+                    const auto* t = nodes[i].texture;
+                    if (t)
+                        std::cerr << "texture " << t->name << " bounds " << t->bounds[0] << ','
+                                  << t->bounds[1] << ',' << t->bounds[2] << ',' << t->bounds[3] << " mip0 "
+                                  << t->mips[0].width << 'x' << t->mips[0].height << '\n';
+                    throw std::runtime_error("node " + std::to_string(i) + ": " + e.what());
                 }
             }
-        } catch (const std::exception& e) { std::cerr << "frame " << f.at("scene.file") << ": " << e.what() << "\n"; ++failures; continue; }
+        } catch (const std::exception& e) {
+            std::cerr << "frame " << f.at("scene.file") << ": " << e.what() << "\n";
+            ++failures;
+            continue;
+        }
         size_t differ = 0;
         for (int y = 0; y < height; ++y)
-            for (int x = 0; x < width; ++x) differ += fb.row(y)[x] != pixels[size_t(y) * size_t(width) + size_t(x)];
-        std::cout << "frame " << f.at("scene.file") << ": " << dump.nodes.size() << " nodes, " << nodes.size() << " rendered, "
-                  << unmatched << " unmatched, " << differ << " differing pixels\n";
+            for (int x = 0; x < width; ++x)
+                differ += fb.row(y)[x] != pixels[size_t(y) * size_t(width) + size_t(x)];
+        std::cout << "frame " << f.at("scene.file") << ": " << dump.nodes.size() << " nodes, " << nodes.size()
+                  << " rendered, " << unmatched << " unmatched, " << differ << " differing pixels\n";
         if (differ || unmatched) {
             ++failures;
-            std::ofstream out(stem + "-scene" + std::to_string(f.at("scene.file")) + "-native.raw", std::ios::binary);
+            std::ofstream out(stem + "-scene" + std::to_string(f.at("scene.file")) + "-native.raw",
+                              std::ios::binary);
             for (int y = 0; y < height; ++y) out.write(reinterpret_cast<const char*>(fb.row(y)), width);
         }
         ++frames;
     }
-    if (!frames) { std::cout << "skip: capture has no scene frames\n"; return rr::golden::skip; }
+    if (!frames) {
+        std::cout << "skip: capture has no scene frames\n";
+        return rr::golden::skip;
+    }
     std::cout << failures << " failures\n";
     return failures ? 1 : 0;
 }

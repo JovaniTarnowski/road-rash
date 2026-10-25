@@ -11,7 +11,8 @@ import subprocess
 import sys
 
 ROOT = Path(__file__).resolve().parents[1]
-EXTENSIONS = {".cpp", ".hpp", ".cc", ".h", ".cxx", ".hh"}
+EXTENSIONS = {".cpp", ".hpp", ".cc", ".h", ".cxx", ".hh", ".c"}
+FIRST_PARTY_DIRS = ("src", "tests", "fuzz", "oracle")
 
 
 def llvm_tool(name):
@@ -38,15 +39,15 @@ def select_files(paths):
     else:
         # Includes new first-party files, excludes ignored build/vendor outputs.
         result = subprocess.run(
-            ["git", "ls-files", "-z", "--cached", "--others", "--exclude-standard", "--", "src", "tests"],
+            ["git", "ls-files", "-z", "--cached", "--others", "--exclude-standard", "--", *FIRST_PARTY_DIRS],
             cwd=ROOT, capture_output=True, check=True,
         )
         files = [ROOT / os.fsdecode(p) for p in result.stdout.split(b"\0") if p]
         files = [p for p in files if p.is_file() and p.suffix in EXTENSIONS]
     for path in files:
         relative = path.relative_to(ROOT)
-        if relative.parts[0] not in {"src", "tests"} or path.suffix not in EXTENSIONS or not path.is_file():
-            raise ValueError(f"expected an existing first-party C++ file under src/ or tests/: {path}")
+        if relative.parts[0] not in FIRST_PARTY_DIRS or path.suffix not in EXTENSIONS or not path.is_file():
+            raise ValueError(f"expected an existing first-party C/C++ file under src/tests/fuzz/oracle: {path}")
     if not files:
         raise ValueError("no C++ files selected")
     return sorted(set(files))
@@ -56,14 +57,32 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("mode", choices=("format", "format-check", "lint"))
     parser.add_argument("--build-dir", default="build", help="configured native compile database directory")
-    parser.add_argument("files", nargs="*", help="explicit src/tests files; default: all first-party C++")
+    parser.add_argument("files", nargs="*", help="explicit C/C++ files; default: all first-party C/C++")
     args = parser.parse_intermixed_args()
     files = select_files(args.files)
     if args.mode != "lint":
         tool = llvm_tool("clang-format")
-        flags = ["-i"] if args.mode == "format" else ["--dry-run", "--Werror"]
-        return subprocess.run([tool, "--style=file", "--fallback-style=none", *flags, *map(str, files)],
-                              cwd=ROOT).returncode
+        if args.mode == "format":
+            # clang-format 22.1.4 is not idempotent on some trailing-comment
+            # alignment (first pass aligns, second collapses); iterate to a fixpoint.
+            for _ in range(4):
+                result = subprocess.run([tool, "--style=file", "--fallback-style=none", "-i", *map(str, files)],
+                                        cwd=ROOT)
+                if result.returncode:
+                    return result.returncode
+                check = subprocess.run(
+                    [tool, "--style=file", "--fallback-style=none", "--dry-run", "--Werror", *map(str, files)],
+                    cwd=ROOT, capture_output=True, text=True)
+                if not check.returncode:
+                    return 0
+                files = [ROOT / line.split(":")[0] for line in check.stderr.splitlines() if line.startswith(str(ROOT))]
+                files = sorted(set(files))
+                if not files:
+                    return 0
+            print("cpp-quality: format did not converge", file=sys.stderr)
+            return 1
+        return subprocess.run([tool, "--style=file", "--fallback-style=none",
+                               "--dry-run", "--Werror", *map(str, files)], cwd=ROOT).returncode
 
     tool = llvm_tool("clang-tidy")
     build = Path(args.build_dir).resolve()

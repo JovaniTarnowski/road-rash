@@ -4,6 +4,7 @@ set -eu
 root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 cd "$root"
 build_dir=${RR_BUILD_DIR:-"$root/build-agent-ci"}
+python3 tools/cpp_quality.py format-check
 python3 tools/agent_gate.py native --build-dir "$build_dir"
 python3 tools/agent_gate.py android-debug
 if [ "${RR_ANDROID_RELEASE:-0}" = 1 ]; then

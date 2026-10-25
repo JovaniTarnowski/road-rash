@@ -4,14 +4,26 @@
 #include <cstdint>
 
 namespace rr {
-enum class RaceAction { none, quit_app, open_pause, toggle_pause, resume, request_quit, confirm_quit,
-                        cancel_quit, restart, demo_exit, pause_message, resume_message };
+enum class RaceAction {
+    none,
+    quit_app,
+    open_pause,
+    toggle_pause,
+    resume,
+    request_quit,
+    confirm_quit,
+    cancel_quit,
+    restart,
+    demo_exit,
+    pause_message,
+    resume_message
+};
 struct RaceActionContext {
     bool demo = false, career = false, finished = false, paused = false, quitting = false;
     bool has_menu = false, menu_open = false;
-    bool pause_message = false;      // original Pause-key message is up
-    SDL_JoystickID pad = 0;          // 0 = no pad open
+    bool pause_message = false; // original Pause-key message is up
+    SDL_JoystickID pad = 0;     // 0 = no pad open
 };
 // One decision per event; mirrors run_race as of the plan-25 fixes.
 RaceAction race_action(const SDL_Event&, const RaceActionContext&);
-}
+} // namespace rr

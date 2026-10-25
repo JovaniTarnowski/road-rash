@@ -58,23 +58,13 @@ inline constexpr SimField rider_fields[] = {
 
 // TrafficCar members; "active" has no original offset (pool slot state).
 inline constexpr SimField car_fields[] = {
-    {"active", 0xffffffffu, 1, false},
-    {"kind", 0x1cc, 1, false},
-    {"vehicle", 0x1fc, 1, false},
-    {"lane", 0x1e8, 1, true},
-    {"position", 0x1c, 4, true},
-    {"lateral", 0x28, 4, true},
-    {"speed", 0xec, 4, true},
-    {"phase", 0x1c4, 4, true},
-    {"sched_next", 0x0c, 4, true},
-    {"sched_last", 0x10, 4, true},
-    {"sched_interval", 0x14, 4, true},
-    {"sched_dt", 0x18, 4, true},
-    {"vel108", 0x108, 4, true},
-    {"pause1f8", 0x1f8, 4, true},
-    {"signal", 0x1ec, 4, true},
+    {"active", 0xffffffffu, 1, false}, {"kind", 0x1cc, 1, false},         {"vehicle", 0x1fc, 1, false},
+    {"lane", 0x1e8, 1, true},          {"position", 0x1c, 4, true},       {"lateral", 0x28, 4, true},
+    {"speed", 0xec, 4, true},          {"phase", 0x1c4, 4, true},         {"sched_next", 0x0c, 4, true},
+    {"sched_last", 0x10, 4, true},     {"sched_interval", 0x14, 4, true}, {"sched_dt", 0x18, 4, true},
+    {"vel108", 0x108, 4, true},        {"pause1f8", 0x1f8, 4, true},      {"signal", 0x1ec, 4, true},
     {"x1e9", 0x1e9, 1, false},
 };
 
-}  // namespace sim
-}  // namespace rr
+} // namespace sim
+} // namespace rr

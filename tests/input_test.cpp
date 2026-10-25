@@ -3,15 +3,25 @@
 
 int main() {
     int failures = 0;
-    auto check = [&](bool v, const char* what) { if (!v) { ++failures; std::cerr << "FAIL " << what << '\n'; } };
+    auto check = [&](bool v, const char* what) {
+        if (!v) {
+            ++failures;
+            std::cerr << "FAIL " << what << '\n';
+        }
+    };
     rr::PlayerInput none{};
     check(rr::controls_from(none) == 0, "no input, no bits");
-    rr::PlayerInput go{}; go.accelerate = true; go.left = true;
+    rr::PlayerInput go{};
+    go.accelerate = true;
+    go.left = true;
     check(rr::controls_from(go) == (rr::control_accelerate | rr::control_left), "accelerate + left");
-    rr::PlayerInput stop{}; stop.brake = true; stop.right = true;
+    rr::PlayerInput stop{};
+    stop.brake = true;
+    stop.right = true;
     check(rr::controls_from(stop) == (rr::control_brake | rr::control_right), "brake + right");
     // Analog stick past the threshold steers; inside the dead zone it does not.
-    rr::PlayerInput stick{}; stick.steer_axis = -20000;
+    rr::PlayerInput stick{};
+    stick.steer_axis = -20000;
     check(rr::controls_from(stick) == rr::control_left, "stick left");
     stick.steer_axis = 5000;
     check(rr::controls_from(stick) == 0, "stick dead zone");
@@ -19,18 +29,26 @@ int main() {
     check(rr::controls_from(stick) == rr::control_right, "stick right");
     // Touch zones on a 1000-wide screen: left third steers left, right third right, bottom-middle brakes;
     // any touch accelerates unless braking.
-    check(rr::touch_input(100, 500, 1000, 800).left && rr::touch_input(100, 500, 1000, 800).accelerate, "touch left");
+    check(rr::touch_input(100, 500, 1000, 800).left && rr::touch_input(100, 500, 1000, 800).accelerate,
+          "touch left");
     check(rr::touch_input(900, 500, 1000, 800).right, "touch right");
     auto b = rr::touch_input(500, 750, 1000, 800);
     check(b.brake && !b.accelerate, "touch brake");
-    rr::PlayerInput fight{}; fight.punch = true; fight.kick = true; fight.backhand = true;
-    check(rr::controls_from(fight) == (rr::control_punch | rr::control_kick | rr::control_backhand), "attack bits");
+    rr::PlayerInput fight{};
+    fight.punch = true;
+    fight.kick = true;
+    fight.backhand = true;
+    check(rr::controls_from(fight) == (rr::control_punch | rr::control_kick | rr::control_backhand),
+          "attack bits");
     check(rr::touch_input(500, 100, 1000, 800).punch, "touch top third punches");
     rr::TouchInput touches;
     auto finger = [&](Uint32 type, SDL_TouchID device, SDL_FingerID id, float x, float y) {
-        SDL_Event e{}; e.type = type;
-        e.tfinger.touchID = device; e.tfinger.fingerID = id;
-        e.tfinger.x = x; e.tfinger.y = y;
+        SDL_Event e{};
+        e.type = type;
+        e.tfinger.touchID = device;
+        e.tfinger.fingerID = id;
+        e.tfinger.x = x;
+        e.tfinger.y = y;
         touches.handle(e);
     };
     finger(SDL_EVENT_FINGER_DOWN, 1, 1, .1f, .6f);
@@ -76,7 +94,8 @@ int main() {
         std::array<uint16_t, 11> defs{};
         bool down[SDL_SCANCODE_COUNT] = {};
         down[SDL_SCANCODE_UP] = true;
-        check(rr::bound_control_bits(defs, false, down) == rr::control_accelerate, "Up accelerates by default");
+        check(rr::bound_control_bits(defs, false, down) == rr::control_accelerate,
+              "Up accelerates by default");
         down[SDL_SCANCODE_UP] = false;
         down[SDL_SCANCODE_C] = true;
         check(rr::bound_control_bits(defs, false, down) == rr::control_backhand, "C backhands by default");
@@ -86,7 +105,8 @@ int main() {
         codes[0] = uint16_t(SDL_SCANCODE_W);
         down[SDL_SCANCODE_C] = false;
         down[SDL_SCANCODE_W] = true;
-        check(rr::bound_control_bits(codes, true, down) == rr::control_accelerate, "rebound key produces its bit");
+        check(rr::bound_control_bits(codes, true, down) == rr::control_accelerate,
+              "rebound key produces its bit");
         down[SDL_SCANCODE_W] = false;
         down[SDL_SCANCODE_UP] = true;
         check(rr::bound_control_bits(codes, true, down) == 0, "old key silent after rebind");

@@ -16,10 +16,20 @@ struct MemSink : rr::ImportSink {
     std::map<std::string, std::vector<uint8_t>> files;
     std::string current;
     bool committed = false, aborted = false;
-    void begin_file(const std::string& path, uint64_t) override { current = path; files[path].clear(); }
-    void write(const uint8_t* data, size_t size) override { files[current].insert(files[current].end(), data, data + size); }
-    void end_file(bool ok) override { if (!ok) files.erase(current); }
-    bool commit() override { committed = true; return true; }
+    void begin_file(const std::string& path, uint64_t) override {
+        current = path;
+        files[path].clear();
+    }
+    void write(const uint8_t* data, size_t size) override {
+        files[current].insert(files[current].end(), data, data + size);
+    }
+    void end_file(bool ok) override {
+        if (!ok) files.erase(current);
+    }
+    bool commit() override {
+        committed = true;
+        return true;
+    }
     void abort() override { aborted = true; }
 };
 
@@ -44,17 +54,24 @@ bool step_once(rr::ImportJob& job, const std::vector<uint8_t>& image) {
 void drive_iso(rr::ImportJob& job, const std::vector<uint8_t>& image) {
     for (int guard = 0; guard < 100000 && !job.done(); ++guard) {
         if (!step_once(job, image)) {
-            if (!job.done()) job.fail_source("unexpected file need for ISO source");
-            else break;
+            if (!job.done())
+                job.fail_source("unexpected file need for ISO source");
+            else
+                break;
         }
     }
 }
 
-}  // namespace
+} // namespace
 
 int main() {
     int failures = 0;
-    auto check = [&](bool v, const char* what) { if (!v) { ++failures; std::cerr << "FAIL " << what << '\n'; } };
+    auto check = [&](bool v, const char* what) {
+        if (!v) {
+            ++failures;
+            std::cerr << "FAIL " << what << '\n';
+        }
+    };
     const auto image = fixture::iso();
 
     // 1. A sync driver feeding exact ranges produces the same files and
@@ -64,16 +81,24 @@ int main() {
         rr::ImportJob job(table(), sink, true);
         drive_iso(job, image);
         check(job.done(), "job finishes");
-        check(job.result().ok && job.result().mismatched.empty() && job.result().missing.empty(), "job result ok");
+        check(job.result().ok && job.result().mismatched.empty() && job.result().missing.empty(),
+              "job result ok");
         check(sink.committed && !sink.aborted, "sink committed, not aborted");
-        check(sink.files.count("A.BIN") && sink.files["A.BIN"] == std::vector<uint8_t>{'h', 'e', 'l', 'l', 'o'},
-            "imported bytes match");
-        const auto tmp = fs::temp_directory_path() / ("rr-import-job-sync-" + std::to_string(::getpid()) + ".iso");
-        const auto dest = fs::temp_directory_path() / ("rr-import-job-sync-" + std::to_string(::getpid()) + ".out");
+        check(sink.files.count("A.BIN") &&
+                  sink.files["A.BIN"] == std::vector<uint8_t>{'h', 'e', 'l', 'l', 'o'},
+              "imported bytes match");
+        const auto tmp =
+            fs::temp_directory_path() / ("rr-import-job-sync-" + std::to_string(::getpid()) + ".iso");
+        const auto dest =
+            fs::temp_directory_path() / ("rr-import-job-sync-" + std::to_string(::getpid()) + ".out");
         fs::remove_all(dest);
-        { std::ofstream f(tmp, std::ios::binary); f.write(reinterpret_cast<const char*>(image.data()), std::streamsize(image.size())); }
+        {
+            std::ofstream f(tmp, std::ios::binary);
+            f.write(reinterpret_cast<const char*>(image.data()), std::streamsize(image.size()));
+        }
         const auto expected = rr::import_game(tmp.string(), dest.string(), table());
-        check(expected.ok && sink.files["A.BIN"].size() == fs::file_size(dest / "A.BIN"), "matches import_game");
+        check(expected.ok && sink.files["A.BIN"].size() == fs::file_size(dest / "A.BIN"),
+              "matches import_game");
         fs::remove_all(dest);
         fs::remove(tmp);
     }
@@ -135,10 +160,13 @@ int main() {
         // PVD root record (offset 16*2048+156): point its extent far past EOF.
         const size_t at = 16 * 2048 + 156;
         const uint32_t far = 0x00ffffff;
-        for (int i = 0; i < 4; ++i) { bad[at + 2 + i] = uint8_t(far >> (i * 8)); bad[at + 6 - i] = uint8_t(far >> (i * 8)); }
+        for (int i = 0; i < 4; ++i) {
+            bad[at + 2 + i] = uint8_t(far >> (i * 8));
+            bad[at + 6 - i] = uint8_t(far >> (i * 8));
+        }
         MemSink sink;
         rr::ImportJob job(table(), sink, true);
-        drive_iso(job, bad);  // driver supplies only bytes that exist
+        drive_iso(job, bad); // driver supplies only bytes that exist
         check(job.done() && !job.result().ok, "bad record fails");
         check(!job.result().error.empty(), "bad record error recorded");
         check(sink.aborted && !sink.committed, "bad record aborts, never commits");

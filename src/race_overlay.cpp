@@ -13,7 +13,10 @@ void FpsOverlay::frame(SDL_Renderer* renderer, uint64_t now, int ticks_this_fram
         const uint64_t span = now_ms >= last_ ? now_ms - last_ : 1;
         v_ = int(uint64_t(frames_) * 1000 / span);
         tps_ = int(uint64_t(tick_acc_) * 1000 / span);
-        frames_ = 0; tick_acc_ = 0; last_ = now_ms; next_ = now_ms + 500;
+        frames_ = 0;
+        tick_acc_ = 0;
+        last_ = now_ms;
+        next_ = now_ms + 500;
         if (!text_) text_ = std::make_unique<TextRenderer>(assets_);
         if (text_->has(Face::futura_bold)) {
             const std::string s = std::to_string(v_) + " FPS " + std::to_string(tps_) + " TPS";
@@ -26,9 +29,14 @@ void FpsOverlay::frame(SDL_Renderer* renderer, uint64_t now, int ticks_this_fram
             argb_.assign(size_t(w) * 30, 0);
             for (size_t i = 0; i < argb_.size(); ++i)
                 if (img_.pixels[i]) argb_[i] = 0xff000000u | img_.pixels[i];
-            if (tex_) { float tw = 0, th = 0; SDL_GetTextureSize(tex_.get(), &tw, &th); if (int(tw) != w || int(th) != 30) tex_.reset(); }
+            if (tex_) {
+                float tw = 0, th = 0;
+                SDL_GetTextureSize(tex_.get(), &tw, &th);
+                if (int(tw) != w || int(th) != 30) tex_.reset();
+            }
             if (!tex_) {
-                tex_.reset(SDL_CreateTexture(renderer, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STREAMING, w, 30));
+                tex_.reset(SDL_CreateTexture(renderer, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STREAMING,
+                                             w, 30));
                 if (tex_) SDL_SetTextureBlendMode(tex_.get(), SDL_BLENDMODE_BLEND);
             }
             if (tex_) SDL_UpdateTexture(tex_.get(), nullptr, argb_.data(), w * 4);
@@ -60,4 +68,4 @@ void draw_quit_prompt(SDL_Renderer* renderer, const std::string& prompt_cp1252) 
         from = to + 1;
     }
 }
-}
+} // namespace rr

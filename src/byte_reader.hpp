@@ -12,11 +12,12 @@ namespace rr {
 // Little-endian reads over a byte span. Every read checks bounds and throws std::runtime_error,
 // never std::out_of_range, so parsers keep the project's exception contract.
 class ByteReader {
-public:
+  public:
     explicit ByteReader(std::span<const uint8_t> bytes) : bytes_(bytes) {}
     size_t size() const { return bytes_.size(); }
     std::span<const uint8_t> bytes(size_t offset, size_t count) const {
-        if (offset > bytes_.size() || count > bytes_.size() - offset) throw std::runtime_error("Read past end of data");
+        if (offset > bytes_.size() || count > bytes_.size() - offset)
+            throw std::runtime_error("Read past end of data");
         return bytes_.subspan(offset, count);
     }
     template <class T> T le(size_t offset) const {
@@ -27,7 +28,8 @@ public:
         if constexpr (std::endian::native == std::endian::big) std::reverse(raw.begin(), raw.end());
         return std::bit_cast<T>(raw);
     }
-private:
+
+  private:
     std::span<const uint8_t> bytes_;
 };
-}
+} // namespace rr

@@ -18,25 +18,56 @@ static std::vector<rr::RouteSample> straight(size_t n, int bend = 0) {
 
 static rr::BikeSpec test_spec() {
     rr::BikeSpec spec{};
-    spec.d[1] = -800; spec.d[2] = 1024; spec.d[3] = 160; spec.d[4] = 160; spec.d[5] = 1; spec.d[6] = 196;
+    spec.d[1] = -800;
+    spec.d[2] = 1024;
+    spec.d[3] = 160;
+    spec.d[4] = 160;
+    spec.d[5] = 1;
+    spec.d[6] = 196;
     auto sp = [&](int offset) -> int32_t& { return spec.d[7 + (offset - 0x1c4) / 4]; };
-    const int up[6] = {3000, 5000, 7000, 8500, 21504, 16777215}, down[6] = {-999, 2500, 4500, 6500, 8000, 17152};
-    for (int g = 0; g < 6; ++g) { sp(0x1d0 + 16*g) = 256 - 8*g; sp(0x1d4 + 16*g) = up[g]; sp(0x1d8 + 16*g) = down[g]; }
-    sp(0x248) = 20000; sp(0x250) = 38; sp(0x254) = 10; sp(0x258) = 60; sp(0x25c) = 64; sp(0x26c) = -60;
-    sp(0x270) = 10; sp(0x274) = 10; sp(0x290) = 64; sp(0x294) = 320; sp(0x29c) = 11776; sp(0x2a0) = 50;
-    sp(0x2a4) = 30; sp(0x2b0) = 120; sp(0x2b8) = 196; sp(0x2bc) = 2560; sp(0x2d0) = 346; sp(0x2d4) = 128;
+    const int up[6] = {3000, 5000, 7000, 8500, 21504, 16777215},
+              down[6] = {-999, 2500, 4500, 6500, 8000, 17152};
+    for (int g = 0; g < 6; ++g) {
+        sp(0x1d0 + 16 * g) = 256 - 8 * g;
+        sp(0x1d4 + 16 * g) = up[g];
+        sp(0x1d8 + 16 * g) = down[g];
+    }
+    sp(0x248) = 20000;
+    sp(0x250) = 38;
+    sp(0x254) = 10;
+    sp(0x258) = 60;
+    sp(0x25c) = 64;
+    sp(0x26c) = -60;
+    sp(0x270) = 10;
+    sp(0x274) = 10;
+    sp(0x290) = 64;
+    sp(0x294) = 320;
+    sp(0x29c) = 11776;
+    sp(0x2a0) = 50;
+    sp(0x2a4) = 30;
+    sp(0x2b0) = 120;
+    sp(0x2b8) = 196;
+    sp(0x2bc) = 2560;
+    sp(0x2d0) = 346;
+    sp(0x2d4) = 128;
     return spec;
 }
 
 static rr::PhysicsTables tables() {
     auto t = rr::PhysicsTables::synthetic();
-    t.bike_object = {3, 4, 1, 0, 0, 0, 0, 0x12c, 0x100, 0x82, 8, 0x25, -0xa00, 0x100, 0x4a, 4, 0x18, 0x1e00, 0x40, 0x2300, 0xc0, 0x100, 0, 1, 1, 0};
+    t.bike_object = {3,     4,    1, 0,    0,      0,    0,      0x12c, 0x100, 0x82, 8, 0x25, -0xa00,
+                     0x100, 0x4a, 4, 0x18, 0x1e00, 0x40, 0x2300, 0xc0,  0x100, 0,    1, 1,    0};
     return t;
 }
 
 int main() {
     int failures = 0;
-    auto check = [&](bool v, const char* what) { if (!v) { ++failures; std::cerr << "FAIL " << what << '\n'; } };
+    auto check = [&](bool v, const char* what) {
+        if (!v) {
+            ++failures;
+            std::cerr << "FAIL " << what << '\n';
+        }
+    };
     const auto t = tables();
     const auto spec = test_spec();
 
@@ -46,7 +77,11 @@ int main() {
 
     uint32_t last = race.position();
     bool monotonic = true;
-    for (int i = 0; i < 600; ++i) { race.step(rr::control_accelerate); monotonic &= race.position() >= last; last = race.position(); }
+    for (int i = 0; i < 600; ++i) {
+        race.step(rr::control_accelerate);
+        monotonic &= race.position() >= last;
+        last = race.position();
+    }
     check(monotonic && race.position() > 0x3200 + 0x400, "accelerating moves forward");
     check(race.bike().i32(0xec) > 3000, "speed builds up");
     check(race.bike().i32(0x23c) >= 1, "gear shifts up");
@@ -55,25 +90,39 @@ int main() {
     rr::Race a(straight(2000), straight(2000), t, spec, 90), b(straight(2000), straight(2000), t, spec, 90);
     for (int i = 0; i < 900; ++i) {
         const uint32_t c = rr::control_accelerate | ((i / 60) % 2 ? rr::control_left : rr::control_right);
-        a.step(c); b.step(c);
+        a.step(c);
+        b.step(c);
     }
     check(a.bike().m == b.bike().m && a.position() == b.position(), "deterministic");
 
     // Steering left moves the rider left of where coasting straight would be.
     rr::Race l(straight(2000), straight(2000), t, spec, 90), s(straight(2000), straight(2000), t, spec, 90);
-    for (int i = 0; i < 300; ++i) { l.step(rr::control_accelerate); s.step(rr::control_accelerate); }
-    for (int i = 0; i < 90; ++i) { l.step(rr::control_accelerate | rr::control_left); s.step(rr::control_accelerate); }
+    for (int i = 0; i < 300; ++i) {
+        l.step(rr::control_accelerate);
+        s.step(rr::control_accelerate);
+    }
+    for (int i = 0; i < 90; ++i) {
+        l.step(rr::control_accelerate | rr::control_left);
+        s.step(rr::control_accelerate);
+    }
     check(l.lateral() < s.lateral(), "steering left decreases lateral position");
 
     // A curve pushes the rider toward its outside (0x004395e0 adds -bend*distance to lateral velocity).
-    rr::Race curve(straight(2000, 20), straight(2000, 20), t, spec, 90), flat(straight(2000), straight(2000), t, spec, 90);
-    for (int i = 0; i < 400; ++i) { curve.step(rr::control_accelerate); flat.step(rr::control_accelerate); }
+    rr::Race curve(straight(2000, 20), straight(2000, 20), t, spec, 90),
+        flat(straight(2000), straight(2000), t, spec, 90);
+    for (int i = 0; i < 400; ++i) {
+        curve.step(rr::control_accelerate);
+        flat.step(rr::control_accelerate);
+    }
     check(curve.lateral() < flat.lateral(), "positive bend drifts the rider to negative lateral");
 
     // Riding into the wall beyond the shoulder never leaves the rider outside it.
     rr::Race wall(straight(4000), straight(4000), t, spec, 90);
     bool inside = true;
-    for (int i = 0; i < 1500; ++i) { wall.step(rr::control_accelerate | rr::control_right); inside &= wall.lateral() <= 500 + 200; }
+    for (int i = 0; i < 1500; ++i) {
+        wall.step(rr::control_accelerate | rr::control_right);
+        inside &= wall.lateral() <= 500 + 200;
+    }
     check(inside, "wall keeps rider within shoulder");
 
     // Finish line from the level-tagged event (0x004525c0/0x00454240 global
@@ -113,7 +162,8 @@ int main() {
         auto same = [&](const rr::RaceSnapshot& a, const rr::RaceSnapshot& b) {
             if (a.tick != b.tick || a.rng != b.rng || a.fields.size() != b.fields.size()) return false;
             for (size_t i = 0; i < a.fields.size(); ++i)
-                if (a.fields[i].name != b.fields[i].name || a.fields[i].value != b.fields[i].value) return false;
+                if (a.fields[i].name != b.fields[i].name || a.fields[i].value != b.fields[i].value)
+                    return false;
             return true;
         };
         rr::Race plain(straight(2000), straight(2000), t, spec, 90);
@@ -128,7 +178,8 @@ int main() {
                 for (int f = 0; f < 120; ++f) snapshots_match &= same(plain.snapshot(), paused.snapshot());
         }
         check(snapshots_match, "pause gaps change no snapshot");
-        check(plain.position() == paused.position() && plain.rng_state() == paused.rng_state(), "pause gaps keep final state");
+        check(plain.position() == paused.position() && plain.rng_state() == paused.rng_state(),
+              "pause gaps keep final state");
     }
     // Render-scale switching inserts no simulation state (plan 19 Task 8
     // Review Focus 1, sim-level half): the same controls stepped while an
@@ -140,12 +191,17 @@ int main() {
             std::vector<rr::RaceSnapshot> snaps;
             int scale = 1;
             for (int i = 0; i < 900; ++i) {
-                if (i == 300) scale = 2;
-                else if (i == 450) scale = 3;
-                else if (i == 600) scale = 4;
-                else if (i == 750) scale = 0;
+                if (i == 300)
+                    scale = 2;
+                else if (i == 450)
+                    scale = 3;
+                else if (i == 600)
+                    scale = 4;
+                else if (i == 750)
+                    scale = 0;
                 scales_seen.push_back(scale);
-                const uint32_t c = rr::control_accelerate | ((i / 60) % 2 ? rr::control_left : rr::control_right);
+                const uint32_t c =
+                    rr::control_accelerate | ((i / 60) % 2 ? rr::control_left : rr::control_right);
                 r.step(c);
                 snaps.push_back(r.snapshot());
             }
@@ -158,7 +214,8 @@ int main() {
             rr::Race r(straight(2000), straight(2000), t, spec, 90);
             for (int i = 0; i < 900; ++i) {
                 flat.push_back(1);
-                const uint32_t c = rr::control_accelerate | ((i / 60) % 2 ? rr::control_left : rr::control_right);
+                const uint32_t c =
+                    rr::control_accelerate | ((i / 60) % 2 ? rr::control_left : rr::control_right);
                 r.step(c);
                 b.push_back(r.snapshot());
             }
@@ -166,7 +223,8 @@ int main() {
         auto same = [&](const rr::RaceSnapshot& x, const rr::RaceSnapshot& y) {
             if (x.tick != y.tick || x.rng != y.rng || x.fields.size() != y.fields.size()) return false;
             for (size_t i = 0; i < x.fields.size(); ++i)
-                if (x.fields[i].name != y.fields[i].name || x.fields[i].value != y.fields[i].value) return false;
+                if (x.fields[i].name != y.fields[i].name || x.fields[i].value != y.fields[i].value)
+                    return false;
             return true;
         };
         bool match = a.size() == b.size();
@@ -181,10 +239,12 @@ int main() {
     check(race.camera().height >= 150, "camera height floor");
 
     // AI opponents (0x00407bd0 racing state): follow the road at their target speed.
-    rr::Opponent opp{test_spec(), 90, 100, 100, 0, 1};   // spec, rider value, target speed, cur2, lane, grid slot
+    rr::Opponent opp{test_spec(), 90, 100,
+                     100,         0,  1}; // spec, rider value, target speed, cur2, lane, grid slot
     rr::Race field(straight(4000, 3), straight(4000, 3), t, spec, 90, {opp});
     check(field.riders().size() == 2 && field.riders()[1].ai, "opponent added");
-    check(field.riders()[1].bike.i32(0x1c) == 0x3200 && field.riders()[1].bike.i32(0x28) == -3616, "opponent on grid slot 1");
+    check(field.riders()[1].bike.i32(0x1c) == 0x3200 && field.riders()[1].bike.i32(0x28) == -3616,
+          "opponent on grid slot 1");
     bool on_road = true;
     for (int i = 0; i < 2400; ++i) {
         field.step(0);
@@ -211,7 +271,8 @@ int main() {
         ai.target_speed = 0;
         replanned.riders()[0].bike.i32(0x28) = -600 * 256;
         replanned.step(0);
-        check(ai.target_position > replanned.riders()[1].bike.i32(0x1c), "AI refreshes stale target with no overtake candidate");
+        check(ai.target_position > replanned.riders()[1].bike.i32(0x1c),
+              "AI refreshes stale target with no overtake candidate");
         check(ai.target_speed > 0 && std::abs(ai.target_x) < 500 * 256, "AI resumes its road line and speed");
     }
 
@@ -227,84 +288,89 @@ int main() {
         ai.target_x = 0;
         passing.step(0);
         check(ai.overtake_latched == 0, "AI detects nearby passing candidate");
-        check(ai.target_position > passing.riders()[1].bike.i32(0x1c), "passing point advances ahead of candidate");
+        check(ai.target_position > passing.riders()[1].bike.i32(0x1c),
+              "passing point advances ahead of candidate");
         check(std::abs(ai.target_x) == 0x8000, "passing point uses recovered lateral clearance");
     }
 
     // Frozen solo halves are separate type-8 scan objects: bike contact can
     // move the bike while its null think/move half stays at its captured point.
-    for (int32_t half_speed : {0,4096}) {
-        auto route=straight(4000);
-        route[90].offset=-1000; // the displaced bike occupies a different slice
-        rr::Race detached(route,route,t,spec,90,{opp});
-        auto& target=detached.riders()[0];
-        target.frozen=true;
-        target.bike.i32(0x1c)=90*256;
-        target.bike.i32(0x28)=0;
-        target.bike.i32(0x108)=0;
-        target.sample=90;
-        target.half_detached=true;
-        target.half_position=83*256;
-        target.half_lateral=0;
-        target.half_speed=half_speed;
-        auto& observer=detached.riders()[1];
-        observer.bike.i32(0x1c)=82*256;
-        observer.bike.i32(0x28)=0;
-        observer.bike.i32(0x108)=4096;
-        observer.sample=82;
-        observer.brain.target_rider=-1;
-        observer.brain.replan_ticks=0;
+    for (int32_t half_speed : {0, 4096}) {
+        auto route = straight(4000);
+        route[90].offset = -1000; // the displaced bike occupies a different slice
+        rr::Race detached(route, route, t, spec, 90, {opp});
+        auto& target = detached.riders()[0];
+        target.frozen = true;
+        target.bike.i32(0x1c) = 90 * 256;
+        target.bike.i32(0x28) = 0;
+        target.bike.i32(0x108) = 0;
+        target.sample = 90;
+        target.half_detached = true;
+        target.half_position = 83 * 256;
+        target.half_lateral = 0;
+        target.half_speed = half_speed;
+        auto& observer = detached.riders()[1];
+        observer.bike.i32(0x1c) = 82 * 256;
+        observer.bike.i32(0x28) = 0;
+        observer.bike.i32(0x108) = 4096;
+        observer.sample = 82;
+        observer.brain.target_rider = -1;
+        observer.brain.replan_ticks = 0;
         detached.countdown_step(); // runs AI scans without moving either object
-        const auto& ai=observer.brain;
-        if (half_speed==0) {
-            check(ai.overtake_latched==0 && ai.overtake_type==8 && ai.overtake_position==83*256,
+        const auto& ai = observer.brain;
+        if (half_speed == 0) {
+            check(ai.overtake_latched == 0 && ai.overtake_type == 8 && ai.overtake_position == 83 * 256,
                   "overtake scans frozen half at its retained position");
-            check(ai.target_x==-0x8000,"detached half passing point uses its own route slice");
+            check(ai.target_x == -0x8000, "detached half passing point uses its own route slice");
         } else {
-            check(ai.overtake_latched==0 && ai.overtake_type==4 && ai.overtake_position==90*256,
+            check(ai.overtake_latched == 0 && ai.overtake_type == 4 && ai.overtake_position == 90 * 256,
                   "half own speed excludes a nonclosing half from overtake selection");
         }
-        check(target.half_position==83*256 && target.half_speed==half_speed && target.bike.i32(0x1c)==90*256,
+        check(target.half_position == 83 * 256 && target.half_speed == half_speed &&
+                  target.bike.i32(0x1c) == 90 * 256,
               "countdown scan preserves independent bike and frozen half state");
     }
 
     // 0x00449ce0 skips NULL-slice candidates and rejects a NULL-slice self.
     // The half can remain eligible independently of its frozen bike. Tick735
     // in sched900 enters a pair whose two captured +0x2c pointers are NULL.
-    for (bool bike_slice : {false,true}) for (bool half_slice : {false,true}) {
-        rr::Race scanned(straight(4000),straight(4000),t,spec,90,{opp});
-        auto& target=scanned.riders()[0];
-        target.frozen=true;
-        target.bike.i32(0x1c)=83*256;
-        target.bike.i32(0x28)=0;
-        target.bike.i32(0x108)=0;
-        target.sample=83;
-        target.bike_slice_present=bike_slice;
-        target.half_detached=true;
-        target.half_position=84*256;
-        target.half_lateral=0;
-        target.half_speed=0;
-        target.half_slice_present=half_slice;
-        auto& observer=scanned.riders()[1];
-        observer.bike.i32(0x1c)=82*256;
-        observer.bike.i32(0x28)=0;
-        observer.bike.i32(0x108)=4096;
-        observer.sample=82;
-        observer.brain.target_rider=-1;
-        scanned.countdown_step();
-        const auto& ai=observer.brain;
-        const uint32_t expected_type=bike_slice?4u:half_slice?8u:0u;
-        check(ai.overtake_type==expected_type,"NULL-slice candidates skipped independently without ending scan");
-        if (expected_type) {
-            check(ai.overtake_latched==0 && ai.overtake_position==(bike_slice?83:84)*256,
-                  "valid frozen candidate retains normal overtake selection");
-        } else check(ai.overtake_latched==-1,"pair with NULL slices cannot become overtake target");
-        observer.bike_slice_present=false;
-        observer.brain.target_rider=-1;
-        scanned.countdown_step();
-        check(observer.brain.overtake_type==0 && observer.brain.overtake_latched==-1,
-              "NULL-slice scan origin cannot latch a valid target");
-    }
+    for (bool bike_slice : {false, true})
+        for (bool half_slice : {false, true}) {
+            rr::Race scanned(straight(4000), straight(4000), t, spec, 90, {opp});
+            auto& target = scanned.riders()[0];
+            target.frozen = true;
+            target.bike.i32(0x1c) = 83 * 256;
+            target.bike.i32(0x28) = 0;
+            target.bike.i32(0x108) = 0;
+            target.sample = 83;
+            target.bike_slice_present = bike_slice;
+            target.half_detached = true;
+            target.half_position = 84 * 256;
+            target.half_lateral = 0;
+            target.half_speed = 0;
+            target.half_slice_present = half_slice;
+            auto& observer = scanned.riders()[1];
+            observer.bike.i32(0x1c) = 82 * 256;
+            observer.bike.i32(0x28) = 0;
+            observer.bike.i32(0x108) = 4096;
+            observer.sample = 82;
+            observer.brain.target_rider = -1;
+            scanned.countdown_step();
+            const auto& ai = observer.brain;
+            const uint32_t expected_type = bike_slice ? 4u : half_slice ? 8u : 0u;
+            check(ai.overtake_type == expected_type,
+                  "NULL-slice candidates skipped independently without ending scan");
+            if (expected_type) {
+                check(ai.overtake_latched == 0 && ai.overtake_position == (bike_slice ? 83 : 84) * 256,
+                      "valid frozen candidate retains normal overtake selection");
+            } else
+                check(ai.overtake_latched == -1, "pair with NULL slices cannot become overtake target");
+            observer.bike_slice_present = false;
+            observer.brain.target_rider = -1;
+            scanned.countdown_step();
+            check(observer.brain.overtake_type == 0 && observer.brain.overtake_latched == -1,
+                  "NULL-slice scan origin cannot latch a valid target");
+        }
 
     {
         rr::Race demo(straight(4000), straight(4000), t, spec, 90);
@@ -318,7 +384,8 @@ int main() {
     // a slower one does not pass through it, and the two end up apart.
     rr::Opponent slow{test_spec(), 90, 40, 40, 0, 1};
     rr::Race bump(straight(4000), straight(4000), t, spec, 90, {slow});
-    bool overlapped_long = false; int overlap_ticks = 0;
+    bool overlapped_long = false;
+    int overlap_ticks = 0;
     for (int i = 0; i < 1800; ++i) {
         // Player aims at the opponent's lateral position and accelerates.
         const auto& o = bump.riders()[1].bike;
@@ -326,7 +393,10 @@ int main() {
         bump.step(rr::control_accelerate | (dx > 20 ? rr::control_right : dx < -20 ? rr::control_left : 0));
         const int32_t dz = std::abs(o.i32(0x1c) - bump.bike().i32(0x1c));
         const int32_t lx = std::abs(o.i32(0x28) - bump.bike().i32(0x28));
-        if (dz < 0x40 && lx < 0x1e00) ++overlap_ticks; else overlap_ticks = 0;
+        if (dz < 0x40 && lx < 0x1e00)
+            ++overlap_ticks;
+        else
+            overlap_ticks = 0;
         overlapped_long |= overlap_ticks > 3;
     }
     check(!overlapped_long, "riders never stay inside each other");
@@ -334,7 +404,7 @@ int main() {
     // Combat (0x004096f0 hit, 0x00409c10 reach, 0x00409ad0 damage, 0x004050c0 stamina):
     // punching a rider alongside drains its stamina until it is knocked off.
     // Grid slots 0 and 1 start side by side 78 world units apart (fist reach is 5*0x1000 Q8 = 80).
-    rr::Opponent target{test_spec(), 90, 0, 0, 0, 1};   // target speed 0: it stays on the grid
+    rr::Opponent target{test_spec(), 90, 0, 0, 0, 1}; // target speed 0: it stays on the grid
     rr::Race fight(straight(4000), straight(4000), t, spec, 90, {target});
     const int32_t before = fight.riders()[1].stamina.current;
     for (int i = 0; i < 18; ++i) fight.step(i == 0 ? rr::control_punch : 0);
@@ -365,7 +435,9 @@ int main() {
         auto& self = ko.riders()[0];
         self.bike.i32(0x1c) = victim.bike.i32(0x1c);
         self.bike.i32(0x28) = victim.bike.i32(0x28);
-        self.bike.i32(0x184) = 0x2000; self.bike.i32(0x188) = 0x2000; self.bike.i32(0x18c) = 0;
+        self.bike.i32(0x184) = 0x2000;
+        self.bike.i32(0x188) = 0x2000;
+        self.bike.i32(0x18c) = 0;
         // run one tick into contact
         ko.step(rr::control_accelerate);
         int crashes = (ko.riders()[0].bike.i32(0x2f4) != 0) + (ko.riders()[1].bike.i32(0x2f4) != 0);
@@ -378,7 +450,7 @@ int main() {
     // never on its steer rate. Pin the traced pair (a class-1 regression once
     // carried {0,0x200,0}).
     check(rr::kContactCrashRiderImpulse == std::array<int32_t, 3>{0, 0, 0x200} &&
-          rr::kContactCrashBikeImpulse == std::array<int32_t, 3>{0, 0, 0x100},
+              rr::kContactCrashBikeImpulse == std::array<int32_t, 3>{0, 0, 0x100},
           "contact crash impulse pair is the traced 0x404eeb local_18");
     // Steering kick tail of bike contact (0x004049c0 LAB_00404f93): a glancing
     // (class-3) hit that moves the steer rate kicks +0x288 by
@@ -392,15 +464,16 @@ int main() {
         auto& me = kick.riders()[0];
         auto& you = kick.riders()[1];
         me.bike.i32(0x1c) = you.bike.i32(0x1c);
-        me.bike.i32(0x28) = you.bike.i32(0x28) + 0x1000;   // alongside, not contained
-        me.bike.i32(0xec) = 3000; you.bike.i32(0xec) = 5526;  // separate() turns the gap into hit ~2526
+        me.bike.i32(0x28) = you.bike.i32(0x28) + 0x1000; // alongside, not contained
+        me.bike.i32(0xec) = 3000;
+        you.bike.i32(0xec) = 5526; // separate() turns the gap into hit ~2526
         me.bike.i32(0x2d8) = 196;
         me.bike.i32(0x288) = 528;
         me.bike.i32(0x29c) = 11776;
         me.bike.i32(0x2f0) = 1000;
         you.bike.i32(0x2f0) = 10000;
         const int32_t rate = me.bike.i32(0x2ac) * me.bike.i32(0x18);
-        const int32_t next = 528 - rate;   // steer() decays toward the zero target
+        const int32_t next = 528 - rate; // steer() decays toward the zero target
         kick.step(0);
         const int32_t f0_steer = (next >> 8) * 120;
         const int32_t d_f0 = me.bike.i32(0xf0) - f0_steer;
@@ -420,22 +493,23 @@ int main() {
         rr::Race kk(straight(4000), straight(4000), t, spec, 90, {slow4});
         auto& me = kk.riders()[0];
         auto& you = kk.riders()[1];
-        you.frozen = true;   // skip think/move: +0x108/+0x10c stay preset
+        you.frozen = true; // skip think/move: +0x108/+0x10c stay preset
         you.bike.i32(0x108) = 5526;
         you.bike.i32(0x10c) = 0x2000;
-        you.bike.i32(0x3c) = -20000;   // stale prev-lateral: separate() takes the lateral branch
-        you.bike.i32(0x30) = -20000;   // stale prev-position: me approaches from behind, so the forward branch runs
+        you.bike.i32(0x3c) = -20000; // stale prev-lateral: separate() takes the lateral branch
+        you.bike.i32(0x30) =
+            -20000; // stale prev-position: me approaches from behind, so the forward branch runs
         you.bike.i32(0x2f0) = 10000;
         me.bike.i32(0x1c) = you.bike.i32(0x1c);
-        me.bike.i32(0x28) = you.bike.i32(0x28) + 0x1000;   // alongside, not contained
-        you.bike.i32(0x1c) += 11;   // frozen partner just ahead: me outer-loops onto it
+        me.bike.i32(0x28) = you.bike.i32(0x28) + 0x1000; // alongside, not contained
+        you.bike.i32(0x1c) += 11;                        // frozen partner just ahead: me outer-loops onto it
         me.bike.i32(0xec) = 3000;
         me.bike.i32(0x2d8) = 196;
         me.bike.i32(0x288) = 528;
         me.bike.i32(0x29c) = 11776;
         me.bike.i32(0x2f0) = 1000;
         const int32_t rate = me.bike.i32(0x2ac) * me.bike.i32(0x18);
-        const int32_t next = 528 - rate;   // steer() decays toward the zero target
+        const int32_t next = 528 - rate; // steer() decays toward the zero target
         const int32_t f0_steer = (next >> 8) * 120;
         kk.step(0);
         const int32_t d_f0 = me.bike.i32(0xf0) - f0_steer;
@@ -471,9 +545,10 @@ int main() {
         auto& me = c1.riders()[0];
         auto& you = c1.riders()[1];
         me.bike.i32(0x1c) = you.bike.i32(0x1c);
-        me.bike.i32(0x28) = you.bike.i32(0x28);   // same spot, no width flag
-        you.bike.i32(0x28) -= 0x2000;   // you clearly left: glance takes the
-        me.bike.i32(0xec) = 6200; you.bike.i32(0xec) = 5000;   // o.28 < s.28 arm
+        me.bike.i32(0x28) = you.bike.i32(0x28); // same spot, no width flag
+        you.bike.i32(0x28) -= 0x2000;           // you clearly left: glance takes the
+        me.bike.i32(0xec) = 6200;
+        you.bike.i32(0xec) = 5000; // o.28 < s.28 arm
         me.bike.i32(0x2f0) = 1000;
         you.bike.i32(0x2f0) = 10000;
         const int32_t st0 = me.stamina.current;
@@ -510,11 +585,16 @@ int main() {
         h0[s].push_back({uint32_t(s), centre - 1000, centre + 1000});
         hz.set_hazards(std::move(h0), std::move(h1));
         // 0x004368f0 runs 0x004373f0 only within the bike's half-length of mid-slice.
-        me.bike.i32(0x1c) = int32_t(s) * 256 + 0x80; me.bike.i32(0x30) = me.bike.i32(0x1c);
+        me.bike.i32(0x1c) = int32_t(s) * 256 + 0x80;
+        me.bike.i32(0x30) = me.bike.i32(0x1c);
         me.bike.i32(0x2f0) = 1000;
-        me.bike.i32(0x188) = 0; me.bike.i32(0x2d8) = 0; me.bike.i32(0x288) = 0;
+        me.bike.i32(0x188) = 0;
+        me.bike.i32(0x2d8) = 0;
+        me.bike.i32(0x288) = 0;
         me.bike.i32(0x29c) = 0x2e00;
-        me.bike.i32(0x184) = 0x2000; me.bike.i32(0x188) = 0; me.bike.i32(0x18c) = 0;
+        me.bike.i32(0x184) = 0x2000;
+        me.bike.i32(0x188) = 0;
+        me.bike.i32(0x18c) = 0;
         const int32_t st0 = me.stamina.current;
         hz.step(0);
         check(me.stamina.current < st0, "in-road hazard damages stamina (reason 1)");
@@ -529,10 +609,14 @@ int main() {
         h0[s].push_back({uint32_t(s), centre - 1000, centre + 1000});
         hz.set_hazards(std::move(h0), std::move(h1));
         // 0x004368f0 runs 0x004373f0 only within the bike's half-length of mid-slice.
-        me.bike.i32(0x1c) = int32_t(s) * 256 + 0x80; me.bike.i32(0x30) = me.bike.i32(0x1c);
+        me.bike.i32(0x1c) = int32_t(s) * 256 + 0x80;
+        me.bike.i32(0x30) = me.bike.i32(0x1c);
         me.bike.i32(0x2f0) = 1000;
-        me.stamina.current = 5; me.stamina.max = 5;
-        me.bike.i32(0x184) = 0x4000; me.bike.i32(0x188) = 0x4000; me.bike.i32(0x18c) = 0;
+        me.stamina.current = 5;
+        me.stamina.max = 5;
+        me.bike.i32(0x184) = 0x4000;
+        me.bike.i32(0x188) = 0x4000;
+        me.bike.i32(0x18c) = 0;
         hz.step(0);
         check(me.bike.i32(0x2f4) != 0 && me.bike.i32(0x2f8) == 1, "lethal hazard crashes reason 1");
     }
@@ -541,11 +625,14 @@ int main() {
         auto& me = hz.riders()[0];
         const size_t s = me.sample;
         std::vector<std::vector<rr::RoadHazard>> h0(4000), h1(4000);
-        h0[s].push_back({uint32_t(s), 900 * 256, 1000 * 256});   // outside the 500-unit road edge
+        h0[s].push_back({uint32_t(s), 900 * 256, 1000 * 256}); // outside the 500-unit road edge
         hz.set_hazards(std::move(h0), std::move(h1));
-        me.bike.i32(0x1c) = int32_t(s) * 256 + 0x80; me.bike.i32(0x30) = me.bike.i32(0x1c);
+        me.bike.i32(0x1c) = int32_t(s) * 256 + 0x80;
+        me.bike.i32(0x30) = me.bike.i32(0x1c);
         me.bike.i32(0x2f0) = 1000;
-        me.bike.i32(0x184) = 0x2000; me.bike.i32(0x188) = 0; me.bike.i32(0x18c) = 0;
+        me.bike.i32(0x184) = 0x2000;
+        me.bike.i32(0x188) = 0;
+        me.bike.i32(0x18c) = 0;
         const int32_t st0 = me.stamina.current;
         hz.step(0);
         check(me.stamina.current == st0 && me.bike.i32(0x2f4) == 0, "outside-edge span never fires");
@@ -567,20 +654,27 @@ int main() {
             const size_t s = me.sample;
             const auto& rs = hz->route_for(0)[s];
             hz->set_static_frames([frame](uint32_t, uint32_t, uint8_t, bool) { return frame; });
-            rr::RingStatics st; st.borr_count = 1; st.borr_selector = 5; st.borr[0] = slot_units;
+            rr::RingStatics st;
+            st.borr_count = 1;
+            st.borr_selector = 5;
+            st.borr[0] = slot_units;
             hz->ring_statics(int32_t(s), rs.section, rs.local, st);
             // Approach from just outside the half-length so the previous
             // position was clear (forward impulse, containment bit 0x40).
             me.bike.i32(0x1c) = int32_t(s) * 256 + 0x80 - me.bike.i32(0x178) - 5;
             for (int k = 0; k < 5; ++k) me.bike.i32(0x30 + 4 * k) = me.bike.i32(0x1c + 4 * k);
-            me.bike.i32(0x28) = rider_q8; me.bike.i32(0x3c) = rider_q8;
-            me.bike.i32(0xec) = 4000; me.bike.i32(0x2f0) = 1000;
+            me.bike.i32(0x28) = rider_q8;
+            me.bike.i32(0x3c) = rider_q8;
+            me.bike.i32(0xec) = 4000;
+            me.bike.i32(0x2f0) = 1000;
             const int32_t lateral0 = me.bike.i32(0x28);
             hz->step(0);
-            return std::array<int32_t,3>{me.bike.i32(0xec), me.bike.i32(0x2f0), me.bike.i32(0x28) - lateral0};
+            return std::array<int32_t, 3>{me.bike.i32(0xec), me.bike.i32(0x2f0),
+                                          me.bike.i32(0x28) - lateral0};
         };
         const auto hit = run(-980, -980 * 256 - 9000, &tree);
-        check(hit[0] < 2500 && hit[1] < 1000 && hit[2] < -2000, "off-road BORR slot is solid: speed, damage and push");
+        check(hit[0] < 2500 && hit[1] < 1000 && hit[2] < -2000,
+              "off-road BORR slot is solid: speed, damage and push");
         rr::AnimationFrame bare;
         const auto none = run(-980, -980 * 256 - 9000, &bare);
         check(none[0] > 3500 && none[1] == 1000, "frame without boxes is not solid");
@@ -592,33 +686,43 @@ int main() {
     }
     // 0x00437750 type3+: marking selectors and timing belong to the half;
     // repeated contact with the same sample does not restart the animation.
-    for (int type : {3, 4, 5}) for (int speed : {1000, 4000}) {
-        rr::Race mark(straight(4000), straight(4000), t, spec, 90);
-        auto& rider = mark.riders()[0]; auto& bike = rider.bike;
-        rr::Race plain(straight(4000), straight(4000), t, spec, 90);
-        for (auto* world : {&mark, &plain}) {
-            auto& b = world->riders()[0].bike;
-            b.i32(0x1c) += 0x80;
-            b.i32(0xec) = speed; b.i32(0x288) = 5000; b.i32(0xf0) = 200;
-        }
-        rr::AnimationFrame decal; decal.boxes = {{-20000, -10000, 20000, 10000}};
-        mark.set_static_frames([&](uint32_t, uint32_t, uint8_t, bool) { return &decal; });
-        rr::RingStatics slice; slice.billboards = 1;
-        slice.billboard[0] = {uint8_t(type), 128, 64};
-        const auto& rs = mark.route()[rider.sample];
-        mark.ring_statics(int32_t(rider.sample), rs.section, rs.local, slice);
-        plain.step(0);
-        mark.step(0);
-        check(bike.i32(0x298) == (type - 2) * 60, "marking type sets its traction timer");
-        check(bike.i32(0x288) == plain.bike().i32(0x288) + plain.bike().i32(0x288) / 2 && bike.i32(0xf0) == 0, "marking scales steering and stops its rate");
-        check(rider.half_object.i32(0x1e8) == (speed > 1000 ? 384 : 0), "marking animation requires speed above1000");
-        if (speed > 1000) {
-            check(rider.half_object.i32(0x1ec) == int32_t(rider.sample) && rider.half_object.i32(0x1f0) == 1,
-                  "marking records sample and contact tick");
+    for (int type : {3, 4, 5})
+        for (int speed : {1000, 4000}) {
+            rr::Race mark(straight(4000), straight(4000), t, spec, 90);
+            auto& rider = mark.riders()[0];
+            auto& bike = rider.bike;
+            rr::Race plain(straight(4000), straight(4000), t, spec, 90);
+            for (auto* world : {&mark, &plain}) {
+                auto& b = world->riders()[0].bike;
+                b.i32(0x1c) += 0x80;
+                b.i32(0xec) = speed;
+                b.i32(0x288) = 5000;
+                b.i32(0xf0) = 200;
+            }
+            rr::AnimationFrame decal;
+            decal.boxes = {{-20000, -10000, 20000, 10000}};
+            mark.set_static_frames([&](uint32_t, uint32_t, uint8_t, bool) { return &decal; });
+            rr::RingStatics slice;
+            slice.billboards = 1;
+            slice.billboard[0] = {uint8_t(type), 128, 64};
+            const auto& rs = mark.route()[rider.sample];
+            mark.ring_statics(int32_t(rider.sample), rs.section, rs.local, slice);
+            plain.step(0);
             mark.step(0);
-            check(rider.half_object.i32(0x1f0) == 1, "same-sample marking does not restart");
+            check(bike.i32(0x298) == (type - 2) * 60, "marking type sets its traction timer");
+            check(bike.i32(0x288) == plain.bike().i32(0x288) + plain.bike().i32(0x288) / 2 &&
+                      bike.i32(0xf0) == 0,
+                  "marking scales steering and stops its rate");
+            check(rider.half_object.i32(0x1e8) == (speed > 1000 ? 384 : 0),
+                  "marking animation requires speed above1000");
+            if (speed > 1000) {
+                check(rider.half_object.i32(0x1ec) == int32_t(rider.sample) &&
+                          rider.half_object.i32(0x1f0) == 1,
+                      "marking records sample and contact tick");
+                mark.step(0);
+                check(rider.half_object.i32(0x1f0) == 1, "same-sample marking does not restart");
+            }
         }
-    }
     // 0x00408ad0: a parked target's missing bike slice clears the target
     // when the rider changes back from overtaking to racing.
     {
@@ -627,7 +731,10 @@ int main() {
         follow.riders()[0].frozen = true;
         follow.riders()[0].bike_slice_present = false;
         auto& ai = follow.riders()[1].brain;
-        ai.state = 2; ai.target_rider = 0; ai.target_step = 1; ai.state_ticks[2] = 17;
+        ai.state = 2;
+        ai.target_rider = 0;
+        ai.target_step = 1;
+        ai.state_ticks[2] = 17;
         follow.step(0);
         check(ai.state == 1 && ai.target_rider == -1 && ai.state_ticks[2] == 17,
               "parked target leaves overtaking without resetting the old state clock");
@@ -636,8 +743,11 @@ int main() {
     // at right-96/right+32 keep the first and drop the second here; pictured
     // trees are not all solid.
     {
-        rr::CourseSection sec; sec.samples.resize(2);
-        for (auto& path : sec.samples) { path.left = path.right = 500; }
+        rr::CourseSection sec;
+        sec.samples.resize(2);
+        for (auto& path : sec.samples) {
+            path.left = path.right = 500;
+        }
         sec.roadside_profiles = {0x014c0182u};
         const auto spans = rr::road_hazard_spans(sec, 100, []() { return 0u; });
         check(spans.size() == 2 && spans[0].sample == 100, "in-road hazard spans kept with sample base");
@@ -653,13 +763,18 @@ int main() {
             rr::Opponent armed{test_spec(), 90, 0, 0, 0, 1};
             rr::Race w(straight(4000), straight(4000), t, spec, 90, {armed});
             w.set_rng_state(uint32_t(seed));
-            w.riders()[0].weapon = 0; w.riders()[0].attack.weapon = 0;
-            w.riders()[1].weapon = 1; w.riders()[1].attack.weapon = 1; w.riders()[1].attack.timer = 1;
-            w.riders()[0].bike.i32(0x2f0) = 1000; w.riders()[1].bike.i32(0x2f0) = 10000;
+            w.riders()[0].weapon = 0;
+            w.riders()[0].attack.weapon = 0;
+            w.riders()[1].weapon = 1;
+            w.riders()[1].attack.weapon = 1;
+            w.riders()[1].attack.timer = 1;
+            w.riders()[0].bike.i32(0x2f0) = 1000;
+            w.riders()[1].bike.i32(0x2f0) = 10000;
             w.riders()[1].steal_until = 0;
             // park alongside in reach, swing and force the frame gate
             w.riders()[1].bike.i32(0x28) = w.riders()[0].bike.i32(0x28) + 1000;
-            w.riders()[0].attack.timer = 1; w.riders()[0].attack.right = true;
+            w.riders()[0].attack.timer = 1;
+            w.riders()[0].attack.right = true;
             for (int i = 0; i < 18 && w.riders()[0].attack.timer; ++i) w.step(i == 0 ? 0 : 0);
             const int total = (w.riders()[0].weapon != 0) + (w.riders()[1].weapon != 0);
             if (total != 1) ++failures2;
@@ -686,12 +801,17 @@ int main() {
             rr::Opponent armed{test_spec(), 90, 0, 0, 0, 1};
             rr::Race w(straight(4000), straight(4000), t, spec, 90, {armed});
             w.set_rng_state(uint32_t(seed));
-            w.riders()[0].weapon = 0; w.riders()[0].attack.weapon = 0;
-            w.riders()[1].weapon = 1; w.riders()[1].attack.weapon = 1; w.riders()[1].attack.timer = 1;
-            w.riders()[0].bike.i32(0x2f0) = 1000; w.riders()[1].bike.i32(0x2f0) = 10000;
+            w.riders()[0].weapon = 0;
+            w.riders()[0].attack.weapon = 0;
+            w.riders()[1].weapon = 1;
+            w.riders()[1].attack.weapon = 1;
+            w.riders()[1].attack.timer = 1;
+            w.riders()[0].bike.i32(0x2f0) = 1000;
+            w.riders()[1].bike.i32(0x2f0) = 10000;
             w.riders()[1].steal_until = 0;
             w.riders()[1].bike.i32(0x28) = w.riders()[0].bike.i32(0x28) + 1000;
-            w.riders()[0].attack.timer = 1; w.riders()[0].attack.right = true;
+            w.riders()[0].attack.timer = 1;
+            w.riders()[0].attack.right = true;
             for (int i = 0; i < 18 && w.riders()[0].attack.timer; ++i) w.step(i == 0 ? 0 : 0);
             successes += (w.riders()[0].weapon != 0);
             conserved += ((w.riders()[0].weapon != 0) + (w.riders()[1].weapon != 0)) == 1;
@@ -707,12 +827,17 @@ int main() {
             rr::Opponent armed{test_spec(), 90, 0, 0, 0, 1};
             rr::Race w(straight(4000), straight(4000), t, spec, 90, {armed});
             w.set_rng_state(uint32_t(seed));
-            w.riders()[0].weapon = 0; w.riders()[0].attack.weapon = 0;
-            w.riders()[1].weapon = 1; w.riders()[1].attack.weapon = 1; w.riders()[1].attack.timer = 1;
-            w.riders()[0].bike.i32(0x2f0) = 1000; w.riders()[1].bike.i32(0x2f0) = 10000;
+            w.riders()[0].weapon = 0;
+            w.riders()[0].attack.weapon = 0;
+            w.riders()[1].weapon = 1;
+            w.riders()[1].attack.weapon = 1;
+            w.riders()[1].attack.timer = 1;
+            w.riders()[0].bike.i32(0x2f0) = 1000;
+            w.riders()[1].bike.i32(0x2f0) = 10000;
             w.riders()[1].steal_until = 1 << 30;
             w.riders()[1].bike.i32(0x28) = w.riders()[0].bike.i32(0x28) + 1000;
-            w.riders()[0].attack.timer = 1; w.riders()[0].attack.right = true;
+            w.riders()[0].attack.timer = 1;
+            w.riders()[0].attack.right = true;
             for (int i = 0; i < 18 && w.riders()[0].attack.timer; ++i) w.step(i == 0 ? 0 : 0);
             successes += (w.riders()[0].weapon != 0);
         }
@@ -734,16 +859,21 @@ int main() {
     {
         rr::Race hz(straight(4000), straight(4000), t, spec, 90);
         auto& me = hz.riders()[0];
-        me.weapon = 2; me.attack.weapon = 2;
+        me.weapon = 2;
+        me.attack.weapon = 2;
         const size_t s = me.sample;
         const int32_t centre = me.bike.i32(0x28);
         std::vector<std::vector<rr::RoadHazard>> h0(4000), h1(4000);
         h0[s].push_back({uint32_t(s), centre - 1000, centre + 1000});
         hz.set_hazards(std::move(h0), std::move(h1));
-        me.bike.i32(0x1c) = int32_t(s) * 256 + 0x80; me.bike.i32(0x30) = me.bike.i32(0x1c);
+        me.bike.i32(0x1c) = int32_t(s) * 256 + 0x80;
+        me.bike.i32(0x30) = me.bike.i32(0x1c);
         me.bike.i32(0x2f0) = 1000;
-        me.stamina.current = 5; me.stamina.max = 5;
-        me.bike.i32(0x184) = 0x4000; me.bike.i32(0x188) = 0x4000; me.bike.i32(0x18c) = 0;
+        me.stamina.current = 5;
+        me.stamina.max = 5;
+        me.bike.i32(0x184) = 0x4000;
+        me.bike.i32(0x188) = 0x4000;
+        me.bike.i32(0x18c) = 0;
         hz.step(0);
         check(me.bike.i32(0x2f4) != 0 && me.bike.i32(0x2f8) == 1, "armed rider crashes reason 1");
         check(me.weapon == 2, "crash keeps carried weapon");
@@ -760,10 +890,21 @@ int main() {
     // BORR roadside objects (static_family false) are draw-only and skipped.
     {
         std::vector<rr::SceneryObject> placed;
-        rr::SceneryObject post{}; post.lateral = 100; post.type = 1; post.static_family = true;
-        rr::SceneryObject sign{}; sign.lateral = -300; sign.type = 3; sign.static_family = true;
-        rr::SceneryObject tree{}; tree.lateral = 50; tree.type = 0; tree.static_family = false;
-        placed.push_back(post); placed.push_back(sign); placed.push_back(tree);
+        rr::SceneryObject post{};
+        post.lateral = 100;
+        post.type = 1;
+        post.static_family = true;
+        rr::SceneryObject sign{};
+        sign.lateral = -300;
+        sign.type = 3;
+        sign.static_family = true;
+        rr::SceneryObject tree{};
+        tree.lateral = 50;
+        tree.type = 0;
+        tree.static_family = false;
+        placed.push_back(post);
+        placed.push_back(sign);
+        placed.push_back(tree);
         const auto spans = rr::dzhr_solids_for_sample(1000 * 256, placed);
         check(spans.size() == 2, "DZHR packing keeps billboards, skips BORR");
         check(spans[0].type == 1 && spans[1].type == 3, "DZHR packing keeps the low-nibble type");
@@ -782,10 +923,14 @@ int main() {
         rr::Race::DzhrTable d0(4000), d1(4000);
         d0[s].push_back({centre - 1000, centre + 1000, type});
         dz.set_roadside(std::move(d0), std::move(d1));
-        me.bike.i32(0x1c) = int32_t(s) * 256 + 0x80; me.bike.i32(0x30) = me.bike.i32(0x1c);
+        me.bike.i32(0x1c) = int32_t(s) * 256 + 0x80;
+        me.bike.i32(0x30) = me.bike.i32(0x1c);
         me.bike.i32(0x2f0) = 1000;
-        me.stamina.current = 5; me.stamina.max = 5;
-        me.bike.i32(0x184) = 0x4000; me.bike.i32(0x188) = 0x4000; me.bike.i32(0x18c) = 0;
+        me.stamina.current = 5;
+        me.stamina.max = 5;
+        me.bike.i32(0x184) = 0x4000;
+        me.bike.i32(0x188) = 0x4000;
+        me.bike.i32(0x18c) = 0;
         dz.step(0);
         check(me.bike.i32(0x2f4) != 0 && me.bike.i32(0x2f8) == 1, "DZHR solid type crashes reason 1");
     }
@@ -797,10 +942,13 @@ int main() {
         rr::Race::DzhrTable d0(4000), d1(4000);
         d0[s].push_back({centre - 1000, centre + 1000, 3});
         dz.set_roadside(std::move(d0), std::move(d1));
-        me.bike.i32(0x1c) = int32_t(s) * 256 + 0x80; me.bike.i32(0x30) = me.bike.i32(0x1c);
+        me.bike.i32(0x1c) = int32_t(s) * 256 + 0x80;
+        me.bike.i32(0x30) = me.bike.i32(0x1c);
         me.bike.i32(0x2f0) = 1000;
         const int32_t st0 = me.stamina.current, lat0 = me.bike.i32(0x28);
-        me.bike.i32(0x184) = 0x4000; me.bike.i32(0x188) = 0x4000; me.bike.i32(0x18c) = 0;
+        me.bike.i32(0x184) = 0x4000;
+        me.bike.i32(0x188) = 0x4000;
+        me.bike.i32(0x18c) = 0;
         dz.step(0);
         check(me.bike.i32(0x2f4) == 0, "DZHR marking type never crashes");
         check(me.stamina.current == st0 && me.bike.i32(0x28) == lat0, "DZHR marking type changes nothing");
@@ -825,8 +973,10 @@ int main() {
     {
         rr::Opponent opp{spec, 90, 95, 90, 1, 1};
         rr::Race p(straight(4000), straight(4000), t, spec, 90, {opp});
-        auto& me = p.riders()[0]; auto& ai = p.riders()[1];
-        me.nitro_charge = 0; ai.nitro_charge = 0;
+        auto& me = p.riders()[0];
+        auto& ai = p.riders()[1];
+        me.nitro_charge = 0;
+        ai.nitro_charge = 0;
         for (int i = 0; i < 10; ++i) p.step(0);
         check(me.nitro_charge > 0, "player nitro recharges");
         check(ai.nitro_charge == 0, "AI nitro never ticks (0x0040b1a0 player-only)");
@@ -837,7 +987,8 @@ int main() {
         rr::Race m(straight(4000), straight(4000), t, spec, 90);
         m.step(rr::control_accelerate);
         bool has_anim = false;
-        for (const auto& f : m.snapshot().fields) if (f.name == "rider.0.anim") has_anim = true;
+        for (const auto& f : m.snapshot().fields)
+            if (f.name == "rider.0.anim") has_anim = true;
         check(has_anim, "animation state present in snapshot");
         // knock_off reason 4 selects riding animation 9 in the same tick's
         // snapshot: the pending contact_animation is consumed before
@@ -861,23 +1012,28 @@ int main() {
             rr::Opponent opponent{spec, 90, 95, 90, 1, 1};
             rr::Race duel(straight(4000), straight(4000), t, spec, 90, {opponent});
             duel.set_ride_library(&bank, &codes);
-            auto& victim = duel.riders()[0]; auto& attacker = duel.riders()[1];
+            auto& victim = duel.riders()[0];
+            auto& attacker = duel.riders()[1];
             victim.frozen = true;
-            victim.bike.i32(0x28) = 0; attacker.bike.i32(0x28) = 2000;
+            victim.bike.i32(0x28) = 0;
+            attacker.bike.i32(0x28) = 2000;
             attacker.bike.i32(0x1c) = victim.bike.i32(0x1c);
             attacker.bike.i32(0xec) = victim.bike.i32(0xec) = 6000;
-            attacker.brain.state = 3; attacker.brain.target_rider = 0;
+            attacker.brain.state = 3;
+            attacker.brain.target_rider = 0;
             attacker.brain.reaction[12] = 123;
             attacker.attack.weapon = 1;
             const int8_t code = codes[0][1][1];
             bank.playback[0].at(size_t(code))->at(0).flags = event == 1 ? 0x600000 : 0;
             attacker.ride_animation.animation = code;
             attacker.ride_animation.frame = event == 2 ? 2 : 0;
-            attacker.ride_animation.selected = std::array<int8_t,2>{code,0};
+            attacker.ride_animation.selected = std::array<int8_t, 2>{code, 0};
             const int32_t stamina = victim.stamina.current;
             duel.step(0);
-            check((victim.stamina.current < stamina) == (event != 0), "combat hit accepts descriptor flags or frame2");
-            check(attacker.brain.rating[0] == (event != 0 ? 123 : 0), "landed combat hit applies relationship event4");
+            check((victim.stamina.current < stamina) == (event != 0),
+                  "combat hit accepts descriptor flags or frame2");
+            check(attacker.brain.rating[0] == (event != 0 ? 123 : 0),
+                  "landed combat hit applies relationship event4");
         }
         const auto specs = rr::read_bike_specs(assets.read("DATA/BIKESPEC.RSC"));
         // Napa live setup: all seven racers must continue advancing after
@@ -889,19 +1045,22 @@ int main() {
         std::array<int32_t, 8> halfway{};
         for (int tick = 0; tick < 3600; ++tick) {
             napa.instance.race->step(rr::control_accelerate);
-            if (tick == 2999) for (size_t i = 1; i < 8; ++i) halfway[i] = napa.instance.race->riders()[i].bike.i32(0x1c);
+            if (tick == 2999)
+                for (size_t i = 1; i < 8; ++i) halfway[i] = napa.instance.race->riders()[i].bike.i32(0x1c);
         }
         for (size_t i = 1; i < 8; ++i) {
             const auto& rider = napa.instance.race->riders()[i];
-            std::cout << "Napa AI " << i << " pos " << rider.bike.i32(0x1c)
-                      << " last-ten-seconds " << rider.bike.i32(0x1c) - halfway[i] << "\n";
+            std::cout << "Napa AI " << i << " pos " << rider.bike.i32(0x1c) << " last-ten-seconds "
+                      << rider.bike.i32(0x1c) - halfway[i] << "\n";
             check(rider.bike.i32(0x1c) - halfway[i] > 0x100, "Napa opponent continues driving after replans");
         }
         // 0x0043a610 on CANYN's first (mountain) section: the player is held
         // at the cliff foot on the open side, an AI rider at the outer
         // shoulder edge (non-player riders never use the wall values).
         {
-            rr::RaceConfig canyn; canyn.course = "CANYN"; canyn.opponents = 7;
+            rr::RaceConfig canyn;
+            canyn.course = "CANYN";
+            canyn.opponents = 7;
             auto pch = rr::make_race_setup(assets, exe, canyn);
             auto& race = *pch.instance.race;
             for (int tick = 0; tick < 400; ++tick) race.step(rr::control_accelerate);
@@ -913,7 +1072,8 @@ int main() {
             auto& ai = race.riders()[live_ai];
             // Its bike moves on its own cadence (0x00437e60 interval up to
             // 8): place both riders on the tick before its next move.
-            for (int k = 0; k < 8 && ai.sched_next != race.ticks() + 1; ++k) race.step(rr::control_accelerate);
+            for (int k = 0; k < 8 && ai.sched_next != race.ticks() + 1; ++k)
+                race.step(rr::control_accelerate);
             const auto& route = race.route();
             const auto& ps = route[player.sample];
             const auto& as = race.route_of(ai)[ai.sample];
@@ -928,23 +1088,30 @@ int main() {
             const size_t player_sample = player.sample, ai_sample = ai.sample;
             race.step(rr::control_accelerate);
             if (player.sample == player_sample && player.bike.i32(0x2f4) == 0)
-                check(player.bike.i32(0x28) == (ps.offset + pw.top[1]) * 256 - hw, "player held at the cliff foot (+0x15c)");
+                check(player.bike.i32(0x28) == (ps.offset + pw.top[1]) * 256 - hw,
+                      "player held at the cliff foot (+0x15c)");
             check(ai.sched_last == race.ticks() && ai.live, "AI bike moved on its scheduled tick");
             // The AI's dt-long move may cross samples; the wall holds it at
             // the edge of the sample it ends on.
             (void)ai_sample;
             const auto& as_now = race.route_of(ai)[ai.sample];
             if (ai.bike.i32(0x2f4) == 0)
-                check(ai.bike.i32(0x28) == ai.bike.i32(0x174) + (as_now.offset - as_now.path.left - as_now.path.shoulder_left) * 256, "AI held at the outer shoulder edge (+0xe8)");
+                check(ai.bike.i32(0x28) ==
+                          ai.bike.i32(0x174) +
+                              (as_now.offset - as_now.path.left - as_now.path.shoulder_left) * 256,
+                      "AI held at the outer shoulder edge (+0xe8)");
             const bool player_checked = player.sample == player_sample && player.bike.i32(0x2f4) == 0;
             const bool ai_checked = ai.bike.i32(0x2f4) == 0;
-            std::cout << "CANYN walls: player " << player.bike.i32(0x28) << " (want " << (ps.offset + pw.top[1]) * 256 - hw << ", checked " << player_checked
-                      << ") ai " << ai.bike.i32(0x28) << " (checked " << ai_checked << ")\n";
+            std::cout << "CANYN walls: player " << player.bike.i32(0x28) << " (want "
+                      << (ps.offset + pw.top[1]) * 256 - hw << ", checked " << player_checked << ") ai "
+                      << ai.bike.i32(0x28) << " (checked " << ai_checked << ")\n";
             check(player_checked || ai_checked, "a CANYN wall case was exercised");
         }
         auto field0 = rr::original_opponents(exe, specs, 0, 7);
-        check(field0.size() == 7 && field0[0].slot == 1 && field0[6].slot == 7, "seven opponents in slots 1..7");
-        check(field0[0].base_speed == 99 && field0[0].lane == 1, "personality 1 level 1 speed and lane (0x00464558)");
+        check(field0.size() == 7 && field0[0].slot == 1 && field0[6].slot == 7,
+              "seven opponents in slots 1..7");
+        check(field0[0].base_speed == 99 && field0[0].lane == 1,
+              "personality 1 level 1 speed and lane (0x00464558)");
         check(field0[0].throttle_percent == 116, "level 1 AI throttle scale (0x004642a0)");
         check(field0[0].rider_value == 180 / 2 || field0[0].rider_value > 0, "rider value from 0x00463c78");
         // Full offline field (0x00405600: DAT_004642d4=0x10, slots 1..14,
@@ -958,10 +1125,11 @@ int main() {
             constexpr uint32_t data_raw = 0x61600;
             auto word = [&](uint32_t va) {
                 const size_t p = data_raw + (va - 0x00463000u);
-                return int32_t(uint32_t(exe[p]) | uint32_t(exe[p+1]) << 8 |
-                               uint32_t(exe[p+2]) << 16 | uint32_t(exe[p+3]) << 24);
+                return int32_t(uint32_t(exe[p]) | uint32_t(exe[p + 1]) << 8 | uint32_t(exe[p + 2]) << 16 |
+                               uint32_t(exe[p + 3]) << 24);
             };
-            lat = word(base); pos = word(base + 4);
+            lat = word(base);
+            pos = word(base + 4);
             grid_ok &= field14[size_t(k)].grid_lat == lat && field14[size_t(k)].grid_pos == pos;
             slots_ok &= field14[size_t(k)].slot == k + 1 && field14[size_t(k)].rider == k + 1;
         }
@@ -979,7 +1147,8 @@ int main() {
     // the replan of the player (built first) sees no neighbours.
     {
         auto tt = t;
-        tt.half_object = {0, 8, 1, 0, 0, 0, 0, 300, 256, 130, 70, 37, -2560, 256, 74, 0, 24, 6400, 16, 7680, 192, 25, 0, 1, 1, 0};
+        tt.half_object = {0,   8,  1, 0,  0,    0,  0,    300, 256, 130, 70, 37, -2560,
+                          256, 74, 0, 24, 6400, 16, 7680, 192, 25,  0,   1,  1,  0};
         std::vector<rr::Opponent> two;
         for (int k = 1; k <= 2; ++k) {
             rr::Opponent o{spec, 90, 100, 90, 0, k};
@@ -988,14 +1157,22 @@ int main() {
         rr::Race r(straight(2000), straight(2000), tt, spec, 90, two);
         const uint32_t seed = 12345;
         r.set_rng_state(seed);
-        for (auto& q : r.riders()) { q.brain.spd_b[0] = 87; q.brain.spd_a[0] = 70; q.brain.state = 1; }
+        for (auto& q : r.riders()) {
+            q.brain.spd_b[0] = 87;
+            q.brain.spd_a[0] = 70;
+            q.brain.state = 1;
+        }
         r.build_draws();
         uint32_t x = seed;
-        auto draw = [&] { x = x * 0x343fdu + 0x269ec3u; return (x >> 16) & 0x7fff; };
+        auto draw = [&] {
+            x = x * 0x343fdu + 0x269ec3u;
+            return (x >> 16) & 0x7fff;
+        };
         bool lanes = true;
         for (const auto& q : r.riders()) lanes &= q.brain.lane == int(draw() % 3);
         check(lanes, "0x00405990 draws each rider's lane rand()%3 in build order");
-        check(r.name_roll() == int(draw() % 100) && r.rng_state() == x, "0x00405600 tail draws rand()%100 last");
+        check(r.name_roll() == int(draw() % 100) && r.rng_state() == x,
+              "0x00405600 tail draws rand()%100 last");
         const auto& p = r.riders()[0];
         check(p.brain.state == 0, "0x00405c80 spawns the brain at state 0");
         check(p.bike.i32(0x28) == p.brain.target_x && p.brain.target_position == p.bike.i32(0x1c) + 0x3c0,
@@ -1004,11 +1181,14 @@ int main() {
         check(p.brain.nbr_ahead == -1 && p.brain.nbr_behind == -1 && p.brain.current_speed == 87 + 87 / 4,
               "player replan at build sees no neighbours (case 0: v + v/4)");
         check(p.brain.base_speed == 87, "base speed is the record's level word");
-        check(p.bike.i32(0x30c) == 600 && p.bike.i32(0x310) == ((45 * 200) >> 8) * 600, "0x00405c80 wreck timers");
+        check(p.bike.i32(0x30c) == 600 && p.bike.i32(0x310) == ((45 * 200) >> 8) * 600,
+              "0x00405c80 wreck timers");
         // Rider-half image from its own table (0x004387a0 from 0x00463c10).
-        check(p.half_object.u8(0xc0) == 4 && p.half_object.i32(0x160) == 37 && p.half_object.i32(0x180) == 192 &&
-              p.half_object.i32(0x194) == 25 && p.half_object.i32(0x1a8) == 1 && p.half_object.i32(0x1ac) == 1 &&
-              p.half_object.i32(0x1b4) == 74 && p.half_object.i32(0x11c) == -0x25, "half object built from its table");
+        check(p.half_object.u8(0xc0) == 4 && p.half_object.i32(0x160) == 37 &&
+                  p.half_object.i32(0x180) == 192 && p.half_object.i32(0x194) == 25 &&
+                  p.half_object.i32(0x1a8) == 1 && p.half_object.i32(0x1ac) == 1 &&
+                  p.half_object.i32(0x1b4) == 74 && p.half_object.i32(0x11c) == -0x25,
+              "half object built from its table");
     }
 
     std::cout << failures << " failures\n";

@@ -11,17 +11,26 @@ namespace {
 uint64_t checksum_idx(const rr::Framebuffer& fb) {
     uint64_t h = 1469598103934665603ULL;
     for (int y = 0; y < fb.height(); ++y)
-        for (int x = 0; x < fb.width(); ++x) { h ^= fb.row(y)[x]; h *= 1099511628211ULL; }
+        for (int x = 0; x < fb.width(); ++x) {
+            h ^= fb.row(y)[x];
+            h *= 1099511628211ULL;
+        }
     return h;
 }
-}
+} // namespace
 
 int main() {
     int failures = 0;
-    auto check = [&](bool v, const char* what) { if (!v) { ++failures; std::cerr << "FAIL " << what << '\n'; } };
+    auto check = [&](bool v, const char* what) {
+        if (!v) {
+            ++failures;
+            std::cerr << "FAIL " << what << '\n';
+        }
+    };
     rr::test::BenchScene scene = rr::test::make_bench_scene();
     rr::ViewMode mode = rr::view_mode(true);
-    mode.surface_width = 1280; mode.surface_height = 960;   // scale 2 (wide path + scratch)
+    mode.surface_width = 1280;
+    mode.surface_height = 960; // scale 2 (wide path + scratch)
     rr::RenderThreads pool(4);
     rr::Framebuffer fb(1280, 960);
     fb.clear(0);

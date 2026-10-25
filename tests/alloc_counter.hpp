@@ -8,12 +8,15 @@
 namespace rr::test {
 inline std::atomic<size_t> allocations{0};
 inline std::atomic<bool> counting{false};
-struct CountAllocs {               // RAII: counts operator new calls in scope
-    CountAllocs() { allocations = 0; counting = true; }
+struct CountAllocs { // RAII: counts operator new calls in scope
+    CountAllocs() {
+        allocations = 0;
+        counting = true;
+    }
     ~CountAllocs() { counting = false; }
     size_t count() const { return allocations.load(); }
 };
-}
+} // namespace rr::test
 
 #ifdef RR_ALLOC_COUNTER_DEFINE
 void* operator new(std::size_t n) {
@@ -22,6 +25,10 @@ void* operator new(std::size_t n) {
     if (rr::test::counting.load()) rr::test::allocations.fetch_add(1);
     return p;
 }
-void operator delete(void* p) noexcept { std::free(p); }
-void operator delete(void* p, std::size_t) noexcept { std::free(p); }
+void operator delete(void* p) noexcept {
+    std::free(p);
+}
+void operator delete(void* p, std::size_t) noexcept {
+    std::free(p);
+}
 #endif

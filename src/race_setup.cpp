@@ -19,8 +19,8 @@ std::vector<std::vector<DzhrSolid>> dzhr_table(const std::vector<RouteSample>& r
     std::vector<std::vector<DzhrSolid>> table(route.size());
     for (size_t i = 0; i < route.size(); ++i) {
         const RouteSample& s = route[i];
-        table[i] = dzhr_solids_for_sample(route[i].offset * 256 + road_base_q8,
-                                          scene.objects(s.section, s.local));
+        table[i] =
+            dzhr_solids_for_sample(route[i].offset * 256 + road_base_q8, scene.objects(s.section, s.local));
     }
     return table;
 }
@@ -31,7 +31,7 @@ int32_t rider_value_for(const std::vector<uint8_t>& exe, int rider) {
     const auto body = read_exe_data(exe, 0x00463c78 + uint32_t(rider) * 0x40 + 0xc, 4); // 0x00463c78
     return int32_t(uint32_t(body[0]) | uint32_t(body[1]) << 8) / 2;
 }
-}
+} // namespace
 
 AttackCodes read_attack_codes(const std::vector<uint8_t>& exe) {
     AttackCodes attack_codes{};
@@ -51,9 +51,12 @@ NitroConfig nitro_from_spec(const BikeSpec& spec) {
     NitroConfig nitro;
     // +0x14c is spec word 83 (BIKESPEC: only the nitro bikes 7..10 carry
     // nonzero words there).
-    nitro.recharge = spec.d[83]; nitro.boost = spec.d[84];
-    nitro.max = spec.d[85]; nitro.charges = spec.d[86];
-    nitro.minimum = spec.d[87]; nitro.tail = spec.d[88];
+    nitro.recharge = spec.d[83];
+    nitro.boost = spec.d[84];
+    nitro.max = spec.d[85];
+    nitro.charges = spec.d[86];
+    nitro.minimum = spec.d[87];
+    nitro.tail = spec.d[88];
     return nitro;
 }
 
@@ -64,7 +67,8 @@ RaceAssets load_race_assets(const Assets& assets, const std::vector<uint8_t>& ex
     if (config.level < 0 || config.level > 4) throw std::runtime_error("race setup: level out of range");
     RaceAssets out;
     try {
-        out.course = std::make_unique<Course>(read_course(assets.read("DATA/COURSES/" + config.course + ".CRS")));
+        out.course =
+            std::make_unique<Course>(read_course(assets.read("DATA/COURSES/" + config.course + ".CRS")));
     } catch (const std::exception& e) {
         throw std::runtime_error("DATA/COURSES/" + config.course + ".CRS: " + e.what());
     }
@@ -84,7 +88,8 @@ RaceAssets load_race_assets(const Assets& assets, const std::vector<uint8_t>& ex
     if (config.career && config.bike_from_table) {
         const CareerTables tables = read_career_tables(exe);
         const size_t slot = size_t(config.level) + size_t(rider) * 5; // 0x004641c8
-        if (slot >= tables.level_bike.size()) throw std::runtime_error("career level_bike: slot out of range");
+        if (slot >= tables.level_bike.size())
+            throw std::runtime_error("career level_bike: slot out of range");
         bike_index = tables.level_bike[slot];
     }
     try {
@@ -102,7 +107,8 @@ RaceAssets load_race_assets(const Assets& assets, const std::vector<uint8_t>& ex
     // (0x00464088/0x00464108) place slot 0 at sample 0x32.
     const auto route_a = make_route(*out.course, false);
     const auto route_b = make_route(*out.course, true);
-    if (route_a.size() < 64 || route_b.size() < 64) throw std::runtime_error("race setup: route too short for a race");
+    if (route_a.size() < 64 || route_b.size() < 64)
+        throw std::runtime_error("race setup: route too short for a race");
     // Original per-course/per-level start and level-tagged finish line
     // (plan 17 Task 1, race_bounds); the route end remains only for course
     // files outside the five originals.
@@ -110,19 +116,21 @@ RaceAssets load_race_assets(const Assets& assets, const std::vector<uint8_t>& ex
     out.bounds.finish_position_q8 = uint32_t((route_a.size() - 1) << 8);
     out.bounds.route_hint = 0;
     {
-        static const char* originals[] = {"CITY", "HIWAY", "MEDLY", "NAPA", "CANYN"};   // 0x0046df58
+        static const char* originals[] = {"CITY", "HIWAY", "MEDLY", "NAPA", "CANYN"}; // 0x0046df58
         for (int c = 0; c < 5; ++c)
             if (config.course == originals[c]) {
                 // Finish only: the grid still places slot 0 at 0x3200, so the
                 // level-4 start 0x3300 waits for the grid port.
-                out.bounds.finish_position_q8 = race_bounds(exe, *out.course, c + 1, config.level).finish_position_q8;
+                out.bounds.finish_position_q8 =
+                    race_bounds(exe, *out.course, c + 1, config.level).finish_position_q8;
                 break;
             }
     }
     try {
         out.scene = std::make_unique<CourseScene>(assets, exe, *out.course, config.course, 1, config.level);
     } catch (const std::exception& e) {
-        if (!config.optional_scene) throw std::runtime_error("course scene " + config.course + ": " + e.what());
+        if (!config.optional_scene)
+            throw std::runtime_error("course scene " + config.course + ": " + e.what());
         out.scene.reset();
     }
     try {
@@ -141,10 +149,12 @@ RaceAssets load_race_assets(const Assets& assets, const std::vector<uint8_t>& ex
         // Free traffic from the course's own vehicle container (0x0044db80 /
         // 0x004465f0) WITH its EXE descriptors (views + playback banks).
         try {
-            out.vehicles = std::make_unique<VehicleLibrary>(assets.read("DATA/CARS/" + config.course + ".CAR"), exe);
+            out.vehicles =
+                std::make_unique<VehicleLibrary>(assets.read("DATA/CARS/" + config.course + ".CAR"), exe);
         } catch (const std::exception& e) {
-            if (!config.optional_traffic) throw std::runtime_error("DATA/CARS/" + config.course + ".CAR: " + e.what());
-            out.vehicles.reset();   // game logs the course at fallback time (finding 2)
+            if (!config.optional_traffic)
+                throw std::runtime_error("DATA/CARS/" + config.course + ".CAR: " + e.what());
+            out.vehicles.reset(); // game logs the course at fallback time (finding 2)
         }
     }
     out.attack_codes = std::make_unique<AttackCodes>(read_attack_codes(exe));
@@ -153,8 +163,8 @@ RaceAssets load_race_assets(const Assets& assets, const std::vector<uint8_t>& ex
 }
 
 std::vector<std::string> race_rider_names(const std::vector<uint8_t>& exe, const RaceConfig& config,
-                                        const Race& race, const std::vector<std::string>& strings,
-                                        const std::string& player) {
+                                          const Race& race, const std::vector<std::string>& strings,
+                                          const std::string& player) {
     auto word = [&](uint32_t address) {
         const auto b = read_exe_data(exe, address, 4);
         return uint32_t(b[0]) | uint32_t(b[1]) << 8 | uint32_t(b[2]) << 16 | uint32_t(b[3]) << 24;
@@ -165,11 +175,20 @@ std::vector<std::string> race_rider_names(const std::vector<uint8_t>& exe, const
     const uint32_t first = word(0x004635b8 + uint32_t(course - courses.begin()) * 4);
     std::vector<std::string> names;
     for (const auto& rider : race.riders()) {
-        if (names.empty()) { names.push_back(player); continue; }
+        if (names.empty()) {
+            names.push_back(player);
+            continue;
+        }
         // Police use a separate personality; no racer-name row is assigned.
-        if (rider.cop) { names.emplace_back(); continue; }
+        if (rider.cop) {
+            names.emplace_back();
+            continue;
+        }
         const int index = rider.brain.overtake_index; // personality +0x165
-        if (index < 0 || index > 15) { names.emplace_back(); continue; }
+        if (index < 0 || index > 15) {
+            names.emplace_back();
+            continue;
+        }
         uint32_t slot = word(0x00464188 + uint32_t(index) * 4);
         if (index >= 10) {
             const uint32_t spare = uint32_t(index - 10);
@@ -201,11 +220,14 @@ RaceInstance build_race(const RaceAssets& assets, const std::vector<uint8_t>& ex
     // 0x00405783..0x004057a4: Big Game leaves both place-table entries
     // empty for DAT_00467a6c; retain the remaining rows' original grid slots.
     if (config.career && config.mode == GameMode::big_game) {
-        const int player = config.player_rider >= 0 ? config.player_rider :
-            character_rider(config.character >= 1 && config.character <= 8 ? config.character : 1);
+        const int player =
+            config.player_rider >= 0
+                ? config.player_rider
+                : character_rider(config.character >= 1 && config.character <= 8 ? config.character : 1);
         std::erase_if(opponents, [player](const Opponent& o) { return o.rider == player; });
     }
-    if (config.solo) for (auto& o : opponents) o.frozen = true;
+    if (config.solo)
+        for (auto& o : opponents) o.frozen = true;
     auto race = std::make_unique<Race>(std::move(route_a), std::move(route_b), assets.physics,
                                        assets.specs[size_t(assets.bike_index)], assets.rider_value,
                                        std::move(opponents), config.level, config.road_base_q8,
@@ -218,7 +240,8 @@ RaceInstance build_race(const RaceAssets& assets, const std::vector<uint8_t>& ex
             if (!r.ai || r.cop || r.rider_idx < 9 || r.rider_idx > 14) continue;
             const auto& levels = (*config.spare_levels)[size_t(r.rider_idx - 9)];
             std::copy(levels.begin(), levels.end(), r.brain.spd_b);
-            if (config.level >= 0 && config.level < 5) r.brain.base_speed = r.brain.current_speed = levels[size_t(config.level)];
+            if (config.level >= 0 && config.level < 5)
+                r.brain.base_speed = r.brain.current_speed = levels[size_t(config.level)];
         }
     }
     // 2. Prepare hook (demo hold) runs after the ctor, before the ring.
@@ -232,11 +255,19 @@ RaceInstance build_race(const RaceAssets& assets, const std::vector<uint8_t>& ex
         if (config.track_ring) {
             out.pedestrians = std::make_unique<PedestrianSystem>(
                 [](const RouteSample&) -> const std::vector<DzhrActor>& { return no_actors; },
-                [scene](const RouteSample& s, uint8_t selector) { return scene->pedestrian_look(s.section, s.local, selector); }, exe);
+                [scene](const RouteSample& s, uint8_t selector) {
+                    return scene->pedestrian_look(s.section, s.local, selector);
+                },
+                exe);
         } else {
             out.pedestrians = std::make_unique<PedestrianSystem>(
-                [scene](const RouteSample& s) -> const std::vector<DzhrActor>& { return scene->dzhr_actors(s.section, s.local); },
-                [scene](const RouteSample& s, uint8_t selector) { return scene->pedestrian_look(s.section, s.local, selector); }, exe);
+                [scene](const RouteSample& s) -> const std::vector<DzhrActor>& {
+                    return scene->dzhr_actors(s.section, s.local);
+                },
+                [scene](const RouteSample& s, uint8_t selector) {
+                    return scene->pedestrian_look(s.section, s.local, selector);
+                },
+                exe);
         }
         race->set_pedestrians(out.pedestrians.get());
         if (config.solo) race->set_freeze_actors(true);
@@ -253,18 +284,20 @@ RaceInstance build_race(const RaceAssets& assets, const std::vector<uint8_t>& ex
             r->set_static_frames([scene](uint32_t section, uint32_t local, uint8_t selector, bool billboard) {
                 return scene->static_frame(section, local, selector, billboard);
             });
-            out.ring->set_static_sink([r](int32_t sample, uint32_t section, uint32_t local, const RingStatics& statics) {
-                r->ring_statics(sample, section, local, statics);
-            });
+            out.ring->set_static_sink(
+                [r](int32_t sample, uint32_t section, uint32_t local, const RingStatics& statics) {
+                    r->ring_statics(sample, section, local, statics);
+                });
         }
         // Ring slices carry the race stream's terrain (0x00451910); the
         // scene's isolated-stream values stand in only where the ring has
         // not built a slice (splits/merges, the native quick setup).
         if (assets.scene) {
             auto* scene = assets.scene.get();
-            out.ring->set_slice_sink([scene](uint32_t section, uint32_t local, const PathSample& path, const TerrainSlice& slice) {
-                scene->apply_ring_terrain(section, local, path, slice);
-            });
+            out.ring->set_slice_sink(
+                [scene](uint32_t section, uint32_t local, const PathSample& path, const TerrainSlice& slice) {
+                    scene->apply_ring_terrain(section, local, path, slice);
+                });
         }
         race->set_track_ring(out.ring.get());
     }
@@ -278,9 +311,8 @@ RaceInstance build_race(const RaceAssets& assets, const std::vector<uint8_t>& ex
         race->set_terrain_source([scene](const RouteSample& sample) -> const TerrainSlice& {
             return scene->terrain(sample.section, sample.local);
         });
-        race->set_rail_height_source([scene](const RouteSample& sample) {
-            return scene->rail_height(sample.section, sample.local);
-        });
+        race->set_rail_height_source(
+            [scene](const RouteSample& sample) { return scene->rail_height(sample.section, sample.local); });
         // 5b. DZHR roadside solidity (plan 16 Task 2): solid billboards
         // collide through the class-1 hazard path; BORR spans stay test-only
         // until AI avoidance lands (the autopilot cannot dodge in-road spans).
@@ -310,4 +342,4 @@ RaceSetup make_race_setup(const Assets& assets, const std::vector<uint8_t>& exe,
     setup.instance = build_race(setup.assets, exe, config);
     return setup;
 }
-}
+} // namespace rr

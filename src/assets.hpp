@@ -6,12 +6,13 @@
 namespace rr {
 // Original game files addressed by path relative to the ROADRASH directory, e.g. "DATA/GLOBAL.RSC".
 class Assets {
-public:
+  public:
     explicit Assets(std::string root);
     std::vector<uint8_t> read(const std::string& relative) const;
     bool exists(const std::string& relative) const;
     const std::string& root() const { return root_; }
-private:
+
+  private:
     std::string root_;
 };
-}
+} // namespace rr

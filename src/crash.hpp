@@ -3,32 +3,33 @@
 #include "actor_animation.hpp"
 namespace rr {
 struct CrashConfig {
-    std::array<int32_t,3> bike_dimensions{},normal_dimensions{};
-    std::array<int32_t,26> rider_template{};
+    std::array<int32_t, 3> bike_dimensions{}, normal_dimensions{};
+    std::array<int32_t, 26> rider_template{};
 };
 CrashConfig read_crash_config(const std::vector<uint8_t>& exe);
 struct CrashActor {
     Bike motion;
     ActorAnimationState animation;
-    int route=0;
-    size_t sample=0,previous_sample=0;
+    int route = 0;
+    size_t sample = 0, previous_sample = 0;
 };
-void init_crash_actor(CrashActor&,const CrashConfig&);
-void remount_crash_actor(Bike&,ActorAnimationState& bike_animation,CrashActor&,const CrashConfig&,
-    const ActorAnimationBank&,const std::vector<int8_t>& fallback,uint32_t tick);
+void init_crash_actor(CrashActor&, const CrashConfig&);
+void remount_crash_actor(Bike&, ActorAnimationState& bike_animation, CrashActor&, const CrashConfig&,
+                         const ActorAnimationBank&, const std::vector<int8_t>& fallback, uint32_t tick);
 struct CrashRecoveryInput {
-    int32_t state_elapsed=0;
-    bool player=false,police_owner=false;
-    uint32_t walk_controls=0; // original 0x7800 direction bits, offline play
+    int32_t state_elapsed = 0;
+    bool player = false, police_owner = false;
+    uint32_t walk_controls = 0; // original 0x7800 direction bits, offline play
 };
-enum class CrashRecoveryAction { none,remount,wrecked };
+enum class CrashRecoveryAction { none, remount, wrecked };
 // Offline recovery decisions from 0x0040a600. Caller handles route bounds,
 // input-directed walking and the remount reset separately.
-CrashRecoveryAction recover_crash_actor(Bike&,CrashActor&,const ActorAnimationBank&,
-    const std::vector<int8_t>& fallback,uint32_t tick,CrashRecoveryInput&);
+CrashRecoveryAction recover_crash_actor(Bike&, CrashActor&, const ActorAnimationBank&,
+                                        const std::vector<int8_t>& fallback, uint32_t tick,
+                                        CrashRecoveryInput&);
 // Local motion portion of 0x00439920. The callback applies road-relative
 // longitudinal movement (0x00439270) before lateral velocity is added.
-void advance_actor_motion(Bike&,const PhysicsTables&,const std::function<void(int32_t)>& advance_route);
+void advance_actor_motion(Bike&, const PhysicsTables&, const std::function<void(int32_t)>& advance_route);
 // Impulse pair 0x004049c0 passes to 0x00403d60 at 0x404eeb, used by the
 // class-1 (bike/bike) and class-2 (bike/car) big-speed-gap crash branches.
 // 0x00403d60 applies param_2 to the rider half (bike+0x2fc) and param_3 to the
@@ -37,11 +38,12 @@ void advance_actor_motion(Bike&,const PhysicsTables&,const std::function<void(in
 // the instruction stores at 0x404ee7/0x404eec/0x404ef8/0x404efe/0x404f02/0x404f0a:
 // the rider struct at [esp+0x1c] is {0,0,0x200} and the bike struct at
 // [esp+0x28] is {0,0,0x100}. Do not reorder these axes.
-inline constexpr std::array<int32_t,3> kContactCrashRiderImpulse{0,0,0x200};
-inline constexpr std::array<int32_t,3> kContactCrashBikeImpulse{0,0,0x100};
+inline constexpr std::array<int32_t, 3> kContactCrashRiderImpulse{0, 0, 0x200};
+inline constexpr std::array<int32_t, 3> kContactCrashBikeImpulse{0, 0, 0x100};
 // Local, offline branch of 0x00403d60. Route bookkeeping and contact ownership
 // are supplied by Race; this routine applies the independent motion states.
-bool begin_crash(Bike& bike,CrashActor& rider,const CrashConfig&,const ActorAnimationBank&,
-    const std::vector<int8_t>& fallback,uint32_t tick,int32_t reason,
-    std::optional<std::array<int32_t,3>> rider_impulse={},std::optional<std::array<int32_t,3>> bike_impulse={});
-}
+bool begin_crash(Bike& bike, CrashActor& rider, const CrashConfig&, const ActorAnimationBank&,
+                 const std::vector<int8_t>& fallback, uint32_t tick, int32_t reason,
+                 std::optional<std::array<int32_t, 3>> rider_impulse = {},
+                 std::optional<std::array<int32_t, 3>> bike_impulse = {});
+} // namespace rr

@@ -5,20 +5,33 @@
 
 int main() {
     int failures = 0;
-    auto check = [&](bool v, const char* what) { if (!v) { ++failures; std::cerr << "FAIL " << what << '\n'; } };
+    auto check = [&](bool v, const char* what) {
+        if (!v) {
+            ++failures;
+            std::cerr << "FAIL " << what << '\n';
+        }
+    };
     int destroyed = 0;
     {
         // Counting deleter proves ownership runs on the throw path (Review Focus 4).
-        struct CountDel { int* n; void operator()(SDL_Surface* s) const noexcept { ++*n; SDL_DestroySurface(s); } };
+        struct CountDel {
+            int* n;
+            void operator()(SDL_Surface* s) const noexcept {
+                ++*n;
+                SDL_DestroySurface(s);
+            }
+        };
         try {
-            std::unique_ptr<SDL_Surface, CountDel> p(SDL_CreateSurface(4, 4, SDL_PIXELFORMAT_XRGB8888), CountDel{&destroyed});
+            std::unique_ptr<SDL_Surface, CountDel> p(SDL_CreateSurface(4, 4, SDL_PIXELFORMAT_XRGB8888),
+                                                     CountDel{&destroyed});
             if (!p) throw std::runtime_error("no surface");
             throw std::runtime_error("device lost");
-        } catch (const std::runtime_error&) {}
+        } catch (const std::runtime_error&) {
+        }
         check(destroyed == 1, "surface destroyed on throw path");
     }
     {
-        rr::TexturePtr t;   // null reset is safe
+        rr::TexturePtr t; // null reset is safe
         t.reset();
         check(!t, "null texture resets cleanly");
     }

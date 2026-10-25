@@ -28,11 +28,13 @@ int main(int argc, char** argv) {
             const int course = int(original.at("course"));
             if (course < 0 || course >= 5) throw std::runtime_error("Unknown oracle course");
             if (!routes.count(course)) {
-                const auto data = rr::read_course(assets.read(std::string("DATA/COURSES/") + names[course] + ".CRS"));
+                const auto data =
+                    rr::read_course(assets.read(std::string("DATA/COURSES/") + names[course] + ".CRS"));
                 routes[course] = {rr::make_route(data, false), rr::make_route(data, true)};
             }
             const int64_t recorded_position = original.at("camera.position");
-            if (recorded_position < 0 || recorded_position > UINT32_MAX) throw std::runtime_error("Invalid oracle camera position");
+            if (recorded_position < 0 || recorded_position > UINT32_MAX)
+                throw std::runtime_error("Invalid oracle camera position");
             const uint32_t position = uint32_t(recorded_position);
             bool matched = false;
             std::string first_difference;
@@ -44,9 +46,12 @@ int main(int argc, char** argv) {
                 bool same = true;
                 auto compare = [&](const std::string& key, int64_t value) {
                     const auto it = original.find(key);
-                    if (it == original.end()) throw std::runtime_error("Oracle is missing required field " + key);
+                    if (it == original.end())
+                        throw std::runtime_error("Oracle is missing required field " + key);
                     if (it->second == value) return;
-                    if (first_difference.empty()) first_difference = key + " original=" + std::to_string(it->second) + " native=" + std::to_string(value);
+                    if (first_difference.empty())
+                        first_difference = key + " original=" + std::to_string(it->second) +
+                                           " native=" + std::to_string(value);
                     same = false;
                 };
                 for (size_t s = 0; s < native.size(); ++s) {
@@ -66,7 +71,10 @@ int main(int argc, char** argv) {
                         compare(q + "shoulder_right", native[s].screen_x(r, road.shoulder_right));
                     }
                 }
-                if (same) { matched = true; break; }
+                if (same) {
+                    matched = true;
+                    break;
+                }
             }
             ++compared;
             if (!matched) {
@@ -77,5 +85,8 @@ int main(int argc, char** argv) {
         std::cout << compared << " frames compared; " << mismatches << " mismatches\n";
         if (!compared) throw std::runtime_error("Oracle capture has no race frames");
         return mismatches ? 1 : 0;
-    } catch (const std::exception& e) { std::cerr << e.what() << '\n'; return 1; }
+    } catch (const std::exception& e) {
+        std::cerr << e.what() << '\n';
+        return 1;
+    }
 }

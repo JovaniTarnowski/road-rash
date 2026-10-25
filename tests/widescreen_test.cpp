@@ -35,13 +35,16 @@ std::vector<uint8_t> read_file(const std::string& path) {
 }
 // Wide logical width for 16:9 at the same view height: 320*16/9/(4/3) = 426.
 constexpr int kWide = 426;
-constexpr int kSide = (kWide - 320) / 2;  // 53 logical pixels per side
-}
+constexpr int kSide = (kWide - 320) / 2; // 53 logical pixels per side
+} // namespace
 
 int main(int argc, char** argv) {
     int failures = 0;
     auto check = [&](bool ok, const char* what) {
-        if (!ok) { ++failures; std::cerr << "FAIL " << what << '\n'; }
+        if (!ok) {
+            ++failures;
+            std::cerr << "FAIL " << what << '\n';
+        }
     };
     std::string assets_root = RR_SOURCE_DIR "/../cdrom/ROADRASH";
     for (int i = 1; i < argc; ++i) {
@@ -92,13 +95,17 @@ int main(int argc, char** argv) {
         const auto& state_lib = sprites;
         (void)state_lib;
         rr::AnimationFrame frame;
-        frame.width = 64; frame.height = 64;
-        frame.hotspot[0] = 32; frame.hotspot[1] = 64;
+        frame.width = 64;
+        frame.height = 64;
+        frame.hotspot[0] = 32;
+        frame.hotspot[1] = 64;
         rr::CelTexture tex;
         tex.bounds = {0, 0, 63, 63};
         rr::CelMip m;
         m.pixels.assign(64 * 64, 1);
-        m.width = 64; m.height = 64; m.stride_shift = 6;
+        m.width = 64;
+        m.height = 64;
+        m.stride_shift = 6;
         tex.mips.push_back(std::move(m));
         const rr::Camera camera = race.camera();
         rr::ActorProjection probe = base;
@@ -134,13 +141,17 @@ int main(int argc, char** argv) {
         const auto dump = rr::scene::load(stem + "-scene" + std::to_string(file) + ".raw");
         const auto pixels = read_file(stem + "-f" + std::to_string(long(f.at("pixels.file"))) + ".raw");
         const int width = int(f.at("pixels.width")), height = int(f.at("pixels.height"));
-        if (pixels.size() != size_t(width) * size_t(height)) { ++failures; continue; }
+        if (pixels.size() != size_t(width) * size_t(height)) {
+            ++failures;
+            continue;
+        }
         std::vector<rr::DrawNode> nodes;
         std::vector<std::unique_ptr<rr::CelTexture>> dynamic;
         for (const auto& s : dump.nodes) {
             rr::DrawNode n;
             for (int k = 0; k < 4; ++k)
-                n.view_points[size_t(k)] = {int32_t(s.u32(0x44 + 8 * size_t(k))), int32_t(s.u32(0x48 + 8 * size_t(k)))};
+                n.view_points[size_t(k)] = {int32_t(s.u32(0x44 + 8 * size_t(k))),
+                                            int32_t(s.u32(0x48 + 8 * size_t(k)))};
             n.flip_u = s.bytes[0x64] != 0;
             n.flip_v = s.bytes[0x65] != 0;
             if (s.u32(8) == 0x00466684) {
@@ -148,8 +159,10 @@ int main(int argc, char** argv) {
                 if (!t) continue;
                 dynamic.push_back(std::make_unique<rr::CelTexture>(std::move(*t)));
                 n.texture = dynamic.back().get();
-            } else if (s.bytes[0x66]) n.flat_index = s.bytes[0x67];
-            else if (!(n.texture = lib.find(s.hash, s.size))) continue;
+            } else if (s.bytes[0x66])
+                n.flat_index = s.bytes[0x67];
+            else if (!(n.texture = lib.find(s.hash, s.size)))
+                continue;
             nodes.push_back(n);
         }
         const int wide_w0 = kWide * 4, wide_h0 = 960;
@@ -192,7 +205,9 @@ int main(int argc, char** argv) {
         ++frames;
     }
     check(frames > 0, "golden frames rendered");
-    if (failures) std::cout << failures << " failures\n";
-    else std::cout << "0 failures\n";
+    if (failures)
+        std::cout << failures << " failures\n";
+    else
+        std::cout << "0 failures\n";
     return failures ? 1 : 0;
 }

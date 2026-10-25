@@ -19,8 +19,8 @@ MenuDirections MenuStickInput::update(int x, int y, uint64_t now_ms) {
     if (require_neutral_) return {};
     const int threshold = direction_ == Direction::none ? steer_dead_zone : 8000;
     if (ax <= threshold && ay <= threshold) return {};
-    const Direction next = ax >= ay ? (x < 0 ? Direction::left : Direction::right)
-                                    : (y < 0 ? Direction::up : Direction::down);
+    const Direction next =
+        ax >= ay ? (x < 0 ? Direction::left : Direction::right) : (y < 0 ? Direction::up : Direction::down);
     if (next != direction_) {
         direction_ = next;
         next_repeat_ = now_ms + 350;
@@ -29,8 +29,8 @@ MenuDirections MenuStickInput::update(int x, int y, uint64_t now_ms) {
         // At most one navigation step per frame, even after a long stall.
         next_repeat_ = now_ms + 100;
     }
-    return {next == Direction::left, next == Direction::right,
-            next == Direction::up, next == Direction::down};
+    return {next == Direction::left, next == Direction::right, next == Direction::up,
+            next == Direction::down};
 }
 
 uint32_t controls_from(const PlayerInput& in, int dead_zone) {
@@ -40,35 +40,54 @@ uint32_t controls_from(const PlayerInput& in, int dead_zone) {
     if (in.punch) c |= control_punch;
     if (in.kick) c |= control_kick;
     if (in.backhand) c |= control_backhand;
-    if (in.left || in.steer_axis < -dead_zone) c |= control_left;
-    else if (in.right || in.steer_axis > dead_zone) c |= control_right;
+    if (in.left || in.steer_axis < -dead_zone)
+        c |= control_left;
+    else if (in.right || in.steer_axis > dead_zone)
+        c |= control_right;
     return c;
 }
 
 namespace {
 // Native control bit per action row 0..10 (rows 7/8/10 have no native bit).
 constexpr uint32_t kActionBits[11] = {
-    control_accelerate, control_brake, control_left, control_right, control_punch,
-    control_kick, control_backhand, 0, 0, control_nitro, 0,
+    control_accelerate,
+    control_brake,
+    control_left,
+    control_right,
+    control_punch,
+    control_kick,
+    control_backhand,
+    0,
+    0,
+    control_nitro,
+    0,
 };
 // Default keyboard scancodes per action (current game feel; row 8 dead, 7/9/10 unbound).
 constexpr int kDefaultKeys[11][2] = {
-    {SDL_SCANCODE_UP, SDL_SCANCODE_W}, {SDL_SCANCODE_DOWN, SDL_SCANCODE_S},
-    {SDL_SCANCODE_LEFT, SDL_SCANCODE_A}, {SDL_SCANCODE_RIGHT, SDL_SCANCODE_D},
-    {SDL_SCANCODE_Z, SDL_SCANCODE_LCTRL}, {SDL_SCANCODE_X, SDL_SCANCODE_LALT},
-    {SDL_SCANCODE_C, -1}, {-1, -1}, {-1, -1}, {-1, -1}, {-1, -1},
+    {SDL_SCANCODE_UP, SDL_SCANCODE_W},
+    {SDL_SCANCODE_DOWN, SDL_SCANCODE_S},
+    {SDL_SCANCODE_LEFT, SDL_SCANCODE_A},
+    {SDL_SCANCODE_RIGHT, SDL_SCANCODE_D},
+    {SDL_SCANCODE_Z, SDL_SCANCODE_LCTRL},
+    {SDL_SCANCODE_X, SDL_SCANCODE_LALT},
+    {SDL_SCANCODE_C, -1},
+    {-1, -1},
+    {-1, -1},
+    {-1, -1},
+    {-1, -1},
 };
 bool pressed(const bool* down, int sc) {
     return sc > 0 && sc < SDL_SCANCODE_COUNT && down[sc];
 }
-}
+} // namespace
 
 uint32_t bound_control_bits(const std::array<uint16_t, 11>& codes, bool custom, const bool* down) {
     uint32_t bits = 0;
     for (int i = 0; i < 11; ++i) {
         if (kActionBits[i] == 0) continue;
         if (!custom) {
-            if (pressed(down, kDefaultKeys[i][0]) || pressed(down, kDefaultKeys[i][1])) bits |= kActionBits[i];
+            if (pressed(down, kDefaultKeys[i][0]) || pressed(down, kDefaultKeys[i][1]))
+                bits |= kActionBits[i];
         } else {
             // Custom keyboard codes store low-byte-first (0x0040e760).
             if (pressed(down, codes[size_t(i)] & 0xff)) bits |= kActionBits[i];
@@ -78,12 +97,19 @@ uint32_t bound_control_bits(const std::array<uint16_t, 11>& codes, bool custom, 
 }
 
 PlayerInput touch_input(float x, float y, float width, float height, bool left_handed) {
-    if (left_handed) x = width - x;   // plan 18 Task 7: mirror zones for left thumbs
+    if (left_handed) x = width - x; // plan 18 Task 7: mirror zones for left thumbs
     PlayerInput in;
-    if (y < height / 3) { in.punch = true; in.accelerate = true; return in; }   // top third: punch
-    if (x < width / 3) in.left = true;
-    else if (x > width * 2 / 3) in.right = true;
-    else if (y > height * 3 / 4) in.brake = true;
+    if (y < height / 3) {
+        in.punch = true;
+        in.accelerate = true;
+        return in;
+    } // top third: punch
+    if (x < width / 3)
+        in.left = true;
+    else if (x > width * 2 / 3)
+        in.right = true;
+    else if (y > height * 3 / 4)
+        in.brake = true;
     in.accelerate = !in.brake;
     return in;
 }
@@ -100,12 +126,16 @@ PlayerInput TouchInput::current() const {
     PlayerInput in;
     for (const auto& finger : fingers_) {
         const auto& f = finger.second;
-        in.accelerate |= f.accelerate; in.brake |= f.brake;
-        in.left |= f.left; in.right |= f.right;
-        in.punch |= f.punch; in.kick |= f.kick; in.backhand |= f.backhand;
+        in.accelerate |= f.accelerate;
+        in.brake |= f.brake;
+        in.left |= f.left;
+        in.right |= f.right;
+        in.punch |= f.punch;
+        in.kick |= f.kick;
+        in.backhand |= f.backhand;
     }
     // A braking finger overrides auto-throttle from the steering/attack zones.
     if (in.brake) in.accelerate = false;
     return in;
 }
-}
+} // namespace rr

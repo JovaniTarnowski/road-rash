@@ -40,4 +40,4 @@ struct LifecycleWatch {
     }
     ~LifecycleWatch() { SDL_RemoveEventWatch(watch, this); }
 };
-}
+} // namespace rr

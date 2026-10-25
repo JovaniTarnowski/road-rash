@@ -18,7 +18,7 @@ struct CelGroup {
     // 0x0044aa10 / 0x0044a8c0. Sizes are Q16; logarithmic lookup is
     // read from the imported EXE at 0x00476af8 rather than embedded.
     const GroupCel& select(int32_t width_q16, int32_t height_q16,
-                          const std::vector<uint8_t>& logarithms) const;
+                           const std::vector<uint8_t>& logarithms) const;
 };
 CelGroup read_cel_group(const std::vector<uint8_t>& unpacked, uint32_t offset);
 
@@ -36,4 +36,4 @@ struct Family {
                                     std::optional<uint32_t> frame = std::nullopt) const;
 };
 Family read_family(const std::vector<uint8_t>& packed_payload);
-}
+} // namespace rr

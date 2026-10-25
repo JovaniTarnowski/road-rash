@@ -17,14 +17,17 @@ bool parse_int(const std::string& v, int lo, int hi, int& out) {
         if (used != v.size() || x < lo || x > hi) return false;
         out = x;
         return true;
-    } catch (...) { return false; }
+    } catch (...) {
+        return false;
+    }
 }
-}
+} // namespace
 
 bool operator==(const Enhancements& a, const Enhancements& b) {
-    return a.interpolate == b.interpolate && a.perspective == b.perspective && a.full_colour == b.full_colour &&
-           a.filter == b.filter && a.fog == b.fog && a.grade == b.grade && a.draw_slices == b.draw_slices &&
-           a.bloom == b.bloom && a.vignette == b.vignette && a.motion_blur == b.motion_blur;
+    return a.interpolate == b.interpolate && a.perspective == b.perspective &&
+           a.full_colour == b.full_colour && a.filter == b.filter && a.fog == b.fog && a.grade == b.grade &&
+           a.draw_slices == b.draw_slices && a.bloom == b.bloom && a.vignette == b.vignette &&
+           a.motion_blur == b.motion_blur;
 }
 bool Enhancements::any() const {
     return !(*this == Enhancements{});
@@ -51,7 +54,8 @@ Settings default_settings() {
     SDL_Locale** locales = SDL_GetPreferredLocales(&count);
     if (locales && count > 0 && locales[0]) {
         if (locales[0]->language) s.language = language_from_code(locales[0]->language);
-        s.metric = locales[0]->country ? !imperial_country(locales[0]->country) : s.language != Language::english;
+        s.metric =
+            locales[0]->country ? !imperial_country(locales[0]->country) : s.language != Language::english;
     }
     SDL_free(locales);
 #ifdef __ANDROID__
@@ -70,43 +74,63 @@ Settings parse_settings(const std::string& text) {
         if (eq == std::string::npos) continue;
         const std::string k = line.substr(0, eq), v = line.substr(eq + 1);
         int x = 0;
-        auto flag = [&](bool& f) { if (parse_int(v, 0, 1, x)) f = x != 0; };
-        if (k == "language") { if (parse_int(v, 0, 4, x)) s.language = Language(x); }
-        else if (k == "metric") flag(s.metric);
-        else if (k == "hires") flag(s.high_resolution);
-        else if (k == "inset") flag(s.inset);
-        else if (k == "hires_bikers") flag(s.high_res_bikers);
-        else if (k == "video_mode") { if (parse_int(v, 0, 2, x)) s.video_mode = x; }
-        else if (k == "alternate_artwork") flag(s.alternate_artwork);
-        else if (k == "mini_dash") { if (parse_int(v, 0, 2, x)) s.mini_dash = x; }
-        else if (k == "controls") {
+        auto flag = [&](bool& f) {
+            if (parse_int(v, 0, 1, x)) f = x != 0;
+        };
+        if (k == "language") {
+            if (parse_int(v, 0, 4, x)) s.language = Language(x);
+        } else if (k == "metric")
+            flag(s.metric);
+        else if (k == "hires")
+            flag(s.high_resolution);
+        else if (k == "inset")
+            flag(s.inset);
+        else if (k == "hires_bikers")
+            flag(s.high_res_bikers);
+        else if (k == "video_mode") {
+            if (parse_int(v, 0, 2, x)) s.video_mode = x;
+        } else if (k == "alternate_artwork")
+            flag(s.alternate_artwork);
+        else if (k == "mini_dash") {
+            if (parse_int(v, 0, 2, x)) s.mini_dash = x;
+        } else if (k == "controls") {
             // 44 hex chars (full u16 per action, high byte first); legacy 22-char
             // files carry the low byte only. Malformed input ignored. Unknown codes
             // fall back to that action's keyboard default only: high byte 0 with a
             // low byte outside the joystick set means nothing pressable (plan 18
             // Task 7). Zero stays unbound.
-            auto hex = [](char c) { return c >= '0' && c <= '9' ? c - '0' : c >= 'a' && c <= 'f' ? c - 'a' + 10 : c >= 'A' && c <= 'F' ? c - 'A' + 10 : -1; };
+            auto hex = [](char c) {
+                return c >= '0' && c <= '9'   ? c - '0'
+                       : c >= 'a' && c <= 'f' ? c - 'a' + 10
+                       : c >= 'A' && c <= 'F' ? c - 'A' + 10
+                                              : -1;
+            };
             std::array<uint16_t, 11> t{};
             bool ok = false;
             if (v.size() == 44) {
                 ok = true;
                 for (size_t i = 0; i < 11 && ok; ++i) {
                     int h[4] = {hex(v[4 * i]), hex(v[4 * i + 1]), hex(v[4 * i + 2]), hex(v[4 * i + 3])};
-                    if (h[0] < 0 || h[1] < 0 || h[2] < 0 || h[3] < 0) ok = false;
-                    else t[i] = uint16_t(h[0] * 4096 + h[1] * 256 + h[2] * 16 + h[3]);
+                    if (h[0] < 0 || h[1] < 0 || h[2] < 0 || h[3] < 0)
+                        ok = false;
+                    else
+                        t[i] = uint16_t(h[0] * 4096 + h[1] * 256 + h[2] * 16 + h[3]);
                 }
             } else if (v.size() == 22) {
                 ok = true;
                 for (size_t i = 0; i < 11 && ok; ++i) {
                     int hi = hex(v[2 * i]), lo = hex(v[2 * i + 1]);
-                    if (hi < 0 || lo < 0) ok = false;
-                    else t[i] = uint16_t(hi * 16 + lo);
+                    if (hi < 0 || lo < 0)
+                        ok = false;
+                    else
+                        t[i] = uint16_t(hi * 16 + lo);
                 }
             }
             if (ok) {
                 static constexpr uint8_t kJoy[] = {0x00, 0x01, 0x02, 0x25, 0x26, 0x27, 0x28};
                 const auto known_joy = [&](uint8_t b) {
-                    for (uint8_t j : kJoy) if (j == b) return true;
+                    for (uint8_t j : kJoy)
+                        if (j == b) return true;
                     return false;
                 };
                 const auto kb = default_keyboard_controls();
@@ -115,53 +139,92 @@ Settings parse_settings(const std::string& text) {
                 s.controls = t;
                 s.custom_controls = true;
             }
+        } else if (k == "music_group") {
+            if (parse_int(v, 0, 31, x)) s.music_group = x;
+        } else if (k == "music_track") {
+            if (parse_int(v, 0, 31, x)) s.music_track = x;
+        } else if (k == "master_volume") {
+            if (parse_int(v, 0, 100, x)) s.master_volume = x;
+        } else if (k == "music_volume") {
+            if (parse_int(v, 0, 100, x)) s.music_volume = x;
+        } else if (k == "effects_volume") {
+            if (parse_int(v, 0, 100, x)) s.effects_volume = x;
+        } else if (k == "engine_volume") {
+            if (parse_int(v, 0, 100, x)) s.engine_volume = x;
+        } else if (k == "others_volume") {
+            if (parse_int(v, 0, 100, x)) s.others_volume = x;
+        } else if (k == "siren_volume") {
+            if (parse_int(v, 0, 100, x)) s.siren_volume = x;
+        } else if (k == "interface_volume") {
+            if (parse_int(v, 0, 100, x)) s.interface_volume = x;
+        } else if (k == "mute")
+            flag(s.mute);
+        else if (k == "swap_speakers")
+            flag(s.swap_speakers);
+        else if (k == "display_mode") {
+            if (parse_int(v, 0, 1, x)) s.display_mode = DisplayMode(x);
+        } else if (k == "window_scale") {
+            if (parse_int(v, 1, 4, x)) s.window_scale = x;
+        } else if (k == "scale_mode") {
+            if (parse_int(v, 0, 2, x)) s.scale_mode = ScaleMode(x);
+        } else if (k == "filter") {
+            if (parse_int(v, 0, 1, x)) s.filter = FilterMode(x);
+        } else if (k == "vsync")
+            flag(s.vsync);
+        else if (k == "show_fps")
+            flag(s.show_fps);
+        else if (k == "render_scale") {
+            if (parse_int(v, 0, 4, x)) s.render_scale = x;
+        } else if (k == "widescreen") {
+            if (parse_int(v, 0, 3, x)) s.widescreen = Widescreen(x);
+        } else if (k == "texture_detail") {
+            if (parse_int(v, 0, 1, x)) s.texture_detail = x;
+        } else if (k == "enh_interpolate")
+            flag(s.enhancements.interpolate);
+        else if (k == "enh_perspective")
+            flag(s.enhancements.perspective);
+        else if (k == "enh_full_colour")
+            flag(s.enhancements.full_colour);
+        else if (k == "enh_filter") {
+            if (parse_int(v, 0, 2, x)) s.enhancements.filter = TextureFilter(x);
+        } else if (k == "enh_fog") {
+            if (parse_int(v, 0, 100, x)) s.enhancements.fog = x;
+        } else if (k == "enh_grade") {
+            if (parse_int(v, 0, 3, x)) s.enhancements.grade = Grade(x);
+        } else if (k == "enh_draw_slices") {
+            if (v == "33" || v == "48" || v == "64") s.enhancements.draw_slices = std::stoi(v);
+        } else if (k == "enh_bloom")
+            flag(s.enhancements.bloom);
+        else if (k == "enh_vignette")
+            flag(s.enhancements.vignette);
+        else if (k == "enh_motion_blur")
+            flag(s.enhancements.motion_blur);
+        else if (k == "enh_widescreen") {
+            if (parse_int(v, 0, 3, x)) s.widescreen = Widescreen(x);
+        } // migrated: single setting
+        else if (k == "touch_opacity") {
+            if (parse_int(v, 0, 100, x)) s.touch_opacity = x;
+        } else if (k == "haptics")
+            flag(s.haptics);
+        else if (k == "swap_punch_kick")
+            flag(s.swap_punch_kick);
+        else if (k == "stick_deadzone") {
+            if (parse_int(v, 10, 40, x)) s.stick_deadzone = x;
+        } else if (k == "left_handed")
+            flag(s.left_handed);
+        else if (k == "alias") {
+            if (v.size() < 20) s.alias = v;
         }
-        else if (k == "music_group") { if (parse_int(v, 0, 31, x)) s.music_group = x; }
-        else if (k == "music_track") { if (parse_int(v, 0, 31, x)) s.music_track = x; }
-        else if (k == "master_volume") { if (parse_int(v, 0, 100, x)) s.master_volume = x; }
-        else if (k == "music_volume") { if (parse_int(v, 0, 100, x)) s.music_volume = x; }
-        else if (k == "effects_volume") { if (parse_int(v, 0, 100, x)) s.effects_volume = x; }
-        else if (k == "engine_volume") { if (parse_int(v, 0, 100, x)) s.engine_volume = x; }
-        else if (k == "others_volume") { if (parse_int(v, 0, 100, x)) s.others_volume = x; }
-        else if (k == "siren_volume") { if (parse_int(v, 0, 100, x)) s.siren_volume = x; }
-        else if (k == "interface_volume") { if (parse_int(v, 0, 100, x)) s.interface_volume = x; }
-        else if (k == "mute") flag(s.mute);
-        else if (k == "swap_speakers") flag(s.swap_speakers);
-        else if (k == "display_mode") { if (parse_int(v, 0, 1, x)) s.display_mode = DisplayMode(x); }
-        else if (k == "window_scale") { if (parse_int(v, 1, 4, x)) s.window_scale = x; }
-        else if (k == "scale_mode") { if (parse_int(v, 0, 2, x)) s.scale_mode = ScaleMode(x); }
-        else if (k == "filter") { if (parse_int(v, 0, 1, x)) s.filter = FilterMode(x); }
-        else if (k == "vsync") flag(s.vsync);
-        else if (k == "show_fps") flag(s.show_fps);
-        else if (k == "render_scale") { if (parse_int(v, 0, 4, x)) s.render_scale = x; }
-        else if (k == "widescreen") { if (parse_int(v, 0, 3, x)) s.widescreen = Widescreen(x); }
-        else if (k == "texture_detail") { if (parse_int(v, 0, 1, x)) s.texture_detail = x; }
-        else if (k == "enh_interpolate") flag(s.enhancements.interpolate);
-        else if (k == "enh_perspective") flag(s.enhancements.perspective);
-        else if (k == "enh_full_colour") flag(s.enhancements.full_colour);
-        else if (k == "enh_filter") { if (parse_int(v, 0, 2, x)) s.enhancements.filter = TextureFilter(x); }
-        else if (k == "enh_fog") { if (parse_int(v, 0, 100, x)) s.enhancements.fog = x; }
-        else if (k == "enh_grade") { if (parse_int(v, 0, 3, x)) s.enhancements.grade = Grade(x); }
-        else if (k == "enh_draw_slices") { if (v == "33" || v == "48" || v == "64") s.enhancements.draw_slices = std::stoi(v); }
-        else if (k == "enh_bloom") flag(s.enhancements.bloom);
-        else if (k == "enh_vignette") flag(s.enhancements.vignette);
-        else if (k == "enh_motion_blur") flag(s.enhancements.motion_blur);
-        else if (k == "enh_widescreen") { if (parse_int(v, 0, 3, x)) s.widescreen = Widescreen(x); }   // migrated: single setting
-        else if (k == "touch_opacity") { if (parse_int(v, 0, 100, x)) s.touch_opacity = x; }
-        else if (k == "haptics") flag(s.haptics);
-        else if (k == "swap_punch_kick") flag(s.swap_punch_kick);
-        else if (k == "stick_deadzone") { if (parse_int(v, 10, 40, x)) s.stick_deadzone = x; }
-        else if (k == "left_handed") flag(s.left_handed);
-        else if (k == "alias") { if (v.size() < 20) s.alias = v; }
     }
     return s;
 }
 
 std::string format_settings(const Settings& s) {
     std::ostringstream o;
-    o << "language=" << int(s.language) << "\nmetric=" << s.metric << "\nhires=" << s.high_resolution << "\ninset=" << s.inset
-      << "\nhires_bikers=" << s.high_res_bikers << "\nvideo_mode=" << s.video_mode << "\nalternate_artwork=" << s.alternate_artwork
-      << "\nmini_dash=" << s.mini_dash << "\nopponent_list=" << s.opponent_list << "\nmusic_group=" << s.music_group;
+    o << "language=" << int(s.language) << "\nmetric=" << s.metric << "\nhires=" << s.high_resolution
+      << "\ninset=" << s.inset << "\nhires_bikers=" << s.high_res_bikers << "\nvideo_mode=" << s.video_mode
+      << "\nalternate_artwork=" << s.alternate_artwork << "\nmini_dash=" << s.mini_dash
+      << "\nopponent_list=" << s.opponent_list << "\nmusic_group=" << s.music_group;
     if (s.custom_controls) {
         // Full u16 per action (4 hex chars, high byte first). The pre-Task-7
         // writer emitted only the low byte (22 chars); the reader still takes it.
@@ -170,14 +233,17 @@ std::string format_settings(const Settings& s) {
             o << "0123456789abcdef"[(c >> 12) & 15] << "0123456789abcdef"[(c >> 8) & 15]
               << "0123456789abcdef"[(c >> 4) & 15] << "0123456789abcdef"[c & 15];
     }
-    o << "\nmusic_track=" << s.music_track << "\nmaster_volume=" << s.master_volume << "\nmusic_volume=" << s.music_volume
-      << "\neffects_volume=" << s.effects_volume << "\nengine_volume=" << s.engine_volume << "\nothers_volume=" << s.others_volume
-      << "\nsiren_volume=" << s.siren_volume << "\ninterface_volume=" << s.interface_volume << "\nmute=" << s.mute
-      << "\nswap_speakers=" << s.swap_speakers
-      << "\ndisplay_mode=" << int(s.display_mode) << "\nwindow_scale=" << s.window_scale << "\nscale_mode=" << int(s.scale_mode)
-      << "\nfilter=" << int(s.filter) << "\nvsync=" << s.vsync << "\nshow_fps=" << s.show_fps
-      << "\nrender_scale=" << s.render_scale << "\nwidescreen=" << int(s.widescreen) << "\ntexture_detail=" << s.texture_detail
-      << "\nenh_interpolate=" << s.enhancements.interpolate << "\nenh_perspective=" << s.enhancements.perspective
+    o << "\nmusic_track=" << s.music_track << "\nmaster_volume=" << s.master_volume
+      << "\nmusic_volume=" << s.music_volume << "\neffects_volume=" << s.effects_volume
+      << "\nengine_volume=" << s.engine_volume << "\nothers_volume=" << s.others_volume
+      << "\nsiren_volume=" << s.siren_volume << "\ninterface_volume=" << s.interface_volume
+      << "\nmute=" << s.mute << "\nswap_speakers=" << s.swap_speakers
+      << "\ndisplay_mode=" << int(s.display_mode) << "\nwindow_scale=" << s.window_scale
+      << "\nscale_mode=" << int(s.scale_mode) << "\nfilter=" << int(s.filter) << "\nvsync=" << s.vsync
+      << "\nshow_fps=" << s.show_fps << "\nrender_scale=" << s.render_scale
+      << "\nwidescreen=" << int(s.widescreen) << "\ntexture_detail=" << s.texture_detail
+      << "\nenh_interpolate=" << s.enhancements.interpolate
+      << "\nenh_perspective=" << s.enhancements.perspective
       << "\nenh_full_colour=" << s.enhancements.full_colour << "\nenh_filter=" << int(s.enhancements.filter)
       << "\nenh_fog=" << s.enhancements.fog << "\nenh_grade=" << int(s.enhancements.grade)
       << "\nenh_draw_slices=" << s.enhancements.draw_slices << "\nenh_bloom=" << s.enhancements.bloom
@@ -230,4 +296,4 @@ bool save_settings(const std::string& path, const Settings& s) {
     const std::string text = format_settings(s);
     return write_file_atomic(path, text.data(), text.size());
 }
-}
+} // namespace rr

@@ -19,9 +19,9 @@ namespace rr {
 // tie-break. The game always upscales index images once, then remaps at draw
 // time (valid indices, documented shared silhouette); that form is correct
 // even when the remap is not a bijection.
-Image8 mmpx2x(const Image8& source, const std::array<uint32_t,256>& luma, int transparent);
-Image8 mmpx4x(const Image8& source, const std::array<uint32_t,256>& luma, int transparent);
+Image8 mmpx2x(const Image8& source, const std::array<uint32_t, 256>& luma, int transparent);
+Image8 mmpx4x(const Image8& source, const std::array<uint32_t, 256>& luma, int transparent);
 // Luma table from the game palette (Palette::rgbx). Throws
 // std::runtime_error on bad dimensions.
-std::array<uint32_t,256> mmpx_luma(const std::array<uint8_t,1024>& rgbx);
-}
+std::array<uint32_t, 256> mmpx_luma(const std::array<uint8_t, 1024>& rgbx);
+} // namespace rr

@@ -6,15 +6,18 @@
 
 namespace rr {
 namespace {
-void put32(uint8_t* p, uint32_t v) { for (int i = 0; i < 4; ++i) p[i] = uint8_t(v >> (8 * i)); }
+void put32(uint8_t* p, uint32_t v) {
+    for (int i = 0; i < 4; ++i) p[i] = uint8_t(v >> (8 * i));
+}
 constexpr uint32_t save_magic = 0xcafedead;
 constexpr size_t save_size = 0xa0;
-}
+} // namespace
 
 CareerTables read_career_tables(const std::vector<uint8_t>& exe) {
     CareerTables t;
     const auto cash = read_exe_data(exe, 0x00469000, 18);
-    for (size_t i = 0; i < t.start_cash.size(); ++i) t.start_cash[i] = uint16_t(cash[2 * i] | cash[2 * i + 1] << 8);
+    for (size_t i = 0; i < t.start_cash.size(); ++i)
+        t.start_cash[i] = uint16_t(cash[2 * i] | cash[2 * i + 1] << 8);
     const auto bikes = read_exe_data(exe, 0x004641c8, t.level_bike.size());
     std::copy(bikes.begin(), bikes.end(), t.level_bike.begin());
     const auto prices = read_exe_data(exe, 0x00468fc0, 4 * t.bike_price.size());
@@ -27,18 +30,20 @@ CareerTables read_career_tables(const std::vector<uint8_t>& exe) {
         const auto rec = read_exe_data(exe, 0x00464558 + uint32_t(p) * 0x204, 120);
         const ByteReader rel_reader(rec);
         for (size_t r = 0; r < 10; ++r)
-            for (size_t k = 0; k < 3; ++k) t.default_relations[p][r][k] = int32_t(rel_reader.le<uint32_t>(12 * r + 4 * k));
+            for (size_t k = 0; k < 3; ++k)
+                t.default_relations[p][r][k] = int32_t(rel_reader.le<uint32_t>(12 * r + 4 * k));
     }
     const auto spare = read_exe_data(exe, 0x00464558 + 0x1bc, 4 * t.spare_levels.size());
     const ByteReader spare_reader(spare);
-    for (size_t l = 0; l < t.spare_levels.size(); ++l) t.spare_levels[l] = int32_t(spare_reader.le<uint32_t>(4 * l));
+    for (size_t l = 0; l < t.spare_levels.size(); ++l)
+        t.spare_levels[l] = int32_t(spare_reader.le<uint32_t>(4 * l));
     for (auto b : t.level_bike)
         if (b >= t.bike_price.size()) throw std::runtime_error("Invalid default bike table");
     return t;
 }
 
 int character_rider(int character) {
-    static constexpr int map[8] = {8, 7, 2, 5, 4, 6, 3, 1};   // 0x00415fc0
+    static constexpr int map[8] = {8, 7, 2, 5, 4, 6, 3, 1}; // 0x00415fc0
     return character >= 1 && character <= 8 ? map[character - 1] : 0;
 }
 
@@ -58,7 +63,8 @@ void reset_relations(Career& c, const CareerTables& t) {
     // 0x00407918..0x00407978: copy personality 0 into each spare row, then
     // +0x1bc[level] += rand()%13 - 6 for levels 0..4 (0x00441750 draws).
     for (auto& row : c.spare_levels)
-        for (size_t l = 0; l < row.size(); ++l) row[l] = t.spare_levels[l] + int32_t(career_random(c) % 13) - 6;
+        for (size_t l = 0; l < row.size(); ++l)
+            row[l] = t.spare_levels[l] + int32_t(career_random(c) % 13) - 6;
 }
 
 void select_mode(Career& c, const CareerTables& t, GameMode mode) {
@@ -79,7 +85,7 @@ void reset_for_character(Career& c, const CareerTables& t) {
     }
     const size_t i = size_t(c.state.level) + size_t(character_rider(c.state.character)) * 5;
     c.state.bike = t.level_bike.at(i);
-    reset_relations(c, t);   // 0x004078f0 via 0x0041f630
+    reset_relations(c, t); // 0x004078f0 via 0x0041f630
 }
 
 void choose_character(Career& c, const CareerTables& t, int character) {
@@ -103,7 +109,8 @@ void start_race(Career& c, int course) {
 }
 
 PurchaseResult buy_bike(Career& c, const CareerTables& t, int bike) {
-    if (bike < 0 || bike >= int(t.bike_price.size()) || c.state.bike >= t.bike_price.size()) throw std::runtime_error("Invalid bike");
+    if (bike < 0 || bike >= int(t.bike_price.size()) || c.state.bike >= t.bike_price.size())
+        throw std::runtime_error("Invalid bike");
     if (c.state.bike == bike) return PurchaseResult::already_owned;
     const uint32_t trade_in = t.bike_price[c.state.bike] >> 1;
     if (uint32_t(trade_in + c.state.cash) < t.bike_price[size_t(bike)]) return PurchaseResult::cannot_afford;
@@ -118,12 +125,23 @@ RaceReport finish_race(Career& c, const CareerTables& t, RaceOutcome outcome, in
     if (place < 0) place = 0;
     if (place > 14) place = 14;
     c.state.place = uint8_t(place);
-    if (c.mode == GameMode::attract) { r.screen = screen_id::main_menu; return r; }
+    if (c.mode == GameMode::attract) {
+        r.screen = screen_id::main_menu;
+        return r;
+    }
     switch (outcome) {
-    case RaceOutcome::won: r.screen = screen_id::won; break;
-    case RaceOutcome::lost: r.screen = screen_id::lost; break;
-    case RaceOutcome::busted: r.screen = screen_id::busted; break;
-    default: r.screen = screen_id::wrecked; break;
+    case RaceOutcome::won:
+        r.screen = screen_id::won;
+        break;
+    case RaceOutcome::lost:
+        r.screen = screen_id::lost;
+        break;
+    case RaceOutcome::busted:
+        r.screen = screen_id::busted;
+        break;
+    default:
+        r.screen = screen_id::wrecked;
+        break;
     }
     // 0x00449150: a win qualifies the course (not in mano-a-mano).
     if (r.screen == screen_id::won && c.mode != GameMode::mano && c.state.course >= 1 && c.state.course <= 5)
@@ -144,7 +162,7 @@ RaceReport finish_race(Career& c, const CareerTables& t, RaceOutcome outcome, in
         } else {
             r.penalty_message = 198;
             r.game_over = true;
-            reset_for_character(c, t);   // 0x0041f630
+            reset_for_character(c, t); // 0x0041f630
         }
     } else if (c.mode == GameMode::thrash) {
         c.state.qualified = 0;
@@ -156,10 +174,14 @@ RaceReport finish_race(Career& c, const CareerTables& t, RaceOutcome outcome, in
 int after_results(Career& c) {
     if (c.state.qualified != all_qualified) {
         switch (c.mode) {
-        case GameMode::attract: return screen_id::main_menu;
-        case GameMode::thrash: return screen_id::thrash_courses;
-        case GameMode::big_game: return c.state.character ? screen_id::street : screen_id::characters;
-        default: return screen_id::mano;
+        case GameMode::attract:
+            return screen_id::main_menu;
+        case GameMode::thrash:
+            return screen_id::thrash_courses;
+        case GameMode::big_game:
+            return c.state.character ? screen_id::street : screen_id::characters;
+        default:
+            return screen_id::mano;
         }
     }
     c.unsaved = true;
@@ -172,15 +194,21 @@ int after_results(Career& c) {
 }
 
 std::string results_video(const Career& c, int screen, uint32_t random) {
-    auto numbered = [&](const char* base, uint32_t n) { return std::string(base) + std::to_string(random % n + 1); };
+    auto numbered = [&](const char* base, uint32_t n) {
+        return std::string(base) + std::to_string(random % n + 1);
+    };
     switch (screen) {
-    case screen_id::wrecked: return numbered("WRECK", 6);
-    case screen_id::busted: return numbered("BUSTED", 6);
-    case screen_id::lost: return numbered("LOSE", 10);
+    case screen_id::wrecked:
+        return numbered("WRECK", 6);
+    case screen_id::busted:
+        return numbered("BUSTED", 6);
+    case screen_id::lost:
+        return numbered("LOSE", 10);
     case screen_id::won:
         if (c.state.qualified == all_qualified) return c.state.level == 4 ? "FINALWIN" : numbered("LEVEL", 6);
         return numbered("WIN", 6);
-    default: return {};
+    default:
+        return {};
     }
 }
 
@@ -214,23 +242,31 @@ Career read_save(const std::vector<uint8_t>& b, const CareerTables& t, uint32_t 
     if (b.size() != save_size) throw std::runtime_error("Save file has the wrong size");
     const ByteReader save(b);
     if (save.le<uint32_t>(4) != save_magic) throw std::runtime_error("Not a Road Rash save file");
-    if (save.le<uint32_t>(0) != save_checksum(&b[4], save_size - 4)) throw std::runtime_error("Save file checksum mismatch");
+    if (save.le<uint32_t>(0) != save_checksum(&b[4], save_size - 4))
+        throw std::runtime_error("Save file checksum mismatch");
     Career c;
     GameState& s = c.state;
-    s.player = b[8]; s.character = b[9]; s.level = b[10]; s.qualified = b[11];
-    s.bike = b[12]; s.course = b[13]; s.place = b[14]; s.flags = b[15];
+    s.player = b[8];
+    s.character = b[9];
+    s.level = b[10];
+    s.qualified = b[11];
+    s.bike = b[12];
+    s.course = b[13];
+    s.place = b[14];
+    s.flags = b[15];
     s.cash = save.le<uint32_t>(16);
     std::memcpy(s.name.data(), &b[20], s.name.size());
     if (s.character > 8 || s.level > 4 || s.qualified > all_qualified || s.bike > 14 || s.course > 5)
         throw std::runtime_error("Save file has out-of-range values");
     s.name.back() = '\0';
     c.rng = rng;
-    reset_relations(c, t);   // 0x004078f0 before the saved triples are applied
+    reset_relations(c, t); // 0x004078f0 before the saved triples are applied
     const size_t rider = size_t(character_rider(s.character));
     for (size_t p = 0; p < 10; ++p)
-        for (size_t k = 0; k < 3; ++k) c.relations[p][rider][k] = int32_t(save.le<uint32_t>(40 + 12 * p + 4 * k));
-    c.mode = GameMode::big_game;   // 0x0042f110 -> 0x00444fb0(2)
+        for (size_t k = 0; k < 3; ++k)
+            c.relations[p][rider][k] = int32_t(save.le<uint32_t>(40 + 12 * p + 4 * k));
+    c.mode = GameMode::big_game; // 0x0042f110 -> 0x00444fb0(2)
     c.unsaved = false;
     return c;
 }
-}
+} // namespace rr

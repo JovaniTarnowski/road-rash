@@ -10,7 +10,7 @@ namespace {
 MenuItem value_item(const MenuItem& t, int y, int caption, int desc, uint32_t popup) {
     MenuItem m = t;
     m.y = y;
-    m.target = int(popup);   // >= 0xF0000000: Frontend::activate opens the popup
+    m.target = int(popup); // >= 0xF0000000: Frontend::activate opens the popup
     m.caption = caption;
     m.handler = 0;
     m.desc = desc;
@@ -26,7 +26,7 @@ MenuItem value_item(const MenuItem& t, int y, int caption, int desc, uint32_t po
 MenuItem choice_item(const MenuItem& t, int y, int target, int caption, size_t index, size_t count) {
     MenuItem m = t;
     m.y = y;
-    m.target = target;   // 1-based choice for the 0x00445440 confirm handler
+    m.target = target; // 1-based choice for the 0x00445440 confirm handler
     m.caption = caption;
     m.handler = 0x00445440;
     m.enabled = true;
@@ -44,11 +44,12 @@ std::vector<MenuItem> build_popup(const std::vector<MenuItem>& tpl, int header_c
     out.push_back(header);
     for (size_t i = 0; i < choices.size(); ++i) {
         const MenuItem& t = tpl[1 + (i % (tpl.size() - 1))];
-        out.push_back(choice_item(t, t.y + int(i) * t.h, choices[i].first, choices[i].second, i + 1, choices.size() + 1));
+        out.push_back(choice_item(t, t.y + int(i) * t.h, choices[i].first, choices[i].second, i + 1,
+                                  choices.size() + 1));
     }
     return out;
 }
-}
+} // namespace
 
 namespace {
 // Review 2026-10-13 item 3: rows fit in 480 px. step shrinks to fit the row
@@ -61,15 +62,20 @@ int fit_step(int tpl_h, int tpl_y, size_t rows) {
 }
 // Original rows never carry title_desc (the screen title persists); strip it
 // from native rows so long help text can't become the banner.
-void strip_title_desc(MenuItem& m) { m.flags &= ~item_flag::title_desc; }
+void strip_title_desc(MenuItem& m) {
+    m.flags &= ~item_flag::title_desc;
 }
+} // namespace
 
 void add_native_screens(FrontendData& data, bool mobile) {
     const MenuItem& tpl = data.screens[0x13].items.front();
     const int step = tpl.h + 4;
     // Display screen rows (desktop): mode, size, scaling, filtering, vsync, fps, back.
     // Mobile: scaling, filtering, fps, touch, haptics, back (no mode/size; compositor owns vsync).
-    struct Row { int caption, desc; uint32_t popup; };
+    struct Row {
+        int caption, desc;
+        uint32_t popup;
+    };
     std::vector<Row> rows;
     if (!mobile) {
         rows.push_back({ns::display_mode, ns::d_display_mode, native_popup::display_mode});
@@ -102,7 +108,8 @@ void add_native_screens(FrontendData& data, bool mobile) {
         const int dstep = fit_step(tpl.h, tpl.y, rows.size() + 1);
         const int dh = std::min(tpl.h, dstep - 2);
         for (size_t i = 0; i < rows.size(); ++i) {
-            MenuItem m = value_item(tpl, tpl.y + int(i) * dstep, rows[i].caption, rows[i].desc, rows[i].popup);
+            MenuItem m =
+                value_item(tpl, tpl.y + int(i) * dstep, rows[i].caption, rows[i].desc, rows[i].popup);
             m.h = dh;
             screen.items.push_back(m);
         }
@@ -118,7 +125,7 @@ void add_native_screens(FrontendData& data, bool mobile) {
         screen.items.push_back(back);
     }
     const size_t n = screen.items.size();
-    for (size_t i = 0; i < n; ++i) {   // vertical chain, wrapping
+    for (size_t i = 0; i < n; ++i) { // vertical chain, wrapping
         strip_title_desc(screen.items[i]);
         screen.items[i].nav[2] = uint8_t((i + n - 1) % n);
         screen.items[i].nav[3] = uint8_t((i + 1) % n);
@@ -129,32 +136,39 @@ void add_native_screens(FrontendData& data, bool mobile) {
     // The template has 4 rows (header + 3 choices); popups needing more
     // choices cycle the choice rows (plan 19 Task 8: resolution needs 5).
     const auto& rtpl = data.popups.at(0x00474240);
-    data.popups[native_popup::display_mode] = build_popup(rtpl, ns::display_mode, {{1, ns::windowed}, {2, ns::fullscreen}});
-    data.popups[native_popup::window_size] = build_popup(rtpl, ns::window_size,
-        {{1, ns::scale_1x}, {2, ns::scale_2x}, {3, ns::scale_3x}, {4, ns::scale_4x}});
-    data.popups[native_popup::scaling] = build_popup(rtpl, ns::scaling,
-        {{1, ns::fit}, {2, ns::integer}, {3, ns::stretch}});
-    data.popups[native_popup::filtering] = build_popup(rtpl, ns::filtering, {{1, ns::sharp}, {2, ns::smooth}});
+    data.popups[native_popup::display_mode] =
+        build_popup(rtpl, ns::display_mode, {{1, ns::windowed}, {2, ns::fullscreen}});
+    data.popups[native_popup::window_size] = build_popup(
+        rtpl, ns::window_size, {{1, ns::scale_1x}, {2, ns::scale_2x}, {3, ns::scale_3x}, {4, ns::scale_4x}});
+    data.popups[native_popup::scaling] =
+        build_popup(rtpl, ns::scaling, {{1, ns::fit}, {2, ns::integer}, {3, ns::stretch}});
+    data.popups[native_popup::filtering] =
+        build_popup(rtpl, ns::filtering, {{1, ns::sharp}, {2, ns::smooth}});
     data.popups[native_popup::on_off] = build_popup(rtpl, ns::fps, {{1, ns::off}, {2, ns::on}});
-    data.popups[native_popup::touch] = build_popup(rtpl, ns::touch_opacity,
+    data.popups[native_popup::touch] = build_popup(
+        rtpl, ns::touch_opacity,
         {{1, ns::touch_0}, {2, ns::touch_25}, {3, ns::touch_50}, {4, ns::touch_75}, {5, ns::touch_100}});
     // Plan 19 Task 8: match + 1x..4x. Choice index maps to render_scale - 1 (see the setter).
-    data.popups[native_popup::resolution] = build_popup(rtpl, ns::render_resolution,
+    data.popups[native_popup::resolution] = build_popup(
+        rtpl, ns::render_resolution,
         {{1, ns::res_match}, {2, ns::scale_1x}, {3, ns::scale_2x}, {4, ns::scale_3x}, {5, ns::scale_4x}});
     // Plan 21 Task 8: 4:3 + 16:10/16:9/match.
-    data.popups[native_popup::widescreen] = build_popup(rtpl, ns::widescreen,
-        {{1, ns::wide_off}, {2, ns::wide_16x10}, {3, ns::wide_16x9}, {4, ns::wide_match}});
+    data.popups[native_popup::widescreen] =
+        build_popup(rtpl, ns::widescreen,
+                    {{1, ns::wide_off}, {2, ns::wide_16x10}, {3, ns::wide_16x9}, {4, ns::wide_match}});
     // Plan 20 Task 3: Original / Enhanced.
-    data.popups[native_popup::tex_detail] = build_popup(rtpl, ns::tex_detail,
-        {{1, ns::tex_original}, {2, ns::tex_enhanced}});
+    data.popups[native_popup::tex_detail] =
+        build_popup(rtpl, ns::tex_detail, {{1, ns::tex_original}, {2, ns::tex_enhanced}});
     // Plan 21 Task 9: visual style + per-effect popups.
-    data.popups[native_popup::visual_style] = build_popup(rtpl, ns::visual_style,
-        {{1, ns::style_original}, {2, ns::style_enhanced}, {3, ns::style_custom}});
-    data.popups[native_popup::enh_filter] = build_popup(rtpl, ns::enh_filter,
-        {{1, ns::filt_nearest}, {2, ns::filt_bilinear}, {3, ns::filt_trilinear}});
-    data.popups[native_popup::enh_grade] = build_popup(rtpl, ns::enh_grade,
-        {{1, ns::grade_none}, {2, ns::grade_warm}, {3, ns::grade_vivid}, {4, ns::grade_dusk}});
-    data.popups[native_popup::enh_fog] = build_popup(rtpl, ns::touch_opacity,
+    data.popups[native_popup::visual_style] = build_popup(
+        rtpl, ns::visual_style, {{1, ns::style_original}, {2, ns::style_enhanced}, {3, ns::style_custom}});
+    data.popups[native_popup::enh_filter] = build_popup(
+        rtpl, ns::enh_filter, {{1, ns::filt_nearest}, {2, ns::filt_bilinear}, {3, ns::filt_trilinear}});
+    data.popups[native_popup::enh_grade] =
+        build_popup(rtpl, ns::enh_grade,
+                    {{1, ns::grade_none}, {2, ns::grade_warm}, {3, ns::grade_vivid}, {4, ns::grade_dusk}});
+    data.popups[native_popup::enh_fog] = build_popup(
+        rtpl, ns::touch_opacity,
         {{1, ns::touch_0}, {2, ns::touch_25}, {3, ns::touch_50}, {4, ns::touch_75}, {5, ns::touch_100}});
     // Enhancements screen (plan 21 Task 9): one row per Enhancements field +
     // Back to the Display screen. Toggle rows use the on/off popup; filter and
@@ -168,16 +182,17 @@ void add_native_screens(FrontendData& data, bool mobile) {
         const std::pair<int, uint32_t> erows[] = {
             {ns::enh_interp, native_popup::on_off}, {ns::enh_persp, native_popup::on_off},
             {ns::enh_colour, native_popup::on_off}, {ns::enh_filter, native_popup::enh_filter},
-            {ns::enh_fog, native_popup::enh_fog}, {ns::enh_grade, native_popup::enh_grade},
-            {ns::enh_bloom, native_popup::on_off}, {ns::enh_vig, native_popup::on_off},
-            {ns::enh_mb, native_popup::on_off}, {ns::enh_wide, native_popup::widescreen},
+            {ns::enh_fog, native_popup::enh_fog},   {ns::enh_grade, native_popup::enh_grade},
+            {ns::enh_bloom, native_popup::on_off},  {ns::enh_vig, native_popup::on_off},
+            {ns::enh_mb, native_popup::on_off},     {ns::enh_wide, native_popup::widescreen},
         };
         {
             // Review 2026-10-13 item 3: 11 rows fit in 480 px.
             const int estep = fit_step(tpl.h, tpl.y, 11);
             const int eh = std::min(tpl.h, estep - 2);
             for (size_t i = 0; i < 10; ++i) {
-                MenuItem m = value_item(tpl, tpl.y + int(i) * estep, erows[i].first, ns::d_enh, erows[i].second);
+                MenuItem m =
+                    value_item(tpl, tpl.y + int(i) * estep, erows[i].first, ns::d_enh, erows[i].second);
                 m.h = eh;
                 enh.items.push_back(m);
             }
@@ -204,7 +219,8 @@ void add_native_screens(FrontendData& data, bool mobile) {
     // Sound screen (plan 18 Task 6): dialog-300 order — master + six channels as sliders,
     // mute + swap as direct toggles, Back to the restroom. Same button template/column.
     {
-        const int caps[7] = {ns::master, ns::music, ns::effects, ns::engines, ns::others, ns::sirens, ns::interface};
+        const int caps[7] = {ns::master, ns::music,  ns::effects,  ns::engines,
+                             ns::others, ns::sirens, ns::interface};
         MenuScreen& sound = data.screens[screen_id::native_sound];
         sound.title = ns::sound_title;
         sound.title_format = data.screens[0x13].title_format;
@@ -281,7 +297,7 @@ void add_native_screens(FrontendData& data, bool mobile) {
         m.desc = desc;
         m.handler = handler;
         m.target = target;
-        m.flags = flags & ~item_flag::title_desc;   // item 3: screen title persists
+        m.flags = flags & ~item_flag::title_desc; // item 3: screen title persists
         m.enabled = true;
         return m;
     };
@@ -290,30 +306,30 @@ void add_native_screens(FrontendData& data, bool mobile) {
         column(pad, ns::gamepad_title);
         const int maps[4] = {ns::pad_map1, ns::pad_map2, ns::pad_map3, ns::pad_map4};
         for (int i = 0; i < 4; ++i) {
-            MenuItem m = button(tpl.y + i * step, maps[i], 0, 0, 0,
-                                item_flag::title_desc | item_flag::description);
-            m.enabled = false;   // info rows: visible, never focused
+            MenuItem m =
+                button(tpl.y + i * step, maps[i], 0, 0, 0, item_flag::title_desc | item_flag::description);
+            m.enabled = false; // info rows: visible, never focused
             pad.items.push_back(m);
         }
-        pad.items.push_back(button(tpl.y + 4 * step, ns::pad_swap, ns::d_swap,
-                                   native_action::toggle_pad_swap, 0, item_flag::title_desc));
+        pad.items.push_back(button(tpl.y + 4 * step, ns::pad_swap, ns::d_swap, native_action::toggle_pad_swap,
+                                   0, item_flag::title_desc));
         MenuItem dz = button(tpl.y + 5 * step, ns::pad_deadzone, ns::d_deadzone, 0, 0,
                              item_flag::title_desc | item_flag::native_slider);
         dz.desc = ns::d_deadzone;
         pad.items.push_back(dz);
-        pad.items.push_back(button(tpl.y + 6 * step, ns::back, 0, 0, 0x12,
-                                   item_flag::title_desc | item_flag::escape));
+        pad.items.push_back(
+            button(tpl.y + 6 * step, ns::back, 0, 0, 0x12, item_flag::title_desc | item_flag::escape));
         chain(pad);
     }
     {
         MenuScreen& touch = data.screens[screen_id::native_touch];
         column(touch, ns::touch_title);
-        touch.items.push_back(button(tpl.y, ns::touch_opacity, ns::d_touch, 0,
-                                     int(native_popup::touch), item_flag::title_desc | item_flag::description));
+        touch.items.push_back(button(tpl.y, ns::touch_opacity, ns::d_touch, 0, int(native_popup::touch),
+                                     item_flag::title_desc | item_flag::description));
         touch.items.push_back(button(tpl.y + step, ns::touch_left, ns::d_lefthand,
                                      native_action::toggle_left_handed, 0, item_flag::title_desc));
-        touch.items.push_back(button(tpl.y + 2 * step, ns::back, 0, 0, 0x12,
-                                     item_flag::title_desc | item_flag::escape));
+        touch.items.push_back(
+            button(tpl.y + 2 * step, ns::back, 0, 0, 0x12, item_flag::title_desc | item_flag::escape));
         chain(touch);
     }
     // Pause menu (plan 18 Task 8): RESUME, SOUND, DISPLAY, CONTROLS, QUIT RACE.
@@ -321,15 +337,13 @@ void add_native_screens(FrontendData& data, bool mobile) {
     {
         MenuScreen& pause = data.screens[screen_id::native_pause];
         column(pause, ns::pause_title);
-        pause.items.push_back(button(tpl.y, ns::resume, 0,
-                                     native_action::pause_resume, 0,
+        pause.items.push_back(button(tpl.y, ns::resume, 0, native_action::pause_resume, 0,
                                      item_flag::title_desc | item_flag::escape));
-        pause.items.push_back(button(tpl.y + step, ns::sound, 0, 0,
-                                     screen_id::native_sound, item_flag::title_desc));
-        pause.items.push_back(button(tpl.y + 2 * step, ns::display, 0, 0,
-                                     screen_id::native_display, item_flag::title_desc));
-        pause.items.push_back(button(tpl.y + 3 * step, ns::controls, 0, 0,
-                                     0x12, item_flag::title_desc));
+        pause.items.push_back(
+            button(tpl.y + step, ns::sound, 0, 0, screen_id::native_sound, item_flag::title_desc));
+        pause.items.push_back(
+            button(tpl.y + 2 * step, ns::display, 0, 0, screen_id::native_display, item_flag::title_desc));
+        pause.items.push_back(button(tpl.y + 3 * step, ns::controls, 0, 0, 0x12, item_flag::title_desc));
         pause.items.push_back(button(tpl.y + 4 * step, ns::quit_race, ns::d_quit_race,
                                      native_action::pause_quit, 0,
                                      item_flag::title_desc | item_flag::description));
@@ -381,4 +395,4 @@ void add_native_screens(FrontendData& data, bool mobile) {
     link.flags = item_flag::title_desc | item_flag::description;
     link.enabled = true;
 }
-}
+} // namespace rr

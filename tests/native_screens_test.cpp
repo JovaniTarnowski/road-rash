@@ -6,11 +6,20 @@
 
 int main(int argc, char** argv) {
     int failures = 0;
-    auto check = [&](bool v, const char* what) { if (!v) { ++failures; std::cerr << "FAIL " << what << "\n"; } };
-    for (int s = rr::native_slot_base; s < rr::ns::count; ++s) check(!rr::native_string(s).empty(), "every native slot has text");
+    auto check = [&](bool v, const char* what) {
+        if (!v) {
+            ++failures;
+            std::cerr << "FAIL " << what << "\n";
+        }
+    };
+    for (int s = rr::native_slot_base; s < rr::ns::count; ++s)
+        check(!rr::native_string(s).empty(), "every native slot has text");
     const std::string root = argc > 1 ? argv[1] : RR_SOURCE_DIR "/../cdrom/ROADRASH";
     const rr::Assets assets(root);
-    if (!assets.exists("ROADRASH.EXE")) { std::cout << "skip: no disc\n"; return failures ? 1 : 77; }
+    if (!assets.exists("ROADRASH.EXE")) {
+        std::cout << "skip: no disc\n";
+        return failures ? 1 : 77;
+    }
     rr::FrontendData data = rr::read_frontend_data(assets.read("ROADRASH.EXE"));
     rr::add_native_screens(data, false);
     const auto& display = data.screens[rr::screen_id::native_display];
@@ -21,11 +30,14 @@ int main(int argc, char** argv) {
         check(m.x == gfx.x, "native buttons keep the template column");
         check(m.y + m.h <= 480, "native rows fit in 480 px");
     }
-    for (size_t i = 0; i < display.items.size(); ++i) {   // vertical chain, wrapping, Escape on Back
+    for (size_t i = 0; i < display.items.size(); ++i) { // vertical chain, wrapping, Escape on Back
         const auto& m = display.items[i];
-        check(m.nav[3] == (i + 1) % display.items.size() && m.nav[2] == (i + display.items.size() - 1) % display.items.size(), "up/down chain");
+        check(m.nav[3] == (i + 1) % display.items.size() &&
+                  m.nav[2] == (i + display.items.size() - 1) % display.items.size(),
+              "up/down chain");
     }
-    check((display.items.back().flags & rr::item_flag::escape) && display.items.back().target == 0x13, "Back returns to Graphics Options");
+    check((display.items.back().flags & rr::item_flag::escape) && display.items.back().target == 0x13,
+          "Back returns to Graphics Options");
     rr::FrontendData mobile = rr::read_frontend_data(assets.read("ROADRASH.EXE"));
     rr::add_native_screens(mobile, true);
     check(mobile.screens[rr::screen_id::native_display].items.size() == 10, "mobile adds texture detail");
@@ -61,7 +73,8 @@ int main(int argc, char** argv) {
     check(mobile.screens[rr::screen_id::native_display].items.size() == 10, "mobile display screen rows");
     // Plan 21 Task 9: Enhancements screen (10 effect rows + Back).
     check(data.screens[rr::screen_id::native_enhancements].items.size() == 11, "enhancements screen rows");
-    check(data.screens[rr::screen_id::native_enhancements].items.back().target == rr::screen_id::native_display,
+    check(data.screens[rr::screen_id::native_enhancements].items.back().target ==
+              rr::screen_id::native_display,
           "enhancements Back returns to Display");
     return failures ? 1 : 0;
 }

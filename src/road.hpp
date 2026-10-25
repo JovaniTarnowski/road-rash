@@ -3,47 +3,52 @@
 
 namespace rr {
 // Original 3D view space: 320x240, horizon row 90 (0x00444630).
-constexpr int view_width=320, view_height=240, view_horizon=90;
+constexpr int view_width = 320, view_height = 240, view_horizon = 90;
 // 0x00443a00 projects 0x21 slices ahead of the camera.
-constexpr int view_slices=33;
+constexpr int view_slices = 33;
 
 // Q16 depth scale, indexed by depth/2. Static data at 0x0046f098 in ROADRASH.EXE.
-struct DepthTable { std::vector<int32_t> scale; };
+struct DepthTable {
+    std::vector<int32_t> scale;
+};
 DepthTable read_depth_table(const std::vector<uint8_t>& exe);
 
 // Camera position relative to the road surface of the current slice.
 // Race start (0x0044b250) and the camera update (0x00437d80) use height >= 150.
 // 0x0044b3b0 heading accumulation and 0x00438450/0x00443a80 horizon shift.
-int32_t advance_heading(int32_t heading,uint32_t previous,uint32_t current,int32_t previous_bend,int32_t current_bend,bool frozen=false);
-int32_t horizon_scroll(int32_t heading,bool high_resolution=true);
-struct Camera { int32_t x=0, height=150; };
+int32_t advance_heading(int32_t heading, uint32_t previous, uint32_t current, int32_t previous_bend,
+                        int32_t current_bend, bool frozen = false);
+int32_t horizon_scroll(int32_t heading, bool high_resolution = true);
+struct Camera {
+    int32_t x = 0, height = 150;
+};
 
 // One projected roadway at a slice.
 struct RoadSurface {
-    int32_t road_x;    // road centre minus camera x, world units
-    int32_t screen_y;  // Q16 row of the road surface
+    int32_t road_x;   // road centre minus camera x, world units
+    int32_t screen_y; // Q16 row of the road surface
     int32_t left, right;
     // Outer shoulder edges: sub-slice [0x3a]/[0x3b] = road edges -/+ RSLD widths (0x00454240).
     int32_t shoulder_left, shoulder_right;
-    int32_t world_y=0; // accumulated rise, needed by terrain/scenery projection
-    int32_t heading=0; // 0x00444630 view-relative tangent angle
+    int32_t world_y = 0; // accumulated rise, needed by terrain/scenery projection
+    int32_t heading = 0; // 0x00444630 view-relative tangent angle
 };
 
 struct RoadSlice {
-    uint32_t sample;   // route index
-    int32_t depth;     // Q8 slices ahead of camera
-    int32_t scale;     // Q16 screen pixels per world unit
+    uint32_t sample; // route index
+    int32_t depth;   // Q8 slices ahead of camera
+    int32_t scale;   // Q16 screen pixels per world unit
     // Single road: road[0]. Split/merge: road[0] and road[1] are halves 0 and 1.
     uint8_t count;
-    uint8_t own;       // roadway the route follows
+    uint8_t own; // roadway the route follows
     RoadSurface road[2];
     // Q16 view column of the camera axis. Widescreen (plan 21 Task 8): the
     // same (logical_width&~1)*32768 every scene builder centres on, so the
     // road surface and the scenery/actors/terrain built on it share one centre.
-    int32_t centre_q16=view_width/2*65536;
+    int32_t centre_q16 = view_width / 2 * 65536;
     // Q16 screen column of a world offset from a roadway's centre.
     int64_t screen_x(int r, int32_t offset) const {
-        return int64_t(road[r].road_x+offset)*scale+centre_q16;
+        return int64_t(road[r].road_x + offset) * scale + centre_q16;
     }
 };
 
@@ -53,5 +58,5 @@ struct RoadSlice {
 // logical_width is the Hor+ view width (320 original, up to 426 wide).
 std::vector<RoadSlice> project_road(const std::vector<RouteSample>& route, uint32_t position,
                                     const Camera& camera, const DepthTable& table,
-                                    int32_t logical_width=view_width);
-}
+                                    int32_t logical_width = view_width);
+} // namespace rr

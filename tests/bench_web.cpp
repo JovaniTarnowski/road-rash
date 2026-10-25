@@ -25,23 +25,21 @@ uint64_t render_scene(int iterations) {
     texture.mips.push_back(mip);
     rr::DrawNode node;
     node.texture = &texture;
-    node.view_points = {{{2 * 65536, 3 * 65536},
-                         {10 * 65536, 3 * 65536},
-                         {10 * 65536, 11 * 65536},
-                         {2 * 65536, 11 * 65536}}};
+    node.view_points = {
+        {{2 * 65536, 3 * 65536}, {10 * 65536, 3 * 65536}, {10 * 65536, 11 * 65536}, {2 * 65536, 11 * 65536}}};
     const auto start = std::chrono::steady_clock::now();
     for (int i = 0; i < iterations; ++i) {
         fb.clear(125);
         rr::render_nodes(fb, {node, {}}, rr::view_mode(false), 16);
     }
-    const auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(
-                        std::chrono::steady_clock::now() - start)
-                        .count();
+    const auto ms =
+        std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - start)
+            .count();
     uint64_t sum = 0;
     for (int y = 0; y < fb.height(); ++y)
         for (int x = 0; x < fb.width(); ++x) sum += fb.row(y)[x];
-    std::printf("render: %d iterations in %lld ms (checksum %llu)\n", iterations,
-                (long long)ms, (unsigned long long)sum);
+    std::printf("render: %d iterations in %lld ms (checksum %llu)\n", iterations, (long long)ms,
+                (unsigned long long)sum);
     return sum;
 }
 
@@ -85,14 +83,14 @@ void decode_stream(int iterations) {
         decoder.decode(encoded.data(), encoded.size());
         for (uint8_t v : decoder.rgb24()) sum += v;
     }
-    const auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(
-                        std::chrono::steady_clock::now() - start)
-                        .count();
-    std::printf("cinepak: %d iterations in %lld ms (checksum %llu)\n", iterations,
-                (long long)ms, (unsigned long long)sum);
+    const auto ms =
+        std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - start)
+            .count();
+    std::printf("cinepak: %d iterations in %lld ms (checksum %llu)\n", iterations, (long long)ms,
+                (unsigned long long)sum);
 }
 
-}  // namespace
+} // namespace
 
 int main() {
     render_scene(20000);

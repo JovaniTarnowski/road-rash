@@ -13,21 +13,30 @@ constexpr int max_rri_dimension = 4096;
 }
 
 uint32_t quantise565(uint32_t c) {
-    auto q5 = [](uint32_t v) { v >>= 3; return (v << 3) | (v >> 2); };
-    auto q6 = [](uint32_t v) { v >>= 2; return (v << 2) | (v >> 4); };
+    auto q5 = [](uint32_t v) {
+        v >>= 3;
+        return (v << 3) | (v >> 2);
+    };
+    auto q6 = [](uint32_t v) {
+        v >>= 2;
+        return (v << 2) | (v >> 4);
+    };
     return q5(c >> 16 & 0xff) << 16 | q6(c >> 8 & 0xff) << 8 | q5(c & 0xff);
 }
 
 uint32_t darken555(uint32_t c) {
-    auto d = [](uint32_t v) { v = (v >> 3) >> 1; return (v << 3) | (v >> 2); };
+    auto d = [](uint32_t v) {
+        v = (v >> 3) >> 1;
+        return (v << 3) | (v >> 2);
+    };
     return d(c >> 16 & 0xff) << 16 | d(c >> 8 & 0xff) << 8 | d(c & 0xff);
 }
 
 RgbImage decode_rri(const std::vector<uint8_t>& bytes) {
     int w = 0, h = 0, n = 0;
     if (bytes.size() > 0x7fffffff) throw std::runtime_error("RRI image too large");
-    if (!stbi_info_from_memory(bytes.data(), int(bytes.size()), &w, &h, &n) ||
-        w <= 0 || h <= 0 || w > max_rri_dimension || h > max_rri_dimension)
+    if (!stbi_info_from_memory(bytes.data(), int(bytes.size()), &w, &h, &n) || w <= 0 || h <= 0 ||
+        w > max_rri_dimension || h > max_rri_dimension)
         throw std::runtime_error("Invalid RRI image");
     stbi_uc* p = stbi_load_from_memory(bytes.data(), int(bytes.size()), &w, &h, &n, 3);
     if (!p) throw std::runtime_error("Invalid RRI image");
@@ -48,7 +57,11 @@ static std::string image_path(const std::string& name) {
     return p + ".RRI";
 }
 
-bool menu_image_exists(const Assets& a, const std::string& name) { return a.exists(image_path(name)); }
-
-RgbImage load_menu_image(const Assets& a, const std::string& name) { return decode_rri(a.read(image_path(name))); }
+bool menu_image_exists(const Assets& a, const std::string& name) {
+    return a.exists(image_path(name));
 }
+
+RgbImage load_menu_image(const Assets& a, const std::string& name) {
+    return decode_rri(a.read(image_path(name)));
+}
+} // namespace rr

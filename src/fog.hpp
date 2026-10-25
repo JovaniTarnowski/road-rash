@@ -16,4 +16,4 @@ uint32_t fog_colour(const uint32_t* argb, int width, int height);
 std::vector<uint32_t> grade_lut(Grade grade);
 // Apply a LUT to one channel-triplet (trilinear in the lattice).
 uint32_t grade_apply(const std::vector<uint32_t>& lut, uint32_t rgb);
-}  // namespace rr
+} // namespace rr

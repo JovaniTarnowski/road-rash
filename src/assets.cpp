@@ -22,4 +22,4 @@ bool Assets::exists(const std::string& relative) const {
     SDL_CloseIO(io);
     return true;
 }
-}
+} // namespace rr

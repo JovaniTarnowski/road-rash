@@ -25,7 +25,9 @@ uint32_t fog_colour(const uint32_t* argb, int width, int height) {
     for (int y = height - rows; y < height; ++y)
         for (int x = 0; x < width; ++x) {
             const uint32_t p = argb[size_t(y) * width + x];
-            r += (p >> 16) & 0xff; g += (p >> 8) & 0xff; b += p & 0xff;
+            r += (p >> 16) & 0xff;
+            g += (p >> 8) & 0xff;
+            b += p & 0xff;
             ++n;
         }
     if (!n) throw std::runtime_error("Empty fog source");
@@ -40,28 +42,32 @@ std::vector<uint32_t> grade_lut(Grade grade) {
             for (int b = 0; b < 17; ++b) {
                 int R = lat(r), G = lat(g), B = lat(b);
                 switch (grade) {
-                    case Grade::none: break;
-                    case Grade::warm:  // gentle warmth: lift red, press blue
-                        R = std::min(255, R + (255 - R) * 8 / 100);
-                        B = B - B * 8 / 100;
-                        break;
-                    case Grade::vivid:  // saturation stretch around grey
-                    {
-                        const int lum = (R * 2126 + G * 7152 + B * 722) / 10000;
-                        R = std::max(0, std::min(255, lum + (R - lum) * 130 / 100));
-                        G = std::max(0, std::min(255, lum + (G - lum) * 130 / 100));
-                        B = std::max(0, std::min(255, lum + (B - lum) * 130 / 100));
-                        break;
-                    }
-                    case Grade::dusk:  // cool shadows, warm highlights
-                    {
-                        const int lum = (R * 2126 + G * 7152 + B * 722) / 10000;
-                        const int w = lum * 100 / 255;  // 0 at black, 100 at white
-                        R = std::max(0, std::min(255, R + ((255 - R) * 10 - R * 6) * w / 10000 + (0 - R) * 6 * (100 - w) / 10000));
-                        G = std::max(0, std::min(255, G + ((255 - G) * 4 - G * 4) * w / 10000 + (0 - G) * 2 * (100 - w) / 10000));
-                        B = std::max(0, std::min(255, B + ((255 - B) * 0 - B * 0) * w / 10000 + (40 - B) * 10 * (100 - w) / 10000));
-                        break;
-                    }
+                case Grade::none:
+                    break;
+                case Grade::warm: // gentle warmth: lift red, press blue
+                    R = std::min(255, R + (255 - R) * 8 / 100);
+                    B = B - B * 8 / 100;
+                    break;
+                case Grade::vivid: // saturation stretch around grey
+                {
+                    const int lum = (R * 2126 + G * 7152 + B * 722) / 10000;
+                    R = std::max(0, std::min(255, lum + (R - lum) * 130 / 100));
+                    G = std::max(0, std::min(255, lum + (G - lum) * 130 / 100));
+                    B = std::max(0, std::min(255, lum + (B - lum) * 130 / 100));
+                    break;
+                }
+                case Grade::dusk: // cool shadows, warm highlights
+                {
+                    const int lum = (R * 2126 + G * 7152 + B * 722) / 10000;
+                    const int w = lum * 100 / 255; // 0 at black, 100 at white
+                    R = std::max(0, std::min(255, R + ((255 - R) * 10 - R * 6) * w / 10000 +
+                                                      (0 - R) * 6 * (100 - w) / 10000));
+                    G = std::max(0, std::min(255, G + ((255 - G) * 4 - G * 4) * w / 10000 +
+                                                      (0 - G) * 2 * (100 - w) / 10000));
+                    B = std::max(0, std::min(255, B + ((255 - B) * 0 - B * 0) * w / 10000 +
+                                                      (40 - B) * 10 * (100 - w) / 10000));
+                    break;
+                }
                 }
                 lut[size_t((r * 17 + g) * 17 + b)] = (uint32_t(R) << 16) | (uint32_t(G) << 8) | uint32_t(B);
             }
@@ -89,4 +95,4 @@ uint32_t grade_apply(const std::vector<uint32_t>& lut, uint32_t rgb) {
     const auto c = [](double v) { return uint32_t(std::max(0.0, std::min(255.0, v))); };
     return (c(R) << 16) | (c(G) << 8) | c(B);
 }
-}  // namespace rr
+} // namespace rr

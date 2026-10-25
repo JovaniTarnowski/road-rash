@@ -18,14 +18,18 @@ int32_t blend_heading(int32_t a, int32_t b, uint32_t alpha_q16) {
     constexpr int32_t period = 0x1000000;
     int64_t d = int64_t(b) - int64_t(a);
     d %= period;
-    if (d > period / 2) d -= period;
-    else if (d < -period / 2) d += period;
+    if (d > period / 2)
+        d -= period;
+    else if (d < -period / 2)
+        d += period;
     int64_t r = (int64_t(a) + (d * alpha_q16 >> 16)) % period;
-    if (r > period / 2) r -= period;
-    else if (r < -period / 2) r += period;
+    if (r > period / 2)
+        r -= period;
+    else if (r < -period / 2)
+        r += period;
     return int32_t(r);
 }
-}  // namespace
+} // namespace
 
 void capture_view(ViewState& v, const Race& race, const TrafficSystem* traffic) {
     v.camera_position_q8 = race.camera_position();
@@ -52,7 +56,7 @@ void capture_view(ViewState& v, const Race& race, const TrafficSystem* traffic) 
             c.position_q8 = uint32_t(rd.crash_actor.motion.i32(0x1c));
             c.lateral_q8 = rd.crash_actor.motion.i32(0x28);
             c.height_q8 = rd.crash_actor.motion.i32(0x24);
-            c.heading = rd.crash_actor.motion.i32(0x5c);   // walk-back facing (0x0040a600)
+            c.heading = rd.crash_actor.motion.i32(0x5c); // walk-back facing (0x0040a600)
             c.roll = rd.crash_actor.motion.i32(0x60);
             c.route = rd.crash_actor.route;
             c.visible = true;
@@ -95,15 +99,18 @@ void blend_view(ViewState& out, const ViewState& a, const ViewState& b, uint32_t
     for (const auto& pb : b.actors) {
         const ActorPose* pa = nullptr;
         for (const auto& q : a.actors)
-            if (q.id == pb.id) { pa = &q; break; }
+            if (q.id == pb.id) {
+                pa = &q;
+                break;
+            }
         if (!pa || !pa->visible || pa->route != pb.route) {
-            out.actors.push_back(pb);  // new, gone-before, or route-changed: draw at b
+            out.actors.push_back(pb); // new, gone-before, or route-changed: draw at b
             continue;
         }
         const uint32_t fwd = pb.position_q8 - pa->position_q8;
         const uint32_t back = pa->position_q8 - pb.position_q8;
         if (fwd > teleport_q8 && back > teleport_q8) {
-            out.actors.push_back(pb);  // teleport: draw at b
+            out.actors.push_back(pb); // teleport: draw at b
             continue;
         }
         ActorPose m = pb;
@@ -115,4 +122,4 @@ void blend_view(ViewState& out, const ViewState& a, const ViewState& b, uint32_t
         out.actors.push_back(m);
     }
 }
-}  // namespace rr
+} // namespace rr

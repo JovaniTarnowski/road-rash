@@ -10,7 +10,8 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
         for (size_t i = 0; i < t.bike_price.size(); ++i) t.bike_price[i] = uint32_t(1000 * (i + 1));
         for (size_t i = 0; i < t.prize.size(); ++i) t.prize[i] = uint32_t(1000 - 60 * i);
         for (size_t p = 0; p < 10; ++p)
-            for (size_t r = 0; r < 10; ++r) t.default_relations[p][r] = {int32_t(p), int32_t(r), int32_t(p * 10 + r)};
+            for (size_t r = 0; r < 10; ++r)
+                t.default_relations[p][r] = {int32_t(p), int32_t(r), int32_t(p * 10 + r)};
         (void)rr::read_save(bytes, t);
     });
 }

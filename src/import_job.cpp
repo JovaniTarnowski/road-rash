@@ -22,7 +22,7 @@
 
 namespace rr {
 namespace {
-constexpr uint32_t kChunk = 1u << 20;  // file data requests are at most 1 MiB
+constexpr uint32_t kChunk = 1u << 20; // file data requests are at most 1 MiB
 constexpr uint64_t kMaxFile = 256ull * 1024 * 1024;
 constexpr uint64_t kMaxDir = 16ull * 1024 * 1024;
 
@@ -45,7 +45,8 @@ void validate_table(const std::vector<ReferenceHash>& hashes) {
         while (at < path.size()) {
             const size_t end = path.find('/', at);
             const std::string part = path.substr(at, end == std::string::npos ? end : end - at);
-            if (part.empty() || part == "." || part == "..") throw std::runtime_error("Import reference escapes destination");
+            if (part.empty() || part == "." || part == "..")
+                throw std::runtime_error("Import reference escapes destination");
             if (end == std::string::npos) break;
             at = end + 1;
         }
@@ -71,7 +72,7 @@ std::vector<std::string> split_iso_path(const std::string& full) {
     }
     return parts;
 }
-}  // namespace
+} // namespace
 
 struct ImportJob::Impl {
     std::vector<ReferenceHash> hashes;
@@ -98,7 +99,7 @@ struct ImportJob::Impl {
     bool pvd_found = false;
     uint64_t volume_size = 0;
     uint32_t root_sector = 0, root_size = 0;
-    std::map<uint64_t, std::vector<uint8_t>> dir_cache;  // extent offset -> bytes
+    std::map<uint64_t, std::vector<uint8_t>> dir_cache; // extent offset -> bytes
     struct Extent {
         uint32_t sector = 0, size = 0;
         bool missing = false;
@@ -108,7 +109,7 @@ struct ImportJob::Impl {
 
     // Current file transfer.
     size_t file_index = 0;
-    std::vector<uint8_t> file_buf;  // data chunks until the hash verifies
+    std::vector<uint8_t> file_buf; // data chunks until the hash verifies
     Sha256Stream hasher;
     bool hashing = false;
     uint32_t file_size = 0, file_got = 0;
@@ -123,14 +124,16 @@ struct ImportJob::Impl {
         const IsoRecord r = parse_iso_record({p, available});
         Record e{r.name, r.sector, r.size, r.directory};
         const uint64_t offset = uint64_t(e.sector) * 2048;
-        if (offset > volume_size || e.size > volume_size - offset) throw std::runtime_error("ISO extent outside volume");
+        if (offset > volume_size || e.size > volume_size - offset)
+            throw std::runtime_error("ISO extent outside volume");
         return e;
     }
 
     std::vector<Record> list_dir(uint32_t sector, uint32_t size) const {
         const uint64_t offset = uint64_t(sector) * 2048;
         auto it = dir_cache.find(offset);
-        if (it == dir_cache.end() || it->second.size() != size) throw std::runtime_error("ISO directory not loaded");
+        if (it == dir_cache.end() || it->second.size() != size)
+            throw std::runtime_error("ISO directory not loaded");
         const auto& data = it->second;
         std::vector<Record> result;
         std::set<std::string> names;
@@ -143,7 +146,8 @@ struct ImportJob::Impl {
             auto e = parse_record(data.data() + at, data.size() - at);
             at += data[at];
             if (e.name == std::string(1, '\0') || e.name == std::string(1, '\1')) continue;
-            if (e.name.empty() || e.name == "." || e.name == ".." || e.name.find_first_of("/\\") != std::string::npos)
+            if (e.name.empty() || e.name == "." || e.name == ".." ||
+                e.name.find_first_of("/\\") != std::string::npos)
                 throw std::runtime_error("Invalid ISO entry name");
             if (!names.insert(e.name).second) throw std::runtime_error("Duplicate ISO name");
             result.push_back(std::move(e));
@@ -170,8 +174,8 @@ struct ImportJob::Impl {
     // returns true when fully resolved; returns false with blocked_* set
     // when the walk needs an uncached directory; throws the missing/invalid
     // reason otherwise (messages mirror Iso9660::locate).
-    bool walk(const std::vector<std::string>& parts, const std::string& full, Extent& out, uint32_t& blocked_sector,
-              uint32_t& blocked_size) const {
+    bool walk(const std::vector<std::string>& parts, const std::string& full, Extent& out,
+              uint32_t& blocked_sector, uint32_t& blocked_size) const {
         uint32_t sector = root_sector, size = root_size;
         std::set<uint32_t> visited{root_sector};
         for (size_t i = 0; i < parts.size(); ++i) {
@@ -181,8 +185,8 @@ struct ImportJob::Impl {
                 return false;
             }
             const auto children = list_dir(sector, size);
-            const auto child =
-                std::find_if(children.begin(), children.end(), [&](const Record& e) { return e.name == parts[i]; });
+            const auto child = std::find_if(children.begin(), children.end(),
+                                            [&](const Record& e) { return e.name == parts[i]; });
             if (child == children.end()) throw std::runtime_error("Missing ISO path: " + full);
             const bool last = i + 1 == parts.size();
             if (child->directory) {
@@ -231,7 +235,8 @@ struct ImportJob::Impl {
             try {
                 const auto parts = split_iso_path(full);
                 uint32_t sector = 0, size = 0;
-                if (!walk(parts, full, found, sector, size)) throw std::runtime_error("ISO directory not loaded");
+                if (!walk(parts, full, found, sector, size))
+                    throw std::runtime_error("ISO directory not loaded");
             } catch (const std::exception& e) {
                 found.missing = true;
                 found.why = e.what();
@@ -250,7 +255,7 @@ struct ImportJob::Impl {
             }
             const std::string& path = hashes[file_index].path;
             current = path;
-            if (!iso) return;  // need_file() offers the whole file
+            if (!iso) return; // need_file() offers the whole file
             const Extent& e = extents[file_index];
             if (e.missing) {
                 result.missing.push_back(path + ": " + e.why);
@@ -267,7 +272,7 @@ struct ImportJob::Impl {
                 finish_file_data();
                 continue;
             }
-            return;  // need_range() offers the first chunk
+            return; // need_range() offers the first chunk
         }
     }
 
@@ -399,7 +404,7 @@ std::optional<ByteRange> ImportJob::need_range() const {
     if (m.phase == Impl::Phase::files) {
         if (m.file_index >= m.hashes.size() || m.file_index >= m.extents.size()) return std::nullopt;
         const Impl::Extent& e = m.extents[m.file_index];
-        if (e.missing || m.file_got >= m.file_size) return std::nullopt;  // consumed by the start_file cascade
+        if (e.missing || m.file_got >= m.file_size) return std::nullopt; // consumed by the start_file cascade
         m.pending = Impl::Need::file_chunk;
         const uint32_t left = m.file_size - m.file_got;
         m.pending_range = {uint64_t(e.sector) * 2048 + m.file_got, std::min(left, kChunk)};
@@ -433,7 +438,8 @@ void ImportJob::supply(const uint8_t* data, size_t size) {
     m.pending = Impl::Need::none;
     try {
         if (was == Impl::Need::file_whole) {
-            if (m.phase != Impl::Phase::files || m.iso) throw std::runtime_error("supply with no pending need");
+            if (m.phase != Impl::Phase::files || m.iso)
+                throw std::runtime_error("supply with no pending need");
             const std::string& path = m.hashes[m.file_index].path;
             Sha256Stream hasher;
             if (size) hasher.write(data, size);
@@ -459,9 +465,9 @@ void ImportJob::supply(const uint8_t* data, size_t size) {
         // source is truncated (messages mirror the Iso9660 constructor/load).
         const uint32_t want = m.pending_range.size;
         if (size != want) {
-            m.fail(was == Impl::Need::descriptor ? "Truncated ISO descriptor"
-                                                 : was == Impl::Need::volume_tail ? "ISO declared volume is truncated"
-                                                                                  : "Truncated ISO extent");
+            m.fail(was == Impl::Need::descriptor    ? "Truncated ISO descriptor"
+                   : was == Impl::Need::volume_tail ? "ISO declared volume is truncated"
+                                                    : "Truncated ISO extent");
             return;
         }
         std::vector<uint8_t> bytes(size);
@@ -506,7 +512,8 @@ void ImportJob::supply(const uint8_t* data, size_t size) {
 void ImportJob::missing_file(const std::string& message) {
     Impl& m = *impl_;
     if (m.finished) throw std::runtime_error("missing_file after the job finished");
-    if (m.pending != Impl::Need::file_whole || m.iso) throw std::runtime_error("missing_file with no pending file need");
+    if (m.pending != Impl::Need::file_whole || m.iso)
+        throw std::runtime_error("missing_file with no pending file need");
     m.pending = Impl::Need::none;
     const std::string& path = m.hashes[m.file_index].path;
     m.result.missing.push_back(path + ": " + message);
@@ -547,4 +554,4 @@ void ImportJob::cancel() {
     m.finished = true;
 }
 
-}  // namespace rr
+} // namespace rr

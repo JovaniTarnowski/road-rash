@@ -11,7 +11,10 @@
 namespace {
 int failures = 0;
 void check(bool ok, const char* what) {
-    if (!ok) { ++failures; std::cerr << "FAIL " << what << '\n'; }
+    if (!ok) {
+        ++failures;
+        std::cerr << "FAIL " << what << '\n';
+    }
 }
 bool same_row(const rr::TextureEdge64& a, const rr::TextureEdge64& b) {
     return a.x == b.x && a.u == b.u && a.v == b.v;
@@ -30,7 +33,7 @@ rr::RasterScratch64 all_sentinel(int height) {
     rr::texture_edge_wide(scratch, a, b);
     return scratch;
 }
-}
+} // namespace
 
 int main() {
     // 1. Tall-scratch case from the ASan report: a 1920-row scratch with an

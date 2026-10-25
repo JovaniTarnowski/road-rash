@@ -22,14 +22,14 @@ class Mixer;
 // A single channel voice event with an absolute tick.
 struct MidsEvent {
     uint32_t tick = 0;  // accumulated delta ticks, division units
-    uint8_t status = 0;  // 0x80..0xEF channel voice status
+    uint8_t status = 0; // 0x80..0xEF channel voice status
     uint8_t data0 = 0;
     uint8_t data1 = 0;
 };
 
 struct MidsSong {
-    uint32_t division = 480;  // ticks per quarter note (MIDS `fmt ` field 0)
-    std::vector<MidsEvent> events;  // tick order, all blocks concatenated
+    uint32_t division = 480;       // ticks per quarter note (MIDS `fmt ` field 0)
+    std::vector<MidsEvent> events; // tick order, all blocks concatenated
     // (tick, microseconds per quarter note); kind==1 tempo events.
     std::vector<std::pair<uint32_t, uint32_t>> tempo;
     uint32_t total_ticks = 0;
@@ -41,20 +41,20 @@ MidsSong read_mids(const std::vector<uint8_t>& bytes);
 
 // One playable (program,key) sample zone of a SoundFont 1 bank.
 struct Sf1Zone {
-    uint8_t program = 0;  // melodic preset program (bank 0), or 0 for drums
-    uint8_t bank = 0;  // 0 melodic, 128 drums
+    uint8_t program = 0; // melodic preset program (bank 0), or 0 for drums
+    uint8_t bank = 0;    // 0 melodic, 128 drums
     uint8_t low_key = 0, high_key = 127;
     uint8_t root_key = 60;
     int8_t coarse_tune = 0;
-    int8_t fine_tune = 0;  // semitones + cents/100
-    int16_t volume_db_cb = 0;  // initial attenuation, centibels (negative ok)
-    uint32_t sample_start = 0, sample_end = 0;  // sample indices into samples
-    uint32_t loop_start = 0, loop_end = 0;  // sample indices; loop_end<=start = no loop
+    int8_t fine_tune = 0;                      // semitones + cents/100
+    int16_t volume_db_cb = 0;                  // initial attenuation, centibels (negative ok)
+    uint32_t sample_start = 0, sample_end = 0; // sample indices into samples
+    uint32_t loop_start = 0, loop_end = 0;     // sample indices; loop_end<=start = no loop
     uint16_t sample_rate = 22050;
 };
 
 struct Sf1Bank {
-    std::vector<int16_t> samples;  // 16-bit mono PCM from `sdta/smpl`
+    std::vector<int16_t> samples; // 16-bit mono PCM from `sdta/smpl`
     std::vector<Sf1Zone> zones;
 };
 
@@ -77,16 +77,15 @@ bool factory_covers(uint8_t program);
 // Count note-on events in `song` whose (program,key) is covered by neither
 // `melodic`/`drums` nor the factory table (`factory_prog_key` lists the
 // census-observed soundings as (bank,program) for the report).
-size_t count_factory_notes(const MidsSong& song, const Sf1Bank& melodic,
-                           const Sf1Bank& drums);
+size_t count_factory_notes(const MidsSong& song, const Sf1Bank& melodic, const Sf1Bank& drums);
 
 // Offline render of a parsed song against melodic + drum banks (no audio
 // hardware). Returns true when at least one sample was rendered. Unmapped
 // notes fall back to `factory` (default: the factory table, so SbkGrng/Klown
 // corpus renders are audible like the original AWE path); pass nullptr
 // explicitly for the exact hardware-silence audit.
-bool render_race_song(const MidsSong&, const Sf1Bank&, const Sf1Bank&,
-                      std::vector<int16_t>& mono, const Sf1Bank* factory = &factory_bank());
+bool render_race_song(const MidsSong&, const Sf1Bank&, const Sf1Bank&, std::vector<int16_t>& mono,
+                      const Sf1Bank* factory = &factory_bank());
 // Live-registry pump for the sound.cpp hook region: SoundSystem::update
 // (already called once per race tick) forwards here so the sequencer runs
 // without touching game_main.cpp, which the live session owns.
@@ -102,7 +101,7 @@ std::string race_song_name(int original_course_index, const std::string& alias);
 bool race_song_is_klown(const std::string& alias);
 
 class RaceMusicPlayer {
-public:
+  public:
     RaceMusicPlayer(const Assets&, Mixer&);
     ~RaceMusicPlayer();
     // 0x00433bb0: load song+bank for the course; silent no-op when assets are
@@ -110,7 +109,7 @@ public:
     void play_race(int original_course_index, const std::string& alias);
     void stop();
     void pause(bool);
-    void update();  // game thread: render the next block into the mixer ring
+    void update(); // game thread: render the next block into the mixer ring
     bool active() const { return playing_; }
     std::string song() const { return song_; }
     // Test hook: parse + render without audio hardware.
@@ -123,20 +122,21 @@ public:
     void set_music_level(int level) { music_level_ = level < 0 ? 0 : level > 100 ? 100 : level; }
     void test_play(const MidsSong& song, std::shared_ptr<const Sf1Bank> melodic,
                    std::shared_ptr<const Sf1Bank> drums);
-private:
+
+  private:
     const Assets& assets_;
     Mixer& mixer_;
     bool playing_ = false, paused_ = false, loaded_ = false;
     std::string song_;
     MidsSong song_data_;
     std::shared_ptr<const Sf1Bank> melodic_, drums_;
-    class MusicStream* stream_ = nullptr;  // owned; mixer only borrows during play
+    class MusicStream* stream_ = nullptr; // owned; mixer only borrows during play
     int stream_voice_ = -1;
     uint64_t position_frames_ = 0;
     uint32_t event_cursor_ = 0;
     uint32_t tick_ = 0;
     double tick_frac_ = 0.0;
-    int music_level_ = 80;  // 0x004362e0 music channel default
+    int music_level_ = 80; // 0x004362e0 music channel default
     struct LiveVoice {
         const Sf1Zone* zone = nullptr;
         double pos = 0.0, step = 1.0;
@@ -153,4 +153,4 @@ private:
 // holds JESSIE/DUEL, shown by the jukebox popup 0x00445730.
 std::string jukebox_video_path(int slot);
 int jukebox_video_count();
-}  // namespace rr
+} // namespace rr

@@ -14,14 +14,14 @@ struct ActorPose {
     bool visible = false;
 };
 struct ViewState {
-    uint32_t camera_position_q8 = 0;  // Race::camera_position()
-    Camera camera;                    // x, height
+    uint32_t camera_position_q8 = 0; // Race::camera_position()
+    Camera camera;                   // x, height
     int camera_route = 0;
-    std::vector<ActorPose> actors;  // riders, crash riders, cars, cops, stable id order
+    std::vector<ActorPose> actors; // riders, crash riders, cars, cops, stable id order
     uint32_t tick = 0;
 };
 class TrafficSystem;
 void capture_view(ViewState&, const Race&, const TrafficSystem*);
 void blend_view(ViewState& out, const ViewState& a, const ViewState& b, uint32_t alpha_q16,
                 uint32_t teleport_q8 = 8 << 8);
-}  // namespace rr
+} // namespace rr

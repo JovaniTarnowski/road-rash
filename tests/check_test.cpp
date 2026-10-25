@@ -4,7 +4,12 @@
 
 int main() {
     int failures = 0;
-    auto check = [&](bool v, const char* what) { if (!v) { ++failures; std::cerr << "FAIL " << what << '\n'; } };
+    auto check = [&](bool v, const char* what) {
+        if (!v) {
+            ++failures;
+            std::cerr << "FAIL " << what << '\n';
+        }
+    };
     {
         rr::test::Checks c;
         check(c(true, "pass records nothing") && c.failures == 0, "pass path");

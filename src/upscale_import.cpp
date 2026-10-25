@@ -34,8 +34,8 @@ UpscaledImage to_entry(const Image8& img) {
 }
 // Generate (or hit the cache for) one texture's 2x/4x levels. Returns false on cancel.
 bool generate_one(const CelMip& mip, const UpscaleCache& cache, const std::string& asset, uint32_t index,
-                  const std::array<uint32_t, 256>& luma, const std::function<bool(int, int)>& progress, int& done,
-                  int total) {
+                  const std::array<uint32_t, 256>& luma, const std::function<bool(int, int)>& progress,
+                  int& done, int total) {
     if (mip.width <= 0 || mip.height <= 0) return true;
     const auto src = mip_source(mip);
     Image8 im{mip.width, mip.height, src};
@@ -47,7 +47,7 @@ bool generate_one(const CelMip& mip, const UpscaleCache& cache, const std::strin
     }
     return true;
 }
-}  // namespace
+} // namespace
 
 void attach_upscaled(CelTexture& tex, const UpscaleCache& cache, const std::string& asset, uint32_t index) {
     tex.upscaled.clear();
@@ -111,12 +111,19 @@ void generate_upscaled(const Assets& assets, const UpscaleCache& cache,
     const auto palette = Palette::from_raw(assets.read("DATA/PALETTE.RAW"));
     const auto luma = mmpx_luma(palette.rgbx);
     const auto exe = assets.read("ROADRASH.EXE");
-    struct Job { std::string asset; uint32_t index; CelMip mip; };
+    struct Job {
+        std::string asset;
+        uint32_t index;
+        CelMip mip;
+    };
     std::vector<Job> jobs;
     auto fnv = [](uint32_t a, uint32_t b, uint32_t c) {
         uint32_t h = 2166136261u;
         for (uint32_t v : {a, b, c}) {
-            for (int i = 0; i < 4; ++i) { h ^= uint8_t(v >> (i * 8)); h *= 16777619u; }
+            for (int i = 0; i < 4; ++i) {
+                h ^= uint8_t(v >> (i * 8));
+                h *= 16777619u;
+            }
         }
         return h;
     };
@@ -154,7 +161,10 @@ void generate_upscaled(const Assets& assets, const UpscaleCache& cache,
         uint32_t index = 0;
         for (const auto* sheet : {&sprites.bob, &sprites.cop, &sprites.shadow, &sprites.shadoc}) {
             for (const auto& bob : *sheet) {
-                if (bob.width <= 0 || bob.height <= 0) { ++index; continue; }
+                if (bob.width <= 0 || bob.height <= 0) {
+                    ++index;
+                    continue;
+                }
                 CelMip m;
                 m.width = bob.width;
                 m.height = bob.height;
@@ -174,4 +184,4 @@ void generate_upscaled(const Assets& assets, const UpscaleCache& cache,
     }
     progress(total, total);
 }
-}  // namespace rr
+} // namespace rr

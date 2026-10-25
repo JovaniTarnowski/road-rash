@@ -19,4 +19,4 @@ void draw_opponents(SDL_Renderer*, const Game&, SpriteCache&, const std::vector<
 void draw_hud(SDL_Renderer*, const Game&);
 RgbImage capture_race_frame(SDL_Renderer*);
 void pause_event(Frontend*, const SDL_Event&, GamepadPtr&, SDL_Renderer*);
-}
+} // namespace rr

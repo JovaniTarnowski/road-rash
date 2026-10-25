@@ -22,14 +22,23 @@
 //   by ring position, and the contact pass runs after rider/car contacts.
 namespace rr {
 namespace {
-int32_t sar8(int32_t x) { return (x + ((x >> 31) & 0xff)) >> 8; }
-int32_t sar4(int32_t x) { return (x + ((x >> 31) & 0xf)) >> 4; }
-int32_t div256(int64_t x) { return int32_t((x + ((x >> 63) & 0xff)) >> 8); }
-int32_t magnitude(int32_t v) { const uint32_t s = uint32_t(v >> 31); return int32_t((uint32_t(v) ^ s) - s); }
-constexpr int32_t crossing_heading[4] = {0, 0x400000, -0x800000, -0x400000};   // 0x0046df30 by +0x1ec
-constexpr int32_t car_half_length = 64, car_half_height = 8960;   // 0x00475700 + kind * 0x18 via 0x004387a0
-constexpr int32_t car_mass = 1800;
+int32_t sar8(int32_t x) {
+    return (x + ((x >> 31) & 0xff)) >> 8;
 }
+int32_t sar4(int32_t x) {
+    return (x + ((x >> 31) & 0xf)) >> 4;
+}
+int32_t div256(int64_t x) {
+    return int32_t((x + ((x >> 63) & 0xff)) >> 8);
+}
+int32_t magnitude(int32_t v) {
+    const uint32_t s = uint32_t(v >> 31);
+    return int32_t((uint32_t(v) ^ s) - s);
+}
+constexpr int32_t crossing_heading[4] = {0, 0x400000, -0x800000, -0x400000}; // 0x0046df30 by +0x1ec
+constexpr int32_t car_half_length = 64, car_half_height = 8960; // 0x00475700 + kind * 0x18 via 0x004387a0
+constexpr int32_t car_mass = 1800;
+} // namespace
 
 void Race::build_pedestrian_slices() {
     // 0x004552e0 fills the ring back to front (128 slices); 0x00454120 then
@@ -46,9 +55,13 @@ void Race::build_pedestrian_slices() {
         const auto& sample = road[size_t(s)];
         const auto& records = system.actors(sample);
         for (size_t i = 0; i < records.size(); ++i)
-            if (system.consume(sample.section, sample.local, i)) spawn_pedestrian(sample, size_t(s), records[i], random());
+            if (system.consume(sample.section, sample.local, i))
+                spawn_pedestrian(sample, size_t(s), records[i], random());
     };
-    if (!system.filled) { system.filled = true; system.built_back = system.built_front = front - 128; }
+    if (!system.filled) {
+        system.filled = true;
+        system.built_back = system.built_front = front - 128;
+    }
     while (system.built_front < front) build(system.built_front++);
     while (system.built_back > back) build(--system.built_back);
     system.built_front = std::min(system.built_front, front);
@@ -61,7 +74,7 @@ void Race::set_track_ring(TrackRing* ring) {
     ring_random_ = [this] { return random(); };
     ring_sink_ = [this](const RingActor& a, uint32_t jitter) { ring_actor(a, jitter); };
     ring_setup_ = true;
-    ring_->setup(int32_t(camera_position()) + 0x100, ring_random_, ring_sink_);   // ring camera 0x004b7ee0
+    ring_->setup(int32_t(camera_position()) + 0x100, ring_random_, ring_sink_); // ring camera 0x004b7ee0
     ring_setup_ = false;
 }
 
@@ -83,7 +96,8 @@ void Race::spawn_pedestrian(const RouteSample& sample, size_t s, const DzhrActor
     const int32_t offset12 = (w1 & 0x800) ? int32_t(w1 | 0xfffff000u) : int32_t(w1 & 0xfff);
     const uint32_t spread = (w1 & 0xff0000u) >> 14;
     const int type = int(w0 & 15);
-    const int32_t lateral = int32_t(uint32_t((sample.offset + offset12) * 256) - spread * 2 + jitter % (spread * 4 + 1));
+    const int32_t lateral =
+        int32_t(uint32_t((sample.offset + offset12) * 256) - spread * 2 + jitter % (spread * 4 + 1));
     if (type >= 0xb) {
         // 0x004409e0 else-branch: two rand() draws, then the police bike
         // 0x00406b80 at (second draw % 0x81 + 0x200) * 0x10 >> 8 slices
@@ -97,23 +111,32 @@ void Race::spawn_pedestrian(const RouteSample& sample, size_t s, const DzhrActor
         }
         return;
     }
-    const int32_t player = ring_setup_ ? 0 : riders_[0].bike.i32(0x1c);   // local_8
+    const int32_t player = ring_setup_ ? 0 : riders_[0].bike.i32(0x1c); // local_8
     Pedestrian* slot = nullptr;
-    for (auto& p : system.pool()) if (!p.active) { slot = &p; break; }
-    if (!slot) return;   // pool full: 0x004387a0 returns null, the record is still consumed
+    for (auto& p : system.pool())
+        if (!p.active) {
+            slot = &p;
+            break;
+        }
+    if (!slot) return; // pool full: 0x004387a0 returns null, the record is still consumed
     Pedestrian& p = *slot;
     p = Pedestrian{};
     p.active = true;
     Bike& b = p.body.bike;
     system.apply_template(b);
-    b.u8(0xc0) = uint8_t(b.u8(0xc0) | 0x10);   // native guard: cross_sample's finish latch never applies to pedestrians
+    b.u8(0xc0) =
+        uint8_t(b.u8(0xc0) | 0x10); // native guard: cross_sample's finish latch never applies to pedestrians
     const int32_t position = int32_t(uint32_t(s) * 256 + (w1 >> 24));
-    b.i32(0x1c) = position; b.i32(0x20) = 0; b.i32(0x24) = 0; b.i32(0x28) = lateral;
+    b.i32(0x1c) = position;
+    b.i32(0x20) = 0;
+    b.i32(0x24) = 0;
+    b.i32(0x28) = lateral;
     for (int k = 0; k < 5; ++k) b.i32(0x30 + 4 * k) = b.i32(0x1c + 4 * k);
-    b.i32(0x134) = position; b.i32(0x138) = position;
+    b.i32(0x134) = position;
+    b.i32(0x138) = position;
     p.body.route = riders_[0].route;
     p.body.sample = p.body.previous_sample = s;
-    p.anchor = position;                            // +0x1c8..+0x1d8 copy of +0x1c..+0x2c
+    p.anchor = position; // +0x1c8..+0x1d8 copy of +0x1c..+0x2c
     p.selector = uint8_t(w0 >> 8);
     p.type = type;
     p.side = lateral < 1 ? 1 : 3;
@@ -132,7 +155,7 @@ void Race::spawn_pedestrian(const RouteSample& sample, size_t s, const DzhrActor
     const int32_t created = ring_setup_ ? setup_tick_ : ticks_;
     p.last_tick = created - b.i32(0x14);
     p.next_tick = created;
-    p.look = nullptr;   // 0x00440680 loads it at the first draw (load_pedestrian_looks)
+    p.look = nullptr; // 0x00440680 loads it at the first draw (load_pedestrian_looks)
     ++system.spawned_;
 }
 
@@ -148,7 +171,7 @@ void Race::load_pedestrian_looks() {
         if (!p.active || p.look) continue;
         const auto& road = route_of(p.body);
         p.look = pedestrians_->look(road[std::min(p.body.sample, road.size() - 1)], p.selector);
-        if (p.look) {   // 0x00440b80
+        if (p.look) { // 0x00440b80
             set_animation(p.animation, p.look->bank, 1, uint32_t(ticks_));
             queue_animation(p.animation, p.look->bank, -1);
             advance_animation(p.animation, p.look->bank, uint32_t(ticks_));
@@ -181,15 +204,19 @@ void Race::run_ped_node(Pedestrian& p) {
         b.i32(0x14) = interval;
     }
     p.next_tick = ticks_ + b.i32(0x14);
-    if (b.i32(0x28) < -0xc8000 || b.i32(0x28) > 0xc8000 ||
-        front - b.i32(0x1c) < 0 || b.i32(0x1c) - back < 0) {
+    if (b.i32(0x28) < -0xc8000 || b.i32(0x28) > 0xc8000 || front - b.i32(0x1c) < 0 ||
+        b.i32(0x1c) - back < 0) {
         // Nulled-callback solo replays keep their measured same-step removal
         // contract; only the live move-slot path defers unlink.
-        if(freeze_actors_) {p.active=false;return;}
+        if (freeze_actors_) {
+            p.active = false;
+            return;
+        }
         // 0x00437c10 -> 0x00437be0: disabled now, still in the list through
         // this frame; next tick's prepass returns the pool slot.
-        p.pending_remove=true;b.u8(0xc0)=uint8_t((b.u8(0xc0)&~4)|8);
-        p.last_tick=p.next_tick=ticks_+100;
+        p.pending_remove = true;
+        b.u8(0xc0) = uint8_t((b.u8(0xc0) & ~4) | 8);
+        p.last_tick = p.next_tick = ticks_ + 100;
     }
 }
 
@@ -199,7 +226,11 @@ void Race::step_pedestrians() {
     if (!pedestrians_) return;
     for (auto& p : pedestrians_->pool()) {
         // 0x00437df0 removes last tick's marked nodes before scheduling.
-        if(p.pending_remove) {p.active=false;p.pending_remove=false;continue;}
+        if (p.pending_remove) {
+            p.active = false;
+            p.pending_remove = false;
+            continue;
+        }
         if (!p.active || p.next_tick > ticks_) continue;
         run_ped_node(p);
     }
@@ -228,11 +259,14 @@ bool Race::pedestrian_road_clear(const Pedestrian& p, int factor, int delta) con
         if (int8_t(int32_t(int64_t(sar8(d)) / 250) - (d < 0 ? 1 : 0)) != lane) return;
         const int32_t gap = std::abs(opos - pos);
         if (found && gap >= best_gap) return;
-        found = true; best_gap = gap; other_pos = opos; other_velocity = velocity;
+        found = true;
+        best_gap = gap;
+        other_pos = opos;
+        other_velocity = velocity;
     };
     for (const auto& r : riders_) {
         const auto& sample = route_of(r)[r.sample];
-        if (sample.dual && r.route != p.body.route) continue;   // 0x00449ce0 roadway-half test
+        if (sample.dual && r.route != p.body.route) continue; // 0x00449ce0 roadway-half test
         consider(r.bike.i32(0x1c), r.bike.i32(0x28), sample.offset, r.bike.i32(0x108));
     }
     if (traffic_) {
@@ -245,12 +279,14 @@ bool Race::pedestrian_road_clear(const Pedestrian& p, int factor, int delta) con
     }
     if (!found) return true;
     const uint32_t v = uint32_t(magnitude(other_velocity));
-    const int32_t sum = int32_t(uint32_t(int32_t(v & 0xfffff00fu) >> 4) + uint32_t(int32_t(v & 0xfffffe01u) >> 1) + (v & 0xffffff80u) * 2u);
+    const int32_t sum = int32_t(uint32_t(int32_t(v & 0xfffff00fu) >> 4) +
+                                uint32_t(int32_t(v & 0xfffffe01u) >> 1) + (v & 0xffffff80u) * 2u);
     const int32_t cruise = traffic_ ? traffic_->timers().cruise : 25;
     const int32_t q = sum / (cruise + 1);
     const uint32_t f = uint32_t(factor * 0x191) >> 8;
     const int32_t lhs = int32_t((uint32_t(q) * f) & 0xffffff0fu) >> 4;
-    const int32_t rhs = int32_t(uint32_t(magnitude(int32_t(uint32_t(pos) - uint32_t(other_pos)))) & 0xfffffff0u);
+    const int32_t rhs =
+        int32_t(uint32_t(magnitude(int32_t(uint32_t(pos) - uint32_t(other_pos)))) & 0xfffffff0u);
     return lhs <= rhs;
 }
 
@@ -276,28 +312,56 @@ void Race::think_pedestrian(Pedestrian& p) {
     Bike& b = p.body.bike;
     const int32_t player = riders_[0].bike.i32(0x1c);
     const uint32_t tick = uint32_t(ticks_);
-    auto set = [&](int8_t code) { if (p.look) set_animation(p.animation, p.look->bank, code, tick); };
-    auto queue = [&](int8_t code) { if (p.look) queue_animation(p.animation, p.look->bank, code); };
-    auto rest = [&] { p.state = 0; set(1); queue(-1); p.pace = 0; };          // LAB_004413ea
-    auto resume = [&] { p.state = 1; p.pace = 4; set(0); queue(-1); };
+    auto set = [&](int8_t code) {
+        if (p.look) set_animation(p.animation, p.look->bank, code, tick);
+    };
+    auto queue = [&](int8_t code) {
+        if (p.look) queue_animation(p.animation, p.look->bank, code);
+    };
+    auto rest = [&] {
+        p.state = 0;
+        set(1);
+        queue(-1);
+        p.pace = 0;
+    }; // LAB_004413ea
+    auto resume = [&] {
+        p.state = 1;
+        p.pace = 4;
+        set(0);
+        queue(-1);
+    };
     // 0x004415b0: on a crosswalk edge slice, the phase of the index-0/2
     // signal for this side of the road, or -1. Phase 2 walks without a road
     // check; other phases hold; no signal checks the road.
-    const int signal=traffic_?traffic_->pedestrian_signal(route_of(p.body)[p.body.sample].path.marking_flags,
-                                                           b.i32(0x1c),pedestrian_lane(p)):-1;
+    const int signal = traffic_
+                           ? traffic_->pedestrian_signal(route_of(p.body)[p.body.sample].path.marking_flags,
+                                                         b.i32(0x1c), pedestrian_lane(p))
+                           : -1;
     p.pace = 0;
     if (p.state != 2) {
         p.heading = crossing_heading[p.side & 3];
         int base = -1;
         switch (p.type) {
-        case 4: p.heading = int32_t(0xff800800u); break;
-        case 5: base = 0xfe; break;   // 0x7f + 0x7f falling through to case 7
-        case 6: base = 0x7f; break;
-        case 7: base = 0; break;
-        case 10:
-            if (p.loaded() && p.state != 7) { p.state = 7; set(6); }
+        case 4:
+            p.heading = int32_t(0xff800800u);
             break;
-        default: break;
+        case 5:
+            base = 0xfe;
+            break; // 0x7f + 0x7f falling through to case 7
+        case 6:
+            base = 0x7f;
+            break;
+        case 7:
+            base = 0;
+            break;
+        case 10:
+            if (p.loaded() && p.state != 7) {
+                p.state = 7;
+                set(6);
+            }
+            break;
+        default:
+            break;
         }
         if (base >= 0) {
             const int factor = uint8_t(base + 1);
@@ -305,35 +369,51 @@ void Race::think_pedestrian(Pedestrian& p) {
             case 0:
                 p.lane = int8_t(pedestrian_lane(p));
                 if ((p.has(0) || p.has(5) || !p.loaded()) && p.trigger < player && (random() & 1) != 0) {
-                    if (signal>=0 && signal!=2) break;   // red phases hold
-                    if (signal<0) {
+                    if (signal >= 0 && signal != 2) break; // red phases hold
+                    if (signal < 0) {
                         if (!pedestrian_road_clear(p, factor, 0)) break;
                         if (!pedestrian_road_clear(p, factor, p.side == 1 ? 1 : -1)) break;
                     }
                     p.state = 1;
                     p.pace = p.has(0) ? 4 : 8;
-                    if (!p.loaded()) set(0); else set(p.has(0) ? 0 : 5);
+                    if (!p.loaded())
+                        set(0);
+                    else
+                        set(p.has(0) ? 0 : 5);
                 }
                 break;
             case 1:
-                if (p.has(0)) { queue(0); p.pace = 4; }
-                else if (p.has(5)) { queue(5); p.pace = 8; }
-                else if (!p.loaded()) p.pace = 4;
-                else { queue(1); p.pace = 0; }
-                if (signal>=0 || int8_t(pedestrian_lane(p)) == p.lane) {
+                if (p.has(0)) {
+                    queue(0);
+                    p.pace = 4;
+                } else if (p.has(5)) {
+                    queue(5);
+                    p.pace = 8;
+                } else if (!p.loaded())
+                    p.pace = 4;
+                else {
+                    queue(1);
+                    p.pace = 0;
+                }
+                if (signal >= 0 || int8_t(pedestrian_lane(p)) == p.lane) {
                     if ((random() & 3) == 0 || pedestrian_road_clear(p, (factor >> 2) + 0x10, 0)) {
                         if (pedestrian_arrived(p)) {
-                            p.state = 0; queue(1); p.pace = 0;
+                            p.state = 0;
+                            queue(1);
+                            p.pace = 0;
                             p.trigger = player + 0xa0;
                             p.side = (p.side + 2) & 3;
-                        } else if (signal >= 0 && signal != 2 && p.has(5)) queue(5);   // red mid-crossing: hurry
+                        } else if (signal >= 0 && signal != 2 && p.has(5))
+                            queue(5); // red mid-crossing: hurry
                     } else {
                         // Traffic too close mid-crossing: hesitate.
                         p.state = 3;
                         if (p.has(2)) set(2);
-                        if (!p.has(4) || (p.has(5) && (random() & 7) == 0)) { if (p.has(5)) queue(5); }
-                        else {
-                            if (uint32_t(ticks_ - p.voice_tick) > 0xb4 && p.look && p.look->voices[1] >= 0) pedestrian_voice(p, 1);
+                        if (!p.has(4) || (p.has(5) && (random() & 7) == 0)) {
+                            if (p.has(5)) queue(5);
+                        } else {
+                            if (uint32_t(ticks_ - p.voice_tick) > 0xb4 && p.look && p.look->voices[1] >= 0)
+                                pedestrian_voice(p, 1);
                             queue(4);
                         }
                     }
@@ -348,24 +428,40 @@ void Race::think_pedestrian(Pedestrian& p) {
                 if (current == 4 || current == 5) {
                     p.state = current;
                     queue(p.has(0) ? 0 : p.has(5) ? 5 : 1);
-                } else if (!p.has(0)) { if (p.has(5)) queue(5); else rest(); }
-                else resume();
+                } else if (!p.has(0)) {
+                    if (p.has(5))
+                        queue(5);
+                    else
+                        rest();
+                } else
+                    resume();
                 break;
             }
             case 4:
                 if (p.animation.animation != 4) {
-                    if (!p.has(0)) { if (p.has(5)) queue(5); else rest(); }
-                    else resume();
+                    if (!p.has(0)) {
+                        if (p.has(5))
+                            queue(5);
+                        else
+                            rest();
+                    } else
+                        resume();
                 }
                 break;
             case 5:
                 p.pace = 8;
                 if (pedestrian_road_clear(p, factor, 0)) {
-                    if (!p.has(0)) { if (p.has(5)) queue(5); else rest(); }
-                    else resume();
+                    if (!p.has(0)) {
+                        if (p.has(5))
+                            queue(5);
+                        else
+                            rest();
+                    } else
+                        resume();
                 }
                 break;
-            default: break;
+            default:
+                break;
             }
         }
         // 0x004498c0(obj, heading, pace*100, pace*100).
@@ -383,7 +479,10 @@ void Race::move_pedestrian(Pedestrian& p) {
     // 0x00440990: 0x0043adc0 (independent actor motion), then stay within
     // 0x1ff of the spawn position.
     Bike& b = p.body.bike;
-    if (!b.i32(0x160)) { b.i32(0x114) = b.i32(0x118) = 0; b.u8(0x164) = 0; }
+    if (!b.i32(0x160)) {
+        b.i32(0x114) = b.i32(0x118) = 0;
+        b.u8(0x164) = 0;
+    }
     integrate_speed(b, tables_, surface_class(edges(p.body, p.body.sample), b.i32(0x28)));
     advance_actor_motion(b, tables_, [&](int32_t distance) { move_along(p.body, distance); });
     vertical(p.body);
@@ -403,18 +502,22 @@ void Race::hit_pedestrian(Pedestrian& p, int32_t hitter_speed, bool hitter_attac
         if (hitter_attacking || (magnitude(hitter_speed) > 1000 && !hitter_walking)) {
             // Knocked down: scream when 0..0x400 ahead of the view camera.
             const int32_t ahead = b.i32(0x1c) - int32_t(camera_position());
-            if (ahead >= 0 && ahead < 0x401 && uint32_t(ticks_ - p.voice_tick) > 0xb4 && p.look->voices[0] >= 0) pedestrian_voice(p, 0);
+            if (ahead >= 0 && ahead < 0x401 && uint32_t(ticks_ - p.voice_tick) > 0xb4 &&
+                p.look->voices[0] >= 0)
+                pedestrian_voice(p, 0);
             p.state = 2;
             set_animation(p.animation, p.look->bank, 3, tick);
             queue_animation(p.animation, p.look->bank, -1);
             b.i32(0x154) = 0x19;
-            b.i32(0x128) = 0; b.i32(0x5c) = 0;   // 0x004498c0(obj, 0, 20000, 0)
+            b.i32(0x128) = 0;
+            b.i32(0x5c) = 0; // 0x004498c0(obj, 0, 20000, 0)
             if (20000 < b.i32(0xec)) b.i32(0xec) = 20000;
         } else {
             // Bumped: stagger.
             p.state = 3;
             if (p.has(2)) set_animation(p.animation, p.look->bank, 2, tick);
-            if (!p.has(4) || (p.has(5) && (random() & 7) == 0)) queue_animation(p.animation, p.look->bank, p.has(5) ? 5 : 1);
+            if (!p.has(4) || (p.has(5) && (random() & 7) == 0))
+                queue_animation(p.animation, p.look->bank, p.has(5) ? 5 : 1);
             else {
                 queue_animation(p.animation, p.look->bank, 4);
                 if (uint32_t(ticks_ - p.voice_tick) > 0xb4 && p.look->voices[1] >= 0) pedestrian_voice(p, 1);
@@ -453,9 +556,13 @@ void Race::contact_pedestrian(Rider& self, Pedestrian& p) {
     s.i32(0x184) = div256(int64_t(s.i32(0x184)) * elasticity);
     const int32_t speed = s.i32(0xec);
     bool nudge;
-    if (speed < 300 && s.u8(0x19c) == 0x20) { move_along(self, s.i32(0x18) * 2, false); nudge = true; }
-    else if (p.state != 2) nudge = speed < 2000;
-    else nudge = speed < 500;
+    if (speed < 300 && s.u8(0x19c) == 0x20) {
+        move_along(self, s.i32(0x18) * 2, false);
+        nudge = true;
+    } else if (p.state != 2)
+        nudge = speed < 2000;
+    else
+        nudge = speed < 500;
     if (nudge) {
         const int32_t step = sar4(s.i32(0x174) + q.i32(0x174)) * s.i32(0x18);
         s.i32(0x28) += q.i32(0x28) < s.i32(0x28) ? step : -step;
@@ -465,14 +572,15 @@ void Race::contact_pedestrian(Rider& self, Pedestrian& p) {
         t += (t >> 31) & 0x3fff;
         s.i32(0xf4) += (((t >> 14) + ((t >> 31) & 0xf)) >> 4) * 4;
     }
-    (void)steer;   // +0xf0 is unchanged on this branch, so the steer-rate tail is skipped
+    (void)steer; // +0xf0 is unchanged on this branch, so the steer-rate tail is skipped
     if (s.i32(0xf4) > 0x600) s.i32(0xf4) = 0x600;
     s.i32(0x184) = s.i32(0x188) = s.i32(0x18c) = 0;
     s.u8(0x19c) = 0;
     if (s.i32(0xec) > 30000) s.i32(0xec) = 30000;
     if (s.i32(0xec) < -1000) s.i32(0xec) = -1000;
     s.i32(0xf4) = std::clamp(int32_t(s.i32(0xf4)), -10000, 10000);
-    if (live_schedule_ && s.i32(0x2f4) == 0 && finish_q8_ != 0) self.finish_distance = finish_q8_ - self.half_mirror.position;
+    if (live_schedule_ && s.i32(0x2f4) == 0 && finish_q8_ != 0)
+        self.finish_distance = finish_q8_ - self.half_mirror.position;
 }
 
 void Race::contact_rider_pedestrian(Rider& r, Pedestrian& p, bool rider_outer) {
@@ -481,8 +589,10 @@ void Race::contact_rider_pedestrian(Rider& r, Pedestrian& p, bool rider_outer) {
     // outer node's handler first: the rider's 0x004049c0 path, the
     // pedestrian's 0x00440760.
     const int32_t hitter_speed = r.bike.i32(0xec);
-    if (rider_outer) separate(r, 4, p.body, 0x20);
-    else separate(p.body, 0x20, r, 4);
+    if (rider_outer)
+        separate(r, 4, p.body, 0x20);
+    else
+        separate(p.body, 0x20, r, 4);
     if (rider_outer) {
         contact_pedestrian(r, p);
         hit_pedestrian(p, hitter_speed, ai_attack_anim(r) != 0, false);
@@ -505,7 +615,8 @@ void Race::collide_pedestrians() {
             if (std::abs(car.lateral - q.i32(0x28)) > car_half_width + q.i32(0x174)) continue;
             if (std::abs(q.i32(0x20)) > car_half_height + q.i32(0x17c)) continue;
             // Lateral separation only (the car keeps no previous-position copy).
-            const int32_t depth = (car_half_width + q.i32(0x174) - std::abs(car.lateral - q.i32(0x28))) + 0x800;
+            const int32_t depth =
+                (car_half_width + q.i32(0x174) - std::abs(car.lateral - q.i32(0x28))) + 0x800;
             const int32_t back = depth * car_mass / (car_mass + q.i32(0x194)) + 3;
             q.i32(0x28) += car.lateral < q.i32(0x28) ? back : -back;
             hit_pedestrian(p, car.kind == 2 ? -car.speed : car.speed, false, false);
@@ -513,6 +624,7 @@ void Race::collide_pedestrians() {
     }
 }
 void Race::attach_terrain_type() {
-    if (traffic_ && terrain_source_) traffic_->set_terrain_type([this](const RouteSample& s) { return int(terrain_source_(s).type); });
+    if (traffic_ && terrain_source_)
+        traffic_->set_terrain_type([this](const RouteSample& s) { return int(terrain_source_(s).type); });
 }
-}
+} // namespace rr

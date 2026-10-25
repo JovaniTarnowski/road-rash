@@ -32,17 +32,24 @@ void SessionState::handle(const SDL_Event& e) {
         focused_ = true;
         reset_ = true;
         break;
-    default: break;
+    default:
+        break;
     }
 }
 
 int TickClock::advance(uint64_t elapsed_ns, bool paused) {
-    if (paused) { reset(); return 0; }
+    if (paused) {
+        reset();
+        return 0;
+    }
     constexpr uint64_t second = 1000000000ull;
     constexpr uint64_t cap = (second * max_steps_per_frame + ticks_per_second - 1) / ticks_per_second;
     remainder_ += std::min(elapsed_ns, cap) * ticks_per_second;
     const int steps = int(remainder_ / second);
-    if (steps >= max_steps_per_frame) { reset(); return max_steps_per_frame; }
+    if (steps >= max_steps_per_frame) {
+        reset();
+        return max_steps_per_frame;
+    }
     remainder_ %= second;
     return steps;
 }
@@ -51,4 +58,4 @@ uint32_t TickClock::alpha_q16() const {
     constexpr uint64_t second = 1000000000ull;
     return uint32_t((remainder_ << 16) / second);
 }
-}
+} // namespace rr

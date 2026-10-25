@@ -5,10 +5,17 @@
 int main() {
     int failures = 0;
     auto check = [&](bool ok, const char* message) {
-        if (!ok) { ++failures; std::cerr << "FAIL " << message << '\n'; }
+        if (!ok) {
+            ++failures;
+            std::cerr << "FAIL " << message << '\n';
+        }
     };
     rr::SessionState state;
-    auto event = [&](Uint32 type) { SDL_Event e{}; e.type = type; state.handle(e); };
+    auto event = [&](Uint32 type) {
+        SDL_Event e{};
+        e.type = type;
+        state.handle(e);
+    };
     check(!state.paused(), "race starts active");
     event(SDL_EVENT_WILL_ENTER_BACKGROUND);
     check(state.paused() && state.background(), "background pauses immediately");
@@ -50,7 +57,7 @@ int main() {
     {
         // Plan 21 Task 2: alpha_q16 reports the sub-tick remainder in Q16.
         rr::TickClock c2;
-        constexpr uint64_t half = 1000000000ull / 60 / 2 + 1;  // ceil(half a 60 Hz tick)
+        constexpr uint64_t half = 1000000000ull / 60 / 2 + 1; // ceil(half a 60 Hz tick)
         check(c2.advance(half, false) == 0, "half tick takes no step");
         check(c2.alpha_q16() == 32767 || c2.alpha_q16() == 32768, "half-tick remainder reads half");
         check(c2.advance(half, false) == 1, "two halves complete the tick");

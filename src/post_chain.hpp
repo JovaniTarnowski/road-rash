@@ -17,7 +17,7 @@ float motion_blur_factor(float speed, float max_speed);
 float motion_blur_factor_after_pause();
 float motion_blur_factor_after_teleport();
 class PostChain {
-public:
+  public:
     PostChain() = default;
     void configure(const Enhancements& e);
     bool any() const;
@@ -28,12 +28,13 @@ public:
     void apply(uint32_t* frame, int width, int height, float speed, bool teleported,
                float max_speed = 20000.0f, RenderThreads* pool = nullptr);
     void reset_history();
-private:
+
+  private:
     bool bloom_ = false, vignette_ = false, motion_blur_ = false;
     std::vector<uint32_t> previous_;
     int prev_w_ = 0, prev_h_ = 0;
-    std::vector<float> bright_, tmp_;      // bloom working buffers, reused
-    std::vector<double> vignette_gain_;    // per-pixel factor for vig_w_ x vig_h_
+    std::vector<float> bright_, tmp_;   // bloom working buffers, reused
+    std::vector<double> vignette_gain_; // per-pixel factor for vig_w_ x vig_h_
     int vig_w_ = 0, vig_h_ = 0;
 };
-}  // namespace rr
+} // namespace rr
