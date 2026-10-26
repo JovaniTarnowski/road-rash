@@ -16,7 +16,8 @@ const script = fs.readFileSync(path.join(dist, fs.readdirSync(dist).find(n => /^
         const envelopes = [], analytics = [], errors = [], external = [];
         await context.route('**/*', async route => {
             const req = route.request(), url = new URL(req.url());
-            if (url.hostname === 'o425745.ingest.us.sentry.io') {
+            // Sentry posts only to the same-origin tunnel; a direct sentry.io call lands in `external`.
+            if (url.hostname === 'road-rash.archit.xyz' && url.pathname === '/t/e' && req.method() === 'POST') {
                 envelopes.push(req.postData()); return route.fulfill({json:{}});
             }
             if (url.hostname === 'nazar.archit.xyz') {
@@ -31,7 +32,7 @@ const script = fs.readFileSync(path.join(dist, fs.readdirSync(dist).find(n => /^
             }
             if (!['road-rash.archit.xyz', 'localhost'].includes(url.hostname)) external.push(req.url());
             if (url.pathname === '/telemetry.js') return route.fulfill({contentType:'application/javascript',body:script});
-            return route.fulfill({contentType:'text/html',headers:{'Content-Security-Policy':"default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; connect-src 'self' https://o425745.ingest.us.sentry.io https://nazar.archit.xyz"}, body:'<script src="/telemetry.js"></script><h1>Telemetry fixture</h1>'});
+            return route.fulfill({contentType:'text/html',headers:{'Content-Security-Policy':"default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; connect-src 'self' https://nazar.archit.xyz"}, body:'<script src="/telemetry.js"></script><h1>Telemetry fixture</h1>'});
         });
         const page = await context.newPage();
         page.on('pageerror', e => errors.push(e.message));
@@ -85,7 +86,7 @@ const script = fs.readFileSync(path.join(dist, fs.readdirSync(dist).find(n => /^
         assert.deepEqual([envelopes.length,analytics.length],before,'local development does not send telemetry');
         // A browser which blocks both services must still run launcher hooks.
         await context.route('https://nazar.archit.xyz/**', r=>r.abort());
-        await context.route('https://o425745.ingest.us.sentry.io/**', r=>r.abort());
+        await context.route('https://road-rash.archit.xyz/t/e', r=>r.abort());
         await page.goto('https://road-rash.archit.xyz/');
         assert.equal(await page.evaluate(() => {rrTelemetry.track('launcher_ready');rrTelemetry.error(new Error('blocked'), 'game');return true;}),true);
         console.log('PASS real SDK transports, Sentry and PostHog handled/uncaught/Wasm-trap errors, unclean exits, event properties, privacy, CSP, localhost and blocked services');

@@ -11,7 +11,8 @@ fs.mkdirSync(evidence, {recursive:true});
     try {
         const context = await browser.newContext({viewport:{width:1440,height:900}});
         // Deterministic acceptance never sends synthetic failures to production telemetry.
-        await context.route('https://o425745.ingest.us.sentry.io/**', r => r.fulfill({json:{}}));
+        const tunnel = new URL('/t/e', url).href; // same-origin Sentry tunnel (deploy/nginx.conf)
+        await context.route(tunnel, r => r.fulfill({json:{}}));
         await context.route('https://nazar.archit.xyz/**', r => r.fulfill({json:{status:1}}));
         const page = await context.newPage();
         const errors = [], requests = [];
@@ -129,7 +130,7 @@ fs.mkdirSync(evidence, {recursive:true});
         const beforeReload=requests.length;
         await page.reload();await page.locator('#ready').waitFor({state:'visible',timeout:90000});
         assert.equal(requests.slice(beforeReload).filter(r=>/game-assets\/[a-f0-9]{64}$/.test(r.url)).length,0);
-        assert.ok(requests.every(r=>r.method==='GET' || (r.method==='POST' && ['https://o425745.ingest.us.sentry.io','https://nazar.archit.xyz'].includes(new URL(r.url).origin))),'no file uploads');
+        assert.ok(requests.every(r=>r.method==='GET' || (r.method==='POST' && (r.url===tunnel || new URL(r.url).origin==='https://nazar.archit.xyz'))),'no file uploads');
         assert.deepEqual(errors,[]);
         console.log('PASS cache reused after reload, no uploads or page errors; unique assets:',new Set(downloaded.map(r=>r.url)).size);
         fs.writeFileSync(path.join(evidence,'requests.json'),JSON.stringify(requests,null,2));

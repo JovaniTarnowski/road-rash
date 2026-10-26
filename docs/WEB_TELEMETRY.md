@@ -3,6 +3,13 @@
 Production https://road-rash.archit.xyz uses:
 
 - Sentry project `archit-khode/road-rash`, JavaScript browser SDK 11.9.0.
+  The SDK posts through the same-origin tunnel `/t/e` (`tunnel` option).
+  `deploy/nginx.conf` forwards POSTs there to this project's fixed envelope
+  endpoint only (no relay to other hosts or projects). It strips cookies,
+  Authorization and client-IP headers, verifies upstream TLS, resolves DNS per
+  request, and caps the path at one global 10/s bucket (burst 100, then 429).
+  The bucket is global because behind the host TLS proxy and Dokku's proxy every
+  request reaches the container from one address. GET and other methods get 403.
   https://archit-khode.sentry.io/issues/?project=4512320659914752
 - PostHog project `Road Rash` (688403), browser SDK 1.438.21, US region, sent
   through the PostHog managed reverse proxy `https://nazar.archit.xyz`
@@ -66,9 +73,10 @@ fragments are stripped from analytics URL fields, Sentry request URLs and stack
 frame URLs. Sentry default PII and console/network/interaction breadcrumbs are
 disabled; error messages and stack traces still describe the failure.
 
-CSP permits only the two exact HTTPS ingestion hosts in connect-src: Sentry's
-ingest host and the PostHog proxy `nazar.archit.xyz`. Sentry is not proxied, so
-blockers can still drop its reports. Scripts
+CSP connect-src is `'self'` (which covers the Sentry tunnel) plus the PostHog proxy
+`nazar.archit.xyz`; no third-party ingestion host remains. A blocker that
+matches Sentry envelope payloads or same-origin SDK bundles can still drop
+reports, but host-based lists no longer do. Scripts
 remain same-origin. Ad blockers may suppress delivery; gameplay still works.
 
 ## Verification
@@ -81,7 +89,7 @@ properties, URL scrubbing, CSP, disabled localhost and blocked endpoints.
 PostHog filters webdriver traffic, so this payload test simulates a human UA.
 `tests/web_hosted_smoke.cjs` intercepts telemetry at the context level so its
 intentional manifest/download faults never pollute production data. Its upload
-check allows POST only to these two ingestion hosts. Game assets remain GET-only.
+check allows POST only to the tunnel and the PostHog proxy. Game assets remain GET-only.
 Both run in the deployment workflow; stale-cache and full hosted gameplay gates
 remain required. Normal PostHog bot filtering stays enabled in production.
 

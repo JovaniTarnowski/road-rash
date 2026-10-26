@@ -66,3 +66,17 @@ false` and no ErrorTrackingExtensions.
   ride until ~68 s, slow down, let the cop catch up.
 - A production `unclean_exit` from Safari would point to memory pressure:
   measure wasm heap growth over a race (`ALLOW_MEMORY_GROWTH`, no maximum set).
+
+## Follow-up: PostHog proxy and Sentry tunnel (same day)
+
+- PostHog `api_host` is the owner's managed proxy `https://nazar.archit.xyz`
+  (`ui_host` `https://us.posthog.com`); 3feddcd.
+- Sentry `tunnel: '/t/e'`; nginx forwards to the fixed project envelope URL
+  (see WEB_TELEMETRY.md); the Sentry host is removed from CSP.
+- Local evidence in `nginx:1.28-alpine` built from `deploy/Dockerfile` (OrbStack
+  Docker 28.5.2): `nginx -t` ok; empty POST `/t/e` -> Sentry 401 through
+  verified TLS; GET -> 403; 130 parallel POSTs -> 103 forwarded, 27 x 429; CSP
+  `connect-src 'self' https://nazar.archit.xyz`. `tests/web_telemetry.cjs` PASS
+  with Sentry captured only at `/t/e`.
+- Owner's earlier crash was not a tab kill, so it was most likely a blocker
+  dropping both reports; the proxy and tunnel address that.

@@ -22,6 +22,8 @@ if (enabled) {
     safe(() => Sentry.init({
         dsn: 'https://72f1b0670d21ecd90bc4908ebe82d35e@o425745.ingest.us.sentry.io/4512320659914752',
         environment: 'production', release, sendDefaultPii: false,
+        // Same-origin tunnel (deploy/nginx.conf) so blockers do not drop reports.
+        tunnel: '/t/e',
         // No console logs, replay, network breadcrumbs or interaction text.
         integrations: defaults => defaults.filter(i => i.name !== 'Breadcrumbs'),
         beforeSend(event) {
