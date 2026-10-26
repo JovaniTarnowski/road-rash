@@ -59,7 +59,19 @@ match where compared; `+0x130` (bend) is uncompared.
   native `collide()` separation + handler shove (-2022). Golden has NO
   shove (70, drift only) with RNG in sync (no sounds) -- original sees
   NO overlap (frozen lateral must differ; it is NEVER compared: solo
-  dumps only player bike/half; `node.*` has no lateral).
+  dumps only player bike/half; `node.*` has no lateral). `was_clear`
+  probe (reverted): player pos31396/prevlat-380/hl64/hw7680 vs frozen
+  pos31488/prevpos31488/lat15360/prevlat16384/hl64/hw7680. Prev pos diff
+  92 <128 (NOT clear forward); prev lat diff 16764 >15360 (WAS clear
+  lateral) => push LATERAL (both worlds, since prev inputs match?
+  frozen prev lat 16384 spawn, should match -- yet original does NO
+  push). RANDLOG (solo-split, 200 frames, HUMAN=1): 2 draws at tick 149
+  from `0x00404BF3`/`0x00404C18` (both in `FUN_004049c0` contact handler)
+  -- frozen-contact sounds must stay (no blanket skip). 845 has NO draws
+  in either world (RNG 2285034199 constant) -- silent shove mismatch only.
+  Next: audit masses (`+0x194` via `init_bike_object` tables) + half-dims
+  for frozen shove history (spawn 16384 -> 15360 drift via 149 + possibly
+  others); `+0x328` mapping still open (plan-17).
 - Naive fix (skip frozen inners) makes it WORSE: first divergence moves
   EARLIER to tick 149 RNG (original 2193798822 vs native 1793882572).
   I.e. the tick-149 draw IS a frozen contact with sounds in both worlds
