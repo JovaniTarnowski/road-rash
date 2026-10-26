@@ -1035,6 +1035,34 @@ int main() {
             check(attacker.brain.rating[0] == (event != 0 ? 123 : 0),
                   "landed combat hit applies relationship event4");
         }
+        // Player combat must also land with the real descriptor bank attached.
+        for (bool held : {false, true})
+            for (int weapon = 0; weapon < 3; ++weapon)
+                for (int side : {-1, 1})
+                    for (uint32_t action : {rr::control_punch, rr::control_kick, rr::control_backhand}) {
+                        rr::ActorAnimationLibrary bank(exe, assets.read("DATA/GLOBAL.RSC"));
+                        const auto codes = rr::read_attack_codes(exe);
+                        rr::Opponent opponent{spec, 90, 0, 0, 0, 1};
+                        rr::Race duel(straight(4000), straight(4000), t, spec, 90, {opponent});
+                        duel.set_ride_library(&bank, &codes);
+                        auto& player = duel.riders()[0];
+                        auto& victim = duel.riders()[1];
+                        victim.frozen = true;
+                        player.bike.i32(0x2f0) = victim.bike.i32(0x2f0) = 10000;
+                        player.bike.i32(0x28) = 0;
+                        victim.bike.i32(0x28) = side * 18000;
+                        player.weapon = weapon;
+                        duel.set_live_schedule(true);
+                        const int32_t before = victim.stamina.current;
+                        for (int tick = 0; tick < 90; ++tick) {
+                            duel.step(held || tick == 0 ? action : 0);
+                        }
+                        if (victim.stamina.current >= before)
+                            std::cerr << "Combat failure: held=" << held << " weapon=" << weapon
+                                      << " side=" << side << " action=" << action << '\n';
+                        check(victim.stamina.current < before,
+                              "player attack with real animation bank lands");
+                    }
         const auto specs = rr::read_bike_specs(assets.read("DATA/BIKESPEC.RSC"));
         // Napa live setup: all seven racers must continue advancing after
         // their first replans, rather than parking at an obsolete target.

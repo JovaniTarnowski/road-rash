@@ -54,6 +54,30 @@ DrawNode node(const std::array<RasterPoint, 4>& p, const CelTexture* texture,
     return n;
 }
 } // namespace
+std::vector<DrawNode> hill_intersection_nodes(const HillIntersectionInput& in,
+                                              const ShoulderMaterial& material) {
+    if (in.side > 1 || in.logical_width < 1 || in.logical_width > 32767)
+        throw std::runtime_error("Invalid hill intersection input");
+    const bool right = in.side != 0;
+    const int32_t width = in.logical_width * 65536;
+    const int32_t fw = mul(in.far_scale, right ? 256 : -256), nw = mul(in.near_scale, right ? 256 : -256);
+    RasterPoint far = in.far_edge, near = in.near_edge;
+    // 0x0044a870 selects the material once, before walking the tiles.
+    const auto* texture = material(mul(in.far_scale, 256), sub(near.y, far.y));
+    std::vector<DrawNode> result;
+    for (int tile = 0; tile < 16 && (right ? far.x < width : far.x > 0); ++tile) {
+        const int32_t fx = add(far.x, fw), nx = add(near.x, nw);
+        // 0x00443990: retain a tile when either edge intersects the view.
+        const bool visible = right ? (far.x < width || near.x < width) && (fx > 0 || nx > 0)
+                                   : (fx < width || nx < width) && (far.x > 0 || near.x > 0);
+        if (visible)
+            result.push_back(node({far, {fx, far.y}, {nx, near.y}, near}, texture,
+                                  {in.far_depth_q8, in.far_depth_q8, in.near_depth_q8, in.near_depth_q8}));
+        far.x = fx;
+        near.x = nx;
+    }
+    return result;
+}
 std::vector<DrawNode> hill_draw_nodes(const HillPanelInput& in, const Camera& camera,
                                       const DepthTable& depths, const HillMaterial& material) {
     if (in.side > 1 || in.logical_width < 1 || in.logical_width > 32767)

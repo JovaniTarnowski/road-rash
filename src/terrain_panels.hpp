@@ -51,6 +51,16 @@ struct WallPanelInput {
 using WallMaterial = std::function<const CelTexture*(uint8_t frame, int32_t width_q16, int32_t height_q16)>;
 std::vector<DrawNode> wall_draw_nodes(const WallPanelInput&, const WallMaterial&, const CelTexture* water);
 using ShoulderMaterial = std::function<const CelTexture*(int32_t width_q16, int32_t height_q16)>;
+// 0x0041d110: type-4 intersections replace hills with sixteen 256-unit
+// cross-road tiles, using category 5 frame 2 at the shoulder edges.
+struct HillIntersectionInput {
+    RasterPoint near_edge{}, far_edge{};
+    int32_t near_scale = 0, far_scale = 0;
+    int32_t near_depth_q8 = 0, far_depth_q8 = 0;
+    uint8_t side = 0;
+    int32_t logical_width = 320;
+};
+std::vector<DrawNode> hill_intersection_nodes(const HillIntersectionInput&, const ShoulderMaterial&);
 // 0x0041d260. Caller supplies the appropriate hill/wall outer shoulder edge
 // and category-5 material; returned texture pointers have caller lifetime.
 std::vector<DrawNode> shoulder_draw_nodes(const ShoulderPanelInput&, const Camera&, const DepthTable&,

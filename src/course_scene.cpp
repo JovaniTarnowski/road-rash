@@ -704,6 +704,25 @@ std::vector<DrawNode> CourseScene::draw_nodes(const std::vector<RouteSample>& ro
                             return material(road.section, road.local, path.side_flags[side], 5, 0, w, h);
                         }));
                     }
+                    if (path.marking_flags & 24) {
+                        // 0x0043bef0 type 4, flags 8/16: shoulder followed
+                        // by 0x0041d110's cross road, rather than hillside.
+                        if (visible) {
+                            HillIntersectionInput crossing;
+                            crossing.side = uint8_t(side);
+                            crossing.logical_width = logical_width;
+                            crossing.near_edge = {road.hill[side].projected[0].x, b.screen_y};
+                            crossing.far_edge = {old.hill[side].projected[0].x, a.screen_y};
+                            crossing.near_scale = near.scale;
+                            crossing.far_scale = far.scale;
+                            crossing.near_depth_q8 = near.depth;
+                            crossing.far_depth_q8 = far.depth;
+                            append(hill_intersection_nodes(crossing, [&](int32_t w, int32_t h) {
+                                return material(road.section, road.local, path.side_flags[side], 5, 2, w, h);
+                            }));
+                        }
+                        continue;
+                    }
                     HillPanelInput hills;
                     hills.near = road.hill[side];
                     hills.far = old.hill[side];

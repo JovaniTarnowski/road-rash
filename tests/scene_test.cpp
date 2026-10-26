@@ -13,6 +13,51 @@ int main() {
             std::cerr << msg << '\n';
         }
     };
+    // Rural intersections must tile outward from both shoulders. With
+    // hills here instead, the side road is missing under the crossing cars.
+    for (int width : {320, 426})
+        for (int side : {0, 1}) {
+            const int32_t q = 65536;
+            rr::CelTexture pavement;
+            rr::HillIntersectionInput in;
+            in.side = uint8_t(side);
+            in.logical_width = width;
+            in.far_edge = {(width / 2 + (side ? 20 : -20)) * q, 100 * q};
+            in.near_edge = {(width / 2 + (side ? 40 : -40)) * q, 120 * q};
+            in.near_scale = q / 4;
+            in.far_scale = q / 8;
+            in.near_depth_q8 = 512;
+            in.far_depth_q8 = 768;
+            int selections = 0;
+            auto nodes = rr::hill_intersection_nodes(in, [&](int32_t w, int32_t h) {
+                ++selections;
+                check(w == 32 * q && h == 20 * q, "intersection material size");
+                return &pavement;
+            });
+            check(!nodes.empty() && selections == 1, "intersection chooses pavement once");
+            for (size_t i = 0; i < nodes.size(); ++i) {
+                const auto& n = nodes[i];
+                const int32_t direction = side ? 1 : -1;
+                check(n.texture == &pavement && n.view_points[0].y == 100 * q &&
+                          n.view_points[3].y == 120 * q,
+                      "intersection uses road surface rows");
+                check(n.view_points[1].x - n.view_points[0].x == direction * 32 * q &&
+                          n.view_points[2].x - n.view_points[3].x == direction * 64 * q,
+                      "intersection tiles project 256 world units");
+                check(n.view_depth[0] == 768 && n.view_depth[3] == 512,
+                      "intersection retains depth for enhanced renderer");
+                if (i)
+                    check(nodes[i - 1].view_points[1].x == n.view_points[0].x &&
+                              nodes[i - 1].view_points[2].x == n.view_points[3].x,
+                          "intersection pavement has no gaps between tiles");
+            }
+            const auto& last = nodes.back();
+            check(side ? last.view_points[1].x >= width * q : last.view_points[1].x <= 0,
+                  "intersection pavement reaches view edge");
+            in.near_scale = in.far_scale = 1;
+            nodes = rr::hill_intersection_nodes(in, [&](int32_t, int32_t) { return &pavement; });
+            check(nodes.size() == 16, "intersection tile pool capped at sixteen");
+        }
     rr::TerrainSlice hills;
     hills.type = 4;
     for (int i = 0; i < 6; ++i) hills.points[i] = {i % 2 ? 500 : -500, i * 16};
