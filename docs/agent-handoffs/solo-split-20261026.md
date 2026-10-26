@@ -83,7 +83,10 @@ match where compared; `+0x130` (bend) is uncompared.
    lat 15360 differs (or whether original also overlaps but handles shove
    differently -- e.g. axis choice `was_clear_forward` vs
    `was_clear_lateral` from `+0x30`/`+0x3c` prev copies, which for frozen
-   never advance).
+   never advance). REA `0x00436a40` fetched (exit 0): separation checks
+   `+0x144` self, masses `+0x194`, rel `+0x108`, flags `+0x19c`,
+   prev-pos `+0x30` for longitudinal was-clear -- no crash/frozen gate
+   in `00436a40` itself (gates are in caller `004368f0` via `+0xc0`).
 2. RANDLOG capture (`RR_ORACLE_RANDLOG=1`, like `napa-foot-randlog`)
    around tick 149 to name the draw caller (frozen-contact sounds vs
    other), proving which contacts must stay for RNG.
