@@ -54,6 +54,47 @@ DrawNode node(const std::array<RasterPoint, 4>& p, const CelTexture* texture,
     return n;
 }
 } // namespace
+MergeHillProfiles merge_hill_profiles(const TerrainSlice& first, const TerrainSlice& second,
+                                      int32_t right_shoulder, int32_t left_shoulder, int32_t separation) {
+    MergeHillProfiles out{{first, second}, {1, 1}};
+    std::array<RasterPoint, 4> a{}, b{};
+    a[0] = {right_shoulder, 0};
+    b[0] = {add(left_shoulder, separation), 0};
+    for (int i = 1; i < 4; ++i) {
+        a[i] = {first.points[i * 2 - 1][0], first.points[i * 2 - 1][1]};
+        b[i] = {add(second.points[i * 2 - 2][0], separation), second.points[i * 2 - 2][1]};
+    }
+    int& ca = out.bands[0];
+    int& cb = out.bands[1];
+    bool crossed = false;
+    for (int i = 1; i < 4 && !crossed; ++i) {
+        if (a[ca].x < b[cb].x && ca < 3) ++ca;
+        crossed = a[ca].x >= b[cb].x;
+        if (!crossed && cb < 3) ++cb;
+    }
+    if (!crossed && b[cb].x > a[ca].x) {
+        out.bands = {4, 4};
+        return out;
+    }
+    // 0x00454c30 evaluates the first profile at the midpoint of the two
+    // preceding endpoints; its fourth argument is unused in the original.
+    const int32_t x = add(a[ca - 1].x, b[cb - 1].x) / 2;
+    const int32_t span = sub(a[ca].x, a[ca - 1].x);
+    if (!span) throw std::runtime_error("Degenerate merge hill profile");
+    const int32_t slope = mul(sub(a[ca].y, a[ca - 1].y), 65536) / span;
+    const int32_t y = add(a[ca - 1].y, mul(sub(x, a[ca - 1].x), slope) >> 16);
+    for (int i = ca; i < 4; ++i) out.terrain[0].points[i * 2 - 1] = {x, y};
+    for (int i = cb; i < 4; ++i) out.terrain[1].points[i * 2 - 2] = {sub(x, separation), y};
+    return out;
+}
+std::vector<DrawNode> merge_hill_bridge(const std::array<RasterPoint, 4>& p, int32_t far_depth,
+                                        int32_t near_depth, int32_t logical_width,
+                                        const std::function<const CelTexture*(int32_t, int32_t)>& material) {
+    const int32_t width = logical_width * 65536;
+    if ((p[0].x >= width && p[3].x >= width) || (p[1].x < 1 && p[2].x < 1)) return {};
+    return {node(p, material(length(p[0], p[1]), std::max(length(p[1], p[2]), length(p[0], p[3]))),
+                 {far_depth, far_depth, near_depth, near_depth})};
+}
 std::vector<DrawNode> hill_intersection_nodes(const HillIntersectionInput& in,
                                               const ShoulderMaterial& material) {
     if (in.side > 1 || in.logical_width < 1 || in.logical_width > 32767)
@@ -89,9 +130,9 @@ std::vector<DrawNode> hill_draw_nodes(const HillPanelInput& in, const Camera& ca
         for (int i = 1; i < 4; ++i) far[i] = {near[i].x, far[0].y};
     else if (in.far.type == 1)
         far[3] = far[2];
-    int bands = 3;
+    int bands = std::clamp(in.band_count, 0, 3);
     const int32_t width = in.logical_width * 65536;
-    if (in.far.type != 0 && in.far.type != 1 &&
+    if (in.extend_outer && bands == 3 && in.far.type != 0 && in.far.type != 1 &&
         (in.side == 0 ? near[3].x > 0 || far[3].x > 0 : near[3].x < width || far[3].x < width)) {
         auto edge = [&](const std::array<RasterPoint, 5>& p) {
             const int32_t x = sub(mul(p[3].x, 2), p[2].x);

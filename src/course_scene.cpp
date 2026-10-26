@@ -412,6 +412,9 @@ std::vector<DrawNode> CourseScene::draw_nodes(const std::vector<RouteSample>& ro
     struct Road {
         const PathSample* path;
         const TerrainSlice* terrain;
+        TerrainSlice terrain_image;
+        bool merge_hills = false;
+        int inner_bands = 3;
         uint32_t section, local;
         HillRoad hill[2];
         BuildingRoad building[2];
@@ -441,13 +444,34 @@ std::vector<DrawNode> CourseScene::draw_nodes(const std::vector<RouteSample>& ro
     for (size_t n = 0; n < slices.size(); ++n) {
         const auto& slice = slices[n];
         const auto& sample = route.at(slice.sample);
+        std::optional<MergeHillProfiles> joined;
+        if (slice.count == 2) {
+            size_t start = slice.sample;
+            while (start > 0 && route[start - 1].dual) --start;
+            if (route[start].event == RoadEvent::merge_window) {
+                const bool first = sample.half == 0;
+                const auto& p0 = first ? sample.path : sample.other;
+                const auto& p1 = first ? sample.other : sample.path;
+                const auto& t0 = terrain(first ? sample.section : sample.other_section,
+                                         first ? sample.local : sample.other_local);
+                const auto& t1 = terrain(first ? sample.other_section : sample.section,
+                                         first ? sample.other_local : sample.local);
+                if (t0.type == 4 && t1.type == 4)
+                    joined =
+                        merge_hill_profiles(t0, t1, p0.right + p0.shoulder_right, -p1.left - p1.shoulder_left,
+                                            slice.road[1].road_x - slice.road[0].road_x);
+            }
+        }
         for (int r = 0; r < slice.count; ++r) {
             auto& road = roads[n][r];
             const bool own = slice.count == 1 || r == slice.own;
             road.section = own ? sample.section : sample.other_section;
             road.local = own ? sample.local : sample.other_local;
             road.path = own ? &sample.path : &sample.other;
-            road.terrain = &terrain(road.section, road.local);
+            road.terrain_image = joined ? joined->terrain[r] : terrain(road.section, road.local);
+            road.terrain = &road.terrain_image;
+            road.merge_hills = joined.has_value();
+            road.inner_bands = joined ? joined->bands[r] : 3;
             road.kind = tunnel(road.section, road.local) ? 3 : road.terrain->type;
             if (road.terrain->type == 4 && side_street_mark < 0)
                 side_street_mark = 0;
@@ -735,6 +759,24 @@ std::vector<DrawNode> CourseScene::draw_nodes(const std::vector<RouteSample>& ro
                     hills.overlap = true;
                     hills.join_offsets = joins_;
                     hills.logical_width = logical_width;
+                    if (road.merge_hills && side == 1 - r) {
+                        // 0x00443cd0 / 0x0041d500: inward profiles meet the
+                        // neighboring branch. Only exterior hills extend to
+                        // the viewport boundary.
+                        hills.extend_outer = false;
+                        hills.band_count = std::max(road.inner_bands, old.inner_bands);
+                        if (i == count - 1 && far.count == 2 &&
+                            std::max(roads[n - 1][0].inner_bands, roads[n][0].inner_bands) > 3) {
+                            const auto& h0 = roads[n - 1][0];
+                            append(merge_hill_bridge(
+                                {roads[n][0].hill[1].projected[3], roads[n][1].hill[0].projected[3],
+                                 roads[n - 1][1].hill[0].projected[3], h0.hill[1].projected[3]},
+                                far.depth, near.depth, logical_width, [&](int32_t w, int32_t h) {
+                                    return material(h0.section, h0.local, h0.terrain->selectors[1], 1, 2, w,
+                                                    h);
+                                }));
+                        }
+                    }
                     append(hill_draw_nodes(hills, camera, depths, [&](uint8_t band, int32_t w, int32_t h) {
                         return material(road.section, road.local, road.terrain->selectors[side], 1, band, w,
                                         h);

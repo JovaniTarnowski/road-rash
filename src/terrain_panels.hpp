@@ -18,7 +18,22 @@ struct HillPanelInput {
     // supported by the original quality setting at 0x00468960.
     bool overlap = false;
     std::array<RasterPoint, 16> join_offsets{};
+    int band_count = 3;
+    bool extend_outer = true;
 };
+struct MergeHillProfiles {
+    std::array<TerrainSlice, 2> terrain;
+    std::array<int, 2> bands{3, 3}; // 4 means all three bands plus the connecting ridge
+};
+// 0x00454890, approaching a merge: join the two inward hill profiles in
+// world space. Each road keeps its own exterior profile unchanged.
+MergeHillProfiles merge_hill_profiles(const TerrainSlice&, const TerrainSlice&, int32_t right_shoulder,
+                                      int32_t left_shoulder, int32_t separation);
+// 0x0041d620: connect separated terminal inner hill edges, without extending
+// either inner profile to the screen boundary.
+std::vector<DrawNode> merge_hill_bridge(const std::array<RasterPoint, 4>&, int32_t far_depth,
+                                        int32_t near_depth, int32_t logical_width,
+                                        const std::function<const CelTexture*(int32_t, int32_t)>&);
 using HillMaterial = std::function<const CelTexture*(uint8_t band, int32_t width_q16, int32_t height_q16)>;
 // 0x0041c390, 0x0041cf60, 0x0041d060: far-to-near hill bands.
 std::vector<DrawNode> hill_draw_nodes(const HillPanelInput&, const Camera&, const DepthTable&,

@@ -13,6 +13,35 @@ int main() {
             std::cerr << msg << '\n';
         }
     };
+    {
+        rr::TerrainSlice a, b;
+        a.type = b.type = 4;
+        for (int i = 0; i < 3; ++i) {
+            a.points[i * 2] = {-300 - i * 200, 20 + i * 20};
+            a.points[i * 2 + 1] = {300 + i * 200, 30 + i * 30};
+            b.points[i * 2] = {-300 - i * 200, 20 + i * 20};
+            b.points[i * 2 + 1] = {300 + i * 200, 30 + i * 30};
+        }
+        auto joined = rr::merge_hill_profiles(a, b, 100, -100, 800);
+        check(joined.bands[0] == 2 && joined.bands[1] == 1,
+              "merge limits inward hill bands at their meeting point");
+        const auto meeting = joined.terrain[0].points[3];
+        for (int i = 1; i < 3; ++i)
+            check(joined.terrain[0].points[i * 2 + 1] == meeting,
+                  "merge collapses surplus first-road points");
+        for (int i = 0; i < 3; ++i) {
+            const auto p = joined.terrain[1].points[i * 2];
+            check(p[0] + 800 == meeting[0] && p[1] == meeting[1],
+                  "merge profiles share one world-space ridge");
+            check(joined.terrain[0].points[i * 2] == a.points[i * 2] &&
+                      joined.terrain[1].points[i * 2 + 1] == b.points[i * 2 + 1],
+                  "merge preserves exterior hills");
+        }
+        joined = rr::merge_hill_profiles(a, b, 100, -100, 4000);
+        check(joined.bands[0] == 4 && joined.bands[1] == 4 && joined.terrain[0].points == a.points &&
+                  joined.terrain[1].points == b.points,
+              "separated profiles retain all hills and request a connecting ridge");
+    }
     // Rural intersections must tile outward from both shoulders. With
     // hills here instead, the side road is missing under the crossing cars.
     for (int width : {320, 426})

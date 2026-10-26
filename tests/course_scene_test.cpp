@@ -42,6 +42,39 @@ int main(int argc, char** argv) {
         }
         const auto course = rr::read_course(assets.read("DATA/COURSES/NAPA.CRS"));
         rr::CourseScene scene(assets, exe, course, "NAPA");
+        {
+            // Reported web corruption at 2.6–2.8 miles, approaching Napa's
+            // first merge. Inner hills from the other branch must not extend
+            // across the road or turn into a full-screen green curtain.
+            const auto route = rr::make_route(course, false);
+            std::set<uint8_t> pavement;
+            const auto materials = rr::read_road_materials(exe, assets.read("DATA/GLOBAL.RSC"));
+            for (const auto& entry : materials.entries)
+                for (const auto& mip : entry.texture->mips)
+                    pavement.insert(mip.pixels.begin(), mip.pixels.end());
+            for (int width : {320, 426}) {
+                rr::Framebuffer sky(width * 2, 480), frame(width * 2, 480);
+                scene.draw_horizon(sky, 0, width);
+                auto mode = rr::view_mode(true);
+                mode.surface_width = mode.display_width = width * 2;
+                for (uint32_t sample : {940u, 945u, 970u, 975u}) {
+                    scene.draw_horizon(frame, 0, width);
+                    const auto slices = rr::project_road(route, sample * 256 + 128, {0, 150}, depths, width);
+                    rr::render_nodes(frame, scene.draw_nodes(route, slices, {0, 150}, depths, {}, width),
+                                     mode, 16);
+                    for (int y = 20; y < 80; ++y)
+                        for (int x = width - 10; x < width + 10; ++x)
+                            if (frame.row(y)[x] != sky.row(y)[x])
+                                throw std::runtime_error("Napa merge terrain covers the sky at " +
+                                                         std::to_string(sample));
+                    for (int y = 330; y < 350; ++y)
+                        for (int x = width - 10; x < width + 10; ++x)
+                            if (!pavement.count(frame.row(y)[x]))
+                                throw std::runtime_error("Napa merge terrain covers the roadway at " +
+                                                         std::to_string(sample));
+                }
+            }
+        }
         std::map<unsigned, size_t> building_flags;
         size_t samples = 0, missing = 0, hill_samples = 0, nodes = 0, views = 0, objects = 0,
                missing_objects = 0;
