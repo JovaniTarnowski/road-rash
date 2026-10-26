@@ -1,5 +1,14 @@
 # Verification log (all sessions September 28, 2026)
 
+## Tunnel engine variant (October 26, 2026)
+
+Owned Debug build `build-agent-open` plus ASan/UBSan tree `build-agent-open-san`:
+
+- `sound-test ../cdrom/ROADRASH`: 0 failures, including the new
+  `Race::player_in_tunnel` pins (no terrain false; terrain type 3 true;
+  type 2 false). Player engine mix now reads the flag (`0x00434a80`) and
+  selects slot 2 (`EngTunne`) instead of always slot 0.
+
 ## Gameplay and frontend open items (October 26, 2026)
 
 Owned Debug build `build-agent-open` (`cmake -S . -B build-agent-open`,

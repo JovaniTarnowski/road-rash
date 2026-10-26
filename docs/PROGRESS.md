@@ -53,6 +53,13 @@ Detailed evidence is in [REVERSE_ENGINEERING.md](REVERSE_ENGINEERING.md) and tes
 
 ## Timeline
 
+### October 26, 2026: tunnel engine variant wired
+
+- `Race::player_in_tunnel()` ports the `0x00434a80` tunnel flag (sub-slice
+  terrain type 3); `SoundSystem::update` reads it instead of forcing false,
+  so the player engine selects slot 2 (`EngTunne`) in tunnels. Pinned in
+  `sound_test`; Debug and ASan/UBSan trees pass.
+
 ### October 26, 2026: gameplay and frontend open items closed (police live, car engines, driven saves, menu layout)
 
 - **Live police.** `Race::spawn_cop` runs from the DZHR actor branch and the

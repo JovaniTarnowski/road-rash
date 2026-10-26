@@ -4067,8 +4067,17 @@ void Race::update_camera() {
     if (camera_height_ < 0x97) camera_height_ = 0x96;
 }
 
-uint32_t Race::camera_position() const {
-    // 0x00437c30 reads the player's half (`*(player + 0x2fc) + 0x138`): while the
+bool Race::player_in_tunnel() const {
+    // 0x00434a80: DAT_0046d97c = (*(player.bike + 0x140) + 0x3c == 3).
+    if (riders_.empty()) return false;
+    const Rider& player = riders_[0];
+    const auto& road = route_of(player);
+    if (player.sample >= road.size()) return false;
+    return edges(player, player.sample).type == 3;
+}
+
+uint32_t
+Race::camera_position() const { // 0x00437c30 reads the player's half (`*(player + 0x2fc) + 0x138`): while the
     // rider is down that half is the crash body, which the camera follows
     // (measured against napa-cops-crashed: ring camera == body +0x1c).
     // The half image trails the bike by the 0x004067d0 copy, which runs in

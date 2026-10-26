@@ -36,7 +36,9 @@ Still open (see `docs/CURRENT_STATUS.md` and `docs/PROGRESS.md`):
   and the traffic draw order approximation is visual-only. Race MIDI
   (`SBKGRNG1..5` + `KLOWN` via `RaceMusicPlayer`, hooked at race start/stop),
   sirens (slots 30/31, event 19) and car engines (slots 4/6, `Engcar11`,
-  `0x00435090` Doppler route) play; exact AWE/MIDI timbre remains open.
+  `0x00435090` Doppler route) play; the player engine switches to the tunnel
+  variant (slot 2, `EngTunne`) on terrain type 3 (`0x00434a80`,
+  `Race::player_in_tunnel`, pinned). Exact AWE/MIDI timbre remains open.
 - Frontend: jukebox, sound mix and controls are implemented; mano-a-mano
   stays disabled — online multiplayer (plan 34) is in scope per the owner's
   October 26 decision and is not yet implemented. Seeded original-writer saves round-trip byte-identical and

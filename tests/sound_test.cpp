@@ -2,6 +2,7 @@
 #include "bike.hpp"
 #include "race.hpp"
 #include "sound.hpp"
+#include "terrain.hpp"
 #include "traffic.hpp"
 #include <algorithm>
 #include <cmath>
@@ -265,6 +266,15 @@ int main(int argc, char** argv) {
         traffic.configure(6);
         car_race.set_traffic(&traffic);
         check(car_race.traffic() == &traffic, "race exposes attached traffic");
+        // Tunnel flag (0x00434a80): terrain type 3 at the player sample.
+        check(!car_race.player_in_tunnel(), "no terrain reads type 0, not a tunnel");
+        rr::TerrainSlice tunnel_slice;
+        tunnel_slice.type = 3;
+        car_race.set_terrain_source(
+            [&](const rr::RouteSample&) -> const rr::TerrainSlice& { return tunnel_slice; });
+        check(car_race.player_in_tunnel(), "terrain type 3 is a tunnel (0x00434a80)");
+        tunnel_slice.type = 2;
+        check(!car_race.player_in_tunnel(), "terrain type 2 is not a tunnel");
         // Park one opponent far outside hearing and one car at the camera.
         if (car_race.riders().size() < 2) car_race.riders().push_back(rr::Rider{});
         car_race.riders()[1].bike.i32(0x1c) = int32_t(car_race.camera_position()) + 0x10000;

@@ -337,7 +337,7 @@ void SoundSystem::update(Race& race) {
     listener_speed_ = (camera_position - listener_position_) * 0x100;
     listener_position_ = camera_position; // 0x00437c30: refresh before distance attenuation
     listener_lateral_ = race.camera_x();
-    tunnel_ = false; // sub-slice terrain type 3 (0x00434a80): type 2/3 assignment (0x00454240) not ported
+    tunnel_ = race.player_in_tunnel(); // 0x00434a80: sub-slice terrain type 3
     // 0x004349c0: the engine rpm lives on the bike (+0x2dc), so the
     // dashboard needle and the engine pitch read the same field
     // (0x00434ce0/0x00434fd0); the player's was refreshed above.

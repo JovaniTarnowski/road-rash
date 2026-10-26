@@ -341,6 +341,11 @@ class Race {
     // interleaving against the original's scheduler is not verified.
     void set_traffic(TrafficSystem* t);
     const TrafficSystem* traffic() const { return traffic_; }
+    // Tunnel flag for the player engine mix (0x00434a80): the byte at +0x3c of
+    // the object at player bike +0x140 is 3 inside a tunnel. Natively that is
+    // the terrain type of the player's route sample (course_scene assigns 3
+    // to mountain tunnel samples). Fixtures without terrain read type 0.
+    bool player_in_tunnel() const;
     // Nulled-pool solo: keep timer/density draws, never place (Task 5/7).
     void set_spawn_enabled(bool v);
     // Pedestrians (plan 24 Task 4, src/race_pedestrians.cpp): spawned as the
