@@ -9,8 +9,20 @@ import sys
 
 root = Path(__file__).resolve().parents[1]
 dist = Path(sys.argv[1]).resolve()
-allowed = {'index.html', 'app.js', 'style.css', 'rr-game.js', 'rr-game.wasm', 'references.json', 'LICENSES.txt'}
+roles = ['index.html', 'app.js', 'style.css', 'rr-game.js', 'rr-game.wasm', 'references.json', 'LICENSES.txt']
 files = {p.name for p in dist.iterdir() if p.is_file()}
+allowed = set()
+for role in roles:
+    stem, extension = role.rsplit('.', 1)
+    matches = {name for name in files if name == role or (
+        role not in {'index.html', 'LICENSES.txt'} and
+        re.fullmatch(re.escape(stem) + r'\.[0-9a-f]{16}\.' + re.escape(extension), name))}
+    if len(matches) != 1:
+        raise SystemExit(f'Expected one bundle file for {role}: {matches}')
+    for name in matches:
+        if name != role and hashlib.sha256((dist / name).read_bytes()).hexdigest()[:16] != name.split('.')[-2]:
+            raise SystemExit(f'Fingerprint does not match bundle content: {name}')
+    allowed.update(matches)
 if files != allowed or any(p.is_dir() for p in dist.iterdir()):
     raise SystemExit(f'Unexpected web bundle contents: {files ^ allowed}')
 hashes = set(re.findall(r'[0-9a-f]{64}', (root / 'src/reference_hashes.inc').read_text()))

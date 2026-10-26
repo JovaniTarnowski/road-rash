@@ -38,5 +38,6 @@ PYTHON
 } > "$dist/LICENSES.txt"
 
 # Only the seven known code/metadata files may be published.
+python3 "$root/tools/fingerprint_web_bundle.py" "$dist"
 python3 "$root/tools/prepare_web_deploy.py" "$dist" --validate-only
 echo "Playable web bundle ready in $dist"

@@ -12,6 +12,8 @@ on:
       - 'deploy/**'
       - 'tools/build_web.sh'
       - 'tools/prepare_web_deploy.py'
+      - 'tools/fingerprint_web_bundle.py'
+      - 'tests/web_bundle_cache.cjs'
       - 'tests/web_hosted_smoke.cjs'
       - '.github/workflows/web-deploy.yml'
   workflow_dispatch:
@@ -53,6 +55,14 @@ jobs:
           cp deploy/Dockerfile deploy/nginx.conf deploy/app.json build-deploy/
           printf '%s\n' "$GITHUB_SHA" > build-deploy/dist/revision.txt
           tar -czf build-deploy.tar.gz -C build-deploy .
+      - name: Install browser test runtime
+        run: |
+          npm install --prefix .tools/browser-tests --no-save playwright@1.62.1
+          .tools/browser-tests/node_modules/.bin/playwright install --with-deps chromium
+      - name: Verify upgrade with stale browser cache
+        env:
+          NODE_PATH: ${{ github.workspace }}/.tools/browser-tests/node_modules
+        run: node tests/web_bundle_cache.cjs
       - name: Deploy to Dokku
         env:
           DEPLOY_KEY: ${{ secrets.DOKKU_ROAD_RASH_KEY }}
@@ -69,10 +79,6 @@ jobs:
           test "$(curl --fail -sS https://road-rash.archit.xyz/revision.txt)" = "$GITHUB_SHA"
           curl --fail -sS https://road-rash.archit.xyz/game-assets/manifest.json -o /tmp/game-manifest.json
           python3 -c 'import json; assert len(json.load(open("/tmp/game-manifest.json"))["files"]) == 341'
-      - name: Install browser test runtime
-        run: |
-          npm install --prefix .tools/browser-tests --no-save playwright@1.62.1
-          .tools/browser-tests/node_modules/.bin/playwright install --with-deps chromium
       - name: Verify automatic assets and live gameplay
         env:
           NODE_PATH: ${{ github.workspace }}/.tools/browser-tests/node_modules
