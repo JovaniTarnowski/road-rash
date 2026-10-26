@@ -31,20 +31,31 @@ const script = fs.readFileSync(path.join(dist, fs.readdirSync(dist).find(n => /^
             }
             if (!['road-rash.archit.xyz', 'localhost'].includes(url.hostname)) external.push(req.url());
             if (url.pathname === '/telemetry.js') return route.fulfill({contentType:'application/javascript',body:script});
-            return route.fulfill({contentType:'text/html',headers:{'Content-Security-Policy':"default-src 'self'; script-src 'self'; connect-src 'self' https://o425745.ingest.us.sentry.io https://us.i.posthog.com"}, body:'<script src="/telemetry.js"></script><h1>Telemetry fixture</h1>'});
+            return route.fulfill({contentType:'text/html',headers:{'Content-Security-Policy':"default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; connect-src 'self' https://o425745.ingest.us.sentry.io https://us.i.posthog.com"}, body:'<script src="/telemetry.js"></script><h1>Telemetry fixture</h1>'});
         });
         const page = await context.newPage();
         page.on('pageerror', e => errors.push(e.message));
         await page.goto('https://road-rash.archit.xyz/?private=test-secret#private');
         await page.evaluate(() => {
             rrTelemetry.track('game_start', {mode:'quick_race', course:0, filename:'secret.iso', save:'secret-save'});
+            rrTelemetry.log('engine fixture stderr line');
             rrTelemetry.error(new Error('Telemetry fixture handled failure'), 'engine_abort');
             setTimeout(() => { throw new Error('Telemetry fixture uncaught failure'); }, 0);
+            // A real Wasm trap escaping a frame callback, as an engine fault inside SDL's loop does.
+            const trap = new WebAssembly.Instance(new WebAssembly.Module(new Uint8Array([0,97,115,109,1,0,0,0,1,4,1,96,0,0,3,2,1,0,7,5,1,1,102,0,0,10,5,1,3,0,0,11])));
+            requestAnimationFrame(() => trap.exports.f());
         });
         await page.waitForFunction(() => true);
         // SDK queues flush in the background; wait on captured transport, not real services.
-        await assertEventually(() => envelopes.some(x=>x.includes('uncaught failure')) && analytics.some(x=>x.event==='game_start'));
-        assert.ok(envelopes.some(x=>x.includes('handled failure') && x.includes('engine_abort')));
+        const exceptions = () => analytics.filter(x=>x.event==='$exception');
+        const posthogHas = text => exceptions().some(x=>JSON.stringify(x.properties.$exception_list).includes(text));
+        await assertEventually(() => envelopes.some(x=>x.includes('uncaught failure')) && envelopes.some(x=>x.includes('unreachable')) &&
+            analytics.some(x=>x.event==='game_start') && posthogHas('uncaught failure') && posthogHas('unreachable') && posthogHas('handled failure'));
+        assert.ok(envelopes.some(x=>x.includes('handled failure') && x.includes('engine_abort') && x.includes('engine fixture stderr line')));
+        const handled = exceptions().find(x=>JSON.stringify(x.properties.$exception_list).includes('handled failure'));
+        assert.equal(handled.properties.phase,'engine_abort');
+        assert.ok(handled.properties.release.startsWith('road-rash@'));
+        assert.equal(handled.properties.engine_log,'engine fixture stderr line');
         const start = analytics.find(x=>x.event==='game_start');
         assert.equal(start.properties.course,0);
         assert.equal(start.properties.filename,undefined);
@@ -53,7 +64,21 @@ const script = fs.readFileSync(path.join(dist, fs.readdirSync(dist).find(n => /^
         assert.ok(!JSON.stringify(analytics).includes('test-secret'));
         assert.ok(!envelopes.join('').includes('test-secret'));
         assert.deepEqual(external,[],'no external SDK or replay loads');
-        assert.deepEqual(errors,['Telemetry fixture uncaught failure']);
+        assert.equal(errors.length,2);
+        assert.equal(errors[0],'Telemetry fixture uncaught failure');
+        assert.match(errors[1],/unreachable/);
+        // A game still marked running on the next load was killed without an error (mobile OOM reload).
+        await page.evaluate(() => rrTelemetry.gameStarted('main_game'));
+        await page.reload();
+        assert.equal(await page.evaluate(() => localStorage.getItem('rr-game-session')),null,'pagehide clears a live session');
+        // The killed tab never fires pagehide: leave it open and load a second one.
+        await page.evaluate(() => localStorage.setItem('rr-game-session', JSON.stringify({mode:'main_game'})));
+        const next = await context.newPage();
+        await next.goto('https://road-rash.archit.xyz/');
+        await assertEventually(() => envelopes.some(x=>x.includes('without a clean exit (main_game)') && x.includes('unclean_exit')) &&
+            exceptions().some(x=>x.properties.phase==='unclean_exit'));
+        assert.equal(await next.evaluate(() => localStorage.getItem('rr-game-session')),null);
+        await next.close();
         const before = [envelopes.length,analytics.length];
         await page.goto('http://localhost/');
         await page.evaluate(() => {rrTelemetry.track('game_start');rrTelemetry.error(new Error('local'), 'game');});
@@ -63,7 +88,7 @@ const script = fs.readFileSync(path.join(dist, fs.readdirSync(dist).find(n => /^
         await context.route('https://o425745.ingest.us.sentry.io/**', r=>r.abort());
         await page.goto('https://road-rash.archit.xyz/');
         assert.equal(await page.evaluate(() => {rrTelemetry.track('launcher_ready');rrTelemetry.error(new Error('blocked'), 'game');return true;}),true);
-        console.log('PASS real SDK transports, handled/uncaught errors, event properties, privacy, CSP, localhost and blocked services');
+        console.log('PASS real SDK transports, Sentry and PostHog handled/uncaught/Wasm-trap errors, unclean exits, event properties, privacy, CSP, localhost and blocked services');
     } finally {await browser.close();}
 })().catch(e=>{console.error(e);process.exitCode=1;});
 async function assertEventually(check) {

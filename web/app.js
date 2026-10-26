@@ -1,6 +1,6 @@
 'use strict';
 // Hosted deployments fetch verified assets on demand; local disc import remains available.
-const telemetry = window.rrTelemetry || {track() {}, error() {}};
+const telemetry = window.rrTelemetry || {track() {}, error() {}, log() {}, gameStarted() {}, gameStopped() {}};
 const $ = id => document.getElementById(id);
 let engine, storageRoot, assetDirectory, references, importing = false, cancelled = false, running = false;
 let loadingStage = '', downloadingAssets = 0;
@@ -230,6 +230,7 @@ async function startGame(quick) {
     const started = performance.now();
     const mode = quick ? 'quick_race' : 'main_game';
     telemetry.track('game_start', {mode, ...(quick ? {course: Number($('course').value)} : {})});
+    telemetry.gameStarted(mode);
     document.body.classList.add('playing');
     loadingStage = 'Starting game…'; updateLoading();
     $('setup').hidden = true; $('canvas').hidden = false; $('loading').hidden = false;
@@ -262,7 +263,7 @@ async function startGame(quick) {
     } catch (error) {
         telemetry.error(error, 'game');
         showGameMessage(storageError(error) + ' Use Exit to launcher to try again.');
-    } finally { allocated.forEach(ptr => engine._free(ptr)); }
+    } finally { telemetry.gameStopped(); allocated.forEach(ptr => engine._free(ptr)); }
 }
 $('iso').addEventListener('change', e => e.target.files[0] && importDisc(e.target.files[0], true));
 $('folder').addEventListener('change', e => e.target.files.length && importDisc(e.target.files, false));
@@ -293,7 +294,7 @@ window.addEventListener('keydown', event => {
         engine = await createRoadRash({
             canvas: $('canvas'), noInitialRun: true,
             print: console.log,
-            printErr: message => { console.warn(message); },
+            printErr: message => { console.warn(message); telemetry.log(message); },
             preRun: [module => { module.ENV.RR_PREF_OVERRIDE = '/persist'; }],
             onAbort: reason => { telemetry.error(new Error(String(reason)), 'engine_abort'); showGameMessage('Engine error: ' + reason + '. Use Exit to launcher to restart.'); }
         });

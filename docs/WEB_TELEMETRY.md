@@ -28,19 +28,35 @@ prevent playing. Localhost and other hostnames never initialize either SDK.
 | `disc_import_start` | source: iso or folder |
 | `disc_import_complete`, `disc_import_cancelled` | Import outcome |
 | `fullscreen` | Successful fullscreen entry |
-| `web_error` | phase only; details go to Sentry |
+| `web_error` | phase only; details go to Sentry and PostHog `$exception` |
+| `$exception` | PostHog error tracking: every handled `rrTelemetry.error` (with `phase`) plus uncaught errors and rejections; `release` and `engine_log` attached |
 
 Every event includes release. A start event means the user requested launch,
 not that the race rendered or finished. No per-frame or simulation hooks added.
 
-Sentry captures uncaught exceptions/rejections plus handled initialization,
-import, fullscreen, game execution and Emscripten abort failures with phase tags.
+Sentry and PostHog error tracking both capture uncaught exceptions/rejections
+plus handled initialization, import, fullscreen, game execution and Emscripten
+abort failures with phase tags. Wasm traps (for example `memory access out of
+bounds`) escaping SDL's frame callbacks are uncaught errors and reach both.
+PostHog uses the slim SDK, so `telemetry.js` passes `ErrorTrackingExtensions`
+and bundles `posthog-js/dist/exception-autocapture` itself; without them the
+slim SDK has no exception capture, and the lazy CDN load is blocked by
+`disable_external_dependency_loading` and the CSP. Console errors are not
+captured. Each error carries `engine_log`: the last 40 engine stderr lines
+(SDL/C++ diagnostics, at most 300 characters each), never user input.
+
+A tab killed without a JavaScript error (mobile Safari reloading a page that
+used too much memory, a renderer crash) cannot report at that moment. While a
+game runs, localStorage holds `rr-game-session`; a clean return or `pagehide`
+removes it. A page load that still finds it reports
+`Previous game session ended without a clean exit (<mode>)` with phase
+`unclean_exit`.
 JS stack locations remain available; this does not add C++/Wasm source maps or
 promise native symbolication. Recovered cache misses are intentionally not errors.
 
 PostHog uses a pseudonymous localStorage ID without identified person profiles.
-Autocapture, replay, surveys, external extensions, feature flags and exception
-capture are disabled. Explicit event properties are allowlisted. Disc bytes,
+Autocapture, replay, surveys, external extensions and feature flags are
+disabled; exception capture is on (above). Explicit event properties are allowlisted. Disc bytes,
 saves, keystrokes and user file objects are never passed to tracking.
 SDK browser/device/session metadata is still present. Query strings and URL
 fragments are stripped from analytics URL fields, Sentry request URLs and stack
@@ -53,7 +69,9 @@ remain same-origin. Ad blockers may suppress delivery; gameplay still works.
 ## Verification
 
 `tests/web_telemetry.cjs` exercises the real bundled SDKs in Chromium with both
-services intercepted: handled/uncaught errors, phase tags, PostHog events and
+services intercepted: handled/uncaught errors and a real Wasm `unreachable` trap
+thrown from `requestAnimationFrame` in both Sentry envelopes and PostHog
+`$exception` events, `engine_log`, the unclean-exit report, phase tags, PostHog events and
 properties, URL scrubbing, CSP, disabled localhost and blocked endpoints.
 PostHog filters webdriver traffic, so this payload test simulates a human UA.
 `tests/web_hosted_smoke.cjs` intercepts telemetry at the context level so its
