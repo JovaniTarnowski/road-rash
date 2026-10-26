@@ -67,8 +67,7 @@ as if it were an exterior roadside profile.
   sweep. Before/after sheets and probes are under ignored local
   `analysis/napa-terrain-20261026/` (disc-derived; never commit images/assets).
 - Owned Release build + full CTest: 106/106 pass, zero skips (41.08 s),
-  `/tmp/rr-napa-terrain-{config,build,ctest}.log`. A final neighboring-band
-  bridge condition correction is being verified from the committed source.
+  `/tmp/rr-napa-terrain-{config,build,ctest}.log`.
 - No C++ LSP channel exposed; Homebrew clangd with owned compile DB checks
   the new terrain helper with zero errors, `/tmp/rr-napa-terrain-clangd.log`.
 - No new original-runtime capture or device verification. Static original
@@ -82,3 +81,19 @@ combat work in race.cpp/race_schedule.cpp/field_replay.hpp, shared verification
 and scenario docs, and its napa-fight handoff are preserved and excluded from
 staging. No Wine/Ghidra/capture locks held. Private build above; no live server.
 Use an isolated committed-source checkout for final native/web builds.
+
+## Final committed-source gates
+
+- Source `66fcb52`, isolated tracked-clean checkout
+  `/tmp/rr-user-road-combat-release/native-port`, excluding OMP's unfinished
+  combat changes. Full Release build and CTest `-j 4`: **106/106 pass**, zero
+  skips (27.16 s), `/tmp/rr-napa-terrain-clean-{build,ctest}.log`.
+- Emscripten browser Release build succeeds and validates nine asset-free
+  code/metadata files: `/tmp/rr-napa-terrain-clean-web.log`, bundle at
+  `build-agent-user-road-combat-clean-web/dist`.
+- Native build identity: commit `66fcb52`, `dirty=false`, source SHA-256
+  `75419a54128436b09bf5bc1ed21d3e25ecb48e8485fe55921db4e6bf7f7d6c87`.
+- Changed scene setup clangd check also zero errors. New captured live-original
+  merge goldens, sanitizers and device validation were not run. Existing original
+  replay gates pass; no golden was modified.
+- Source claim released after completion. No background local servers/captures.
