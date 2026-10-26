@@ -2,13 +2,29 @@
 
 ## Playable browser port (October 25, 2026)
 
+- Final Vercel preview **READY**: [https://road-rash-exd6fu2sm-arkits.vercel.app](https://road-rash-exd6fu2sm-arkits.vercel.app), deployment
+  `dpl_8YqHHSB6mrtaCJj7BgxoDmkKXoYb`, clean engine/config commit `096bff2`
+  (implementation `8673a75`). CLI inspection confirms preview/Ready. Existing
+  project Vercel authentication applies. No deployed-URL fetch was made (deploy
+  skill restriction); the exact static release was tested locally with its
+  content policy, then uploaded prebuilt. Final packaging change aligns
+  `vercel.json` and output headers; browser/game behavior is unchanged.
+- Clean release worktree built with `dirty=false`; source fingerprint and bundle
+  SHA-256 receipt in `analysis/browser-20261025/`. The full browser smoke passes
+  on the clean committed game, including visible-pixel assertions for every
+  course and frontend. Logs copied there alongside native/Node CTest logs.
+- Browser clangd check could not fully resolve the Emscripten driver/host C++
+  headers (`xlocale.h`); native assets check is clean and the real wasm compiler
+  builds all guarded browser sources. This is an LSP environment limit.
+
+
 - Owned browser build `build-agent-browser`: pinned emsdk 6.0.10 / SDL 3.4.8,
   `tools/build_web.sh`, Release, shared `rr-game`, no pthreads. Only seven
   allowlisted code/metadata/licence files staged in `.vercel/output/static`;
   reference-hash exclusion passes. Wasm about 3.2 MiB raw.
 - Native Debug configure/build and full CTest in `build-agent-browser-native`:
   **106/106 passed**, zero skips, 165.35 s (final native run). Source changes
-  after that run are launcher/test/docs and CMake comments only.
+  after that run are launcher/tests/docs and deployment settings/tooling only.
 - Node suite in `build-agent-browser-tests`: **101 pass / 2 skip / 1 fail** of
   104 (33.07 s). `race-screen` and `mixer-device` skip 77 under Node. Remaining
   failure is `raster-rgb-alloc`'s pre-change native pixel checksum; allocation

@@ -71,6 +71,12 @@ disc import, all courses, driving/audio, persistence and recovery. Callback
 refactoring is superseded as a prerequisite by SDL's Asyncify support. See
 [WEB.md](WEB.md) and the browser handoff for evidence and limits.
 
+Preview deployment **READY**: [https://road-rash-exd6fu2sm-arkits.vercel.app](https://road-rash-exd6fu2sm-arkits.vercel.app), engine/config `096bff2`.
+Existing Vercel preview authentication applies. Disc data is imported locally.
+The release was built from a clean detached worktree, excluding OMP scratch
+probes; committed implementation `8673a75` is pushed to main.
+
+
 
 ### October 26, 2026: solo braking/steering script green, no porting needed
 

@@ -54,7 +54,7 @@ Linked existing `arkits/road-rash` project, ID
 Vercel connector requested reauthentication; authenticated CLI 63.1.2 used.
 Build produces `.vercel/output` for `vercel deploy --prebuilt --yes` preview;
 remote source builds need emsdk and are not the release path. Release URL/status
-will be recorded below after upload. Browser storage is per origin; use a stable
+is recorded below. Browser storage is per origin; use a stable
 origin for subsequent releases to retain imports.
 
 ## Remaining / resources
@@ -66,3 +66,26 @@ callback rewrite are separate follow-up work.
 
 Owned static servers on localhost ports 8765/8766 are temporary verification
 resources; stop them at completion. No Wine/Ghidra/shared-prefix resources held.
+
+
+## Final release receipt
+
+- Implementation `8673a75`; engine/config `096bff2`, both pushed to main. OMP's
+  intervening `45df041` is a docs-only commit; no uncommitted probes included.
+- Final preview: https://road-rash-exd6fu2sm-arkits.vercel.app
+- Deployment `dpl_8YqHHSB6mrtaCJj7BgxoDmkKXoYb`, **READY**, static WebAssembly,
+  existing Vercel authentication. Owner signs in then imports local disc data.
+- Built from a clean detached worktree (`dirty=false`) because OMP temporarily
+  probed the shared simulation. Managed worktree creation was unavailable at
+  the parent non-Git task cwd; ordinary `git worktree` from native-port was used.
+- Exact clean-game browser smoke and CSP pass with visible-pixel checks, including
+  quota failure. Packaging then aligned project/output CSP headers; no game
+  behavior changed. Native 106/106; wasm 101 pass / 2 skip / 1 optional RGB
+  checksum failure. No golden was changed.
+- Build identity, SHA-256 bundle receipt, deploy/inspect logs, browser log,
+  network requests and native/wasm CTest logs: `analysis/browser-20261025/`.
+  Browser clangd couldn't resolve host xlocale.h through the emcc driver;
+  native assets clangd and actual wasm compilation pass.
+- Temporary HTTP servers stopped. No held Wine/Ghidra/capture resources. The
+  generated asset-free release is retained at `build-agent-browser-release/dist`
+  and `.vercel/output`; private release worktree can be removed after upload.

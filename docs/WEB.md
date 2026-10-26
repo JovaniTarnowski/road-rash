@@ -7,6 +7,12 @@ below; the October 12 sections are historical checkpoints.
 
 ## Playable browser implementation — October 25, 2026
 
+**Deployment:** [Play the Vercel preview](https://road-rash-exd6fu2sm-arkits.vercel.app) — READY, engine/config
+commit `096bff2` (implementation `8673a75`). This project requires Vercel
+sign-in for previews. Import your disc on this origin, then choose Quick race.
+Framework: static HTML/JavaScript + WebAssembly; prebuilt upload, no remote C++
+build. Vercel does not report a build duration for this upload.
+
 - `RR_WEB_BROWSER=ON` builds `rr-game.js` + `rr-game.wasm` from the same
   `game_main.cpp`, `RaceScreen`, simulation, renderer, frontend and audio code
   used natively. The separate default Emscripten configuration runs tests in Node.
