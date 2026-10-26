@@ -76,7 +76,13 @@ match where compared; `+0x130` (bend) is uncompared.
   92 <128 (NOT clear forward); prev lat diff 16764 >15360 (WAS clear
   lateral) => push LATERAL (both worlds, since prev inputs match?
   frozen prev lat 16384 spawn, should match -- yet original does NO
-  push). RANDLOG (solo-split, 200 frames, HUMAN=1): 2 draws at tick 149
+  push). `node.*` at tick 845 includes `0x00440680` (pedestrians) --
+  ped vs frozen shoves can drift frozen without touching the player
+  (no player shove mismatch through 844, RNG in sync at 845 since ped
+  contacts silent? Or ...?). Next: audit ped vs frozen contacts
+  (separate() pushes, no handler sounds?); compare ped spawn/behaviour
+  in solo vs field (L1 green with peds?).
+  RANDLOG (solo-split, 200 frames, HUMAN=1): 2 draws at tick 149
   from `0x00404BF3`/`0x00404C18` (both in `FUN_004049c0` contact handler)
   -- frozen-contact sounds must stay (no blanket skip). 845 has NO draws
   in either world (RNG 2285034199 constant) -- silent shove mismatch only.
