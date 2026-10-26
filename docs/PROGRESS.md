@@ -53,6 +53,25 @@ Detailed evidence is in [REVERSE_ENGINEERING.md](REVERSE_ENGINEERING.md) and tes
 
 ## Timeline
 
+### October 26, 2026: crashed car contact (L5d 2278 -> 2400 green)
+
+- `collide_traffic` no longer skips crashed riders (`0x004368f0` gates
+  only on tick/flags/geometry, never on `+0x2f4`; separation runs for
+  crashed too). `contact_car` for crashed now mirrors bike-bike
+  `contact()`'s crashed path: `+0xf4 += 0x150` bump, no `knock_off`
+  (down stays false), no `|184|/4` speed bleed, no `shit/2` steer-rate
+  shove; tail kick baseline is `magnitude` (`full>>10`) vs `+0xf0`
+  (e.g. 2 vs 0 gives -2). Nudge, impulse/flag clear and clamps
+  unchanged. L5d 2278 lateral/velocity/speed/steer sequence gone;
+  L5d now 2400/2400 (pin retired, CTest unregistered like L5e since
+  golden-only suffix can neither pass nor pin; verified manually).
+  L1/schema2/L5/L5e still 2400/2400;
+  strict human still 1431/1431; full owned-Debug gate 106/106.
+  Remaining: `+0x324` type-word never set (branch gates unported);
+  uncrashed trailing `0x00407410` (deliberately open); full
+  `0x00407410` walk (plan-17); class-2-contained crashed speed path
+  (untested).
+
 ### October 26, 2026: crash-entry finish recompute (L5d 2267 -> 2278)
 
 - `0x00403d60` tail ported in `Race::crash_entry` (contact) and

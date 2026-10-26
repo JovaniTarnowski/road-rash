@@ -680,9 +680,15 @@ void Race::collide(Rider& ra, Rider& rb) {
 void Race::collide_traffic(Rider& r) {
     if (!traffic_ || r.finished) return;
     if (live_schedule_ && (r.bike.u8(0xc0) & 5) != 5) return; // parked: not a contact candidate
-    if (r.bike.i32(0x2f4) != 0) return;                       // crashed riders: 0x004049c0 rejects
-    constexpr int32_t car_half_length = 64;                   // 0x00475698 +0x48
-    constexpr int32_t car_half_height = 8960;                 // 0x00475698 +0x4c
+    // No crash gate here: 0x004368f0 checks only tick/flags/geometry, not
+    // +0x2f4, so separation (0x00436a40) runs for crashed riders too, and
+    // 0x004049c0 handles them (vertical +0xf4 bump, steer tail) without a
+    // re-knock (crash_entry guards on crash_active; finish recompute in
+    // contact_car is gated on uncrashed). Skipping crashed misses the
+    // riderless-bike shove (e.g. L5d tick 2278: car 13e2038 vs crashed
+    // rider 9 bike, lateral +12032 / steer -2).
+    constexpr int32_t car_half_length = 64;   // 0x00475698 +0x48
+    constexpr int32_t car_half_height = 8960; // 0x00475698 +0x4c
     Bike& s = r.bike;
     const int32_t half_length = s.i32(0x178), half_width = s.i32(0x174), half_height = s.i32(0x17c);
     const auto& route = route_of(r);
@@ -1377,6 +1383,12 @@ bool Race::knock_off(Rider& victim, int32_t stamina_damage, int32_t bike_damage,
 // upstream in this caller, preserving the shared-stream position.
 void Race::contact_car(Rider& self, TrafficCar& car) {
     Bike& s = self.bike;
+    // Crashed self (riderless bike, e.g. L5d tick 2278): 0x004049c0's crashed
+    // path still runs the +0xf4 bump (line 219: +0x150). Mirror bike-bike
+    // contact(), which does the same; knock_off/nudge/kick below then run
+    // (knock_off guards re-entry via crash_active; finish recompute stays
+    // gated on uncrashed).
+    if (s.i32(0x2f4) != 0) s.i32(0xf4) += 0x150;
     // 0x004049c0 sounds, class routing and knock magnitudes read the
     // UNSCALED impulses; elasticity applies after (lines 89-93).
     const int32_t raw184 = s.i32(0x184), raw188 = s.i32(0x188), raw18c = s.i32(0x18c);
@@ -1408,25 +1420,38 @@ void Race::contact_car(Rider& self, TrafficCar& car) {
     // Silent hits run the same geometric routing: the original recomputes
     // iVar9 from geometry after the sound gate (LAB_00404c2d).
     bool down = false; // 0x004049c0 local_21, returned by 0x004052c0
+    // Crashed self (riderless bike): 0x004049c0 never calls 0x004052c0
+    // (no re-knock; crash_entry guards on crash_active). Skip the decision
+    // so down stays false (kick allowed) and no stamina/bike damage or
+    // +shit/256 bump is applied; the +0x150 bump above is the only +0xf4
+    // change. Mirrors bike-bike contact()'s crashed path.
+    const bool crashed = s.i32(0x2f4) != 0;
     if (!contained) {
         // Class 3: glance off the car's side, with the 0x004052c0 decision.
         // 0x004049c0: other lateral < self lateral shoves +f0 (away from the
         // car), else -f0; speed loses |184|/4 either way. The car caller has
         // +0xc4 & 0xc == 0, so the assembly keeps stamina local_20 and bike
         // damage iVar10 both at the full magnitude.
-        down = knock_off(self, magnitude, magnitude, 3);
+        down = crashed ? false : knock_off(self, magnitude, magnitude, 3);
         if (down) {
             s.i32(0xf4) += div_pow2(shit, 8);
         } else if (car.lateral < s.i32(0x28)) {
-            if (s.i32(0xf0) < 0) s.i32(0xf0) = 0;
-            s.i32(0xf0) += shit / 2;
-            s.i32(0xec) = std::max(0, s.i32(0xec) - div_pow2(shit, 2));
+            // Crashed: no +0xf0 shove and no speed bleed (0x004049c0 crashed
+            // path has neither; the tail kick below uses magnitude vs +0xf0
+            // to give the -2). Uncrashed shoves away from the car.
+            if (!crashed) {
+                if (s.i32(0xf0) < 0) s.i32(0xf0) = 0;
+                s.i32(0xf0) += shit / 2;
+                s.i32(0xec) = std::max(0, s.i32(0xec) - div_pow2(shit, 2));
+            }
         } else {
-            if (s.i32(0xf0) > 0) s.i32(0xf0) = 0;
-            s.i32(0xf0) -= shit / 2;
-            s.i32(0xec) = std::max(0, s.i32(0xec) - div_pow2(shit, 2));
+            if (!crashed) {
+                if (s.i32(0xf0) > 0) s.i32(0xf0) = 0;
+                s.i32(0xf0) -= shit / 2;
+                s.i32(0xec) = std::max(0, s.i32(0xec) - div_pow2(shit, 2));
+            }
         }
-    } else if ((down = knock_off(self, magnitude, magnitude, 2))) {
+    } else if ((down = crashed ? false : knock_off(self, magnitude, magnitude, 2))) {
         // Class 2 and the rider went down in the decision: the impulse still
         // transfers to speed (0x004049c0).
         s.i32(0xec) += s.i32(0x184);
@@ -1457,11 +1482,15 @@ void Race::contact_car(Rider& self, TrafficCar& car) {
     if (s.i32(0xec) < -1000) s.i32(0xec) = -1000;
     if (s.i32(0xf4) > 0x600) s.i32(0xf4) = 0x600;
     if (s.i32(0xf4) < -10000) s.i32(0xf4) = -10000;
-    // Steering kick from the steer-rate change (0x00404f93 tail). The
-    // local_21 suppresses only this kick; a newly crashed rider still
+    // Steering kick (0x00404f93 tail). Uncrashed: kicked by the steer-rate
+    // change (new - old). Crashed: 0x004049c0 never updated +0xf0 via shove,
+    // so the tail compares local_20 (magnitude = full>>10) vs +0xf0;
+    // e.g. L5d tick 2278: magnitude 2 vs +0xf0 0 gives kick -2.
+    // local_21 (down) suppresses only this kick; a newly crashed rider still
     // receives the separation nudge and impulse/flag clear above.
-    if (!down && old_steer_rate != s.i32(0xf0)) {
-        const int32_t kick = div256(int64_t(s.i32(0x2d8)) * (s.i32(0xf0) - old_steer_rate) * 2);
+    if (!down && (crashed ? magnitude : old_steer_rate) != s.i32(0xf0)) {
+        const int32_t base = crashed ? magnitude : old_steer_rate;
+        const int32_t kick = div256(int64_t(s.i32(0x2d8)) * (s.i32(0xf0) - base) * 2);
         const int32_t lim = s.i32(0x29c);
         const int32_t next = s.i32(0x288) + kick;
         s.i32(0x288) = std::max(-lim, std::min(lim, next));

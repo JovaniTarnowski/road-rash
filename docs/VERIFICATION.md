@@ -1,5 +1,29 @@
 # Verification log (all sessions September 28, 2026)
 
+## Crashed car contact and L5d full green (October 26, 2026)
+
+- Baseline `f8a4c59`. `src/race.cpp` `collide_traffic` runs separation
+  + `contact_car` for crashed (removed the `+0x2f4` early-return;
+  `0x004368f0` never gates on crash). `contact_car` for crashed
+  (`+0x2f4 != 0`) does the `+0xf4 += 0x150` bump, skips `knock_off`
+  (down stays false), skips the `|184|/4` bleed and the `shit/2`
+  steer-rate shove; tail kick baseline is `magnitude` (`full>>10`) vs
+  `+0xf0` (e.g. 2 vs 0 gives -2). `0x004049c0` crashed path, REA 6.4.0
+  `0x0043a580` (gated `0x0043a610` walls not the trigger here:
+  routes 0/0 same), disassembly `4060e4-4060f2`/`406165-40616e`.
+- Replays with owned Debug build `build-agent-crash-2278`:
+  L1/schema2/L5 `2400 identical`; L5e `2400 identical (+43
+  golden-only)`; strict human `sched-human-cov2-20261017`
+  `1431 identical`; L5d 2278 lateral (-12032) / velocity (+330) /
+  speed (-427 bleed) / steer (+857 vs -2 kick) sequence gone --
+  L5d now `2400 ticks identical` (+13 golden-only; pin retired, CTest
+  unregistered like L5e since a golden-only suffix can neither pass
+  nor pin -- verified manually, no golden changed).
+- Full owned-Debug gate: **106/106 passed** (see receipt below;
+  L5d/L5e verified manually outside CTest; sanitizers/Android not run:
+  no sanitizer-sensitive or Android-affecting change beyond the car-contact
+  lines + pin retirement + CTest unregistration).
+
 ## Crash-entry finish recompute and L5d 2267 -> 2278 (October 26, 2026)
 
 - Baseline `14df8b2`. `src/race.cpp` `crash_entry` (contact path) and
