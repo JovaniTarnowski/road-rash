@@ -639,9 +639,13 @@ std::vector<DrawNode> CourseScene::draw_nodes(const std::vector<RouteSample>& ro
             const bool visible = b.screen_y >= a.screen_y && road.ceiling >= a.screen_y;
             const auto& path = *road.path;
             const int32_t whole_left = -((path.left_q8 + 255) / 256) * 250;
-            const int32_t far_left = -((old.path->left_q8 + 255) / 256) * 250;
             RoadPanelInput panels;
-            panels.first_left = wrap(far.screen_x(r, far_left));
+            // 0x00444630 updates the previous strip's +0x30 using that
+            // strip's own +0xd8 lane origin at the new far scale. Both ends
+            // must share its lane grid: using the next sample's rounded left
+            // count shifts every far endpoint by a lane at width transitions.
+            const int32_t far_origin = wrap(int64_t(whole_left) + road.offset - old.offset);
+            panels.first_left = wrap(far.screen_x(r, far_origin));
             panels.first_y = a.screen_y;
             panels.first_lane_width = wrap(int64_t(250) * far.scale);
             panels.second_left = wrap(near.screen_x(r, whole_left));

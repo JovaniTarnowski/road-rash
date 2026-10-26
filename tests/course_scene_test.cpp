@@ -13,6 +13,33 @@ int main(int argc, char** argv) {
         }
         const auto exe = assets.read("ROADRASH.EXE");
         const auto depths = rr::read_depth_table(exe);
+        {
+            // Reported City gap at ~00:38: left lanes grow from 2 to 2+21/256
+            // at sample 159. The right lane exposed background scenery because
+            // the far lane grid used a different rounded left-lane count.
+            const auto city = rr::read_course(assets.read("DATA/COURSES/CITY.CRS"));
+            const rr::CourseScene city_scene(assets, exe, city, "CITY");
+            const auto route = rr::make_route(city, false);
+            std::set<uint8_t> pavement;
+            const auto materials = rr::read_road_materials(exe, assets.read("DATA/GLOBAL.RSC"));
+            for (const auto& entry : materials.entries)
+                for (const auto& mip : entry.texture->mips)
+                    pavement.insert(mip.pixels.begin(), mip.pixels.end());
+            for (const int width : {320, 426}) {
+                rr::Framebuffer frame(width * 2, 480);
+                city_scene.draw_horizon(frame, 0, width);
+                const auto slices = rr::project_road(route, 156 * 256 + 128, {0, 150}, depths, width);
+                auto mode = rr::view_mode(true);
+                mode.surface_width = mode.display_width = width * 2;
+                rr::render_nodes(frame, city_scene.draw_nodes(route, slices, {0, 150}, depths, {}, width),
+                                 mode, 16);
+                for (int y = 190; y < 195; ++y)
+                    for (int x = 550 + width - 320; x < 600 + width - 320; ++x)
+                        if (!pavement.count(frame.row(y)[x]))
+                            throw std::runtime_error(
+                                "City sample 159 width transition exposes scenery inside road");
+            }
+        }
         const auto course = rr::read_course(assets.read("DATA/COURSES/NAPA.CRS"));
         rr::CourseScene scene(assets, exe, course, "NAPA");
         std::map<unsigned, size_t> building_flags;
