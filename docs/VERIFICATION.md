@@ -1,5 +1,16 @@
 # Verification log (all sessions September 28, 2026)
 
+## Android debug assembly (October 26, 2026)
+
+- Baseline `ae5ea41` + docs (no src changes since `b619cb4` gate).
+  `android/gradlew -p android assembleDebug -PdevAssets=true`
+  (`JAVA_HOME` openjdk@21): `BUILD SUCCESSFUL in 17s`
+  (`verifyDebugNoGameData` passes; developer assets enabled for debug,
+  local research only). Covers the `collide_traffic`/`contact_car`
+  crashed paths and `+0x324` writes (pure integer sim logic, no Android
+  API). No device connected; hardware import/render/input/lifecycle
+  still unverified (plan 14).
+
 ## Focused ASan/UBSan for crash-contact + type-word (October 26, 2026)
 
 - Baseline `b619cb4` + docs (no src changes since the 106/106 gate).
