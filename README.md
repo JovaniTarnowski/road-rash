@@ -30,8 +30,10 @@ Still open (see `docs/CURRENT_STATUS.md` and `docs/PROGRESS.md`):
   paths beyond the receipted run, isolated fight/steal/traffic cases.
 - Gameplay: live police, wall/crash-sequence stand-ins, some car/pedestrian
   branches, race MIDI, sirens/car engines.
-- Frontend: some option screens (mano-a-mano, jukebox, sound mix, controls),
-  no driven-career original-save round trip, no menu pixel comparison.
+- Frontend: jukebox, sound mix and controls are implemented; mano-a-mano
+  awaits the multiplayer decision. A seeded original-writer save round-trips,
+  but a driven-career save round trip and full menu pixel acceptance remain
+  open (main-menu capture and layout checks exist).
 - Android builds and packages but hardware validation (render, input,
   import, lifecycle, performance) is pending.
 - Linux/Windows builds do not exist yet.

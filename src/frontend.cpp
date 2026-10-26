@@ -48,6 +48,35 @@ std::vector<MenuItem> read_items(const std::vector<uint8_t>& exe, uint32_t addre
     return items;
 }
 
+// Drawing rectangles are in logical pixels, including the original shadow offset.
+// 0x0041fa52..0x0041fab8: ordinary banners use bottom alignment, with a
+// six-pixel bottom inset and a sixteen-pixel inset on the picture-facing side.
+std::pair<TextRect, unsigned> title_text_layout(TextRect box, uint32_t format, int slot) {
+    if (format & 4) return {box, dt::center | dt::bottom | dt::singleline};
+    if (format & 1) return {box, dt::center | dt::vcenter | (slot == 0x178 ? dt::wordbreak : dt::singleline)};
+    box.bottom -= 6;
+    if (format & 2) {
+        box.left += 16;
+        return {box, dt::bottom | dt::singleline};
+    }
+    box.right -= 16;
+    return {box, dt::right | dt::bottom | dt::singleline};
+}
+
+// 0x0042071d..0x00420795: only the fixed rectangle (flag 0x1000) forces
+// centering. Other descriptions retain the caller's DrawText alignment.
+std::pair<TextRect, unsigned> description_text_layout(TextRect box, uint32_t flags, unsigned format) {
+    if (flags & 0x1000) return {box, dt::center | dt::wordbreak};
+    const bool wide = (flags & 0x900) != 0;
+    box.left += 10;
+    box.top += wide ? 2 : 10;
+    box.right -= 6;
+    box.bottom += wide ? 2 : -6;
+    if (format == 0x4852 && !(flags & 0x80)) format = 0x4850;
+    if (wide) format |= dt::singleline;
+    return {box, format};
+}
+
 // Popup tables passed to 0x004224b0 and the setter each popup applies (0x0049e0a8).
 enum Setter {
     none = 0,
@@ -2018,8 +2047,8 @@ void Frontend::draw_scale1(RgbImage& out) const {
             box = {0, 0, w, th + 0x2a};
         }
         fill_from(out, dark_, box.left, box.top, box.right - box.left, box.bottom - box.top);
-        TextRect t{box.left, box.top + (box.bottom - box.top - th) / 2 + 2, box.right, box.bottom};
-        draw_text_box(out, t, Face::badloc, 72, title, dt::center | dt::wordbreak, colour_orange);
+        const auto [t, flags] = title_text_layout(box, title_format_, title_slot_);
+        draw_text_box(out, t, Face::badloc, 72, title, flags, colour_orange);
     }
     // Description box (0x00420470): darkened, Futura, pale text with a black shadow.
     const std::string& desc = str(desc_slot_);
@@ -2030,7 +2059,7 @@ void Frontend::draw_scale1(RgbImage& out) const {
         const int height = screen_ == 0x1a ? 36 : (desc_flags_ & 0x80) ? 24 : 32;
         TextRect box;
         if (desc_flags_ & 0x1000)
-            box = {0, 300, 640, 0x1a4 + 300};
+            box = {0, 300, 640, 0x1a4};
         else {
             const bool wide = (desc_flags_ & 0x900) != 0;
             const int maxw = wide ? 0x270 : 300;
@@ -2045,8 +2074,8 @@ void Frontend::draw_scale1(RgbImage& out) const {
             box = {x, y, x + w + 16, y + h + 16};
         }
         fill_from(out, dark_, box.left, box.top, box.right - box.left, box.bottom - box.top);
-        draw_text_box(out, {box.left + 8, box.top + 8, box.right - 8, box.bottom}, face, height, desc,
-                      dt::wordbreak | dt::center, colour_light);
+        const auto [t, flags] = description_text_layout(box, desc_flags_, desc_format_);
+        draw_text_box(out, t, face, height, desc, flags, colour_light);
     }
     if (!price_text_.empty()) {
         TextRect box{0x10, 0x154, 0x10 + 0xf0 + 16, 0x154 + 30 + 16};
@@ -2237,8 +2266,8 @@ void Frontend::draw_scaled(RgbImage& out, int scale) const {
             box = {0, 0, w, th + 0x2a};
         }
         fill(box.left, box.top, box.right - box.left, box.bottom - box.top);
-        TextRect t{box.left, box.top + (box.bottom - box.top - th) / 2 + 2, box.right, box.bottom};
-        textbox(t, Face::badloc, 72, title, dt::center | dt::wordbreak, colour_orange);
+        const auto [t, flags] = title_text_layout(box, title_format_, title_slot_);
+        textbox(t, Face::badloc, 72, title, flags, colour_orange);
     }
     // Description box (0x00420470): darkened, Futura, pale text with a black shadow.
     const std::string& desc = str(desc_slot_);
@@ -2249,7 +2278,7 @@ void Frontend::draw_scaled(RgbImage& out, int scale) const {
         const int height = screen_ == 0x1a ? 36 : (desc_flags_ & 0x80) ? 24 : 32;
         TextRect box;
         if (desc_flags_ & 0x1000)
-            box = {0, 300, 640, 0x1a4 + 300};
+            box = {0, 300, 640, 0x1a4};
         else {
             const bool wide = (desc_flags_ & 0x900) != 0;
             const int maxw = wide ? 0x270 : 300;
@@ -2264,8 +2293,8 @@ void Frontend::draw_scaled(RgbImage& out, int scale) const {
             box = {x, y, x + w + 16, y + h + 16};
         }
         fill(box.left, box.top, box.right - box.left, box.bottom - box.top);
-        textbox({box.left + 8, box.top + 8, box.right - 8, box.bottom}, face, height, desc,
-                dt::wordbreak | dt::center, colour_light);
+        const auto [t, flags] = description_text_layout(box, desc_flags_, desc_format_);
+        textbox(t, face, height, desc, flags, colour_light);
     }
     if (!price_text_.empty()) {
         TextRect box{0x10, 0x154, 0x10 + 0xf0 + 16, 0x154 + 30 + 16};

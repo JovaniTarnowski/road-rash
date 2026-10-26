@@ -1944,3 +1944,22 @@ changing simulation or RNG. New sky/road coverage checks at widths 320/426
 fail before the fix and pass afterward. Clean committed-source native gate:
 106/106, no skips. Browser deployment and live-gameplay checks pass; correction
 is live. [Evidence and remaining fidelity scope](agent-handoffs/napa-merge-terrain-20261026.md).
+
+## Frontend layout acceptance follow-up — October 26, 2026
+
+- Continued plan 13 Task 6 using the existing original screen-9 capture.
+  Traced title/description DrawText flags and RECT offsets in the unmodified
+  disc disassembly; fixed banner bottom/right alignment, paragraph caller
+  alignment and the fixed description rectangle bottom (420, not 720).
+- Shared layout rules serve 1× and scaled rendering. Main-menu title ink now
+  starts at the original `(33,48)` instead of `(24,35)`; the last description
+  line starts at x=17 versus original x=18 (formerly centered at x=115).
+  Regression checks use captured positions at 1×/2×/4× and permit four logical
+  pixels for the documented font metric difference.
+- README now distinguishes implemented jukebox/sound/controls from acceptance
+  gaps. Mano-a-mano remains behind plan 09's multiplayer decision. Seeded
+  writer round-trip coverage exists; driven-career round trip, all-screen
+  captures and strict non-text pixel acceptance remain open. The existing
+  broad-mask menu characterization pin is not an acceptance claim.
+- Verification and limitations: see the matching VERIFICATION entry and
+  `docs/agent-handoffs/frontend-layout-20261026.md`.

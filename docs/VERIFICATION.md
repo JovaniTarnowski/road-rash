@@ -2770,3 +2770,55 @@ names). Rebase preserved both progress entries; no implementation conflicts.
   sanitizer or device gate; static original trace plus exact native scene
   reproduction, not full original split/merge pixel acceptance.
 - [Commands, hashes and before/after evidence](agent-handoffs/napa-merge-terrain-20261026.md).
+
+## Frontend title/description layout follow-up (October 26, 2026)
+
+- Evidence: existing original screen-9 capture and receipt at
+  `analysis/oracle/menu-09-20261026.*`; original-disassembly ranges
+  `0x0041fa52..0x0041fab8` and `0x0042071d..0x00420795`. No new Wine run,
+  proxy modification, save capture or shared-prefix mutation in this slice.
+- Reproduced the old layout using the existing Release frontend-test binary:
+  `build-agent-frontend-menu-26/frontend-test ../cdrom/ROADRASH --dump
+  analysis/frontend/continue-20261026`. Old orange title ink starts `(24,35)`;
+  old last paragraph line starts x=115. Both violate the new captured-position
+  regression limits. The corrected title starts `(33,48)`, identical to the
+  original capture; final line x=17 versus original x=18. Native corrected
+  title right edge 224 versus original 222 (half-open bounds).
+- Owned Debug configure/build:
+  `cmake -S . -B build-agent-frontend-layout-20261026 -DCMAKE_BUILD_TYPE=Debug
+  -DCMAKE_EXPORT_COMPILE_COMMANDS=ON`, then
+  `cmake --build build-agent-frontend-layout-20261026 --parallel 6`: PASS.
+  Logs: `/tmp/frontend-layout-configure.log`, `/tmp/frontend-layout-fullbuild.log`.
+- Focused CTest `-R '^frontend$' --output-on-failure`: PASS. Added bounds checks
+  at scales 1, 2 and 4 with four logical pixels of glyph-metric tolerance.
+  Corrected 1× frame visually inspected:
+  `analysis/frontend/layout-fixed-20261026/main.png` (local original artwork).
+- LSP client unavailable in this chat. Owned compile database preflight:
+  healthy, 187 entries. Initial clangd checks failed first without the compile
+  database and then on Apple clangd's ExtractFunction/ExpandDeducedType tweak
+  self-tests (103 errors, no parse diagnostics). Rerun with those refactoring
+  self-tests disabled:
+  `clangd --check=src/frontend.cpp
+  --compile-commands-dir=build-agent-frontend-layout-20261026 --tweaks=`:
+  exit 0, **0 errors**; `/tmp/frontend-layout-clangd.log`.
+- Full integration CTest (`ctest --test-dir build-agent-frontend-layout-20261026
+  --output-on-failure -j 6`): **105/106 passed, 1 failed, zero skips**, exit 8.
+  Failure: `sound`, "negative split separation truncates toward zero".
+  Repeated frontend/sound pair: frontend PASS, sound same failure.
+  Logs `/tmp/frontend-layout-ctest.log`, `/tmp/frontend-layout-rerun.log`.
+- Isolated attribution check: detached checkout at `bca9d45` under
+  `/tmp/rr-frontend-layout-baseline-20261026`, Debug build `build-frontend-baseline`.
+  Baseline `sound-test /Users/archit/Dev/rr/cdrom/ROADRASH`: PASS, 0 failures.
+  Applied **only** `src/frontend.cpp` + `tests/frontend_test.cpp` patch;
+  rebuilt both targets. Sound still PASS, 0 failures; frontend with the
+  absolute disc path and `--menu-corpus /Users/archit/Dev/rr/native-port/analysis/oracle`:
+  PASS, including captured-position and picture characterization checks.
+  The shared tree concurrently changes `Race::camera_position()` to follow
+  the half image; the failing sound fixture edits bike camera words. This is
+  the likely interaction, not established as the fix here. Other session's
+  simulation edits/fixtures were not modified. Isolated checkout removed
+  after testing; patch/build logs retained in `/tmp/frontend-layout-*`.
+- Not covered: driven-career save, additional original menu captures, strict
+  non-text/JPEG parity, exact GDI glyphs, music listening, sanitizer/Android
+  or hardware checks. Existing broad-mask picture characterization remains
+  diagnostic; this change does not upgrade plan 13 Task 6 to complete.

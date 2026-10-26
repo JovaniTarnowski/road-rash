@@ -76,6 +76,21 @@ static bool read_bmp_24(const std::string& path, RgbImage& out) {
     return true;
 }
 
+// Compare ink positions independently of JPEG/photo deltas. The original's
+// RGB565 surface quantises text too; match colours in that common space.
+static TextRect ink_bounds(const RgbImage& image, TextRect region, uint32_t colour) {
+    TextRect bounds{region.right, region.bottom, region.left, region.top};
+    for (int y = region.top; y < region.bottom; ++y)
+        for (int x = region.left; x < region.right; ++x)
+            if (image.contains(x, y) && quantise565(image.at(x, y)) == quantise565(colour)) {
+                bounds.left = std::min(bounds.left, x);
+                bounds.top = std::min(bounds.top, y);
+                bounds.right = std::max(bounds.right, x + 1);
+                bounds.bottom = std::max(bounds.bottom, y + 1);
+            }
+    return bounds;
+}
+
 int main(int argc, char** argv) {
     int failures = 0;
     auto check = [&](bool v, const std::string& what) {
@@ -217,6 +232,25 @@ int main(int argc, char** argv) {
     key("back");
     check(fe.screen() == screen_id::main_menu, "Escape skips the credits to the main menu");
     snap("main");
+    // The screen-9 original capture places the orange title at (33,48)..(222,92)
+    // and the final description line at x=18. Allow four pixels of font metric
+    // difference, never the old centered paragraph or vertically centered title.
+    auto check_main_layout = [&](const RgbImage& frame, int scale) {
+        const auto title = ink_bounds(frame, {0, 0, 300 * scale, 115 * scale}, 0xff6432);
+        const auto last = ink_bounds(frame, {0, 230 * scale, 330 * scale, 270 * scale}, 0xdefff0);
+        check(std::abs(title.left - 33 * scale) <= 4 * scale &&
+                  std::abs(title.top - 48 * scale) <= 4 * scale &&
+                  std::abs(title.bottom - 92 * scale) <= 4 * scale,
+              "main title follows original bottom/right banner alignment");
+        check(std::abs(last.left - 18 * scale) <= 4 * scale && last.right > last.left,
+              "main description final line is left aligned like original");
+    };
+    check_main_layout(img, 1);
+    for (int scale : {2, 4}) {
+        RgbImage scaled;
+        fe.draw(scaled, scale);
+        check_main_layout(scaled, scale);
+    }
     { // Plan 13 Task 6 Step 2, first slice: screen 9 vs the original
         // RR_ORACLE_MENU=9 capture (menu-09-<date>.bmp, git-ignored, skip 77).
         // Masked: title, description box and button row (text/chrome: GDI

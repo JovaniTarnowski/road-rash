@@ -2226,3 +2226,31 @@ sequences checked in exported assembly. Native previously extended each inner
 profile to the viewport, producing the reported Napa green curtain; the
 approaching-merge path now follows these rules in local render copies.
 [Trace and acceptance limits](agent-handoffs/napa-merge-terrain-20261026.md).
+
+## Menu title and description placement (October 26, 2026 follow-up)
+
+The screen-9 capture `analysis/oracle/menu-09-20261026.bmp` exposes layout
+errors previously hidden by the broad text/chrome characterization mask.
+Assembly, rather than Ghidra's overlapping stack-local names, resolves them:
+
+- `0x0041fa52` tests the saved **format bit 4**, not the measured text width
+  suggested by the pseudocode. Ordinary left banners reach `0x0041faa1`:
+  right edge minus 16, bottom edge minus 6, DrawText flags `0x802a`
+  (right/bottom/single-line). Right banners use left plus 16 and `0x28`;
+  format bit 1 uses `0x25` (or `0x15` for slot `0x178`); bit 4 uses `0x29`.
+  The black pass is followed by `OffsetRect(-2,-2)` and the colour pass.
+- `0x0042071d` tests the saved **description flag 0x1000**, not the RECT's
+  right edge suggested by the pseudocode. That case uses `0x4851` and the
+  fixed rectangle `(0,300)..(640,420)`; 420 is an absolute bottom coordinate.
+  The ordinary path (`0x0042072f..0x00420795`) retains the caller alignment,
+  adjusts the shadow rectangle by left +10 / right -6, and top +10 /
+  bottom -6 (wide descriptions instead use top/bottom +2 and single-line).
+  `0x4852` becomes `0x4850` without flag 0x80. The colour pass offsets -2.
+- Measured orange ink bounds (half-open): original `(33,48)..(222,92)`;
+  corrected native `(33,48)..(224,92)`; old native `(24,35)..(215,79)`.
+  Final paragraph line starts at original x=18, corrected native x=17,
+  old native x=115. Font hinting/advances and JPEG deltas remain open.
+
+`src/frontend.cpp` shares these rectangle/flag rules between logical and
+scaled drawing. This supersedes the former forced-centering implementation;
+it does not establish whole-frame pixel parity or other-screen acceptance.

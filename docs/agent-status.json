@@ -55,15 +55,16 @@
     },
     {
       "area": "Frontend/settings",
-      "implementation": "Menu/career/save paths exist; options gaps",
-      "verification": "Original save round-trip and options acceptance pending",
-      "remaining": "Settings/screens and music completion",
+      "implementation": "Menus, career, saves, jukebox, sound mix and controls implemented; multiplayer disabled",
+      "verification": "Seeded original-writer save byte identity; main-menu capture and 1x/2x/4x layout checks",
+      "remaining": "Driven-career original-save round trip; all-screen pixel acceptance; multiplayer decision; exact music fidelity",
       "evidence": [
         "plans/18-settings-and-options.md",
-        "plans/13-music-and-frontend-completion.md"
+        "plans/13-music-and-frontend-completion.md",
+        "agent-handoffs/frontend-layout-20261026.md"
       ],
       "last_verified_commit": null,
-      "fidelity_level": "not-claimed"
+      "fidelity_level": "partial"
     },
     {
       "area": "Android",
