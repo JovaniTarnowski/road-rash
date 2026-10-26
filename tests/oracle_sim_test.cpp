@@ -1125,7 +1125,8 @@ int main(int argc, char** argv) {
         race.set_ticks(int32_t(tick0 + int64_t(green) - 1));
     }
     std::vector<std::pair<int64_t, uint64_t>> rng_history; // (golden, native)
-    size_t uncovered = 0; // native fields no golden era dumps (acceptance gaps, counted not skipped)
+    size_t uncovered = 0;        // native fields no golden era dumps (acceptance gaps, counted not skipped)
+    size_t rpm_timing_notes = 0; // nondeterministic sound-thread rpm channel (diagnostic only)
     for (size_t i = green; i < g.frames.size(); ++i) {
         const auto& frame = g.frames[i];
         auto fc = frame.find("controls");
@@ -1255,6 +1256,22 @@ int main(int argc, char** argv) {
                     continue;
                 g_used_keys.insert(k);
                 if (native != kv.second) {
+                    // Engine rpm (+0x2dc) and its speed cache (+0x2e8) are
+                    // wall-clock driven (async sound-pump thread), not
+                    // sim-deterministic: the two identical split captures
+                    // (same seed, same 1*4500 script) disagree on +0x2dc at
+                    // 252 ticks starting at tick 20, and on +0x44 at 185
+                    // ticks, while positions, speeds, RNG and crash state
+                    // match on every tick. They feed no physics (HUD needle
+                    // and engine pitch only), so a mismatch is diagnostic
+                    // context, never a sim divergence: report and continue.
+                    if (k == "rider.0.bike_2dc" || k == "rider.0.bike_2e8") {
+                        std::cout << "rpm timing at frame " << i << " (tick " << tick0 + int64_t(i)
+                                  << "): " << k << " original " << kv.second << " native " << native
+                                  << " (bike image, nondeterministic channel)\n";
+                        ++rpm_timing_notes;
+                        continue;
+                    }
                     std::cout << "first divergence at frame " << i << " (tick " << tick0 + int64_t(i)
                               << "): " << k << " original " << kv.second << " native " << native
                               << " (bike image)\n";
@@ -1360,6 +1377,14 @@ int main(int argc, char** argv) {
                     have.push_back({fr.parked ? 0 : 0x00446250, fr.bike.i32(0x1c)});
                     have.push_back({fr.parked ? 0 : 0x004463e0, half});
                 }
+                // The player crash body once the solo freeze-hack nulls the
+                // half (Rider::half_frozen): the proxy dumps scheduler nodes
+                // whose think is not a rider think, including nulled ones,
+                // with their draw callback. The live player half (rider
+                // slot) is never dumped; the nulled body appears as a half
+                // node (split-left 2102: (0x004463e0, 77996)).
+                if (!riders.empty() && riders[0].crash_active && riders[0].half_frozen)
+                    have.push_back({0x004463e0, riders[0].crash_actor.motion.i32(0x1c)});
                 if (setup.instance.pedestrians)
                     for (const auto& p : setup.instance.pedestrians->pool())
                         if (p.active) have.push_back({0x00440680, p.body.bike.i32(0x1c)});
@@ -1418,14 +1443,20 @@ int main(int argc, char** argv) {
                 }
             }
         }
-        // Per-frame hook 0x00434980 (the game calls it after each tick:
-        // sound pump or game_types without sound): player rpm +0x2dc and its
-        // speed cache +0x2e8, read by the next tick's dump.
-        // The capture's frame schedule is an input like the controls: the
-        // render prep 0x00438450 copies +0x1c into +0x44 once per frame, so a
-        // frame ends after this tick exactly when the next dump's +0x44 is
-        // this tick's position (ticks 13, 493 and 1197 share a frame with the
-        // tick before on sched-human-20261016).
+        // Per-tick hook 0x00434980 (the game calls it after each tick: sound
+        // pump or game_types without sound): player rpm +0x2dc and its speed
+        // cache +0x2e8, read by the next tick's dump. While riding (or
+        // airborne) it runs once per render frame: the render prep
+        // 0x00438450 copies +0x1c into +0x44 once per frame, so a frame ends
+        // after this tick exactly when the next dump's +0x44 is this tick's
+        // position (ticks 13, 493 and 1197 share a frame with the tick
+        // before on sched-human-20261016; cov2-1300 and schema2-1234
+        // likewise skip). While crashed on the ground the engine-sound
+        // path is off and the direct 0x004349c0 runs every tick:
+        // split-left 2099-2102 decay the rpm on ticks whose +0x44 copy did
+        // not advance, while split-right 2062 (crashed but airborne,
+        // height 3091) skips like the riding case. Rule: frame end, or
+        // crashed with height below the 0x65 airborne line.
         bool frame_ends = true;
         if (i + 1 < g.frames.size()) {
             const auto next44 = g.frames[i + 1].find("rider.0.bike_44");
@@ -1433,7 +1464,9 @@ int main(int argc, char** argv) {
             if (next44 != g.frames[i + 1].end() && pos != frame.end())
                 frame_ends = next44->second == pos->second;
         }
-        if (frame_ends) rr::update_engine_rpm(race.riders()[0].bike);
+        const rr::Bike& pb = race.riders()[0].bike;
+        if (frame_ends || (pb.i32(0x2f4) != 0 && pb.i32(0x20) < 0x65))
+            rr::update_engine_rpm(race.riders()[0].bike);
     }
     // Coverage report. Acceptance needs every native field compared
     // (uncovered == 0) and every golden key either compared (ledger) or
@@ -1491,12 +1524,13 @@ int main(int argc, char** argv) {
                 std::cout << "uncovered " << kv.first << ' ' << kv.second << '\n';
             for (const auto& kv : fam) std::cout << "golden-only " << kv.first << ' ' << kv.second << '\n';
         }
-        if (uncovered == 0 && extras == 0)
+        if (uncovered == 0 && extras == 0 && rpm_timing_notes == 0)
             std::cout << g.frames.size() << " ticks identical\n";
         else
             std::cout << g.frames.size() << " ticks identical (" << extras
                       << " golden-only fields not compared; " << uncovered
-                      << " field-comparisons uncovered: " << uncovered_names << ")\n";
+                      << " field-comparisons uncovered: " << uncovered_names << "; " << rpm_timing_notes
+                      << " rpm-timing notes on the nondeterministic channel)\n";
     }
     return 0;
 }

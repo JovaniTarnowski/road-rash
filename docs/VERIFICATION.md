@@ -1,5 +1,35 @@
 # Verification log (all sessions September 28, 2026)
 
+## Solo splits fully green; crash/static/half/freeze/rpm (October 26, 2026)
+
+- Baseline `a4572e0` (split 845->2056). Owned Debug build
+  `build-solo-split-845` (`oracle-sim-test --driver=human`, git-ignored
+  split captures): `sim-napa-solo-split-left/right.tsv` advance 2056 ->
+  full `6681 ticks identical` each, 0 uncovered sim gaps (19 golden-only;
+  8/94 rpm-timing notes on the nondeterministic channel).
+- Fixes in `src/race.cpp` (all cited to original addresses):
+  `collide_hazards` runs the `0x004373f0`/`0x00437660` static sweep for
+  crashed riders (tables path still rejects; `contact_static` crashed
+  path gives the 2056 bump/nudge/kick); crash half follows the body
+  (`sync_crash_half`, body pre-filled with half spec words at entry);
+  `update_halves` no longer clobbers crash mirror/finish with bike words;
+  place refresh runs while crashed but stops once nulled; solo
+  freeze-hack mirror (`Rider::half_frozen` past 256 bike-body gap: bike
+  parts continue, half parts stop; harness lists the nulled body as a
+  half scheduler node). Harness (`tests/oracle_sim_test.cpp`): rpm
+  updates per frame, plus per tick while crashed grounded; rpm mismatches
+  demoted to diagnostic notes (proven nondeterministic: identical
+  inputs+seed disagree on 252 ticks while sim matches everywhere).
+- No regressions (same build): `napa-field-l1` 2400 identical,
+  `schema2` 2400 identical, `sched-human-cov2` 1431 identical,
+  `sim-napa-solo-script` 1801 identical (+5 golden-only).
+- Full owned-Debug gate: **106/106 passed** (`ctest -j8`, exit 0, 159.80 s;
+  `clangd --check` clean on `src/race.cpp`/`race.hpp`/
+  `tests/oracle_sim_test.cpp`; `rg` throughout).
+- Remaining: split CTest registration (manual like script/L5d/L5e);
+  `napa-solo-jump`, `napa-fight`, `napa-contact`,
+  `napa-traffic-solo/field` (same Task 5/7 procedure).
+
 ## Solo split contact gates, flash, crash entry and brain (October 26, 2026)
 
 - Baseline `e101f2d`. Owned Debug build `build-solo-split-845`

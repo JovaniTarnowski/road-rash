@@ -897,11 +897,16 @@ std::vector<DzhrSolid> dzhr_solids_for_sample(int32_t centre_q8, const std::vect
 // half the bike's; reason 1 through knock_off, small-gap speed transfer,
 // big-gap crash entry reason 1). No RNG, no allocation in the tick path.
 void Race::collide_hazards(Rider& r) {
-    if (r.finished || r.bike.i32(0x2f4) != 0) return; // 0x004049c0 rejects
+    if (r.finished) return;
     if (!statics_[r.route].empty()) {
+        // 0x004373f0 sweep + 0x00437660 static: the original runs this for
+        // crashed riders too (split-left 2056: the crashed bike takes the
+        // +0x150 bump, nudge and kick via contact_static's crashed path).
+        // The hazards_/dzhr_ tables below reject crashed (contact_hazard).
         sweep_statics(r);
         return;
     } // live ring slices
+    if (r.bike.i32(0x2f4) != 0) return; // tables reject crashed; see contact_hazard
     Bike& s = r.bike;
     const auto& table = hazards_[r.route];
     if (!table.empty() && r.sample < table.size())
@@ -1511,6 +1516,21 @@ void Race::contact_car(Rider& self, TrafficCar& car) {
 // {0,0,0x100} == kContactCrashRiderImpulse/kContactCrashBikeImpulse in
 // crash.hpp), not the knock_off defaults. crash_reason carries any reason
 // with the pair in the assembly's argument order (rider impulse, then bike).
+//
+// 0x00403d60 makes the half the crash body (iVar2 = *(bike+0x2fc)): the two
+// stay the same object for the whole crash. Native keeps a separate crash
+// body, so the half object image follows the body for the entry word set
+// (0x1c..0x160 plus the zeroed block). Flags stay with the half: entry ORs
+// +0xc0 |= 3 (line 112) onto the half's own template bits (4 -> 7); the
+// body keeps its own object flags for the scan gates.
+static void sync_crash_half(Rider& r) {
+    for (int off : {0x1c,  0x20,  0x24,  0x28,  0x2c,  0x30,  0x34,  0x38,  0x3c,  0x40,  0x58,  0x5c,
+                    0x60,  0xec,  0xf0,  0xf4,  0x104, 0x108, 0x10c, 0x110, 0x118, 0x11c, 0x114, 0x120,
+                    0x124, 0x128, 0x12c, 0x130, 0x134, 0x138, 0x13c, 0x140, 0x158, 0x160, 0x198, 0x1a0})
+        r.half_object.i32(off) = r.crash_actor.motion.i32(off);
+    r.half_object.u8(0x164) = r.crash_actor.motion.u8(0x164);
+    r.half_object.u8(0x19c) = r.crash_actor.motion.u8(0x19c);
+}
 void Race::crash_car(Rider& r) {
     crash_reason(r, 2, kContactCrashRiderImpulse, kContactCrashBikeImpulse);
 }
@@ -1523,6 +1543,11 @@ void Race::crash_entry(Rider& r, int32_t reason, std::optional<std::array<int32_
     if (crash_library_) {
         if (r.crash_active) return;
         r.bike.i32(0x2f4) = 0;
+        // The crash body runs on the half object (iVar2): pre-fill the body
+        // with the half's behavior-table words before begin_crash overwrites
+        // the motion set (split-left 2056: body +0x16c/+0x140 spec words
+        // were stale zeros, skewing the body vertical vs the original).
+        r.crash_actor.motion = r.half_object;
         begin_crash(r.bike, r.crash_actor, crash_config_, crash_library_->playback[0],
                     crash_library_->fallback, uint32_t(ticks_), reason, rider_impulse, bike_impulse);
         // 0x00403d60 copies the bike words into the half (iVar2 =
@@ -1532,12 +1557,7 @@ void Race::crash_entry(Rider& r, int32_t reason, std::optional<std::array<int32_
         // makes the same copies into the crash body; the half object image
         // needs them too (split-left 2055: half ground 61 vs 37, flags 7
         // vs 4). Impulses already landed on the body, matching the half.
-        for (int off : {0x1c,  0x20,  0x24,  0x28,  0x2c,  0x30,  0x34,  0x38,  0x3c,  0x40,  0x58,  0x5c,
-                        0x60,  0xec,  0xf0,  0xf4,  0x104, 0x108, 0x10c, 0x110, 0x118, 0x11c, 0x114, 0x120,
-                        0x124, 0x128, 0x12c, 0x130, 0x134, 0x138, 0x13c, 0x140, 0x158, 0x160, 0x198, 0x1a0})
-            r.half_object.i32(off) = r.crash_actor.motion.i32(off);
-        r.half_object.u8(0x164) = 0;
-        r.half_object.u8(0x19c) = 0;
+        sync_crash_half(r);
         r.half_object.u8(0xc0) |= 3;
         // 0x00403d60 writes the crash rider animation into the rider half's
         // +0x70 block (iVar2 = *(bike+0x2fc)) - the same block the riding
@@ -2074,15 +2094,12 @@ void Race::crash(Rider& r) {
         if (r.crash_active) return;
         // traction currently raises the crash flag directly; entry applies once.
         r.bike.i32(0x2f4) = 0;
+        // Crash body runs on the half object: pre-fill behavior words (see crash_entry).
+        r.crash_actor.motion = r.half_object;
         begin_crash(r.bike, r.crash_actor, crash_config_, crash_library_->playback[0],
                     crash_library_->fallback, uint32_t(ticks_), 0);
         // 0x00403d60 half copies (see crash_entry).
-        for (int off : {0x1c,  0x20,  0x24,  0x28,  0x2c,  0x30,  0x34,  0x38,  0x3c,  0x40,  0x58,  0x5c,
-                        0x60,  0xec,  0xf0,  0xf4,  0x104, 0x108, 0x10c, 0x110, 0x118, 0x11c, 0x114, 0x120,
-                        0x124, 0x128, 0x12c, 0x130, 0x134, 0x138, 0x13c, 0x140, 0x158, 0x160, 0x198, 0x1a0})
-            r.half_object.i32(off) = r.crash_actor.motion.i32(off);
-        r.half_object.u8(0x164) = 0;
-        r.half_object.u8(0x19c) = 0;
+        sync_crash_half(r);
         r.half_object.u8(0xc0) |= 3;
         r.ride_animation = r.crash_actor.animation; // 0x00403d60: the crash rider animation is the half block
         r.crash_active = true;
@@ -2199,6 +2216,10 @@ void Race::crash_body_motion(Rider& r, int32_t dt) {
     body.route = detached.route;
     body.sample = detached.sample;
     body.previous_sample = detached.previous_sample;
+    // The half is the crash body (0x00403d60): it follows the body's words
+    // every tick, not just at entry (split-left 2056: half ground stays 61
+    // while the body goes to 0). Flags keep the entry OR (see sync_crash_half).
+    sync_crash_half(r);
     // 0x00403d60 makes the half the crash body, so the ring node and the
     // scans read its live words: the mirror follows the body while crashed
     // (live_standings takes over again on the first uncrashed step).
@@ -2264,27 +2285,39 @@ void Race::crash_recovery(Rider& r, bool player, uint32_t controls) {
 // bike move (move_bike_live) - matching 0x00407f30/0x00406890 on the half
 // node against 0x00407a90/0x004060b0 on the bike node.
 void Race::step_crash(Rider& r, bool player, uint32_t controls) {
+    // Solo freeze-hack mirror: once the crash body is 256+ from the bike at
+    // tick start the proxy has nulled the player half for good (see
+    // Rider::half_frozen). The bike node keeps running (riderless-bike move);
+    // the half node parts below stop: brain, phases, body motion, recovery.
+    if (player && freeze_actors_ && r.crash_active && !r.half_frozen) {
+        const int64_t gap = int64_t(r.crash_actor.motion.i32(0x1c)) - int64_t(r.bike.i32(0x1c));
+        if (gap <= -256 || gap >= 256) r.half_frozen = true;
+    }
+    const bool half_live = !r.half_frozen;
     // 0x00407bd0 brain for crashed riders in the solo every-tick loop (the
     // live scheduler runs ai_think via think_half): transition, state clock,
     // replan and crash-gated stamina. Dispatch is a no-op for states 8/9.
     // Split-left 2056: native state 0/ticks 0, original state 9/ticks 1.
-    ai_transition(r);
-    const int32_t brain_dt = r.bike.i32(0x18);
-    if (r.brain.state >= 0 && r.brain.state < int(r.brain.state_ticks.size()))
-        r.brain.state_ticks[size_t(r.brain.state)] += brain_dt;
-    r.brain.replan_ticks += brain_dt;
-    if (r.brain.replan_ticks > 0x3b) ai_replan(r);
-    if (ride_library_) {
-        const int crash_state = r.bike.i32(0x2f4);
-        const int passes = crash_state == 1 ? 0 : crash_state == 0 ? 1 : 2;
-        for (int i = 0; i < passes; ++i)
-            r.stamina.current = std::min(r.stamina.max, r.stamina.current + r.bike.i32(0x18));
+    // Half-think stops when the solo half is frozen (see above).
+    if (half_live) {
+        ai_transition(r);
+        const int32_t brain_dt = r.bike.i32(0x18);
+        if (r.brain.state >= 0 && r.brain.state < int(r.brain.state_ticks.size()))
+            r.brain.state_ticks[size_t(r.brain.state)] += brain_dt;
+        r.brain.replan_ticks += brain_dt;
+        if (r.brain.replan_ticks > 0x3b) ai_replan(r);
+        if (ride_library_) {
+            const int crash_state = r.bike.i32(0x2f4);
+            const int passes = crash_state == 1 ? 0 : crash_state == 0 ? 1 : 2;
+            for (int i = 0; i < passes; ++i)
+                r.stamina.current = std::min(r.stamina.max, r.stamina.current + r.bike.i32(0x18));
+        }
     }
     crash_bike_animation(r);
-    crash_phases(r);
+    if (half_live) crash_phases(r);
     crash_bike_motion(r, player);
-    crash_body_motion(r, r.bike.i32(0x18));
-    crash_recovery(r, player, controls);
+    if (half_live) crash_body_motion(r, r.bike.i32(0x18));
+    if (half_live) crash_recovery(r, player, controls);
 }
 
 int32_t Race::curvature(const Rider& r, size_t sample, int samples) const {
@@ -3954,20 +3987,30 @@ int Race::place(size_t index) const {
 
 void Race::update_halves() {
     // Rider halves mirror their bikes after the scheduler pass, before contacts.
+    // Crashed riders keep the crash-body mirror (sync_half_mirror at entry
+    // and after every body motion step): the half IS the body (0x00403d60),
+    // so mirroring the riderless bike here would clobber it (split-left
+    // 2056: half height 19903 vs bike 1543).
     for (auto& r : riders_) {
-        if (r.frozen) continue;
+        if (r.frozen || r.bike.i32(0x2f4) != 0) continue;
         const Bike& b = r.bike;
         r.half_mirror = {b.i32(0x1c),  b.i32(0x28),  b.i32(0x20), b.i32(0xf4), b.i32(0xec), b.i32(0xf0),
                          b.i32(0x10c), b.i32(0x108), b.i32(0x60), r.sample,    r.route};
     }
     // 0x004060b0 tail for riding (uncrashed) riders: distance to the finish,
     // then 0x004075f0 refreshes the place when the half's scheduler tick
-    // (+0x10) reaches +0x1f4. Frozen riders keep finish - position.
+    // (+0x10) reaches +0x1f4. Frozen riders keep finish - position; crashed
+    // riders keep the body-based distance (entry direct path + per-tick
+    // body delta in crash_body_motion).
     for (auto& r : riders_)
-        if (finish_q8_ != 0) r.finish_distance = finish_q8_ - r.bike.i32(0x1c);
+        if (finish_q8_ != 0 && r.bike.i32(0x2f4) == 0) r.finish_distance = finish_q8_ - r.bike.i32(0x1c);
     for (size_t i = 0; i < riders_.size(); ++i) {
         Rider& r = riders_[i];
-        if (r.frozen || r.bike.i32(0x2f4) != 0) continue;
+        // Frozen riders never move; crashed riders still refresh the place
+        // (0x004075f0 runs on the un-frozen half node: split-left 2057 sets
+        // place_refresh 2061 = 2057+4 while crashed, native stalled at 2057).
+        // A solo-nulled half (half_frozen) stops refreshing (2105 stays).
+        if (r.frozen || r.half_frozen) continue;
         const int32_t last = r.sched_live ? r.sched_last : ticks_;
         if (r.place_refresh > last) continue;
         int place = 1; // 0x00407550 over the other riders

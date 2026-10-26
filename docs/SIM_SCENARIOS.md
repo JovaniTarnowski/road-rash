@@ -241,9 +241,13 @@ establish native traffic parity.
 
 - `napa-solo-split-left`, `napa-solo-split-right`: branch commits at the first split (solo).
   Captured October 26 (6,681 ticks each, HUMAN=1, git-ignored; scripts identical
-  through tick 4,500). Replay identical through tick 2,055 (contact-gate,
-  flash, half-entry and brain fixes, October 26); next gap at 2,056 is
-  crash-motion (riderless-bike vertical/walls stand-ins, plan 11 Task 4).
+  through tick 4,500). Replay identical through the full 6,681 ticks with 0
+  sim-field divergences (19 golden-only; 8/94 rpm-timing notes on the proven
+  nondeterministic sound-thread channel). Covers the first crash (static
+  class-2 gap at tick 2055), the solo freeze-hack half nulling at 2102, and
+  the full slide-out; the split branch commit itself was never reached (the
+  crash ends forward progress). Remaining: jump, fight/contact,
+  traffic-solo/field (separate captures).
 - `napa-solo-jump`: airborne ticks on crest sections (solo).
 - `napa-field-l5`: 14 opponents at level 5.
 - `napa-fight`, `napa-contact`: combat and contact scenarios.

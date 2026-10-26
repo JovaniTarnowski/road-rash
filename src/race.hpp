@@ -258,6 +258,15 @@ struct Rider {
     CrashActor crash_actor;
     ActorAnimationState crash_bike_animation;
     bool crash_active = false;
+    // Solo oracle freeze-hack mirror (sim_freeze_others): the proxy nulls the
+    // think/move of every non-player node at the start of each step, sparing
+    // only 0x00434660 halves within 256 of the player bike. Once the crash
+    // body flies 256+ from the bike the player half is nulled for good
+    // (split-left 2101: diff 254 spared; 2102: diff 268 nulled, brain/anim/
+    // sched frozen, rider.1 rows gone, crash stays 1 with no remount).
+    // Solo-only (freeze_actors_); the live game never runs this path.
+    // Latched: the hack never restores a nulled node.
+    bool half_frozen = false;
     int32_t crash_timer = 0;
     int colour = 0; // rider colour remap index (0x0046e158)
     RiderStats stamina;
