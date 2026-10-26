@@ -4207,7 +4207,9 @@ void Race::collide_riders() {
     // Runtime flags are the template byte | 4: bikes and pedestrians (3)
     // take both roles, rider halves (0) neither. Free cars stay in
     // collide_traffic (not in this walk: their list order is approximate);
-    // pedestrian pairs (0x00440760 on both) are not ported.
+    // pedestrian pairs never contact: 0x004368f0 gates every pair on
+    // (cat_a & cat_b & 3) != 0, and pedestrians are type 0x20 (& 3 == 0),
+    // so two pedestrians pass through each other in the original too.
     build_scan_list();
     auto bike_of = [&](const ScanObject& o) -> Bike& {
         return o.rider >= 0 ? riders_[size_t(o.rider)].bike

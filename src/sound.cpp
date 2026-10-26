@@ -3,6 +3,7 @@
 #include "exe_tables.hpp"
 #include "race.hpp"
 #include "race_music.hpp"
+#include "traffic.hpp"
 #include <algorithm>
 #include <cmath>
 #include <climits>
@@ -353,13 +354,32 @@ void SoundSystem::update(Race& race) {
         play_loop(slot, frequency, volume, 0);
     }
     // 0x00434c40 / 0x004350e0: the two nearest other vehicles use slots 3/4 and 5/6.
+    // 0x004350e0 walks the rider list and the car pool, keeping the two closest
+    // objects whose type is 4 (bike) or 0x10 (car) by |pos - camera|.
+    // 0x00434fd0 routes bikes through 0x004349c0 + 0x00435030 (slot base, EngOther)
+    // and cars through 0x00435090 (slot base+1, Engcar11): frequency doppler*0x3b,
+    // volume (cc*0x4fff/0x6400)*level, pan +0xd4.
     if (!others_off_) {
-        std::vector<std::pair<int32_t, size_t>> near;
+        struct Candidate {
+            int32_t dist = INT32_MAX;
+            bool is_car = false;
+            size_t index = 0;
+        };
+        std::vector<Candidate> near;
         for (size_t i = 1; i < riders.size(); ++i) {
             const int32_t d = std::abs(riders[i].bike.i32(0x1c) - listener_position_);
-            if (d < hearing) near.emplace_back(d, i);
+            if (d < hearing) near.push_back({d, false, i});
         }
-        std::sort(near.begin(), near.end());
+        if (const TrafficSystem* traffic = race.traffic()) {
+            for (size_t i = 0; i < traffic->cars().size(); ++i) {
+                const auto& car = traffic->cars()[i];
+                if (!car.active) continue;
+                const int32_t d = std::abs(car.position - listener_position_);
+                if (d < hearing) near.push_back({d, true, i});
+            }
+        }
+        std::sort(near.begin(), near.end(),
+                  [](const Candidate& a, const Candidate& b) { return a.dist < b.dist; });
         for (int k = 0; k < 2; ++k) {
             const int base = k == 0 ? 3 : 5;
             if (size_t(k) >= near.size()) {
@@ -367,13 +387,25 @@ void SoundSystem::update(Race& race) {
                 stop(base + 1);
                 continue;
             }
-            const size_t i = near[size_t(k)].second;
+            const Candidate c = near[size_t(k)];
+            if (c.is_car) {
+                const TrafficSystem* traffic = race.traffic();
+                const auto& car = traffic->cars()[c.index];
+                const int32_t velocity = car.motion.i32(0x108) != 0 ? car.motion.i32(0x108) : car.speed;
+                int32_t doppler, vol, pan;
+                distance(car.position, car.lateral >> 8, velocity, doppler, vol, pan);
+                // 0x00435090: car engine on slot base+1 (Engcar11).
+                stop(base); // bike slot silent when a car holds this rank
+                play_loop(base + 1, doppler * 0x3b, (vol * 0x4fff / 0x6400) * others_, pan);
+                continue;
+            }
+            const size_t i = c.index;
             Bike& b = riders[i].bike;
             update_engine_rpm(b);
             int32_t doppler, vol, pan;
             distance(b.i32(0x1c), b.i32(0x28) >> 8, b.i32(0x108), doppler, vol, pan);
             const int32_t r = b.i32(0x2dc);
-            stop(base + 1); // bikes use the EngOther slot; cars (plan 05) use the next
+            stop(base + 1); // car slot silent when a bike holds this rank
             play_loop(base, (doppler * r) / 512, (vol * 0x9ffe / 0xef10) * others_, pan);
         }
     }

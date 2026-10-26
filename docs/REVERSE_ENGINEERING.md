@@ -631,6 +631,16 @@ The course screens share one item array; the sixth item is copied from `0x004691
 - RPM is `gear_ratio[+0x23c]×speed/256 + 0x2000`, moving at most ±0x2000 per update, +0x1000 while airborne, −0x1000 after a crash.
 - Engine frequency is `doppler × rpm / 512` Hz; volume is `(+0xcc × 0x9ffe / 0xef10) × level`.
 - The two vehicles nearest the camera (`0x004350e0`) use slots 3/5 (bikes) or 4/6 (cars).
+- `0x00434fd0` routes the two ranks: bikes (`+0xc4 == 4`) refresh rpm
+  (`0x004349c0`), play slot base (`0x00435030`) and stop base+1; cars
+  (`+0xc4 == 0x10`) stop slot base and play slot base+1 through `0x00435090`:
+  frequency `doppler(+0xc8) × 0x3b`, volume `(+0xcc × 0x4fff / 0x6400) × level`,
+  pan `+0xd4`. Car Doppler/attenuation come from the same `0x00434db0`
+  core, fed with the car position/lateral/velocity.
+- Contact pairing (`0x004368f0`): every candidate pair must satisfy
+  `(cat_a & cat_b & 3) != 0` before separation/contact run. Pedestrians are
+  type `0x20` (`& 3 == 0`), so pedestrian pairs never contact in the
+  original; the native scan passes them through with no handler.
   - Sound-helper REA re-confirmation (October 12, 2026; plan 11a/13 port input): pinned REA 6.4.0 pseudocode whitespace-identical for `0x004349c0` rpm (955 chars — the `update_engine_rpm` source), `0x00434ce0` engine mix (720: `0x00434db0` + rpm + Doppler/volume + normal/nitro/tunnel buffer routing) and `0x00436830` sound event (965). `0x0044efa0` horn is absent from REA's procedure database (valid 651-char export; single `rand()%10==1` draw + `0x1f8` timer gate) — port from the project export. Files: `analysis/oracle/rea-4349c0-rpm.md`, `rea-434ce0-engine.md`, `rea-436830-soundevt.md` (disc-derived, git-ignored).
   - Spatial-helper REA re-confirmation (October 12, 2026; plan 13 Task 1 siren/engine input): pinned REA 6.4.0 pseudocode whitespace-identical for `0x00435840` siren spatial (1805 chars: 0x1e00 range gate, `|dp| − min/2 + |dl|` distance, `((0x1e00−d)×8/256)²/256` volume, Doppler `0x13b0000/(0x13b00−Δv)`, octant pan ×0x62) and `0x00434db0` engine select (2043: same distance/volume core, `+0xd8` approach/depart flag, `+0xcc/+0xc8/+0xd4` Doppler/volume/pan stores). The distance/volume formulas in the bullets above are now double-confirmed at source level; no RNG in either helper. Files: `analysis/oracle/rea-435840-spatial.md`, `rea-434db0-engsel.md` (disc-derived, git-ignored).
   - Engine-slot REA re-confirmation (October 12, 2026; plan 13 Task 1 input — REA + parallel build check): pinned REA 6.4.0 pseudocode whitespace-identical for `0x004350e0` nearest-two select (1625 chars: ring walk keeping the two closest bikes/cars by `|pos − camera|`, slots 3/5 bikes or 4/6 cars), `0x004362e0` level curve (3724: 101-entry `curve[level·master/100]` table build + channel stores) and `0x00414180` playing check (167: vtable playing-status query, skip-retrigger gate). No RNG in any of the three. Build passes in parallel (`rr-game` links). Files: `analysis/oracle/rea-4350e0-engslots.md`, `rea-4362e0-levels.md`, `rea-414180-dsplaying.md` (disc-derived, git-ignored).

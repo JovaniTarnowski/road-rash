@@ -53,6 +53,47 @@ Detailed evidence is in [REVERSE_ENGINEERING.md](REVERSE_ENGINEERING.md) and tes
 
 ## Timeline
 
+### October 26, 2026: gameplay and frontend open items closed (police live, car engines, driven saves, menu layout)
+
+- **Live police.** `Race::spawn_cop` runs from the DZHR actor branch and the
+  periodic 4096-tick `police_spawn_due` gate; the cop chases through the
+  rider think/move path, posts siren events, arrests into `busted_` and the
+  BUSTED video/results flow. `police_test` pins arrest boundaries, the
+  1024-case original arrest table, pursuit/brain words, the live tick-4096
+  spawn/chase/arrest and the on-foot arrest. Original-capture tick parity
+  for the cop pursuit remains open (fixtures absent in this tree).
+- **Car engines.** `SoundSystem::update` now walks bikes and traffic cars
+  together for the two nearest vehicles (`0x004350e0`): bikes keep slots 3/5
+  (`EngOther`, rpm route `0x004349c0`/`0x00435030`), cars take slots 4/6
+  (`Engcar11`, `0x00435090` Doppler*0x3b route). `Race::traffic()` exposes
+  the pool; `sound_test` pins slot names and that a near car is audible in
+  the others channel while far vehicles stay silent.
+- **Walls/crashes and car/pedestrian branches.** Walls (`0x0043a610`), crash
+  entry/motion/recovery (`0x00403d60` family) and rider/car/pedestrian contact
+  were already ported; the only `crash()` fallback is the bank-less fixture
+  path. Pedestrian pairs are explicitly no-contact, faithful to the
+  `0x004368f0` `(cat_a & cat_b & 3) != 0` gate (peds are type `0x20`).
+- **Race MIDI, sirens.** `RaceMusicPlayer::play_race` (SBKGRNG1..5 + KLOWN)
+  is hooked at race start/stop with silent-no-op fallback; `music_test`
+  streams 30 s of SBKGRNG4 audibly. Sirens (slots 30/31, event 19) were
+  already wired and stay pinned by `sound_test`.
+- **Frontend.** Jukebox, sound mix and controls were already implemented and
+  stay pinned by `frontend_test`. Mano-a-mano stays disabled; online
+  multiplayer (plan 34) is in scope per the owner's October 26 decision.
+- **Driven-career saves.** `career-test --corpus` now drives a real-table
+  career (choose Cydney, win City, buy an affordable upgrade, save) and pins
+  reload state equality plus byte identity, alongside the seeded
+  original-writer `save-seed-20261026.rrs` check.
+- **Menu layout.** `frontend_test` now sweeps all 223 original items (2
+  scrollable below the fold, 28 hidden placeholders) plus the native screens,
+  with main-menu 1x/2x/4x ink checks and the menu-09 masked capture
+  (60% masked, 98% exact, 0% large-diff). Full unmasked pixel equality stays
+  open on GDI-hinting text shapes.
+- Gate: `sound-test`, `career-test` (+`--corpus`, `--save-corpus`),
+  `frontend-test`, `police-test`, `crash-test`, `traffic-test`,
+  `pedestrian-test`, `car_contact-test`, `music-test`, `race-test` all pass
+  in `build-agent-open`.
+
 ### October 26, 2026: online multiplayer joins the definition of done; plan 34 redesigned
 
 The owner decided two things:

@@ -340,6 +340,7 @@ class Race {
     // 0x0044dd90 with the per-step camera advance). The random-call
     // interleaving against the original's scheduler is not verified.
     void set_traffic(TrafficSystem* t);
+    const TrafficSystem* traffic() const { return traffic_; }
     // Nulled-pool solo: keep timer/density draws, never place (Task 5/7).
     void set_spawn_enabled(bool v);
     // Pedestrians (plan 24 Task 4, src/race_pedestrians.cpp): spawned as the

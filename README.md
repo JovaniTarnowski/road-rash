@@ -28,12 +28,24 @@ Still open (see `docs/CURRENT_STATUS.md` and `docs/PROGRESS.md`):
 
 - Simulation parity outside those captures: other courses/levels, human
   paths beyond the receipted run, isolated fight/steal/traffic cases.
-- Gameplay: live police, wall/crash-sequence stand-ins, some car/pedestrian
-  branches, race MIDI, sirens/car engines.
+- Gameplay: live police (periodic 4096-tick and DZHR spawns, chase, siren,
+  arrest, BUSTED flow) is implemented and native-tested; original-capture
+  comparison remains open. Walls (`0x0043a610`), crash entry/motion/recovery
+  (`0x00403d60` family) and rider/car/pedestrian contact branches are ported;
+  pedestrian pairs never contact in the original (`0x004368f0` `& 3` gate),
+  and the traffic draw order approximation is visual-only. Race MIDI
+  (`SBKGRNG1..5` + `KLOWN` via `RaceMusicPlayer`, hooked at race start/stop),
+  sirens (slots 30/31, event 19) and car engines (slots 4/6, `Engcar11`,
+  `0x00435090` Doppler route) play; exact AWE/MIDI timbre remains open.
 - Frontend: jukebox, sound mix and controls are implemented; mano-a-mano
-  awaits the multiplayer decision. A seeded original-writer save round-trips,
-  but a driven-career save round trip and full menu pixel acceptance remain
-  open (main-menu capture and layout checks exist).
+  stays disabled — online multiplayer (plan 34) is in scope per the owner's
+  October 26 decision and is not yet implemented. Seeded original-writer saves round-trip byte-identical and
+  driven-career saves round-trip (win + purchase + save + reload pinned in
+  `career-test --corpus`). Menu layout acceptance covers all 223 original
+  items plus native screens (2 scrollable, 28 hidden placeholders) with
+  main-menu 1x/2x/4x checks and the menu-09 masked capture (60% masked,
+  98% exact, 0% large-diff); full unmasked pixel equality remains open on
+  GDI-hinting text shapes.
 - Android builds and packages but hardware validation (render, input,
   import, lifecycle, performance) is pending.
 - Linux/Windows builds do not exist yet.

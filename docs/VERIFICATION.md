@@ -1,5 +1,26 @@
 # Verification log (all sessions September 28, 2026)
 
+## Gameplay and frontend open items (October 26, 2026)
+
+Owned Debug build `build-agent-open` (`cmake -S . -B build-agent-open`,
+`cmake --build build-agent-open --parallel`):
+
+- `sound-test ../cdrom/ROADRASH`: 0 failures, including the new car-engine
+  pins (slots 4/6 `Engcar11` vs 3/5 `EngOther`; near car audible in the
+  others channel, far vehicles silent).
+- `career-test`, `career-test --corpus ../cdrom/ROADRASH`,
+  `career-test --save-corpus`: 0 failures, including the new driven-career
+  round trip (Cydney, win City, affordable upgrade, save, reload equality +
+  byte identity) and the seeded `save-seed-20261026.rrs` check.
+- `frontend-test ../cdrom/ROADRASH`: 0 failures; all 223 original items
+  swept (2 scrollable below the fold, 28 hidden placeholders), main-menu
+  1x/2x/4x ink checks, menu-09 masked capture (60% masked, 98% exact,
+  0% large-diff).
+- `police-test`, `crash-test`, `traffic-test`, `pedestrian-test`,
+  `car_contact-test`, `music-test ../cdrom/ROADRASH`, `race-test`: 0 failures
+  (police live spawn/chase/arrest and on-foot arrest pass; cop oracle
+  fixtures absent in this tree, skipped).
+
 ## Napa contact scenario to tick 3840, pinned single-static divergence (October 26, 2026)
 
 - New capture `sim-napa-contact` (course 4, seed 1, field/HUMAN=1,

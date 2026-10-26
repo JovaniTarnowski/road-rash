@@ -2,6 +2,7 @@
 #include "bike.hpp"
 #include "race.hpp"
 #include "sound.hpp"
+#include "traffic.hpp"
 #include <algorithm>
 #include <cmath>
 #include <iostream>
@@ -241,6 +242,70 @@ int main(int argc, char** argv) {
         mixer.render(out.data(), 2048);
         sound.stop_race();
         mixer.render(out.data(), 64);
+    }
+    {
+        // Car engines (0x00434c40 / 0x004350e0 / 0x00434fd0 / 0x00435090):
+        // the two nearest vehicles by |pos - camera| among bikes (type 4)
+        // and cars (type 0x10); bikes play slots 3/5 (EngOther), cars play
+        // slots 4/6 (Engcar11) with frequency doppler*0x3b. Pin the routing:
+        // slots 4/6 hold the car engine, and a near car is audible in the
+        // others channel while a far opponent alone is silent.
+        check(std::string(rr::SoundSystem::effect_name(4)) == "Engcar11" &&
+                  std::string(rr::SoundSystem::effect_name(6)) == "Engcar11",
+              "car engine slots hold Engcar11");
+        check(std::string(rr::SoundSystem::effect_name(3)) == "EngOther" &&
+                  std::string(rr::SoundSystem::effect_name(5)) == "EngOther",
+              "bike slots hold EngOther");
+        const auto t = rr::read_physics_tables(exe);
+        const auto specs = rr::read_bike_specs(assets.read("DATA/BIKESPEC.RSC"));
+        rr::Race car_race(straight(4000), straight(4000), t, specs.at(7), 90);
+        check(car_race.traffic() == nullptr, "race starts with no traffic attached");
+        rr::VehicleLibrary library(assets.read("DATA/CARS/NAPA.CAR"), exe);
+        rr::TrafficSystem traffic(library, exe);
+        traffic.configure(6);
+        car_race.set_traffic(&traffic);
+        check(car_race.traffic() == &traffic, "race exposes attached traffic");
+        // Park one opponent far outside hearing and one car at the camera.
+        if (car_race.riders().size() < 2) car_race.riders().push_back(rr::Rider{});
+        car_race.riders()[1].bike.i32(0x1c) = int32_t(car_race.camera_position()) + 0x10000;
+        car_race.riders()[1].bike.i32(0x28) = 0;
+        car_race.riders()[1].bike.i32(0x108) = 0;
+        auto& car = traffic.cars_mut()[0];
+        car = rr::TrafficCar{};
+        car.active = true;
+        car.kind = 0;
+        car.position = int32_t(car_race.camera_position()) + 0x200;
+        car.lateral = car_race.camera_x() * 256;
+        car.speed = 8000;
+        car.motion.i32(0x108) = 8000;
+        car.motion.i32(0x18) = 1;
+        rr::Mixer car_mixer(48);
+        rr::SoundSystem car_sound(assets, car_mixer, curve, 2);
+        rr::SoundLevels others_only;
+        others_only.effects = others_only.engine = others_only.siren = 0;
+        others_only.others = 80;
+        car_sound.set_levels(others_only);
+        car_sound.start_race(7, 3);
+        car_sound.update(car_race);
+        std::vector<int16_t> car_block(2 * 1024, 0);
+        car_mixer.render(car_block.data(), 1024);
+        double car_energy = 0;
+        for (auto v : car_block) car_energy += double(v) * v;
+        check(car_energy > 0, "near traffic car audible in others channel");
+        // Move the car out of hearing: the far opponent alone stays silent.
+        car.position = int32_t(car_race.camera_position()) + 0x10000;
+        car.active = true;
+        car_sound.update(car_race);
+        std::vector<int16_t> far_block(2 * 1024, 0);
+        car_mixer.render(far_block.data(), 1024);
+        // Drain one block: the car voice stops, the far bike stays out of range.
+        car_sound.update(car_race);
+        car_mixer.render(far_block.data(), 1024);
+        double far_energy = 0;
+        for (auto v : far_block) far_energy += double(v) * v;
+        check(far_energy == 0, "far vehicles stay silent in others channel");
+        car_sound.stop_race();
+        car_race.set_traffic(nullptr);
     }
     rr::MusicPlayer music(assets, mixer);
     music.play(13);

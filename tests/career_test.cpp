@@ -165,6 +165,34 @@ int main(int argc, char** argv) {
         select_mode(b, real, GameMode::big_game);
         choose_character(b, real, 3); // Cydney -> personality 2
         check(b.state.cash == 1000 && b.state.bike == real.level_bike[2 * 5], "Cydney starts with $1000");
+        // Driven-career save round trip (plan 13 Task 6 Step 1 remainder):
+        // drive a career through a win, a purchase and a save, then reload.
+        // The bytes must round-trip identically and reload the driven state.
+        start_race(b, 1);
+        auto rep = finish_race(b, real, RaceOutcome::won, 0);
+        check(rep.screen == screen_id::won && b.state.qualified == 1, "driven win qualifies City");
+        const uint32_t after_prize = b.state.cash;
+        // Buy the cheapest affordable upgrade if possible; otherwise keep the bike.
+        int upgrade = -1;
+        for (int bike = 0; bike < 15; ++bike) {
+            Career probe = b;
+            if (buy_bike(probe, real, bike) == PurchaseResult::bought) {
+                upgrade = bike;
+                break;
+            }
+        }
+        if (upgrade >= 0) check(buy_bike(b, real, upgrade) == PurchaseResult::bought, "driven purchase");
+        b.state.name = {'D', 'R', 'I', 'V', 'E', 'N'};
+        const auto driven_bytes = write_save(b);
+        check(driven_bytes.size() == 0xa0, "driven save size");
+        const Career reloaded = read_save(driven_bytes, real);
+        check(reloaded.state.cash == b.state.cash && reloaded.state.bike == b.state.bike &&
+                  reloaded.state.qualified == b.state.qualified &&
+                  reloaded.state.character == b.state.character &&
+                  std::string(reloaded.state.name.data()) == "DRIVEN",
+              "driven save reloads state");
+        check(write_save(reloaded) == driven_bytes, "driven save byte identity");
+        (void)after_prize;
     }
     if (argc > 1 && std::string(argv[1]) == "--save-corpus") {
         // Original-writer file from the RR_ORACLE_SAVE capture (plan 13 Task 6
