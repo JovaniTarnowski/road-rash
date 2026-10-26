@@ -1,5 +1,53 @@
 # Verification log (all sessions September 28, 2026)
 
+## Crash-entry finish recompute and L5d 2267 -> 2278 (October 26, 2026)
+
+- Baseline `14df8b2`. `src/race.cpp` `crash_entry` (contact path) and
+  `Race::crash` (half-node entry) now mirror the `0x00403d60` tail:
+  after `begin_crash` + `sync_half_mirror`, when `finish_q8_ != 0` and
+  the bike holds a live slice (`bike_slice_present`, proxy for body
+  `+0x2c != 0`), set
+  `r.finish_distance = finish_q8_ - body_pos`
+  (`r.crash_actor.motion.i32(0x1c)`). This is the
+  `thunk_FUN_00407410(body)` direct path
+  (`DAT_004b6e58 - body+0x1c` when finish known and slice present;
+  `analysis/decompiled/00403d60.c:135`,
+  `analysis/decompiled/00407410.c:20-24`; REA 6.4.0 `function
+  0x00407410`, Ghidra 12.1.4, Node v25.8.1, `JAVA_HOME` openjdk@21).
+  It discards any split-branch walk offset at crash entry, which is
+  what lets a branch rider rejoining the trunk match (L5d tick 2267:
+  native rider 9, slot 9/10 overtake, +374 move, crash 0->1,
+  `-23 -> 0` reset; `RR_FIELD_TRACE=9`).
+- `0x004060b0` gate (from `analysis/original-disassembly.txt`
+  `4060e4-4060f2` / `406165-40616e`): the same-node incremental vs
+  `0x00407410` recompute test compares `*(slice_ptr)` (first DWORD =
+  next link) before/after the `0x0043a580` move, not node IDs.
+  Native still compares `road[sample].node`; the slice-identity port
+  (plan-17 ring work) stays open. The crash-entry reset above is
+  independent of that gate.
+- `0x00406890` (`analysis/decompiled/00406890.c:15-16`): crashed-half
+  callback does `+0x1f8 += +0x30 - +0x1c` (body delta). Native
+  `crash_body_motion` already does `body_before - body_after`; with
+  the entry reset both sides integrate the same body delta
+  (half_mirror/body positions already match).
+- Replays with owned Debug build `build-agent-crash-2267`:
+  L1/schema2/L5 `2400 identical`; L5e `2400 identical (+43
+  golden-only)`; strict human `sched-human-cov2-20261017`
+  `1431 identical`; L5d 2267 gone, advances to tick 2278
+  (`rider.10.lateral original 62008 native 49976`, riderless-bike
+  lateral for the same crashed rider; pos/speed/crash/finish/RNG
+  identical). Re-pinned as known-divergence (diagnostic, not
+  acceptance). Full owned-Debug gate: **107/107 passed** (see
+  `VERIFICATION.md`; sanitizers/Android not run: no
+  sanitizer-sensitive or Android-affecting change beyond the two
+  finish lines + pins).
+- Remaining: tick-2278 riderless-bike lateral (`0x0043a580` /
+  `0x0043a610` wall path for the crash bike, steer 0 vs -2);
+  uncrashed `0x004049c0:267-268` trailing `0x00407410` not ported
+  (deliberately: would reset branch offsets on every contact);
+  full `0x00407410` branch-aware walk not ported (the `+23/-23/+298`
+  offsets from tick 2240 onward; plan-17 ring/slice work).
+
 ## Slot-rule lane validity and L5 removal-run closure (October 26, 2026)
 
 - Baseline `61b9a0c` through `32605ef` (docs/format only in between).

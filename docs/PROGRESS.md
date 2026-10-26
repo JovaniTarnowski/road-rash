@@ -53,6 +53,21 @@ Detailed evidence is in [REVERSE_ENGINEERING.md](REVERSE_ENGINEERING.md) and tes
 
 ## Timeline
 
+### October 26, 2026: crash-entry finish recompute (L5d 2267 -> 2278)
+
+- `0x00403d60` tail ported in `Race::crash_entry` (contact) and
+  `Race::crash` (half-node entry): after the body copy + mirror sync,
+  `finish_distance = finish_q8_ - body_pos` when the finish is known
+  and the bike holds a live slice. This is the `0x00407410` direct
+  path on the crash body, discarding split-branch walk offsets at
+  crash entry. L5d advances 2267 -> 2278 (single riderless-bike
+  lateral word, everything else identical; re-pinned as a known
+  divergence). L1/schema2/L5/L5e still 2400/2400; strict human still
+  1431/1431; full owned-Debug gate 107/107.
+  Remaining: tick-2278 crash-bike lateral (`0x0043a580`/`0x0043a610`
+  path); uncrashed contact trailing `0x00407410` (deliberately open);
+  full branch-aware `0x00407410` walk (plan-17).
+
 ### October 26, 2026: lane-validity stop port closes the L5 removal runs
 
 - `0x0044e710:122-215` ported into `TrafficSystem::plan_speed` with

@@ -13,8 +13,8 @@
   },
   "napa-field-l5d.tsv": {
     "trace_sha256": "5064e7d57197e95c2f7e4b156199dd24ac1b8a8e2224c6c1e0f7092ba5fd5abb",
-    "divergence": "first divergence at frame 2266 (tick 2267): rider.9.raw_1f8 original 1455026 native 1455003 (native rider 9)",
-    "reason": "Plan 10 Task 6 scenario napa-field-l5 re-captured with the w2c/we8 proxy: 14 opponents, display level 5, demo driver, single green anchor. The slot-rule lane-validity port (src/traffic.cpp, verified end to end on the L5e kind-0 removal) resolves the old tick-2002 removal divergence (native now stops/steps with the original: +70, full stop, lane toward center). Replay advances to tick 2267, where a single rider finish-distance word differs by 23 with all cars/riders/RNG identical (RR_FIELD_ALL shows no other diffs): native takes the same-node incremental path while the original recomputes (split/merge tracker handover, 0x00407410 area, a known-open item per CURRENT_STATUS). Diagnostic only, not acceptance.",
-    "output_sha256": "2ec738831e2c387c106f9647534e95cc18e28a13f0d27c081c9c47beb1f5d6b5"
+    "divergence": "first divergence at frame 2277 (tick 2278): rider.10.lateral original 62008 native 49976 (native rider 9)",
+    "reason": "Plan 10 Task 6 scenario napa-field-l5 re-captured with the w2c/we8 proxy: 14 opponents, display level 5, demo driver, single green anchor. The crash-entry 0x00407410 recompute (src/race.cpp crash_entry/crash, direct finish - body_pos when finish known and slice present, mirroring the 0x00403d60 tail) resolves the old tick-2267 finish-distance divergence (branch-rider -23 offset reset to trunk on crash entry; verified slot 9/10 overtake: native rider 9 +374 move, crash 0->1, finish now matches). Replay advances to tick 2278, where the same crashed rider's riderless-bike lateral differs by 12032 (49976 vs 62008, steer 0 vs -2; pos/speed/crash/finish/RNG identical): the 0x0043a580 riderless-bike lateral / 0x0043a610 wall path for the crash bike, a known-open item (next slice). Diagnostic only, not acceptance.",
+    "output_sha256": "17af24b1ed5475145412a5e6f71fc275b592327ab7572638fd5a440150cb3f22"
   }
 }

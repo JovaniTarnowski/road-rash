@@ -1502,6 +1502,13 @@ void Race::crash_entry(Rider& r, int32_t reason, std::optional<std::array<int32_
         // The half is now the crash body (0x00403d60): its mirror reads the
         // copied body words even before the first body motion step.
         sync_half_mirror(r);
+        // 0x00403d60 tail: thunk_FUN_00407410 on the crash body. With the
+        // finish known and a live slice (+0x2c, i.e. bike_slice_present)
+        // the original takes the direct path (finish - body position),
+        // discarding any split-branch walk offset. That reset is what lets
+        // a branch rider rejoining the trunk (e.g. L5d tick 2267) match.
+        if (finish_q8_ != 0 && r.bike_slice_present)
+            r.finish_distance = finish_q8_ - r.crash_actor.motion.i32(0x1c);
         return;
     }
     // Stand-in (no crash library): the shared helper already computed the
@@ -2026,6 +2033,10 @@ void Race::crash(Rider& r) {
         r.crash_actor.sample = r.sample;
         r.crash_actor.previous_sample = r.previous_sample;
         sync_half_mirror(r);
+        // 0x00403d60 tail (same as crash_entry): recompute the half's
+        // +0x1f8 on the crash body; direct when the finish is known.
+        if (finish_q8_ != 0 && r.bike_slice_present)
+            r.finish_distance = finish_q8_ - r.crash_actor.motion.i32(0x1c);
         return;
     }
     // Simplified stand-in for 0x00403d60: fall, slide to a stop, then remount on the road.
