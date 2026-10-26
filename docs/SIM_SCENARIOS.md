@@ -260,6 +260,16 @@ establish native traffic parity.
   fallback), crash stamina (+3/tick at crash 2 via the wrapper regen),
   and walk-back auto-heading (raw `0x7800` gate). No CTest registration
   (golden-only suffix).
+- `napa-contact` captured October 26: course 4/seed 1/field/HUMAN=1,
+  4,200-word throttle-only script (isolate contact, no combat),
+  FRAMES=4500, ended 4,381 via the quit rule (validated partial).
+  Replay identical through tick 3840 with 0 sim-field divergences
+  (1469 ring-front via half-image camera, 2700 half `+0x1a0` link
+  excluded as a host address, 2724 remount clears the half crash bits).
+  First divergence tick 3841: single static glance the golden skips --
+  the 3x BORR rule (`0x004373f0:47`) needs sub-slice `+0xac` bit
+  `0x4000`, whose writer is not in the export set (triple required at
+  the 2055 crash, spurious here; pinned, no golden touched).
 - `napa-traffic-solo`, `napa-traffic-field`: traffic scenarios.
 
 ## October14 forensic SIM recovery (not acceptance)

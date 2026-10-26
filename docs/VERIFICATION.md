@@ -1,5 +1,32 @@
 # Verification log (all sessions September 28, 2026)
 
+## Napa contact scenario to tick 3840, pinned single-static divergence (October 26, 2026)
+
+- New capture `sim-napa-contact` (course 4, seed 1, field/HUMAN=1,
+  4,200-word throttle-only script, FRAMES=4500): ended at 4,381 ticks
+  via the `0xb4` quit rule; validated as a partial (`validate
+  --simulation --frames 4381`): header, contiguous ticks 1-4381, EXE
+  hash, exit 0, `control_branch human`, `complete true`. Promoted to
+  `analysis/oracle/sim-napa-contact.tsv` (git-ignored). Trace
+  `7ea88dc3…`. No accepted capture overwritten.
+- Owned Debug build `build-solo-split-845` (`oracle-sim-test`, auto
+  human): replay identical through tick 3840 with 0 sim-field
+  divergences. Fixes along the way: camera follows the half image
+  (`0x00437c30` reads `*(player+0x2fc)+0x138`; post-move pre-contact
+  mirror, so contact shoves no longer leak into the ring -- tick 1469
+  lag gone); half `+0x1a0` contact-link words excluded as host
+  addresses (20986896 = bike node at 2700); remount clears the half
+  crash bits (`+0xc0` 7 -> 4 at the 2724 walk-back remount).
+- First divergence at tick 3841: RNG draw (2 native, 0 golden) plus the
+  glance response -- a single-box BORR static the native triple-wide
+  rule overlaps marginally. Root-caused to the `0x004373f0` triple
+  gate (sub-slice `+0xac` bit `0x4000`): no writer found in the export
+  set, triple required at the 2055 crash but spurious here. Pinned
+  without touching goldens; see the SIM_SCENARIOS entry and the
+  `napa-contact-20261026` handoff. No CTest registration.
+- No regressions at pin: splits 6681 each, fight 2581, cov2 1431,
+  script 1801, L1/schema2 2400 (all clean/unchanged).
+
 ## Napa fight scenario fully green (October 26, 2026)
 
 - New capture `sim-napa-fight` (course 4, seed 1, field/HUMAN=1, 2,400-word

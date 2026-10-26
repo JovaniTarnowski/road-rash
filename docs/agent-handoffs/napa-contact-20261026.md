@@ -47,8 +47,42 @@ then. Ghidra/REA: project export first, REA 6.4.0 spot-checks only.
 - Early lateral "jumps" >3000 are row-reassignment artifacts (grid
   spawn/list order), not motion.
 
+## Contact replay: green through 3840, pinned at 3841 (single static)
+
+- Capture validated as a partial (`validate --simulation --frames 4381`):
+  header, 4,381 contiguous ticks 1-4381, EXE hash, exit 0,
+  `control_branch human`, `complete true`. Promoted to
+  `analysis/oracle/sim-napa-contact.tsv` (git-ignored). Trace
+  `7ea88dc3…`. No accepted capture overwritten.
+- Native replay (`oracle-sim-test`, auto human): `1469` ring-front
+  identical after the camera-follow fix (half image, not bike words;
+  contact shoves no longer leak into the ring); `2700` half `+0x1a0`
+  link word excluded as a host address (non-state, like `bike_44`);
+  `2724` remount clears the half crash bits; reaches tick 3840 with 0
+  sim-field divergences.
+- First divergence at tick 3841: RNG draw (2 draws native, 0 golden)
+  plus the full glance response (lateral +5376, speed -1148, steer and
+  steer-rate kicks): a single-box BORR static at lateral units 1372
+  (sample 372, box `[-44544,-2048]` pre-triple) overlaps the player
+  only under the 3x wide rule (`0x004373f0:47-50`: `|units| > 0x3ff`,
+  one box, sub-slice `+0xac` bit `0x4000` clear).
+- Root-cause analysis (no porting, per time-box): native always
+  triples (no writer for the bit found in the export set; `rg 0xac`
+  finds only readers in `004373f0`/`00446250`/`004463e0`). The golden
+  demonstrably does NOT triple here (else it would contact
+  identically), yet the triple IS required elsewhere (removing it
+  breaks the 2055 crash replay, the fight RNG and the solo splits).
+  So the bit varies per slice, but its writer is not in the available
+  exports -- the rule cannot be faithfully ported without REA on the
+  ring build/draw paths. No golden touched.
+- The `+0x1a0` contact-link words are host addresses (20986896 = bike
+  node at tick 2700): excluded from comparison as non-state (like
+  `bike_44`/`slice_ptr`); any behavioral effect would surface as a sim
+  divergence, which remains fatal.
+
 ## Remaining (explicitly not in this slice)
 
+- `napa-contact` acceptance (blocked on the `+0xac` triple rule above).
 - `napa-solo-jump`, `napa-traffic-solo/field`.
 - Split branch commits (blocked: need avoidance scripts; separate slice).
 - CTest registration only on clean full pass without golden-only suffix.

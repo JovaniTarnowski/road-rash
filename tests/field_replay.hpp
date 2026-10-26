@@ -243,7 +243,8 @@ struct FieldReplay {
             if (!diff.empty() && !all) return;
             if (key.rfind(p + "bike_", 0) != 0) continue;
             const uint32_t off = uint32_t(std::stoul(key.substr(p.size() + 5), nullptr, 16));
-            if (off == 0x44) continue; // 0x00438450 render-prep copy (non-state)
+            if (off == 0x44) continue;  // 0x00438450 render-prep copy (non-state)
+            if (off == 0x1a0) continue; // contact-link host pointer (see half raw set below)
             const int64_t native = off == 0x0c   ? r.sched_next
                                    : off == 0x10 ? r.sched_last
                                    : off == 0x14 ? r.sched_interval
@@ -269,7 +270,19 @@ struct FieldReplay {
             if (off == 0x1a4 || off == 0x1c4 || off == 0x1d8 || off == 0x1e0) {
                 used.insert(key);
                 continue;
-            } // pointers
+            } // pointers (raw_1a0 contact link likewise below)
+            if (off == 0x1a0) {
+                // 0x004368f0 contact-link host pointer (+0x68): set to the
+                // partner object when a pair contacts (here the crash body
+                // linked to its bike at tick 2700). Process-specific address,
+                // never equal across runs: compare as non-state (like
+                // bike_44/slice_ptr). The link only gates body-static
+                // contacts; any behavioral effect surfaces as a sim-field
+                // divergence, which remains fatal. Revisit with identity
+                // resolution if one traces here.
+                used.insert(key);
+                continue;
+            }
             int64_t native;
             if (off == 0x1c8)
                 native = r.weapon;

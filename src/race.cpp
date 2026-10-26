@@ -273,6 +273,13 @@ Race::Race(std::vector<RouteSample> a, std::vector<RouteSample> b, const Physics
         nitro_charges_ = nitro_.charges;
         for (auto& rider : riders_) rider.nitro_charge = nitro_.max << 8;
     }
+    // The halves mirror their bikes from birth (0x00405990 builds the pair
+    // together): the camera reads the half image from the first tick.
+    for (auto& r : riders_) {
+        const Bike& b = r.bike;
+        r.half_mirror = {b.i32(0x1c),  b.i32(0x28),  b.i32(0x20), b.i32(0xf4), b.i32(0xec), b.i32(0xf0),
+                         b.i32(0x10c), b.i32(0x108), b.i32(0x60), r.sample,    r.route};
+    }
     update_camera();
     previous_camera_position_ = camera_position();
 }
@@ -2275,6 +2282,10 @@ void Race::crash_recovery(Rider& r, bool player, uint32_t controls) {
         remount_crash_actor(bike, r.crash_bike_animation, body, crash_config_, library.playback[0],
                             library.fallback, uint32_t(ticks_));
         r.ride_animation = body.animation; // one half block: the remount code continues into the ride advance
+        // The half rejoins the bike: clear the crash-entry bits it gained
+        // (0x00403d60 line 112), mirroring the body's &= 0xfc in
+        // remount_crash_actor (contact 2724: golden half 4 vs native 7).
+        r.half_object.u8(0xc0) &= 0xfc;
         r.stamina.current = r.stamina.max;
         r.crash_active = false;
         return;
@@ -4060,8 +4071,14 @@ uint32_t Race::camera_position() const {
     // 0x00437c30 reads the player's half (`*(player + 0x2fc) + 0x138`): while the
     // rider is down that half is the crash body, which the camera follows
     // (measured against napa-cops-crashed: ring camera == body +0x1c).
-    const Rider& p0 = riders_[0];
-    const int32_t follow = p0.crash_active ? p0.crash_actor.motion.i32(0x138) : bike().i32(0x138);
+    // The half image trails the bike by the 0x004067d0 copy, which runs in
+    // the move pass before contacts: a contact shove moves the bike's words
+    // but not the half's until the next copy, so the camera (and the ring
+    // driven from it) does not see contact pushes (contact 1469 lags the
+    // bike by 7). half_mirror is the native image of that point: post-move,
+    // pre-contact in both schedulers (live_standings / update_halves for
+    // riding riders, crash-body sync while crashed).
+    const int32_t follow = riders_[0].half_mirror.position;
     const int32_t p = follow - camera_back_ - 0x100;
     return uint32_t(p < 0 ? 0 : p);
 }
