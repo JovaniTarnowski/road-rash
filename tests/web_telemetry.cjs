@@ -71,14 +71,20 @@ const script = fs.readFileSync(path.join(dist, fs.readdirSync(dist).find(n => /^
         // A game still marked running on the next load was killed without an error (mobile OOM reload).
         await page.evaluate(() => rrTelemetry.gameStarted('main_game'));
         await page.reload();
-        assert.equal(await page.evaluate(() => localStorage.getItem('rr-game-session')),null,'pagehide clears a live session');
-        // The killed tab never fires pagehide: leave it open and load a second one.
-        await page.evaluate(() => localStorage.setItem('rr-game-session', JSON.stringify({mode:'main_game'})));
+        assert.equal(await page.evaluate(() => sessionStorage.getItem('rr-game-session')),null,'pagehide clears a live session');
+        await page.evaluate(() => rrTelemetry.gameStarted('main_game'));
         const next = await context.newPage();
         await next.goto('https://road-rash.archit.xyz/');
+        assert.equal(await next.evaluate(() => sessionStorage.getItem('rr-game-session')),null,'another tab has no stale game');
+        assert.ok(!envelopes.some(x=>x.includes('unclean_exit')),'a live game in another tab is not a crash');
+        assert.ok(await page.evaluate(() => sessionStorage.getItem('rr-game-session')),'another tab cannot clear the live marker');
+        // Simulate a killed renderer retaining per-tab sessionStorage: seed the
+        // restored page before telemetry loads; no pagehide ran in the old renderer.
+        await next.addInitScript(() => sessionStorage.setItem('rr-game-session',JSON.stringify({mode:'main_game'})));
+        await next.reload();
         await assertEventually(() => envelopes.some(x=>x.includes('without a clean exit (main_game)') && x.includes('unclean_exit')) &&
             exceptions().some(x=>x.properties.phase==='unclean_exit'));
-        assert.equal(await next.evaluate(() => localStorage.getItem('rr-game-session')),null);
+        assert.equal(await next.evaluate(() => sessionStorage.getItem('rr-game-session')),null);
         await next.close();
         const before = [envelopes.length,analytics.length];
         await page.goto('http://localhost/');

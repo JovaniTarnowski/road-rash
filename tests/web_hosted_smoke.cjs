@@ -18,6 +18,11 @@ fs.mkdirSync(evidence, {recursive:true});
         const errors = [], requests = [];
         page.on('pageerror', e => errors.push(e.message));
         page.on('request', r => requests.push({url:r.url(),method:r.method()}));
+        let wasmRequests=0;
+        await page.route(/\/rr-game\.[a-f0-9]+\.wasm$/,route=>{
+            wasmRequests++;
+            return wasmRequests<=2 ? route.abort('failed') : route.continue();
+        });
         await page.route('**/game-assets/manifest.json', async route => {
             const response=await route.fetch(), manifest=await response.json();
             manifest.files[0].hash='0'.repeat(64);
@@ -27,6 +32,8 @@ fs.mkdirSync(evidence, {recursive:true});
         await page.locator('#retry').waitFor({state:'visible',timeout:90000});
         assert.match(await page.locator('#status').textContent(),/need updating/);
         assert.equal(await page.locator('#ready').isVisible(),false);
+        assert.ok(wasmRequests>=3,'engine factory recovers after both initial Wasm fetch paths fail');
+        await page.unroute(/\/rr-game\.[a-f0-9]+\.wasm$/);
         await page.unroute('**/game-assets/manifest.json');
         console.log('PASS mismatched server manifest rejected');
         await page.goto(url);
@@ -134,6 +141,54 @@ fs.mkdirSync(evidence, {recursive:true});
         assert.deepEqual(errors,[]);
         console.log('PASS cache reused after reload, no uploads or page errors; unique assets:',new Set(downloaded.map(r=>r.url)).size);
         fs.writeFileSync(path.join(evidence,'requests.json'),JSON.stringify(requests,null,2));
+        // Storage restrictions must not prevent hosted play. This exercises
+        // the real IDBFS fallback and real engine, rather than a mocked mount.
+        await context.addInitScript(() => {
+            navigator.storage.getDirectory = async () => { throw new DOMException('Blocked', 'SecurityError'); };
+            indexedDB.open = () => { throw new DOMException('Blocked', 'SecurityError'); };
+        });
+        const restricted = await context.newPage();
+        restricted.on('pageerror', e => errors.push(e.message));
+        await restricted.goto(url);
+        await restricted.locator('#ready').waitFor({state:'visible',timeout:90000});
+        assert.match(await restricted.locator('#cache-note').textContent(),/session/);
+        await restricted.locator('#quick').click();
+        await restricted.waitForFunction(()=>document.querySelector('#loading').hidden,null,{timeout:90000});
+        assert.equal(await restricted.evaluate(()=>running),true);
+        // Include SDL's registered callback and the launcher's lifecycle bridge.
+        for (let i=0;i<3;i++) await restricted.evaluate(()=>document.dispatchEvent(new Event('visibilitychange')));
+        assert.equal(await restricted.evaluate(()=>engine.assetError || null),null);
+        assert.deepEqual(errors,[]);
+        console.log('PASS hosted race with blocked OPFS and IndexedDB, live visibility callbacks');
+        // A caught C++ failure must preserve its throw-site stack, and no
+        // lifecycle bridge may call back into SDL after main has returned.
+        const failing = await context.newPage();
+        failing.on('pageerror', e => errors.push(e.message));
+        await failing.route(/\/app\.[a-f0-9]+\.js$/,async route=>{
+            const response=await route.fetch();
+            const body=(await response.text()).replace('const argv = engine._malloc', "args.push('--bike', '999'); const argv = engine._malloc");
+            await route.fulfill({response,body});
+        });
+        await failing.goto(url);
+        await failing.locator('#ready').waitFor({state:'visible',timeout:90000});
+        await failing.locator('#quick').click();
+        await failing.waitForFunction(()=>!running,null,{timeout:90000});
+        const failureDetails=await failing.evaluate(()=>({message:engine.gameException?.message,stack:engine.gameException?.stack}));
+        assert.match(failureDetails.message,/Bike index out of range/);
+        assert.match(failureDetails.stack,/wasm/);
+        assert.match(failureDetails.stack,/main/,'Wasm function names survive release linking');
+        for(let i=0;i<3;i++) await failing.evaluate(()=>document.dispatchEvent(new Event('visibilitychange')));
+        assert.deepEqual(errors,[]);
+        console.log('PASS caught C++ throw-site diagnostics, visibility events after main exits');
+        await failing.reload();
+        await failing.locator('#ready').waitFor({state:'visible',timeout:90000});
+        await failing.evaluate(()=>{engine.localAssets.read=async()=>{throw new Error('Fixture network unavailable');};});
+        await failing.locator('#quick').click();
+        await failing.waitForFunction(()=>!running,null,{timeout:90000});
+        assert.match(await failing.locator('#loading-message').textContent(),/Fixture network unavailable/);
+        assert.doesNotMatch(await failing.locator('#loading-message').textContent(),/Re-import/);
+        assert.deepEqual(errors,[]);
+        console.log('PASS actual asset failure survives the C++ boundary without a misleading disc-import hint');
         await context.close();
     } finally {await browser.close();}
 })().catch(e=>{console.error(e);process.exitCode=1;});

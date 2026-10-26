@@ -17,7 +17,9 @@ const engineLog = [];
 const engineTail = () => engineLog.join('\n');
 // Set while a game runs; a page kill (e.g. a mobile out-of-memory reload) leaves it behind.
 const sessionKey = 'rr-game-session';
-const storage = operation => { try { return operation(localStorage); } catch (_) { return undefined; } };
+// Per-tab storage survives a renderer reload without treating another active
+// game tab as a crashed session, or letting its pagehide erase this tab's marker.
+const storage = operation => { try { return operation(sessionStorage); } catch (_) { return undefined; } };
 if (enabled) {
     safe(() => Sentry.init({
         dsn: 'https://72f1b0670d21ecd90bc4908ebe82d35e@o425745.ingest.us.sentry.io/4512320659914752',
@@ -89,7 +91,8 @@ window.rrTelemetry = Object.freeze({
     },
     error(error, phase) {
         if (!enabled) return;
-        const exception = error instanceof Error ? error : new Error(String(error));
+        const exception = error instanceof Error ? error : new Error(error?.message || String(error));
+        if (!(error instanceof Error) && error?.name) exception.name = error.name;
         safe(() => Sentry.captureException(exception, {tags: {phase}}));
         safe(() => posthog.captureException(exception, {phase}));
         this.track('web_error', {phase});

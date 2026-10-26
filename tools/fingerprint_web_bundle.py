@@ -32,7 +32,7 @@ def fingerprint(directory):
     glue = replace_once((directory / 'rr-game.js').read_text(), 'rr-game.wasm', wasm)
     engine = rename('rr-game.js', glue.encode())
     references = rename('references.json')
-    app = replace_once((directory / 'app.js').read_text(), "fetch('references.json')", f"fetch('{references}')")
+    app = replace_once((directory / 'app.js').read_text(), "'references.json'", f"'{references}'")
     app = rename('app.js', app.encode())
     telemetry = rename('telemetry.js')
     style = rename('style.css')

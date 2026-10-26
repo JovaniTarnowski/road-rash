@@ -47,6 +47,7 @@
 #include "text.hpp"
 #ifdef RR_WEB_BROWSER
 #include "platform_web.hpp"
+#include <emscripten.h>
 #endif
 #include <filesystem>
 #include <future>
@@ -1101,6 +1102,20 @@ int main(int argc, char** argv) {
         }
     } catch (const std::exception& e) {
         SDL_Log("%s", e.what());
+#ifdef RR_WEB_BROWSER
+        EM_ASM(
+            {
+                Module.gameError = UTF8ToString($0);
+                // Emscripten 6.0.10 retains the thrown CppException through this
+                // catch. Copy its JS stack before end_catch releases the C++ object.
+                // Do not retain its native pointer/refcount beyond the catch.
+                const error = new Error(Module.gameError);
+            if (typeof exceptionLast !== 'undefined' && exceptionLast?.stack)
+                error.stack = exceptionLast.stack;
+            Module.gameException = error;
+            },
+            e.what());
+#endif
         result = 1;
     }
     SDL_DestroyRenderer(renderer);

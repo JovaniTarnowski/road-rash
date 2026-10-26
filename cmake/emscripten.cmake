@@ -59,7 +59,10 @@ set(RR_BENCH_WEB ON CACHE BOOL "Build the rr-bench-web microbenchmark" FORCE)
 if(RR_WEB_BROWSER)
     # Preserve the shared native frontend, video and race call stacks while
     # yielding at frame boundaries and asynchronous local asset reads.
-    add_link_options(-sENVIRONMENT=web -sASYNCIFY=1 -sASYNCIFY_STACK_SIZE=1048576)
+    # Keep throw-site stacks and Wasm function names for production failures
+    # caught inside main (otherwise JS sees only exit code 1 / "vector").
+    add_link_options(-sENVIRONMENT=web -sASYNCIFY=1 -sASYNCIFY_STACK_SIZE=1048576
+                     -sEXCEPTION_STACK_TRACES=1 -g2)
 else()
     add_link_options(-sENVIRONMENT=node)
 endif()

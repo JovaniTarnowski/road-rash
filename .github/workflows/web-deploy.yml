@@ -15,6 +15,7 @@ on:
       - 'tools/fingerprint_web_bundle.py'
       - 'tests/web_bundle_cache.cjs'
       - 'tests/web_hosted_smoke.cjs'
+      - 'tests/web_recovery.cjs'
       - '.github/workflows/web-deploy.yml'
   workflow_dispatch:
 
@@ -68,6 +69,7 @@ jobs:
         run: |
           node tests/web_bundle_cache.cjs
           node tests/web_telemetry.cjs
+          node tests/web_recovery.cjs
       - name: Deploy to Dokku
         env:
           DEPLOY_KEY: ${{ secrets.DOKKU_ROAD_RASH_KEY }}

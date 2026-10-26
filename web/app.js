@@ -4,6 +4,25 @@ const telemetry = window.rrTelemetry || {track() {}, error() {}, log() {}, gameS
 const $ = id => document.getElementById(id);
 let engine, storageRoot, assetDirectory, references, importing = false, cancelled = false, running = false;
 let loadingStage = '', downloadingAssets = 0;
+let persistentSaves = false, storageWarning = '';
+// Retry transient network/HTTP failures, including reading a truncated body.
+// Immutable assets are still size/hash checked by their caller.
+async function fetchData(url, decode, options) {
+    for (let attempt = 0; ; attempt++) {
+        try {
+            const response = await fetch(url, options);
+            if (!response.ok && response.status !== 404) {
+                const error = new Error('Game server returned HTTP ' + response.status);
+                error.retryable = response.status >= 500 || response.status === 429;
+                throw error;
+            }
+            return await decode(response);
+        } catch (error) {
+            if (attempt >= 2 || error.retryable === false) throw error;
+            await new Promise(resolve => setTimeout(resolve, 250 * (attempt + 1)));
+        }
+    }
+}
 function updateLoading() {
     $('loading-message').textContent = loadingStage || 'Downloading game data…';
     $('loading').hidden = !running || (!loadingStage && !downloadingAssets);
@@ -35,11 +54,10 @@ async function loadDiscFonts(directory) {
     catch (error) { discFonts = undefined; throw error; }
 }
 async function restoreHostedAssets() {
-    const response = await fetch('game-assets/manifest.json', {cache: 'no-cache'});
+    const manifest = await fetchData('game-assets/manifest.json', response =>
+        response.status === 404 ? null : response.json(), {cache: 'no-cache'});
     // An asset-free local build still supports the original disc picker.
-    if (response.status === 404) return false;
-    if (!response.ok) throw new Error('Game server unavailable. Reload to retry.');
-    const manifest = await response.json();
+    if (!manifest) return false;
     if (manifest.version !== 1 || !Array.isArray(manifest.files) || manifest.files.length !== references.length)
         throw new Error('Game server manifest is incomplete. Reload to retry.');
     const records = new Map(manifest.files.map(file => [file.path, file]));
@@ -48,7 +66,9 @@ async function restoreHostedAssets() {
         if (!record || record.hash !== reference.hash || !Number.isSafeInteger(record.size) || record.size < 0)
             throw new Error('Game server files need updating. Reload to retry.');
     }
-    const cache = await storageRoot.getDirectoryHandle('hosted-v1', {create: true});
+    let cache;
+    try { cache = await storageRoot?.getDirectoryHandle('hosted-v1', {create: true}); }
+    catch (error) { console.warn('Game cache unavailable:', error); }
     const pending = new Map(), verified = new Set();
     const digest = async bytes => Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', bytes)),
         byte => byte.toString(16).padStart(2, '0')).join('');
@@ -57,24 +77,29 @@ async function restoreHostedAssets() {
         if (!record) throw new Error('Unknown game file: ' + path);
         if (pending.has(path)) return pending.get(path);
         const request = (async () => {
-            try {
+            try { if (cache) {
                 const file = await (await cache.getFileHandle(record.hash)).getFile();
                 if (file.size === record.size && (verified.has(record.hash) || await digest(await file.arrayBuffer()) === record.hash)) {
                     verified.add(record.hash);
                     return file;
                 }
-            } catch (error) {
+            } } catch (error) {
                 if (error.name !== 'NotFoundError') console.warn('Game cache unavailable:', error);
             }
             downloadingAssets++; updateLoading();
             try {
-                const result = await fetch('game-assets/' + record.hash);
-                if (!result.ok) throw new Error('Game file unavailable: ' + path);
-                const bytes = await result.arrayBuffer();
+                const bytes = await fetchData('game-assets/' + record.hash, result => {
+                    if (result.status === 404) {
+                        const error = new Error('Game file unavailable: ' + path);
+                        error.retryable = false;
+                        throw error;
+                    }
+                    return result.arrayBuffer();
+                });
                 if (bytes.byteLength !== record.size || await digest(bytes) !== record.hash)
                     throw new Error('Game file failed verification: ' + path);
                 // A full/evicted cache must not prevent playing downloaded data.
-                try { await writeFile(cache, record.hash, bytes); verified.add(record.hash); }
+                try { if (cache) { await writeFile(cache, record.hash, bytes); verified.add(record.hash); } }
                 catch (error) { console.warn('Game file could not be cached:', error); }
                 return new File([bytes], path);
             } finally { downloadingAssets--; updateLoading(); }
@@ -91,12 +116,39 @@ async function restoreHostedAssets() {
     try { await loadDiscFonts(assetDirectory); }
     catch (error) { console.warn('Game fonts unavailable:', error); }
     $('cache-note').hidden = false;
+    if (!cache || storageWarning) $('cache-note').textContent =
+        (!cache ? 'Game files will download as you play; caching is unavailable. ' : '') + storageWarning;
     $('ready').hidden = false;
     status('Ready to play.');
     telemetry.track('launcher_ready', {source: 'hosted'});
     return true;
 }
 const sync = populate => new Promise((resolve, reject) => engine.FS.syncfs(populate, e => e ? reject(e) : resolve()));
+async function setupStorage() {
+    engine.FS.mkdirTree('/persist');
+    let mounted = false;
+    // A transient IndexedDB failure gets one retry before session-only saves.
+    for (let attempt = 0; attempt < 2; attempt++) {
+        try {
+            engine.FS.mount(engine.FS.filesystems.IDBFS, {autoPersist: true}, '/persist');
+            mounted = true;
+            await sync(true);
+            persistentSaves = true;
+            break;
+        } catch (error) {
+            if (mounted) engine.FS.unmount('/persist');
+            mounted = false;
+            console.warn('Persistent saves unavailable:', error);
+        }
+    }
+    if (!persistentSaves) storageWarning = 'Saves and settings last only for this session. Allow browser storage to keep them.';
+    for (let attempt = 0; attempt < 2; attempt++) {
+        try {
+            storageRoot = await (await navigator.storage?.getDirectory()).getDirectoryHandle('road-rash', {create: true});
+            break;
+        } catch (error) { console.warn('Disc cache unavailable:', error); }
+    }
+}
 const call = (name, type = 'number', types = [], values = []) => engine.ccall(name, type, types, values);
 async function writeFile(directory, name, bytes) {
     const handle = await directory.getFileHandle(name, {create: true});
@@ -109,6 +161,7 @@ async function readJson(directory, name) {
 }
 function storageError(error) {
     if (error.name === 'QuotaExceededError') return 'Browser storage is full. Free at least 600 MB on this device, then try again.';
+    if (error.name === 'SecurityError' || error.name === 'NotAllowedError') return 'Browser storage access is blocked. Allow site storage or use a regular browsing window, then retry.';
     return error.message || String(error);
 }
 async function restoreDisc() {
@@ -143,7 +196,7 @@ async function restoreDisc() {
     }
 }
 async function importDisc(source, iso) {
-    if (!engine || importing || running) return;
+    if (!engine || !storageRoot || importing || running) return;
     importing = true; cancelled = false;
     telemetry.track('disc_import_start', {source: iso ? 'iso' : 'folder'});
     $('ready').hidden = true; $('progress').hidden = false; $('cancel').hidden = false;
@@ -229,41 +282,51 @@ async function startGame(quick) {
     running = true;
     const started = performance.now();
     const mode = quick ? 'quick_race' : 'main_game';
+    engine.assetError = ''; engine.gameError = ''; engine.gameException = undefined;
     telemetry.track('game_start', {mode, ...(quick ? {course: Number($('course').value)} : {})});
     telemetry.gameStarted(mode);
     document.body.classList.add('playing');
     loadingStage = 'Starting game…'; updateLoading();
     $('setup').hidden = true; $('canvas').hidden = false; $('loading').hidden = false;
-    $('fullscreen').disabled = false; $('reload').hidden = false;
+    $('fullscreen').disabled = !fullscreenRequest(); $('reload').hidden = false;
     $('state').textContent = 'Playing';
     $('canvas').focus();
-    // Create/resume audio within the launch gesture, before asynchronous reads.
-    const Audio = window.AudioContext || window.webkitAudioContext;
-    if (Audio) {
-        engine.SDL3 = engine.SDL3 || {};
-        engine.SDL3.audioContext = engine.SDL3.audioContext || new Audio();
-        engine.SDL3.audioContext.resume().catch(() => {});
-    }
-    const args = ['rr-game', '--assets', '/assets', '--windowed', '--window-scale', '1'];
-    if (quick) args.push('--race', '--course', $('course').value);
     const allocated = [];
     try {
+        // Create/resume audio within the launch gesture, before asynchronous reads.
+        const Audio = window.AudioContext || window.webkitAudioContext;
+        if (Audio) {
+            engine.SDL3 = engine.SDL3 || {};
+            engine.SDL3.audioContext = engine.SDL3.audioContext || new Audio();
+            engine.SDL3.audioContext.resume().catch(() => {});
+        }
+        const args = ['rr-game', '--assets', '/assets', '--windowed', '--window-scale', '1'];
+        if (quick) args.push('--race', '--course', $('course').value);
         const argv = engine._malloc((args.length + 1) * 4); allocated.push(argv);
+        if (!argv) throw new Error('Not enough memory to start the game');
         args.forEach((arg, index) => {
             const ptr = engine._malloc(engine.lengthBytesUTF8(arg) + 1); allocated.push(ptr);
+            if (!ptr) throw new Error('Not enough memory to start the game');
             engine.stringToUTF8(arg, ptr, engine.lengthBytesUTF8(arg) + 1);
             new DataView(engine.HEAPU8.buffer).setUint32(argv + index * 4, ptr, true);
         });
         new DataView(engine.HEAPU8.buffer).setUint32(argv + args.length * 4, 0, true);
         const code = await engine.ccall('main', 'number', ['number', 'number'], [args.length, argv], {async: true});
-        await sync(false);
-        if (code) throw new Error(engine.assetError || 'The game stopped with an error. Re-import your disc if a stored file is missing.');
+        if (code) throw engine.gameException || new Error(engine.assetError || engine.gameError || 'The game stopped with exit code ' + code + '.');
+        if (persistentSaves) {
+            try { await sync(false); }
+            catch (error) { telemetry.error(error, 'save'); storageWarning = 'Your latest saves could not be stored. Allow browser storage before playing again.'; }
+        }
         telemetry.track('game_exit', {mode, duration_ms: Math.round(performance.now() - started)});
-        showGameMessage('Use Exit to launcher to play again.', 'Game closed');
+        showGameMessage((storageWarning ? storageWarning + ' ' : '') + 'Use Exit to launcher to play again.', 'Game closed');
     } catch (error) {
         telemetry.error(error, 'game');
         showGameMessage(storageError(error) + ' Use Exit to launcher to try again.');
-    } finally { telemetry.gameStopped(); allocated.forEach(ptr => engine._free(ptr)); }
+    } finally {
+        running = false;
+        $('fullscreen').disabled = true;
+        telemetry.gameStopped(); allocated.forEach(ptr => { if (ptr) engine._free(ptr); });
+    }
 }
 $('iso').addEventListener('change', e => e.target.files[0] && importDisc(e.target.files[0], true));
 $('folder').addEventListener('change', e => e.target.files.length && importDisc(e.target.files, false));
@@ -271,7 +334,17 @@ $('cancel').onclick = () => { cancelled = true; };
 $('play').onclick = () => startGame(false);
 $('quick').onclick = () => startGame(true);
 $('reload').onclick = () => { telemetry.track('launcher_exit'); location.reload(); };
-$('fullscreen').onclick = () => document.querySelector('.viewport').requestFullscreen().then(() => telemetry.track('fullscreen')).catch(error => { telemetry.error(error, 'fullscreen'); showGameMessage(storageError(error)); });
+function fullscreenRequest() {
+    const viewport = document.querySelector('.viewport');
+    return viewport.requestFullscreen || viewport.webkitRequestFullscreen;
+}
+$('fullscreen').onclick = async () => {
+    const request = fullscreenRequest();
+    if (!request) { $('fullscreen').disabled = true; return; }
+    try { await request.call(document.querySelector('.viewport')); telemetry.track('fullscreen'); }
+    // A denied fullscreen gesture must leave the running game visible.
+    catch (error) { status('Fullscreen unavailable. You can keep playing in this window.'); }
+};
 // SDL receives these events too; prevent browser scrolling while the game owns focus.
 document.addEventListener('visibilitychange', () => {
     if (running) call('rr_web_visibility', null, ['number'], [document.hidden ? 1 : 0]);
@@ -281,9 +354,11 @@ window.addEventListener('keydown', event => {
 });
 (async () => {
     try {
-        if (!window.isSecureContext || !navigator.storage?.getDirectory)
-            throw new Error('This browser needs secure local storage (OPFS). Open this page over HTTPS in a current desktop browser.');
-        references = await (await fetch('references.json')).json();
+        if (!window.isSecureContext) throw new Error('Open this page over HTTPS to play.');
+        references = await fetchData('references.json', response => {
+            if (!response.ok) throw new Error('Game reference list unavailable. Reload to retry.');
+            return response.json();
+        });
         // SDL's Asyncify presentation and local file reads may yield more than
         // once between draws. Keep the last completed WebGL frame visible.
         const canvas = $('canvas');
@@ -291,18 +366,30 @@ window.addEventListener('keydown', event => {
         canvas.getContext = (kind, attributes) => getContext(kind,
             kind.startsWith('webgl') || kind === 'experimental-webgl'
                 ? {...attributes, preserveDrawingBuffer: true} : attributes);
-        engine = await createRoadRash({
-            canvas: $('canvas'), noInitialRun: true,
-            print: console.log,
-            printErr: message => { console.warn(message); telemetry.log(message); },
-            preRun: [module => { module.ENV.RR_PREF_OVERRIDE = '/persist'; }],
-            onAbort: reason => { telemetry.error(new Error(String(reason)), 'engine_abort'); showGameMessage('Engine error: ' + reason + '. Use Exit to launcher to restart.'); }
-        });
+        for (let attempt = 0; ; attempt++) {
+            try {
+                engine = await createRoadRash({
+                    canvas: $('canvas'), noInitialRun: true,
+                    print: console.log,
+                    printErr: message => { console.warn(message); telemetry.log(message); },
+                    preRun: [module => { module.ENV.RR_PREF_OVERRIDE = '/persist'; }],
+                    onAbort: reason => {
+                        // Factory failures are retried below and reported only if all
+                        // attempts fail. A live engine abort is immediately actionable.
+                        if (!running) return;
+                        running = false; telemetry.gameStopped();
+                        telemetry.error(new Error(String(reason)), 'engine_abort');
+                        showGameMessage('Engine error: ' + reason + '. Use Exit to launcher to restart.');
+                    }
+                });
+                break;
+            } catch (error) {
+                if (attempt >= 2) throw error;
+                await new Promise(resolve => setTimeout(resolve, 250 * (attempt + 1)));
+            }
+        }
         engine.webLoading = stage => { loadingStage = stage; updateLoading(); };
-        engine.FS.mkdirTree('/persist');
-        engine.FS.mount(engine.FS.filesystems.IDBFS, {autoPersist: true}, '/persist');
-        await sync(true);
-        storageRoot = await (await navigator.storage.getDirectory()).getDirectoryHandle('road-rash', {create: true});
+        await setupStorage();
         engine.localAssets = {
             names: new Set(),
             read: async path => {
@@ -312,6 +399,7 @@ window.addEventListener('keydown', event => {
         };
         status('Connecting to game server…');
         if (!await restoreHostedAssets()) {
+            if (!storageRoot) throw new Error('Local disc import needs browser storage. Allow site storage or use a regular browsing window, then retry.');
             document.querySelector('.import-actions').hidden = false;
             $('setup-description').textContent = 'Choose your original PC disc image (.iso) or the ROADRASH folder. Game files stay on this device.';
             status('Engine ready. Select your original PC disc. Allow about 500 MB of browser storage.');
