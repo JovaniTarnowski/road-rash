@@ -86,13 +86,20 @@ match where compared; `+0x130` (bend) is uncompared.
   (native, never compared) must be ~70+ off vs original (outside
   70±15360). Pos diff 56 matches (player 31432/31432; frozen 31488 via
   `node.*` -- nodes match). Half-widths (`+0x174`, never compared)
-  may also be off. L1 spawn laterals match (L1 green), so grid tables
-  are right for live; solo frozen spawn needs its own audit
-  (`place_rider` grid vs `read_grid_slot` EXE values for frozen slots;
-  `nodeaddr.*` may carry original frozen words). EXE grid slot 1
-  (opponent 1): lat 16384 pos 31488 -- pos matches frozen 31488;
-  native frozen lat 15360 = 16384 + road_centre + road_base
-  (road_centre+road_base = -1024 at spawn sample 123).
+  7680/7680 match in native (probe); masses (`+0x194`) 256/256 match in
+  native (probe) -- tables right. `was_clear` probe: player prevpos
+  31396/prevlat -380/hl64/hw7680 vs frozen prevpos31488/prevlat16384/
+  hl64/hw7680. Prev pos diff 92<128 (NOT clear forward); prev lat diff
+  16764>15360 (WAS clear lateral) => push LATERAL (both worlds, since
+  prev inputs match? frozen prev 16384 spawn, should match).
+  RANDLOG names 149 draws as `0x00404D...`? Actually `0x00404BF3`/
+  `0x00404C18` (in `FUN_004049c0`) -- frozen-contact sounds must stay.
+  845 has NO draws (RNG 2285034199 constant) -- silent shove mismatch.
+  Next: audit frozen shove history (lat trajectory 1-845) to find which
+  prior contact(s) drifted native frozen 16384->15360 while original
+  stayed outside overlap (or drifted differently); compare player shove
+  (matches every tick through 844) vs frozen shove (uncompared) at each
+  prior contact via separate() mass-weighted pushes.
 - Tick-149 contact (both worlds, sounds/RNG match): player pos ~13746,
   lat 15123 after -1000 shove, speed 3351->2739. RANDLOG (solo-split,
   200 frames, HUMAN=1): 2 draws at tick 149 from `0x00404BF3` /
