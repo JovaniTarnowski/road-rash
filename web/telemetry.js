@@ -40,7 +40,8 @@ if (enabled) {
         }
     }));
     safe(() => posthog.init('phc_wnzWZVe4yh2bL979v7dyLTWZP7kYomNGC7myFqroyqmB', {
-        api_host: 'https://us.i.posthog.com', defaults: '2026-08-30',
+        // PostHog managed reverse proxy (first-party host, fewer blocker drops).
+        api_host: 'https://nazar.archit.xyz', ui_host: 'https://us.posthog.com', defaults: '2026-08-30',
         autocapture: false, capture_pageview: false, capture_pageleave: false,
         // Error tracking: uncaught errors and rejections, including Wasm traps
         // escaping SDL's frame callbacks. Console errors stay private.

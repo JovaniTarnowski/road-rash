@@ -19,7 +19,7 @@ const script = fs.readFileSync(path.join(dist, fs.readdirSync(dist).find(n => /^
             if (url.hostname === 'o425745.ingest.us.sentry.io') {
                 envelopes.push(req.postData()); return route.fulfill({json:{}});
             }
-            if (url.hostname === 'us.i.posthog.com') {
+            if (url.hostname === 'nazar.archit.xyz') {
                 let body = req.postDataBuffer();
                 if (body?.[0] === 0x1f) body = zlib.gunzipSync(body);
                 if (body) {
@@ -31,7 +31,7 @@ const script = fs.readFileSync(path.join(dist, fs.readdirSync(dist).find(n => /^
             }
             if (!['road-rash.archit.xyz', 'localhost'].includes(url.hostname)) external.push(req.url());
             if (url.pathname === '/telemetry.js') return route.fulfill({contentType:'application/javascript',body:script});
-            return route.fulfill({contentType:'text/html',headers:{'Content-Security-Policy':"default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; connect-src 'self' https://o425745.ingest.us.sentry.io https://us.i.posthog.com"}, body:'<script src="/telemetry.js"></script><h1>Telemetry fixture</h1>'});
+            return route.fulfill({contentType:'text/html',headers:{'Content-Security-Policy':"default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; connect-src 'self' https://o425745.ingest.us.sentry.io https://nazar.archit.xyz"}, body:'<script src="/telemetry.js"></script><h1>Telemetry fixture</h1>'});
         });
         const page = await context.newPage();
         page.on('pageerror', e => errors.push(e.message));
@@ -84,7 +84,7 @@ const script = fs.readFileSync(path.join(dist, fs.readdirSync(dist).find(n => /^
         await page.evaluate(() => {rrTelemetry.track('game_start');rrTelemetry.error(new Error('local'), 'game');});
         assert.deepEqual([envelopes.length,analytics.length],before,'local development does not send telemetry');
         // A browser which blocks both services must still run launcher hooks.
-        await context.route('https://us.i.posthog.com/**', r=>r.abort());
+        await context.route('https://nazar.archit.xyz/**', r=>r.abort());
         await context.route('https://o425745.ingest.us.sentry.io/**', r=>r.abort());
         await page.goto('https://road-rash.archit.xyz/');
         assert.equal(await page.evaluate(() => {rrTelemetry.track('launcher_ready');rrTelemetry.error(new Error('blocked'), 'game');return true;}),true);

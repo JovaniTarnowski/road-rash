@@ -4,7 +4,10 @@ Production https://road-rash.archit.xyz uses:
 
 - Sentry project `archit-khode/road-rash`, JavaScript browser SDK 11.9.0.
   https://archit-khode.sentry.io/issues/?project=4512320659914752
-- PostHog project `Road Rash` (688403), browser SDK 1.438.21, US ingestion.
+- PostHog project `Road Rash` (688403), browser SDK 1.438.21, US region, sent
+  through the PostHog managed reverse proxy `https://nazar.archit.xyz`
+  (`api_host`; `ui_host` is `https://us.posthog.com`). A first-party host is
+  blocked less often than `us.i.posthog.com`.
   https://us.posthog.com/project/688403/activity/events
 
 `web/telemetry.js` uses public ingestion keys. No management token belongs in
@@ -63,7 +66,9 @@ fragments are stripped from analytics URL fields, Sentry request URLs and stack
 frame URLs. Sentry default PII and console/network/interaction breadcrumbs are
 disabled; error messages and stack traces still describe the failure.
 
-CSP permits only the two exact HTTPS ingestion hosts in connect-src. Scripts
+CSP permits only the two exact HTTPS ingestion hosts in connect-src: Sentry's
+ingest host and the PostHog proxy `nazar.archit.xyz`. Sentry is not proxied, so
+blockers can still drop its reports. Scripts
 remain same-origin. Ad blockers may suppress delivery; gameplay still works.
 
 ## Verification
