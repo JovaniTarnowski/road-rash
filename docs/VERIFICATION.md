@@ -2,6 +2,11 @@
 
 ## Browser layout revision (October 25, 2026)
 
+- Shell `7d8f7d7`, engine `096bff2`: Vercel preview READY at
+  https://road-rash-32f5uhubr-arkits.vercel.app
+  (`dpl_4GgoKCBX6fL6kUzQ8wr3ME7RAdiV`). Asset-free prebuilt upload; no
+  deployed-URL fetch. Receipt retained with local layout evidence.
+
 - HTML/CSS/status-label change only. Reused the clean, validated `096bff2`
   wasm engine from `build-agent-browser-release/dist`, copied the changed web
   shell into `build-agent-browser-layout/dist`, and ran the seven-file asset

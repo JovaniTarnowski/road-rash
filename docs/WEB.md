@@ -7,8 +7,8 @@ below; the October 12 sections are historical checkpoints.
 
 ## Playable browser implementation — October 25, 2026
 
-**Deployment:** [Play the Vercel preview](https://road-rash-exd6fu2sm-arkits.vercel.app) — READY, engine/config
-commit `096bff2` (implementation `8673a75`). This project requires Vercel
+**Deployment:** [Play the Vercel preview](https://road-rash-32f5uhubr-arkits.vercel.app) — READY, engine/config
+shell commit `7d8f7d7`, engine `096bff2` (implementation `8673a75`). This project requires Vercel
 sign-in for previews. Import your disc on this origin, then choose Quick race.
 Framework: static HTML/JavaScript + WebAssembly; prebuilt upload, no remote C++
 build. Vercel does not report a build duration for this upload.

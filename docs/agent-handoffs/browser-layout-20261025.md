@@ -23,3 +23,10 @@ rebuilding OMP's in-flight simulation probes. No commercial assets in bundle.
 Prepared/deployed via `prepare_web_deploy.py build-agent-browser-layout/dist`
 and Vercel prebuilt preview on the existing project. Final URL recorded after
 READY. Temporary local server port 8770 is owned by this session.
+
+
+Release: shell `7d8f7d7` pushed to main, reused engine `096bff2`.
+Preview READY: https://road-rash-32f5uhubr-arkits.vercel.app
+Deployment `dpl_4GgoKCBX6fL6kUzQ8wr3ME7RAdiV`. Existing preview Vercel sign-in
+applies. Deploy receipt copied to `analysis/browser-layout-20261025/`.
+Local server stopped; no held resources. OMP's dirty race.cpp remains untouched.
