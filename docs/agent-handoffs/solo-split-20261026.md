@@ -77,7 +77,23 @@ match where compared; `+0x130` (bend) is uncompared.
   may also be off. L1 spawn laterals match (L1 green), so grid tables
   are right for live; solo frozen spawn needs its own audit
   (`place_rider` grid vs `read_grid_slot` EXE values for frozen slots;
-  `nodeaddr.*` may carry original frozen words).
+  `nodeaddr.*` may carry original frozen words). EXE grid slot 1
+  (opponent 1): lat 16384 pos 31488 -- pos matches frozen 31488;
+  native frozen lat 15360 = 16384 + road_centre + road_base
+  (road_centre+road_base = -1024 at spawn sample 123).
+- Tick-149 contact (both worlds, sounds/RNG match): player pos ~13746,
+  lat 15123 after -1000 shove, speed 3351->2739. RANDLOG (solo-split,
+  200 frames, HUMAN=1): 2 draws at tick 149 from `0x00404BF3` /
+  `0x00404C18` (inside `FUN_004049c0` contact handler) -- frozen-contact
+  sounds must stay (no blanket skip). 845 has NO draws in either world
+  (RNG constant 2285034199) -- silent (no sounds), so the 845 shove
+  mismatch is separation-only (no sound/RNG coupling). Fix must keep
+  149 sounds while removing 845 shove: i.e. fix was_clear inputs
+  (`+0x30` prev pos / `+0x3c` prev lat for frozen, which never advance;
+  player prev matches through 844) or frozen geometry, not handler
+  gating. `was_clear_forward` (prev pos diff 92 vs half-lengths sum)
+  vs `was_clear_lateral` (prev lat diff 15740 vs 15360) decides push
+  axis; marginal 70 overlap flips it.
 - `+0x324` now set (0/1) but `+0x328`/branch mapping still 0 for all;
   walls gate still always takes walls path (routes 0/0 at 845).
   L1 spawn laterals match (L1 green), so grid tables are right for live;
