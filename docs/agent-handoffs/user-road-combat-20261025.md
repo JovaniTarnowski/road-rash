@@ -125,3 +125,12 @@ source SHA-256 `ae3dcc4555d8caf8126b72ac1c2a0ee62bebaee436895d3b5035cdfa80b46ce3
 The initial native receipt had `dirty=true` only because the oracle directory
 was a symlink; converting it to an ignored directory of reference symlinks and
 refreshing provenance removed that metadata issue without changing source hash.
+
+## October 26 follow-up: City gap located and fixed
+
+The owner's screenshot and full Desktop recording identify the triangular
+background leak near 00:38. Imported CITY sample 159 reproduces it exactly.
+The road-width transition used mismatched lane origins at the two strip ends;
+fixed from `0x00444630`'s previous-record origin rule, with a failing-before /
+passing-after pixel coverage regression at widths 320/426. This supersedes the
+City reproduction limitation above. See [City-width handoff](city-width-gap-20261026.md).

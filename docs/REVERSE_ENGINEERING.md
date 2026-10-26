@@ -2196,3 +2196,17 @@ varies between otherwise identical captures") and identifies its cause.
   completion. Static evidence plus controlled native live-scheduler damage
   tests, not original combat replay acceptance.
 - [Investigation and evidence limits](agent-handoffs/user-road-combat-20261025.md).
+
+### October 26, 2026: lane-grid origin across width changes
+
+`0x00444630` updates the previous road record's far lane origin (+0x30)
+using the previous sub-slice's +0xd8 when it differs from the newly projected
+sub-slice. Assembly `0x00444c57–0x00444ca3` confirms dword loads, origin
+comparison, previous origin plus current world X minus camera X, multiply by
+current scale, add screen centre and store previous +0x30. `0x0043c170`
+uses the previous strip's lane count at both ends. `CourseScene` formerly
+used the next sample's rounded left lane origin at its far end, shifting the
+whole far grid one lane when ceil(left lanes) changed. CITY sample 159
+(left Q8 512 -> 533) exposed scenery through the right lane. Projecting the
+near strip's origin at the far scale (including sub-slice centre offset)
+restores the original construction. [Reproduction](agent-handoffs/city-width-gap-20261026.md).

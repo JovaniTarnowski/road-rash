@@ -1921,3 +1921,14 @@ actual close-range combat and avoiding shadowboxing. See DEMO_VIDEO.md.
   Browser Release build succeeds. The supplied City recording's specific road
   gap has not been isolated; these fixes do not close City intersection pixel
   acceptance or full combat parity. [Evidence and limits](agent-handoffs/user-road-combat-20261025.md).
+
+### October 26, 2026: exact City road-gap reproduction and fix
+
+The screenshot and full Desktop recording locate the triangle near 00:38.
+Imported CITY route sample 159 reproduces it: the road widens, but the far
+end of the lane grid used the next sample's rounded lane origin. Both ends
+now use the strip's own origin, matching `0x00444630`'s previous-record update.
+The triangle closes and the displaced centre stripe is corrected. Added
+pixel coverage regression at 4:3 and Hor+ widths; it fails on the old code.
+This closes the specific City report left open October 25; full City parity
+remains separate. [Evidence](agent-handoffs/city-width-gap-20261026.md).

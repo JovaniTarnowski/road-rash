@@ -2711,3 +2711,16 @@ names). Rebase preserved both progress entries; no implementation conflicts.
   validation. Browser Release build succeeds.
 - [Full commands, browser checks, local evidence, remaining City report and
   hook correction](agent-handoffs/user-road-combat-20261025.md).
+
+### October 26, 2026: City width-transition triangle
+
+- Supplied full Desktop recording/screenshot reproduces the road leak around
+  00:38 at imported CITY route sample 159. New coverage regression fails on
+  the old renderer and passes at logical widths 320/426 with the correction.
+- Owned Release full build + CTest: **106/106 pass**, no skips (39.50 s).
+- Exact committed source `a41f241` in the isolated checkout, full Release
+  build + CTest `-j 4`: **106/106 pass**, no skips (28.21 s). Browser Release
+  rebuild validates nine code/metadata files; native identity `dirty=false`.
+- Original `0x00444630` origin correction checked against assembly
+  `0x00444c57–0x00444ca3`; changed-line clangd check: zero errors.
+- [Before/after evidence, logs and limits](agent-handoffs/city-width-gap-20261026.md).

@@ -53,7 +53,8 @@ No change to the simulation, randomness, assets or road-panel component rules.
   `frame38.png` from the Desktop recording, `city159.png` before,
   `city159-fixed.png` after, transition enumeration and rendering probe.
 - Native Release configure/full build succeeds in the owned build directory.
-  Full CTest running: `/tmp/rr-city-ctest.log`. Baseline regression failure:
+  Full CTest: 106/106 pass, zero skips (39.50 s), `/tmp/rr-city-ctest.log`.
+  Baseline regression failure:
   `/tmp/rr-city-baseline.log`; fixed sweep: `/tmp/rr-city-fixed.log`.
 - No C++ LSP channel in this client; Homebrew clangd with the owned database,
   changed scene lines: zero errors (`/tmp/rr-city-clangd.log`).
@@ -67,3 +68,21 @@ OMP's in-progress `race.cpp`, `race.hpp`, `oracle_sim_test.cpp` edits preserved.
 No Wine prefix, Ghidra, device, or capture resource held. Rendering probes read
 original local disc data only. Prior isolated Release checkout/build from
 `user-road-combat-20261025.md` is available for exact committed-source gates.
+
+## Exact committed-source verification
+
+- `a41f241` isolated checkout `/tmp/rr-user-road-combat-release/native-port`,
+  tracked clean, excludes concurrent simulation edits. Full Release build and
+  CTest `-j 4`: 106/106 pass, zero skips (28.21 s),
+  `/tmp/rr-city-clean-{build,ctest}.log`.
+- Browser Release rebuild from the same checkout succeeds, validates nine
+  code/metadata files without game assets, `/tmp/rr-city-clean-web.log`.
+  Bundle `build-agent-user-road-combat-clean-web/dist`.
+- Native build identity: commit `a41f241`, `dirty=false`, source SHA-256
+  `3b553ff00d80942e5c376721cbf7f05501bdeeafb096607664f1283c5122f35b`.
+- Original component/list replay gates pass within the full suite. No new live
+  original capture, sanitizer or device gate was run for this renderer change.
+  The exact user-reported scene is reproduced and fixed; this does not establish
+  full City gameplay or all-course original pixel parity.
+- Temporary file claim released after completion; no servers or captures started
+  during this follow-up. The retained isolated checkout supports reproducibility.
