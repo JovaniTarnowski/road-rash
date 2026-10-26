@@ -3,6 +3,25 @@
 const $ = id => document.getElementById(id);
 let engine, storageRoot, assetDirectory, references, importing = false, cancelled = false, running = false;
 const status = (message, error = false) => { $('status').textContent = message; $('status').classList.toggle('error', error); };
+// The original TEXT/*.DLL font files are TrueType data. Use the same
+// verified local files as TextRenderer; never publish or fetch game fonts.
+let discFonts;
+async function loadDiscFonts(directory) {
+    if (!discFonts) {
+        discFonts = Promise.all([
+            ['RoadRashBadloc', 'TEXT/BADLOC.DLL'],
+            ['RoadRashFutura', 'TEXT/FUTR.DLL'],
+            ['RoadRashFuturaBold', 'TEXT/FUTB.DLL'],
+            ['RoadRashFuturaDemi', 'TEXT/FUTD.DLL']
+        ].map(async ([family, path]) => {
+            const file = await (await directory.getFileHandle(encodeURIComponent(path))).getFile();
+            const face = await new FontFace(family, await file.arrayBuffer()).load();
+            return face;
+        })).then(faces => { faces.forEach(face => document.fonts.add(face)); });
+    }
+    try { await discFonts; }
+    catch (error) { discFonts = undefined; throw error; }
+}
 const sync = populate => new Promise((resolve, reject) => engine.FS.syncfs(populate, e => e ? reject(e) : resolve()));
 const call = (name, type = 'number', types = [], values = []) => engine.ccall(name, type, types, values);
 async function writeFile(directory, name, bytes) {
@@ -32,6 +51,11 @@ async function restoreDisc() {
             const file = await (await dir.getFileHandle(encodeURIComponent(reference.path))).getFile();
             if (file.size !== record.size) throw new Error('A stored game file is incomplete');
         }
+        // Font support must not turn a verified disc into an import failure.
+        // Unsupported browsers retain readable fallbacks; supported browsers
+        // use the exact same font files as the game before launch is offered.
+        try { await loadDiscFonts(dir); }
+        catch (error) { console.warn('Local game fonts unavailable:', error); }
         assetDirectory = dir;
         engine.localAssets.names = new Set(references.map(r => r.path));
         $('ready').hidden = false;

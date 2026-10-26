@@ -17,12 +17,17 @@ body {
   overflow: hidden;
   background: var(--background);
   color: var(--text);
-  font: 14px/1.4 "Helvetica Neue", Helvetica, sans-serif;
+  font: 14px/1.4 "RoadRashFutura", "Helvetica Neue", Helvetica, sans-serif;
 }
-h1, h2, button, .button, summary {
-  font-family: Impact, "Arial Narrow", sans-serif;
+h1, h2 {
+  font-family: "RoadRashBadloc", "Arial Narrow", sans-serif;
   font-weight: 400;
-  letter-spacing: .4px;
+  letter-spacing: 0;
+}
+button, .button, summary {
+  font-family: "RoadRashFuturaBold", "Arial Narrow", sans-serif;
+  font-weight: 400;
+  letter-spacing: 0;
 }
 h1, h2 { color: var(--orange); text-shadow: 2px 2px #000; }
 h1 { margin: 0; font-size: 24px; white-space: nowrap; }
@@ -136,7 +141,7 @@ summary::-webkit-details-marker { display: none; }
 }
 .controls-panel h2 { font-size: 26px; }
 dl { display: grid; grid-template-columns: 95px 1fr; gap: 10px; margin: 0; font-size: 13px; }
-dt { color: var(--yellow); }
+dt { color: var(--yellow); font-family: "RoadRashFuturaDemi", sans-serif; }
 dd { margin: 0; }
 .controls-panel p { margin: 20px 0 0; color: var(--muted); font-size: 12px; }
 footer { display: flex; justify-content: space-between; align-items: center; padding: 0 12px; font-size: 10px; color: #85877f; }

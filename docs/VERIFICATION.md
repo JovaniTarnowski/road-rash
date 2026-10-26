@@ -1,5 +1,20 @@
 # Verification log (all sessions September 28, 2026)
 
+## Original browser fonts (October 25, 2026)
+
+- `src/text.cpp` identifies original TrueType disc fonts (`TEXT/*.DLL`). The
+  browser shell loads the four verified files directly from OPFS using binary
+  FontFace sources; headings use Badloc and control/body text uses Futura.
+- Chromium/Playwright with original disc folder import: all four FontFace entries
+  report loaded, CSS resolves headings/buttons to the intended families, fonts
+  restore on page reload, quick race runs, controls popup works, and 390×844 /
+  844×390 toolbar/canvas geometry fits without overflow. No JS errors or font/DLL
+  network requests. Same checks with generated deployment CSP headers.
+- Evidence: `analysis/browser-fonts-20261025/` (local screenshots/logs only).
+  JavaScript syntax, whitespace and seven-file exclusion check pass. Reused
+  validated engine `096bff2`; no C++ changes or new native/wasm test run required.
+  Actual font files match; browser antialiasing is not claimed to match GDI pixels.
+
 ## Android debug assembly (October 26, 2026)
 
 - Baseline `ae5ea41` + docs (no src changes since `b619cb4` gate).

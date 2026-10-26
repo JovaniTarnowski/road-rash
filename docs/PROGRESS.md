@@ -53,6 +53,18 @@ Detailed evidence is in [REVERSE_ENGINEERING.md](REVERSE_ENGINEERING.md) and tes
 
 ## Timeline
 
+### October 25, 2026: original disc fonts in the browser shell
+
+Replaced the Impact approximation with the actual Badloc and Futura font files
+used by `TextRenderer`. After verified disc import/restore, the page loads
+`TEXT/BADLOC.DLL`, `FUTR.DLL`, `FUTB.DLL` and `FUTD.DLL` from OPFS into browser
+FontFace objects. Badloc headings, Futura Bold controls and Futura body text use
+the same local data as the game; no font files are bundled or requested over
+the network. Readable system fallbacks remain before disc import or if a browser
+cannot load the legacy fonts. Browser smoothing differs from native thresholded
+GDI-style rasterisation; this is a font-file match, not a pixel-identical text claim.
+
+
 ### October 25, 2026: browser layout revised around gameplay
 
 Removed the oversized title, promotional slogans, decorative disc and large
