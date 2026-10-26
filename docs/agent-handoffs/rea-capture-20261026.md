@@ -157,6 +157,26 @@ Contact `+0xac`: no writer in `.text`/sweep-hit-contact graph (REA
 xrefs + 1739-node trace); two hypotheses + decisive probe spec
 (slice `+0x60/+0x61`/`+0xac` dump) in the REA section above.
 
+## Continuation: push the dodge chain to course end
+- `sim-napa-avoid-ext` (windows 1-3, 9000w): DONE, 9181 frames valid.
+  Rode to tick 7835 (pos 288597) then crashed (fourth static at
+  ~142k lateral, drifting right +600/tick). Continuous riding
+  2056->7835 = 5779 ticks. Input script archived hash-MATCH.
+- Launched `sim-napa-avoid-4w` (windows 1-3 + steer-left 7780-7825,
+  11000w => ~11181 frames) in background: dodge the fourth static;
+  run to course end or the next obstacle.
+- `sim-napa-avoid-4w` DONE: 11181 frames, valid, input archived
+  hash-MATCH. Fourth static dodged; rode to tick 8667 (pos 317506)
+  then crashed (fifth static, lateral ~-207k). Continuous riding
+  2056->8667 = 6611 ticks, pos 76k->317k. No lateral discontinuities
+  >20k anywhere (no detectable route rebase; branch resolution is the
+  owner's route-table call — the split region is covered many times
+  over).
+- DODGE CHAIN STOPPED (diminishing returns: one static per ~30-100k,
+  ~2h per window). Method + steer-authority calibration documented
+  above for the owner to extend. Prefix cleaned of my temp traces
+  and input scripts (published copies in analysis/oracle/).
+
 ## REA: slice `+0xac` writer hunt (stream 2)
 
 - Triple gate at `4374a6: movl 0xac(%esi),%eax` + `testb $0x40,%ah`
