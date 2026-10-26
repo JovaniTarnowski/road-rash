@@ -173,7 +173,15 @@ int main(int argc, char** argv) {
                 return block;
             };
             auto position = [&](int camera_sample, int cop_sample) {
-                split.riders()[0].bike.i32(0x138) = camera_sample * 256 + 128 + 256;
+                // The camera follows the player half image
+                // (half_mirror.position), which the sim copies from the
+                // bike's motion words after every move (0x004067d0): bike
+                // +0x1c/+0x138 and the mirror always agree outside a contact
+                // tick, so poke all three together.
+                const int32_t camera_pos = camera_sample * 256 + 128 + 256;
+                split.riders()[0].bike.i32(0x1c) = camera_pos;
+                split.riders()[0].bike.i32(0x138) = camera_pos;
+                split.riders()[0].half_mirror.position = camera_pos;
                 split.riders()[0].sample = size_t(camera_sample + 1);
                 split.riders().back().sample = size_t(cop_sample);
                 split.riders().back().bike.i32(0x1c) = cop_sample * 256 + 192;
@@ -210,7 +218,12 @@ int main(int argc, char** argv) {
             split.set_live_schedule(false);
             position(49, 51);
             split.riders()[0].crash_active = true;
+            // While crashed the half IS the crash body (0x00403d60): the
+            // mirror reads the body's words, so keep body +0x1c/+0x138 and
+            // the mirror together as the sim's copy does.
+            split.riders()[0].crash_actor.motion.i32(0x1c) = split.riders()[0].bike.i32(0x1c);
             split.riders()[0].crash_actor.motion.i32(0x138) = split.riders()[0].bike.i32(0x138);
+            split.riders()[0].half_mirror.position = split.riders()[0].bike.i32(0x1c);
             split.riders()[0].crash_actor.route = 1;
             split.riders()[0].crash_actor.sample = 50;
             const auto crash_half_other = pcm(0, 0);

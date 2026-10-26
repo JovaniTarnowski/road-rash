@@ -86,3 +86,17 @@ then. Ghidra/REA: project export first, REA 6.4.0 spot-checks only.
 - `napa-solo-jump`, `napa-traffic-solo/field`.
 - Split branch commits (blocked: need avoidance scripts; separate slice).
 - CTest registration only on clean full pass without golden-only suffix.
+
+## Follow-up 20261026: sound-test regression from the camera hunk
+
+- The camera hunk broke CTest `sound` ("negative split separation
+  truncates toward zero"). Bisected in `/tmp/rr-bisect` (parent
+  `44679e4`): ctor-init hunk alone passes, +camera hunk reproduces,
+  remount hunk inert for sound (recovery path never runs in the
+  fixture). Root cause: the fixture's `position()` poked only player
+  bike `+0x138`, which the old camera read directly; the new camera
+  follows `half_mirror.position` (bike `+0x1c` image). In the sim
+  `+0x1c`/`+0x138`/mirror always agree outside a contact tick, so the
+  fixture now pokes all three together (plus body `+0x1c` and the
+  mirror in the crashed-player block). Fixture-only change in
+  `tests/sound_test.cpp`; no sim, golden, or expectation touched.
