@@ -1,5 +1,6 @@
 'use strict';
 // Hosted deployments fetch verified assets on demand; local disc import remains available.
+const telemetry = window.rrTelemetry || {track() {}, error() {}};
 const $ = id => document.getElementById(id);
 let engine, storageRoot, assetDirectory, references, importing = false, cancelled = false, running = false;
 let loadingStage = '', downloadingAssets = 0;
@@ -92,6 +93,7 @@ async function restoreHostedAssets() {
     $('cache-note').hidden = false;
     $('ready').hidden = false;
     status('Ready to play.');
+    telemetry.track('launcher_ready', {source: 'hosted'});
     return true;
 }
 const sync = populate => new Promise((resolve, reject) => engine.FS.syncfs(populate, e => e ? reject(e) : resolve()));
@@ -133,6 +135,7 @@ async function restoreDisc() {
         $('ready').hidden = false;
         $('state').textContent = 'Disc ready';
         status('Your game is ready to play.');
+        telemetry.track('launcher_ready', {source: 'local'});
         return true;
     } catch (error) {
         if (hasMarker || error.name !== 'NotFoundError') status('Stored disc unavailable. Re-import your original disc. ' + storageError(error), true);
@@ -142,6 +145,7 @@ async function restoreDisc() {
 async function importDisc(source, iso) {
     if (!engine || importing || running) return;
     importing = true; cancelled = false;
+    telemetry.track('disc_import_start', {source: iso ? 'iso' : 'folder'});
     $('ready').hidden = true; $('progress').hidden = false; $('cancel').hidden = false;
     $('progress').value = 0;
     for (const input of [$('iso'), $('folder')]) input.disabled = true;
@@ -206,7 +210,10 @@ async function importDisc(source, iso) {
                 await storageRoot.removeEntry(name, {recursive: true}).catch(() => {});
         }
         await restoreDisc();
+        telemetry.track('disc_import_complete');
     } catch (error) {
+        if (cancelled) telemetry.track('disc_import_cancelled');
+        else telemetry.error(error, 'disc_import');
         call('rr_import_cancel', null);
         if (staging) await storageRoot.removeEntry(directoryName, {recursive: true}).catch(() => {});
         await restoreDisc();
@@ -220,6 +227,9 @@ async function importDisc(source, iso) {
 async function startGame(quick) {
     if (!engine || !assetDirectory || running) return;
     running = true;
+    const started = performance.now();
+    const mode = quick ? 'quick_race' : 'main_game';
+    telemetry.track('game_start', {mode, ...(quick ? {course: Number($('course').value)} : {})});
     document.body.classList.add('playing');
     loadingStage = 'Starting game…'; updateLoading();
     $('setup').hidden = true; $('canvas').hidden = false; $('loading').hidden = false;
@@ -247,8 +257,10 @@ async function startGame(quick) {
         const code = await engine.ccall('main', 'number', ['number', 'number'], [args.length, argv], {async: true});
         await sync(false);
         if (code) throw new Error(engine.assetError || 'The game stopped with an error. Re-import your disc if a stored file is missing.');
+        telemetry.track('game_exit', {mode, duration_ms: Math.round(performance.now() - started)});
         showGameMessage('Use Exit to launcher to play again.', 'Game closed');
     } catch (error) {
+        telemetry.error(error, 'game');
         showGameMessage(storageError(error) + ' Use Exit to launcher to try again.');
     } finally { allocated.forEach(ptr => engine._free(ptr)); }
 }
@@ -257,8 +269,8 @@ $('folder').addEventListener('change', e => e.target.files.length && importDisc(
 $('cancel').onclick = () => { cancelled = true; };
 $('play').onclick = () => startGame(false);
 $('quick').onclick = () => startGame(true);
-$('reload').onclick = () => location.reload();
-$('fullscreen').onclick = () => document.querySelector('.viewport').requestFullscreen().catch(error => showGameMessage(storageError(error)));
+$('reload').onclick = () => { telemetry.track('launcher_exit'); location.reload(); };
+$('fullscreen').onclick = () => document.querySelector('.viewport').requestFullscreen().then(() => telemetry.track('fullscreen')).catch(error => { telemetry.error(error, 'fullscreen'); showGameMessage(storageError(error)); });
 // SDL receives these events too; prevent browser scrolling while the game owns focus.
 document.addEventListener('visibilitychange', () => {
     if (running) call('rr_web_visibility', null, ['number'], [document.hidden ? 1 : 0]);
@@ -283,7 +295,7 @@ window.addEventListener('keydown', event => {
             print: console.log,
             printErr: message => { console.warn(message); },
             preRun: [module => { module.ENV.RR_PREF_OVERRIDE = '/persist'; }],
-            onAbort: reason => showGameMessage('Engine error: ' + reason + '. Use Exit to launcher to restart.')
+            onAbort: reason => { telemetry.error(new Error(String(reason)), 'engine_abort'); showGameMessage('Engine error: ' + reason + '. Use Exit to launcher to restart.'); }
         });
         engine.webLoading = stage => { loadingStage = stage; updateLoading(); };
         engine.FS.mkdirTree('/persist');
@@ -306,6 +318,6 @@ window.addEventListener('keydown', event => {
         }
         for (const input of [$('iso'), $('folder')]) input.disabled = false;
         document.querySelectorAll('label.button').forEach(el => el.classList.remove('disabled'));
-    } catch (error) { status(storageError(error), true); $('retry').hidden = false; }
+    } catch (error) { telemetry.error(error, 'initialization'); status(storageError(error), true); $('retry').hidden = false; }
 })();
-$('retry').onclick = () => location.reload();
+$('retry').onclick = () => { telemetry.track('connection_retry'); location.reload(); };

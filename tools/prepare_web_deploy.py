@@ -9,7 +9,7 @@ import sys
 
 root = Path(__file__).resolve().parents[1]
 dist = Path(sys.argv[1]).resolve()
-roles = ['index.html', 'app.js', 'style.css', 'rr-game.js', 'rr-game.wasm', 'references.json', 'LICENSES.txt']
+roles = ['index.html', 'app.js', 'telemetry.js', 'style.css', 'rr-game.js', 'rr-game.wasm', 'references.json', 'LICENSES.txt']
 files = {p.name for p in dist.iterdir() if p.is_file()}
 allowed = set()
 for role in roles:

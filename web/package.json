@@ -1,0 +1,14 @@
+{
+  "name": "road-rash-web-telemetry",
+  "private": true,
+  "scripts": {
+    "build": "node build.mjs"
+  },
+  "dependencies": {
+    "@sentry/browser": "11.9.0",
+    "posthog-js": "1.438.21"
+  },
+  "devDependencies": {
+    "esbuild": "0.28.2"
+  }
+}

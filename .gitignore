@@ -34,3 +34,5 @@ analysis/*/
 analysis/codex-*.json
 analysis/field-count-sessions.json
 analysis/sim-forensics
+
+web/node_modules/

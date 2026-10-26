@@ -9,7 +9,7 @@ import sys
 def fingerprint(directory):
     # Remove only generated fingerprints from a previous invocation. The build
     # has just copied fresh source assets into this exclusively generated dir.
-    generated = re.compile(r'(?:rr-game|app|style|references)\.[0-9a-f]{16}\.(?:js|wasm|css|json)')
+    generated = re.compile(r'(?:rr-game|app|style|references|telemetry)\.[0-9a-f]{16}\.(?:js|wasm|css|json)')
     for path in directory.iterdir():
         if path.is_file() and generated.fullmatch(path.name):
             path.unlink()
@@ -34,9 +34,10 @@ def fingerprint(directory):
     references = rename('references.json')
     app = replace_once((directory / 'app.js').read_text(), "fetch('references.json')", f"fetch('{references}')")
     app = rename('app.js', app.encode())
+    telemetry = rename('telemetry.js')
     style = rename('style.css')
     index = (directory / 'index.html').read_text()
-    for before, after in [('rr-game.js', engine), ('app.js', app), ('style.css', style)]:
+    for before, after in [('telemetry.js', telemetry), ('rr-game.js', engine), ('app.js', app), ('style.css', style)]:
         index = replace_once(index, before, after)
     (directory / 'index.html').write_text(index)
     print(f'Fingerprint bundle: {engine} -> {wasm}')

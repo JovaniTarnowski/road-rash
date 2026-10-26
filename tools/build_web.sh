@@ -37,7 +37,10 @@ PYTHON
     done
 } > "$dist/LICENSES.txt"
 
-# Only the seven known code/metadata files may be published.
+# Bundle pinned telemetry SDKs locally; no third-party script hosts at runtime.
+npm ci --prefix "$root/web" --ignore-scripts
+RR_TELEMETRY_OUTPUT="$dist/telemetry.js" npm run --prefix "$root/web" build
+# Only known code/metadata files may be published.
 python3 "$root/tools/fingerprint_web_bundle.py" "$dist"
 python3 "$root/tools/prepare_web_deploy.py" "$dist" --validate-only
 echo "Playable web bundle ready in $dist"

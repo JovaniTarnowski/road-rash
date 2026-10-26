@@ -43,6 +43,9 @@ jobs:
           git clone --depth 1 --branch 6.0.10 https://github.com/emscripten-core/emsdk.git .tools/emsdk
           .tools/emsdk/emsdk install 6.0.10
           .tools/emsdk/emsdk activate 6.0.10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
       - name: Build browser game
         run: |
           source .tools/emsdk/emsdk_env.sh
@@ -62,7 +65,9 @@ jobs:
       - name: Verify upgrade with stale browser cache
         env:
           NODE_PATH: ${{ github.workspace }}/.tools/browser-tests/node_modules
-        run: node tests/web_bundle_cache.cjs
+        run: |
+          node tests/web_bundle_cache.cjs
+          node tests/web_telemetry.cjs
       - name: Deploy to Dokku
         env:
           DEPLOY_KEY: ${{ secrets.DOKKU_ROAD_RASH_KEY }}
