@@ -97,3 +97,15 @@ Use an isolated committed-source checkout for final native/web builds.
   merge goldens, sanitizers and device validation were not run. Existing original
   replay gates pass; no golden was modified.
 - Source claim released after completion. No background local servers/captures.
+
+## Deployment receipt
+
+GitHub Actions run `40290251400` completed successfully, including browser build,
+stale-cache upgrade, Dokku deploy, exact revision/health and automatic-assets /
+live-gameplay checks: https://github.com/arkits/road-rash/actions/runs/40290251400 .
+Public `https://road-rash.archit.xyz/revision.txt` returned
+`bf38c791d879cdc34c328378eef39d0ae36be5e7`, which includes `66fcb52` unchanged
+in all five renderer/test files (ancestry and path diff checked). OMP's finished
+combat change followed our source commit before deployment. The later `2080a2a`
+commit contains only this session's verification notes. Existing running tabs
+must reload to load the new engine. No background local resources remain.

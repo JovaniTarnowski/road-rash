@@ -2210,3 +2210,19 @@ whole far grid one lane when ceil(left lanes) changed. CITY sample 159
 (left Q8 512 -> 533) exposed scenery through the right lane. Projecting the
 near strip's origin at the far scale (including sub-slice centre offset)
 restores the original construction. [Reproduction](agent-handoffs/city-width-gap-20261026.md).
+
+### October 26, 2026: inward hills approaching merges
+
+`0x00443cd0` separates exterior side rendering from the inner gap dispatcher
+`0x0043be80`. For type-4 hills the latter uses `0x0041d500` with bounded band
+counts; exterior profiles alone use the fourth band extending to the viewport.
+`0x00454890` joins the two inward world-space profiles in an approaching merge,
+collapsing surplus points to a shared ridge and recording per-side band limits.
+`0x00454c30` places that ridge at the midpoint of the preceding X endpoints and
+evaluates the first profile's signed Q16 slope there (fourth argument unused).
+Disjoint terminal profiles use count 4 and `0x0041d620`'s connecting band-2
+quad, with neighboring count maxima from `0x0041d500`. Signed compare and divide
+sequences checked in exported assembly. Native previously extended each inner
+profile to the viewport, producing the reported Napa green curtain; the
+approaching-merge path now follows these rules in local render copies.
+[Trace and acceptance limits](agent-handoffs/napa-merge-terrain-20261026.md).

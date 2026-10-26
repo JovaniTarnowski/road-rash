@@ -2754,3 +2754,19 @@ names). Rebase preserved both progress entries; no implementation conflicts.
 - Original `0x00444630` origin correction checked against assembly
   `0x00444c57–0x00444ca3`; changed-line clangd check: zero errors.
 - [Before/after evidence, logs and limits](agent-handoffs/city-width-gap-20261026.md).
+
+### October 26, 2026: Napa approaching-merge rendering
+
+- Prior committed library fails the new imported-scene regression:
+  `Napa merge terrain covers the roadway at 940` (exit 1). Fixed renderer
+  checks samples 940/945/970/975 at logical widths 320/426, with unit checks
+  for ridge continuity, exterior preservation and inner band limits.
+- Owned Release full gate: 106/106, zero skips (41.08 s). Isolated clean
+  source `66fcb52` final Release full gate: 106/106, zero skips (27.16 s).
+  Browser Release build succeeds; changed helper/scene clangd checks pass.
+- Actions deployment run `40290251400`: success, including stale-cache upgrade,
+  deployed revision/health and live-gameplay checks. Public revision `bf38c79`
+  includes the renderer fix unchanged. No new original-runtime merge capture,
+  sanitizer or device gate; static original trace plus exact native scene
+  reproduction, not full original split/merge pixel acceptance.
+- [Commands, hashes and before/after evidence](agent-handoffs/napa-merge-terrain-20261026.md).

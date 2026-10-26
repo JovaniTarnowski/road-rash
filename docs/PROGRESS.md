@@ -1932,3 +1932,15 @@ The triangle closes and the displaced centre stripe is corrected. Added
 pixel coverage regression at 4:3 and Hor+ widths; it fails on the old code.
 This closes the specific City report left open October 25; full City parity
 remains separate. [Evidence](agent-handoffs/city-width-gap-20261026.md).
+
+### October 26, 2026: Napa merge terrain overdraw (reported web screenshots)
+
+Reproduced the grass bands, truncated road and green curtain around 2.6–2.8
+miles at Napa route-A samples 940/945/970/975. The inward-facing hill profiles
+were rendered like exterior terrain and extended across the viewport. Ported
+the approaching-merge profile join, band limits and terminal ridge connection
+from `0x00454890` / `0x0041d500` / `0x0041d620`, using per-view copies without
+changing simulation or RNG. New sky/road coverage checks at widths 320/426
+fail before the fix and pass afterward. Clean committed-source native gate:
+106/106, no skips. Browser deployment and live-gameplay checks pass; correction
+is live. [Evidence and remaining fidelity scope](agent-handoffs/napa-merge-terrain-20261026.md).
