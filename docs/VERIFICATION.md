@@ -1,5 +1,20 @@
 # Verification log (all sessions September 28, 2026)
 
+## Solo braking/steering script, player-control green (October 26, 2026)
+
+- Baseline `b619cb4`. New oracle capture `sim-napa-solo-script`
+  (course 4, seed 1, solo, HUMAN=1, 1,620-word script, FRAMES=1801):
+  validated header, 1801 contiguous ticks 1-1801, end marker, EXE
+  `73d7f974…`, exit 0, `demo_hold == 0` (player-control; first attempt
+  without HUMAN=1 gave demo branch, rejected). Trace `97ec1aac…`,
+  receipt git-ignored (analysis/oracle/ never committed).
+- Native replay with owned Debug build `build-agent-crash-2278`
+  (`oracle-sim-test`, auto human driver): `1801 ticks identical`
+  (+5 golden-only, 0 uncovered). No divergence -- no src changes.
+  Like L5d (+13) / L5e (+43), the golden-only suffix can neither pass
+  nor pin, so verified manually, not registered as CTest.
+- No sanitizers/Android run (no src changes; capture + replay only).
+
 ## Bike +0x324 rider type, no behavior change (October 26, 2026)
 
 - Baseline `77b0b7c`. `src/race.cpp` `place_rider` sets bike `+0x324`

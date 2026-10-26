@@ -109,6 +109,36 @@ python3 tools/golden_diff.py analysis/oracle/sim-napa-solo-human.tsv analysis/or
 Both report zero differences (replay verified 1,431 frames identical;
 `sim-napa-solo-human-replay.tsv` is git-ignored scratch, not committed).
 
+## napa-solo-script (braking/steering, player-control; green, no CTest)
+
+Level 1 Napa, default bike and character, seed 1, solo (`RR_ORACLE_SOLO=1`).
+Plan 10 Task 5 braking/steering scenario: full throttle 300, hard left 60,
+brake 120, right 60, repeated to the first split (sample 700). Control bits
+are hex words (`1` throttle, `5` throttle+left, `2` brake, `201`
+throttle+right, `0` coast; `fscanf %x`). Gears auto-shift; no manual gear bits.
+
+`RR_ORACLE_HUMAN=1` is required for the player-control branch
+(`DAT_004753c8` cleared post-setup; `player.demo_hold == 0` every tick).
+`RR_ORACLE_INPUT` alone leaves `demo_hold == 1` (attract-demo AI branch,
+INPUT dumped but ignored -- first attempt in this slice captured 1801
+demo-branch ticks, correctly rejected for player physics; re-ran with
+`HUMAN=1`). Script: 1,620 words, 3 cycles of
+`[1*300, 5*60, 2*120, 201*60]` (`analysis/oracle/sim-napa-solo-script.controls`,
+git-ignored; seeded as `prefix/drive_c/napa-script-20261026.controls`).
+
+```sh
+RR_ORACLE_COURSE=4 RR_ORACLE_SEED=1 RR_ORACLE_SIM=1 RR_ORACLE_SOLO=1 RR_ORACLE_HUMAN=1 RR_ORACLE_INPUT='C:\napa-script-20261026.controls' RR_ORACLE_FRAMES=1801 oracle/run.sh sim-napa-solo-script
+```
+
+Result: `analysis/oracle/sim-napa-solo-script.tsv` (1,801 frames, ticks
+1–1801, 1 frozen frame, green at tick 2, `end` marker, `demo_hold == 0`,
+trace `97ec1aac…`, receipt git-ignored). Native replay
+(`oracle-sim-test`, auto human driver from measured `demo_hold == 0`):
+`1801 ticks identical` (+5 golden-only, 0 uncovered). No divergence, no
+porting needed -- player throttle/brake/steer/gears hold through braking,
+hard turns and the split approach. Like L5d/L5e, the golden-only suffix can
+neither pass nor pin as a CTest, so verified manually, not registered.
+
 ## Replay driver axis (replay prerequisites, Oct 12)
 
 `solo` (field isolation: scheduler freeze, traffic nulled) and

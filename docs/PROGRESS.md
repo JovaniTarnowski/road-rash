@@ -53,6 +53,20 @@ Detailed evidence is in [REVERSE_ENGINEERING.md](REVERSE_ENGINEERING.md) and tes
 
 ## Timeline
 
+### October 26, 2026: solo braking/steering script green, no porting needed
+
+- New capture `sim-napa-solo-script` (plan 10 Task 5): 1,620-word
+  script, 3 cycles `[1*300, 5*60, 2*120, 201*60]`, course 4/level 1/
+  seed 1/solo/HUMAN=1/FRAMES=1801. First attempt without HUMAN=1 gave
+  1801 demo-branch ticks (INPUT ignored, correctly rejected for player
+  physics); re-ran with HUMAN=1 for player-control (`demo_hold == 0`).
+  Validated: header, 1801 contiguous ticks, end marker, EXE hash, exit 0.
+  Native replay `1801 ticks identical` (+5 golden-only, 0 uncovered).
+  Player throttle/brake/steer/gears hold; no divergence, no src changes.
+  Like L5d/L5e, golden-only suffix => verified manually, not registered.
+  Remaining (same Task 5): split-left/right, jump, fight/contact,
+  traffic-solo/field (separate captures).
+
 ### October 26, 2026: bike +0x324 rider type (walls groundwork, no behavior change)
 
 - `0x00405990` sets bike `+0x324` 0/1/2 (player/opponent/cop; cop
