@@ -7,8 +7,8 @@ below; the October 12 sections are historical checkpoints.
 
 ## Playable browser implementation — October 25, 2026
 
-**Deployment:** [Play the Vercel preview](https://road-rash-32f5uhubr-arkits.vercel.app) — READY, engine/config
-shell commit `7d8f7d7`, engine `096bff2` (implementation `8673a75`). This project requires Vercel
+**Deployment:** [Play the Vercel preview](https://road-rash-o4j8h7nq2-arkits.vercel.app) — READY, engine/config
+shell commit `ba1fe64`, engine `096bff2` (implementation `8673a75`). This project requires Vercel
 sign-in for previews. Import your disc on this origin, then choose Quick race.
 Framework: static HTML/JavaScript + WebAssembly; prebuilt upload, no remote C++
 build. Vercel does not report a build duration for this upload.
@@ -44,6 +44,12 @@ build. Vercel does not report a build duration for this upload.
   controls, non-affiliation notice, canvas and error recovery. **Quick race**
   starts directly; **Start game** runs the original frontend. Enter skips the
   opening movie/credits. All five native course choices were browser-tested.
+
+The page also loads the original Badloc/Futura TrueType files from the verified
+local disc after import/restore. Browser FontFace uses in-memory bytes from OPFS;
+no game fonts are published. Badloc headings and Futura controls/body replace the
+system-font approximation. Before import the page uses system fallbacks. Browser
+smoothing differs from the native thresholded text rasteriser.
 
 ### Build, serve, test and deploy
 

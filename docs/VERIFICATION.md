@@ -2,6 +2,10 @@
 
 ## Original browser fonts (October 25, 2026)
 
+- Preview READY: https://road-rash-o4j8h7nq2-arkits.vercel.app, shell `ba1fe64`, engine `096bff2`.
+  Deployment `dpl_C919ivGcxzuxZjk82DwMYZBy1L4i`. JS/CSS in the seven-file
+  prebuilt output byte-match source. No deployed-URL fetch performed.
+
 - `src/text.cpp` identifies original TrueType disc fonts (`TEXT/*.DLL`). The
   browser shell loads the four verified files directly from OPFS using binary
   FontFace sources; headings use Badloc and control/body text uses Futura.

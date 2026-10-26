@@ -22,3 +22,10 @@ allowlist/reference-hash checks pass. Reused original validated wasm engine
 Release bundle build-agent-browser-fonts/dist; existing Vercel project preview
 via prebuilt deployment. URL/status recorded after deployment. Temporary local
 HTTP ports 8771/8772 owned by this session; stop at completion.
+
+
+Release shell `ba1fe64` pushed to main; engine `096bff2` reused.
+Vercel preview READY: https://road-rash-o4j8h7nq2-arkits.vercel.app
+Deployment dpl_C919ivGcxzuxZjk82DwMYZBy1L4i; existing Vercel sign-in applies.
+Staged JS/CSS checked byte-identical to committed web source. Deployment receipt
+retained under analysis/browser-fonts-20261025/. Temporary servers stopped.
