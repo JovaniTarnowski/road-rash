@@ -578,7 +578,7 @@ The course screens share one item array; the sixth item is copied from `0x004691
 - Screen 9 capture: `RR_ORACLE_MENU=9` screenshots the composed 640×480 client window once `0x0046a660` holds 9 (`analysis/oracle/menu-09-20261026.bmp` + receipt, git-ignored; cnc-ddraw gdi renderer, boot takes ~100 s under Wine). First-slice `frontend-test` comparison: title/description/button areas masked (GDI text, wrap and layout gaps), picture + fills compared directly (masked 60%, unmasked exact 15%, large-diff (>32) 1%). Thresholds are characterization pins; full-pixel acceptance stays open.
 
 **Not ported or replaced natively:**
-- Mano-a-mano is disabled (plan 09).
+- Mano-a-mano is disabled. The original protocol is traced in [MULTIPLAYER.md](MULTIPLAYER.md); the port is [plan 34](plans/34-multiplayer.md).
 - Jukebox track list and video popup ported (plan 13 Task 4 Step 1); Sound Mix and Configure Input items do nothing yet (plan 18 Tasks 6-7).
 - The 60-second attract-demo timer on the main menu is not implemented (traced October 12, 2026: plan 13 Task 5 Step 1; see Game-mode bullet).
 - Windows common file dialogs are replaced by numbered `<Character> N.RRS` saves in the preference directory and a list of the newest eight.
@@ -2254,3 +2254,43 @@ Assembly, rather than Ghidra's overlapping stack-local names, resolves them:
 `src/frontend.cpp` shares these rectangle/flag rules between logical and
 scaled drawing. This supersedes the former forced-centering implementation;
 it does not establish whole-frame pixel parity or other-screen acceptance.
+
+## Mano-a-mano network play (October 26, 2026, plan 34 input)
+
+This is static analysis only; no capture has been run. Full detail, with
+traced and inferred items labelled, is in [MULTIPLAYER.md](MULTIPLAYER.md).
+
+- **Game modes:** mode 3 is networked. `DAT_004c5af9` marks the host,
+  `DAT_004c5b00` the client.
+- **Transport `DAT_0046c4cc`:** `0x184` modem (TAPI plus COMM handle, two
+  players), `0x185` TCP/IP and `0x186` IPX. Both of the last two use WSOCK32
+  datagram sockets, up to eight peer slots (`0x0049bd00`) and player table
+  `0x00497304` (8 × 0x20). TCP/IP game traffic uses UDP 6996; discovery
+  broadcast uses 6995.
+- **Rider fields:** `+0x328` is the network slot; `+0x324` is 0 for a local
+  human, 1 for AI and −1 for a remote rider.
+- **Send cadence** (`0x0044b2e0`): `(DAT_004c5afc & tick) == 0`, with mask 1
+  on TCP/IP and IPX and 3 on modem. It runs `0x0043cdb0` and `0x0044f040`.
+- **Frames and records:**
+  - frames are 0x4c bytes: kind `0x0a`, a presence mask, then three 24-byte
+    records;
+  - each record starts with a `type << 4 | slot` byte;
+  - the receiver is `0x0043e9c0`;
+  - clients send to the host, and the host relays (`0x0043c640`,
+    `0x00430570`).
+- **Not lockstep.** Each peer is authoritative for its own rider and the AI
+  riders it owns (owner table `0x004c4fb0`). The host broadcasts the owner and
+  interest tables. The heartbeat (`0x00442f60`, every 0x39 ticks) carries a
+  per-slot handicap byte computed from progress `+0x1f8`.
+- **Networked rule changes:**
+  - countdown 0x168 (`0x00442dd0`);
+  - traffic density ×4 (`0x0044dd00`);
+  - odd-kind spawns suppressed, and spawns gated by the nearest remote riders
+    (`0x0044df60`, `0x0044f0d0`);
+  - `0x00441750` returns `DAT_0049bce8` in mode 3.
+- **Menu:** screen 0x0b (Host `0x0042fc40`, Join `0x0042fef0`, Bulletin Board,
+  Chat Messages, Restroom, Disconnect `0x00431600`); screen 0x0d holds F1–F8
+  chat messages of 60 bytes each at `0x00497408`.
+- **Correction.** Plan 09 assumed two-player lockstep exchanging controls. The
+  code replicates state (snapshots and events), and up to eight humans can
+  play over TCP/IP or IPX.

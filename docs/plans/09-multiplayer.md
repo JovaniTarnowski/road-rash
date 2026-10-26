@@ -1,5 +1,7 @@
 # Multiplayer Implementation Plan (decision-gated)
 
+> **Superseded by [plan 34](34-multiplayer.md) (October 26, 2026).** The Task 1 trace ([../MULTIPLAYER.md](../MULTIPLAYER.md)) showed that mano-a-mano is up to eight players over TCP/IP or IPX (two over a modem), using host-relayed snapshots and AI ownership, not two-player lockstep. Tasks 2–4 below rest on that wrong premise. Kept for history only.
+
 > **Status (October 11, 2026 review):** Not started. The owner decision is scheduled in [plan 15](15-release-and-acceptance.md) Task 4. This plan is kept as background for addresses and findings; follow the newer plans for remaining work.
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking. Read [00-INDEX.md](00-INDEX.md) first. **Do not start Task 2 or later until Task 1's decision is recorded by the project owner.** Requires plans 04–06 and 08.

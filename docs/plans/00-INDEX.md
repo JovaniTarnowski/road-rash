@@ -97,7 +97,7 @@ The owner also asked for plans covering pedestrians, oil slicks, police and the 
 | 06 | [Front end, progression, saves](06-frontend-progression-saves.md) | Mostly done; 3 inert screens, attract demo, pixel and save verification open | Plan 13 |
 | 07 | [Audio and video](07-audio-and-video.md) | Codecs, mixer, effects, engines, RRA done; MIDI, sirens, car engines, cutscene selection open | Plans 11, 13 |
 | 08 | [Platform, input, packaging](08-platform-input-packaging.md) | Software complete for macOS; Android hardware validation open | Plans 14, 15 |
-| 09 | [Multiplayer](09-multiplayer.md) | Decision-gated, not started | Plan 15 Task 4 (decision only) |
+| 09 | [Multiplayer](09-multiplayer.md) | **Superseded by plan 34** (October 26): its lockstep premise was wrong | Plan 34 |
 | **10** | [Simulation oracle and tick verification](10-simulation-oracle.md) | Tasks 1–4 done (`ab8cc79`, `37c4597`, `d3294fa`, `6b2ce6d`). Task 5 in progress: demo-hold replay matches 124 ticks with per-tick RNG re-anchoring (not yet acceptance; see the playtest update) | — |
 | **11a** | [Napa playtest fixes](11a-napa-playtest-fixes.md) | Tasks 1 + 4 done. Task 2 Steps 1–5 done (rpm + distance readout; post-dash hook, parked needles match). Task 3 Steps 1–5 done (nodes 25/25 pixel-clean; jump hunt partial, drive-3 mode kept) | — |
 | **11** | [Opening Napa race completion](11-napa-race-completion.md) | Task 1 done (`51cb898`). Task 2 partly done: playback, live rider and car nodes (`fda8b2a`, `586169a`); node comparison done (11a Task 3: 25/25, pixel clean). Task 4 partly done: crash entry/motion/recovery/remount verified offline (`63ad4ad`, `be31cdc`); car contact done (11a Task 1). Task 6 partly done: arrest decisions and cop setup (`397691a`, `be31cdc`); live spawning open (plan 24 Task 2). Tasks 3, 5, 7, 8 open | — |
@@ -123,6 +123,7 @@ The owner also asked for plans covering pedestrians, oil slicks, police and the 
 | **31** | [Docs and status hygiene](31-docs-and-status-hygiene.md) | **Done**: header/index refresh, handoff archive, doc checks in agent-tooling | — |
 | **32** | [Completion review follow-through](32-completion-review-next-steps.md) | New (October 14 review, [report](../agent-review/REVIEW-2026-10-14-COMPLETION.md)): R1 restart latch, R2/R3 interpolation, R4 pause texture, R5 side panels | Slice C is the active SIM work (this plan); A/B after it; D–G sequenced after parity/device evidence |
 | **33** | [Linux and Windows ports](33-linux-windows-ports.md) | New (October 17). Linux and Windows builds, packaging, CI and acceptance after macOS/Android; portability rules apply now | — |
+| **34** | [Mano-a-mano multiplayer](34-multiplayer.md) | New (October 26, owner request). Trace in [../MULTIPLAYER.md](../MULTIPLAYER.md): up to 8 players over UDP (TCP/IP, IPX) or 2 over a modem; host-relayed snapshots and AI ownership, not lockstep. Tasks: two-instance Wine capture, wire codec, networked race, lobby/chat, native↔original interop, platforms, soak. Modem/IPX dropped. Task 8 (relay/browser) owner-gated | — |
 
 ### Order and dependencies
 
@@ -226,7 +227,7 @@ Never commit `analysis/frontend`, `analysis/oracle`, screenshots of original art
 
 8. Linux and Windows builds pass the same gates (plan 33).
 
-Plan 09 (multiplayer) is outside the definition of done unless the owner decides otherwise (plan 15 Task 4).
+Plan 34 (mano-a-mano multiplayer, superseding plan 09) is outside the definition of done unless the owner decides otherwise (plan 15 Task 4). The owner asked for the plan on October 26, 2026; whether it joins the definition of done is still the owner's decision.
 
 ## Global risks
 

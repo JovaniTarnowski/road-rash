@@ -89,10 +89,10 @@ grep -q '^ACCEPTANCE OK$' "$LOG"
 
 ---
 
-### Task 4: Multiplayer decision (plan 09)
+### Task 4: Multiplayer decision (plan 34, superseding plan 09)
 
-- [ ] **Step 1: Ask the owner** whether mano-a-mano network play is wanted. Present the scope summary from [09-multiplayer.md](09-multiplayer.md) Task 1.
-- [ ] **Step 2:** Record the decision in 00-INDEX.md and PROGRESS.md. If yes, plan 09 becomes active and its acceptance joins the definition of done. If no, the mano-a-mano menu entry stays disabled with a short native message, as now, and the user guide says so.
+- [ ] **Step 1: Ask the owner** whether mano-a-mano network play is wanted. Present the scope summary from [../MULTIPLAYER.md](../MULTIPLAYER.md) and [34-multiplayer.md](34-multiplayer.md).
+- [ ] **Step 2:** Record the decision in 00-INDEX.md and PROGRESS.md. If yes, plan 34 becomes active and its acceptance joins the definition of done. If no, the mano-a-mano menu entry stays disabled with a short native message, as now, and the user guide says so.
 
 ---
 

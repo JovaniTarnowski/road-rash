@@ -53,6 +53,33 @@ Detailed evidence is in [REVERSE_ENGINEERING.md](REVERSE_ENGINEERING.md) and tes
 
 ## Timeline
 
+### October 26, 2026: mano-a-mano traced; multiplayer plan 34
+
+This is a documentation-only session. It covers the original's mano-a-mano
+mode, using static analysis of the disc EXE (hash verified), its imports, the
+Ghidra exports and the ENU.DLL strings.
+
+- **What it is.** Mano-a-mano is networked multiplayer for up to eight humans
+  over TCP/IP (UDP 6996/6995) or IPX, or two over a TAPI modem.
+- **How it plays.**
+  - Every peer simulates its own rider and the AI riders it owns, and sends
+    0x4c-byte snapshot/event frames to the host.
+  - The host relays those frames and owns the AI-owner, interest and handicap
+    tables.
+  - It is not lockstep.
+- **New documents.** [MULTIPLAYER.md](MULTIPLAYER.md) holds the findings, each
+  labelled traced or inferred. [Plan 34](plans/34-multiplayer.md) replaces plan
+  09.
+- **Plan 34's approach.**
+  - Port that model with the original's wire format.
+  - Verify it with a two-instance Wine capture (WSOCK32 hooks in the oracle
+    proxy) and with native↔original interop.
+  - Ship TCP/IP as "Internet/LAN" on macOS, Android, Linux and Windows; drop
+    Modem and IPX.
+  - Leave NAT relay and browser play owner-gated.
+- **Remaining.** All of plan 34. Whether multiplayer joins the definition of
+  done is the owner's decision (plan 15 Task 4). Nothing was built or tested.
+
 ### October 25, 2026: Road Rash title-screen launcher
 
 Redesigned the browser launcher (`web/index.html`, `web/style.css`) as a title
