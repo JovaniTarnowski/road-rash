@@ -18,7 +18,14 @@ fs.mkdirSync(evidence, {recursive:true});
         const errors = [], requests = [];
         page.on('pageerror', error => errors.push(error.message));
         page.on('request', request => requests.push({url:request.url(), method:request.method()}));
-        page.on('console', msg => { if (msg.type() === 'error') errors.push(msg.text()); });
+        // A local import server has no hosted manifest; app.js treats its 404 as
+        // "not hosted", so only that probe's resource error is expected here.
+        const hostedProbe = text => /status of 404/.test(text);
+        page.on('console', msg => {
+            if (msg.type() !== 'error') return;
+            if (hostedProbe(msg.text()) && new URL(msg.location().url || url, url).pathname === '/game-assets/manifest.json') return;
+            errors.push(msg.text());
+        });
         const visibleFrame = async () => page.evaluate(() => {
             const preview = document.createElement('canvas'); preview.width = 16; preview.height = 12;
             const ctx = preview.getContext('2d'); ctx.drawImage(document.querySelector('#canvas'), 0, 0, 16, 12);

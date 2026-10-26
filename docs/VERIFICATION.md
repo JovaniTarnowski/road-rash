@@ -117,10 +117,11 @@
   375x812 and 800x420, including Start Game hover. `tests/web_browser_smoke.cjs`
   passed every functional step (malformed ISO, folder import, cancel, quota,
   reload, quick race + audio, pause/fullscreen, courses 1-4, frontend, missing
-  file recovery). The final console-error assertion failed on 9 404s for
-  `/game-assets/manifest.json`, the hosted-asset probe that a plain local server
-  does not provide. The probe predates this change. The smoke test's error filter
-  needs to tolerate that 404 in local-import mode.
+  file recovery). The first run's final console-error assertion failed on 9 404s
+  for `/game-assets/manifest.json`, the hosted-asset probe that a plain local
+  server does not provide (the probe predates the redesign). The smoke test now
+  ignores only a 404 console error whose resource path is exactly that manifest;
+  every other console/page error still fails. Rerun: all 14 steps PASS, exit 0.
 - `tests/web_browser_smoke.cjs` with bundled Playwright **1.62.1**, existing
   Chromium install, local static server and original disc. Also tested a local
   ISO made with `hdiutil makehybrid -iso` from `../cdrom` (fixture stays in the
