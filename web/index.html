@@ -12,7 +12,7 @@
 <body>
 <header class="toolbar">
   <h1>Road Rash</h1>
-  <span id="state">Load disc</span>
+  <span id="state">Loading</span>
   <nav aria-label="Game controls">
     <details class="controls">
       <summary>Controls</summary>
@@ -36,9 +36,9 @@
 <main aria-label="Road Rash game">
   <div class="viewport">
     <canvas id="canvas" tabindex="0" aria-label="Road Rash game canvas" hidden></canvas>
-    <section id="setup" aria-label="Disc import">
+    <section id="setup" aria-label="Game launcher">
       <h2>Load Game</h2>
-      <p>Choose your original PC disc image (.iso) or the ROADRASH folder. Game files stay on this device.</p>
+      <p id="setup-description">Connecting to the game server…</p>
       <div class="actions import-actions">
         <label class="button primary disabled" for="iso">Choose disc image</label>
         <input id="iso" type="file" disabled accept=".iso">
@@ -60,6 +60,7 @@
       <p id="status" role="status" aria-live="polite">Loading…</p>
       <progress id="progress" max="341" value="0" hidden></progress>
       <button id="cancel" hidden>Cancel import</button>
+      <button id="retry" hidden>Retry connection</button>
     </section>
     <div id="loading" role="status" hidden>Loading game…</div>
   </div>

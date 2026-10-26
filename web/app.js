@@ -1,10 +1,10 @@
 'use strict';
-// No game-data network requests. File/OPFS are the only asset sources.
+// Hosted deployments fetch verified assets on demand; local disc import remains available.
 const $ = id => document.getElementById(id);
 let engine, storageRoot, assetDirectory, references, importing = false, cancelled = false, running = false;
 const status = (message, error = false) => { $('status').textContent = message; $('status').classList.toggle('error', error); };
 // The original TEXT/*.DLL font files are TrueType data. Use the same
-// verified local files as TextRenderer; never publish or fetch game fonts.
+// verified files as TextRenderer.
 let discFonts;
 async function loadDiscFonts(directory) {
     if (!discFonts) {
@@ -21,6 +21,66 @@ async function loadDiscFonts(directory) {
     }
     try { await discFonts; }
     catch (error) { discFonts = undefined; throw error; }
+}
+async function restoreHostedAssets() {
+    const response = await fetch('game-assets/manifest.json', {cache: 'no-cache'});
+    // An asset-free local build still supports the original disc picker.
+    if (response.status === 404) return false;
+    if (!response.ok) throw new Error('Game server unavailable. Reload to retry.');
+    const manifest = await response.json();
+    if (manifest.version !== 1 || !Array.isArray(manifest.files) || manifest.files.length !== references.length)
+        throw new Error('Game server manifest is incomplete. Reload to retry.');
+    const records = new Map(manifest.files.map(file => [file.path, file]));
+    for (const reference of references) {
+        const record = records.get(reference.path);
+        if (!record || record.hash !== reference.hash || !Number.isSafeInteger(record.size) || record.size < 0)
+            throw new Error('Game server files need updating. Reload to retry.');
+    }
+    const cache = await storageRoot.getDirectoryHandle('hosted-v1', {create: true});
+    const pending = new Map(), verified = new Set();
+    const digest = async bytes => Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', bytes)),
+        byte => byte.toString(16).padStart(2, '0')).join('');
+    const read = async path => {
+        const record = records.get(path);
+        if (!record) throw new Error('Unknown game file: ' + path);
+        if (pending.has(path)) return pending.get(path);
+        const request = (async () => {
+            try {
+                const file = await (await cache.getFileHandle(record.hash)).getFile();
+                if (file.size === record.size && (verified.has(record.hash) || await digest(await file.arrayBuffer()) === record.hash)) {
+                    verified.add(record.hash);
+                    return file;
+                }
+            } catch (error) {
+                if (error.name !== 'NotFoundError') console.warn('Game cache unavailable:', error);
+            }
+            if (running) { $('loading').textContent = 'Loading ' + path + '…'; $('loading').hidden = false; }
+            try {
+                const result = await fetch('game-assets/' + record.hash);
+                if (!result.ok) throw new Error('Game file unavailable: ' + path);
+                const bytes = await result.arrayBuffer();
+                if (bytes.byteLength !== record.size || await digest(bytes) !== record.hash)
+                    throw new Error('Game file failed verification: ' + path);
+                // A full/evicted cache must not prevent playing downloaded data.
+                try { await writeFile(cache, record.hash, bytes); verified.add(record.hash); }
+                catch (error) { console.warn('Game file could not be cached:', error); }
+                return new File([bytes], path);
+            } finally { if (running) $('loading').hidden = true; }
+        })();
+        pending.set(path, request);
+        try { return await request; } finally { pending.delete(path); }
+    };
+    // This directory-shaped adapter also supplies the four original fonts.
+    assetDirectory = {getFileHandle: async name => ({getFile: () => read(decodeURIComponent(name))})};
+    engine.localAssets = {names: new Set(records.keys()), read};
+    document.querySelector('.import-actions').hidden = true;
+    $('setup-description').textContent = 'Game files load automatically as you play and are cached on this device.';
+    $('state').textContent = 'Game ready';
+    try { await loadDiscFonts(assetDirectory); }
+    catch (error) { console.warn('Game fonts unavailable:', error); }
+    $('ready').hidden = false;
+    status('Ready to play. Choose Main Game or Quick Race.');
+    return true;
 }
 const sync = populate => new Promise((resolve, reject) => engine.FS.syncfs(populate, e => e ? reject(e) : resolve()));
 const call = (name, type = 'number', types = [], values = []) => engine.ccall(name, type, types, values);
@@ -224,12 +284,17 @@ window.addEventListener('keydown', event => {
                 catch (error) { throw new Error('Stored game file missing: ' + path + '. Re-import your disc.'); }
             }
         };
-        status('Engine ready. Select your original PC disc. Allow about 500 MB of browser storage.');
-        await restoreDisc();
+        status('Connecting to game server…');
+        if (!await restoreHostedAssets()) {
+            $('setup-description').textContent = 'Choose your original PC disc image (.iso) or the ROADRASH folder. Game files stay on this device.';
+            status('Engine ready. Select your original PC disc. Allow about 500 MB of browser storage.');
+            await restoreDisc();
+        }
         for (const input of [$('iso'), $('folder')]) input.disabled = false;
         document.querySelectorAll('label.button').forEach(el => el.classList.remove('disabled'));
         // Hide the DOM loading label once SDL presents its first frame.
         const observer = new MutationObserver(() => { if (running && $('canvas').width > 0) $('loading').hidden = true; });
         observer.observe($('canvas'), {attributes: true, attributeFilter: ['width', 'height']});
-    } catch (error) { status(storageError(error), true); }
+    } catch (error) { status(storageError(error), true); $('retry').hidden = false; }
 })();
+$('retry').onclick = () => location.reload();

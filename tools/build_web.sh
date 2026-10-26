@@ -1,5 +1,5 @@
 #!/bin/sh
-# Build the actual browser game; never publish disc-derived assets.
+# Build the browser engine. Hosted disc assets are provisioned separately.
 set -eu
 root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 build="${RR_WEB_BUILD_DIR:-$root/build-agent-browser}"
@@ -38,5 +38,5 @@ PYTHON
 } > "$dist/LICENSES.txt"
 
 # Only the seven known code/metadata files may be published.
-python3 "$root/tools/prepare_web_deploy.py" "$dist"
+python3 "$root/tools/prepare_web_deploy.py" "$dist" --validate-only
 echo "Playable web bundle ready in $dist"

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Validate the asset-free bundle, then stage Vercel Build Output API files."""
+"""Validate the code-only bundle; optionally stage legacy Vercel output."""
 import hashlib
 import json
 from pathlib import Path
@@ -17,6 +17,9 @@ hashes = set(re.findall(r'[0-9a-f]{64}', (root / 'src/reference_hashes.inc').rea
 for name in allowed:
     if hashlib.sha256((dist / name).read_bytes()).hexdigest() in hashes:
         raise SystemExit(f'Game asset found in web bundle: {name}')
+if '--validate-only' in sys.argv[2:]:
+    print(f'Validated {len(allowed)} code/metadata files; no game assets.')
+    raise SystemExit(0)
 output = root / '.vercel/output'
 static = output / 'static'
 # Only this generated deployment directory is replaced. Project linkage stays intact.

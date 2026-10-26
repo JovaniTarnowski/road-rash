@@ -1,0 +1,91 @@
+name: Deploy browser game
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/**'
+      - 'cmake/**'
+      - 'CMakeLists.txt'
+      - 'third_party/**'
+      - 'web/**'
+      - 'deploy/**'
+      - 'tools/build_web.sh'
+      - 'tools/prepare_web_deploy.py'
+      - 'tests/web_hosted_smoke.cjs'
+      - '.github/workflows/web-deploy.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: road-rash-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - name: Cache pinned Emscripten SDK
+        id: sdk
+        uses: actions/cache@v4
+        with:
+          path: .tools/emsdk
+          key: emsdk-linux-6.0.10-v1
+      - name: Install Emscripten 6.0.10
+        if: steps.sdk.outputs.cache-hit != 'true'
+        run: |
+          git clone --depth 1 --branch 6.0.10 https://github.com/emscripten-core/emsdk.git .tools/emsdk
+          .tools/emsdk/emsdk install 6.0.10
+          .tools/emsdk/emsdk activate 6.0.10
+      - name: Build browser game
+        run: |
+          source .tools/emsdk/emsdk_env.sh
+          tools/build_web.sh
+          node --check web/app.js
+      - name: Package code only
+        run: |
+          mkdir -p build-deploy/dist
+          cp build-agent-browser/dist/* build-deploy/dist/
+          cp deploy/Dockerfile deploy/nginx.conf deploy/app.json build-deploy/
+          printf '%s\n' "$GITHUB_SHA" > build-deploy/dist/revision.txt
+          tar -czf build-deploy.tar.gz -C build-deploy .
+      - name: Deploy to Dokku
+        env:
+          DEPLOY_KEY: ${{ secrets.DOKKU_ROAD_RASH_KEY }}
+          KNOWN_HOSTS: ${{ vars.DOKKU_ROAD_RASH_KNOWN_HOSTS }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$DEPLOY_KEY" > ~/.ssh/road-rash
+          chmod 600 ~/.ssh/road-rash
+          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+          ssh -T -o BatchMode=yes -o StrictHostKeyChecking=yes -i ~/.ssh/road-rash root@5.161.142.20 < build-deploy.tar.gz
+      - name: Verify deployed revision and health
+        run: |
+          curl --fail --retry 12 --retry-delay 5 --retry-all-errors https://road-rash.archit.xyz/healthz
+          test "$(curl --fail -sS https://road-rash.archit.xyz/revision.txt)" = "$GITHUB_SHA"
+          curl --fail -sS https://road-rash.archit.xyz/game-assets/manifest.json -o /tmp/game-manifest.json
+          python3 -c 'import json; assert len(json.load(open("/tmp/game-manifest.json"))["files"]) == 341'
+      - name: Install browser test runtime
+        run: |
+          npm install --prefix .tools/browser-tests --no-save playwright@1.62.1
+          .tools/browser-tests/node_modules/.bin/playwright install --with-deps chromium
+      - name: Verify automatic assets and live gameplay
+        env:
+          NODE_PATH: ${{ github.workspace }}/.tools/browser-tests/node_modules
+          RR_WEB_URL: https://road-rash.archit.xyz
+          RR_WEB_EVIDENCE: build-hosted-evidence
+        run: node tests/web_hosted_smoke.cjs
+      - name: Keep deployment evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: hosted-browser-evidence
+          path: build-hosted-evidence/
+          retention-days: 7
+      - name: Remove temporary SSH key
+        if: always()
+        run: rm -f ~/.ssh/road-rash

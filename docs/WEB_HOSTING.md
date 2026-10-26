@@ -1,0 +1,77 @@
+# Browser hosting on agnee
+
+Production: https://road-rash.archit.xyz — Dokku app `road-rash` on
+`agnee` (5.161.142.20), with Cloudflare proxied DNS. The owner explicitly
+requested hosting the original game files on this VPS on October 25, 2026;
+that request supersedes the earlier local-only web deployment policy for
+this deployment. Commercial files remain outside Git, CI artifacts and images.
+
+## Deployment
+
+`.github/workflows/web-deploy.yml` builds the shared C++ game with pinned
+Emscripten 6.0.10 on pushes to main affecting game/build/web/deployment files,
+or by manual workflow dispatch. It validates the seven-file code bundle,
+packages an Nginx Dockerfile, config, app.json and distribution, and streams
+the archive over SSH into `dokku git:from-archive road-rash --`.
+
+The dedicated `DOKKU_ROAD_RASH_KEY` GitHub secret is a deploy-only key. Its
+server authorized_keys entry forces this one Dokku command and restricts
+forwarding/PTY access. It cannot open an interactive root shell. As with any
+Docker deployment credential, protect it as a production deployment credential.
+`DOKKU_ROAD_RASH_KNOWN_HOSTS` contains the host's Ed25519 public key, obtained
+through the existing authenticated connection. The workflow checks this key;
+it does not trust an unauthenticated scan on each run.
+
+Dokku healthchecks require both the web endpoint and mounted asset manifest.
+The workflow verifies HTTPS health and the exact Git revision, then launches
+a fresh Chromium session and checks automatic assets, hash rejection, cache
+repair, visible race rendering, keyboard input and nonzero audio. Evidence is
+retained as a GitHub Actions artifact for seven days. Deployment jobs serialize.
+Failed startup healthchecks preserve the previous container. Post-deployment
+browser test failures fail the workflow; they do not automatically roll back.
+
+## Persistent assets
+
+The 341 reference paths total 489,500,591 logical bytes. Store them at
+`/home/arkits/road-rash-assets`, mounted read-only into the app at
+`/srv/game-assets`. Content-addressed filenames are SHA-256 hashes; the
+manifest maps original paths to hashes and sizes. Identical content deduplicates.
+All files were verified locally and again after transfer. Do not commit them.
+
+To reprovision from the original disc:
+
+```sh
+python3 tools/export_web_assets.py ../cdrom/ROADRASH .tools/hosted-game-assets
+rsync -az --exclude manifest.json .tools/hosted-game-assets/ arkits@agnee:/home/arkits/road-rash-assets/
+scp .tools/hosted-game-assets/manifest.json arkits@agnee:/home/arkits/road-rash-assets/manifest.json.next
+ssh arkits@agnee 'mv /home/arkits/road-rash-assets/manifest.json.next /home/arkits/road-rash-assets/manifest.json'
+```
+
+Transfer immutable objects first, then atomically publish the manifest. Keep
+old hash files while older clients/deployments might still reference them.
+
+The launcher validates the hosted manifest against compiled reference hashes.
+Only fonts load before launch. Other files download on demand, verify SHA-256
+and size, then cache in OPFS. Cached bytes are checked on first use each page
+session; corrupt/missing data is fetched again. Cache write failures still allow
+playing downloaded files. A local asset-free server returning manifest 404 keeps
+the original disc import mode. HTTPS and OPFS remain browser requirements.
+
+Assets have immutable cache headers; code and manifests revalidate so new
+releases do not rely on clearing users' caches. Servers support byte ranges.
+The engine still loads requested media as whole files; this is on-demand file
+loading, not progressive video streaming. Startup still needs network access
+for the manifest; offline launch is not implemented.
+
+## Operations
+
+```sh
+ssh arkits@agnee 'dokku ps:report road-rash'
+ssh arkits@agnee 'dokku logs road-rash --num 100'
+ssh arkits@agnee 'dokku storage:report road-rash'
+curl --fail https://road-rash.archit.xyz/healthz
+curl --fail https://road-rash.archit.xyz/revision.txt
+```
+
+Native gameplay fidelity gaps remain tracked in CURRENT_STATUS.md; deployment
+checks do not establish original-game parity or mobile/Safari acceptance.

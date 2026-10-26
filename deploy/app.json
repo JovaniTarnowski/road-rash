@@ -1,0 +1,8 @@
+{
+  "healthchecks": {
+    "web": [
+      {"type": "startup", "name": "web", "path": "/healthz", "port": 8080, "content": "ok", "attempts": 5},
+      {"type": "startup", "name": "persistent game assets", "path": "/game-assets/manifest.json", "port": 8080, "content": "version", "attempts": 3}
+    ]
+  }
+}
