@@ -74,10 +74,11 @@ The build uses the already installed/pinned emsdk 6.0.10 and SDL 3.4.8. It
 stages Vercel Build Output API files under `.vercel/output/`. Deploy **prebuilt**:
 the remote builder does not have the local emsdk. `RR_WEB_BUILD_DIR` selects a
 private build tree and `RR_BUILD_JOBS` controls parallelism.
-`prepare_web_deploy.py` permits only seven code/metadata/license files and rejects
+`prepare_web_deploy.py` permits only nine code/metadata/license/preview files and rejects
 any file matching a disc hash. The wasm is about 3.2 MiB raw; the tested race used
-about 187 MiB of wasm memory. Stable filenames revalidate instead of using the
-old scaffold's one-year immutable caching. The output also sets MIME sniffing,
+about 187 MiB of wasm memory. Executable URLs carry content hashes and cache immutably; the HTML entrypoint
+uses no-store. Pinned Sentry/PostHog SDKs are bundled with npm and esbuild; see
+[WEB_TELEMETRY.md](WEB_TELEMETRY.md). The output also sets MIME sniffing,
 referrer and content-security policies. No game data enters the upload.
 
 ### Verification scope and remaining limits

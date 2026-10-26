@@ -55,3 +55,8 @@ bundle and exact ingestion CSP allowances. See docs/WEB_TELEMETRY.md.
 Concurrent unclaimed OG image/metadata changes appeared in web/index.html,
 tools/build_web.sh and tools/prepare_web_deploy.py during validation. Preserved
 in the working tree; stage only telemetry hunks, leaving OG work to its owner.
+
+The OG owner committed only its new image/handoff as 6881864 and explicitly left
+four overlapping edits for this integrator (see og-meta-20261026.md). Reviewed
+those prepared edits and verified the combined nine-file bundle and both cache
+and SDK tests; integrating them separately from cd14c0a. No foreign work deleted.
