@@ -56,7 +56,19 @@ fs.mkdirSync(evidence, {recursive:true});
         await page.locator('#ready').waitFor({state:'visible',timeout:90000});
         assert.equal(requests.slice(beforeRepair).filter(r=>/game-assets\/[a-f0-9]{64}$/.test(r.url)).length,1);
         console.log('PASS automatic launcher, lazy fonts, corrupt cache repaired');
+        const bike=await page.evaluate(async () => (await (await fetch('game-assets/manifest.json')).json()).files.find(f=>f.path==='DATA/BIKESPEC.RSC'));
+        let releaseLoading;
+        const loadingGate=new Promise(resolve=>{releaseLoading=resolve;});
+        await page.route('**/game-assets/'+bike.hash,async route=>{await loadingGate;await route.continue();});
         await page.locator('#quick').click();
+        try {
+            await page.locator('#loading').waitFor({state:'visible'});
+            assert.match(await page.locator('#loading-title').textContent(),/Loading Road Rash/);
+            assert.match(await page.locator('#loading-title').evaluate(el=>getComputedStyle(el).fontFamily),/RoadRashBadloc/);
+            assert.match(await page.locator('#loading-message').evaluate(el=>getComputedStyle(el).fontFamily),/RoadRashFutura/);
+            await page.screenshot({path:path.join(evidence,'loading.png')});
+        } finally {releaseLoading();}
+        await page.unrouteAll({behavior:'wait'});
         await page.waitForFunction(() => engine.SDL3?.audioContext?.state==='running', null, {timeout:90000});
         await page.waitForFunction(() => {
             const canvas=document.querySelector('#canvas');
@@ -68,6 +80,33 @@ fs.mkdirSync(evidence, {recursive:true});
             let sky=0;for(let i=0;i<p.length;i+=4) if(p[i+2]>p[i]*1.3 && p[i+2]>100)sky++;
             return sky>15 && document.querySelector('#loading').hidden;
         }, null, {timeout:90000});
+        // SDL applies these inline CSS sizes when its native Window Size
+        // setting changes. Neither may override the page's fitted display size.
+        for (const [width,height] of [[1907,1280],[1280,960],[1440,900],[390,844],[844,390]]) {
+            await page.setViewportSize({width,height});
+            for (const scale of [1,2]) {
+                await page.locator('#canvas').evaluate((canvas,scale)=>{
+                    canvas.style.width=640*scale+'px';canvas.style.height=480*scale+'px';
+                },scale);
+                const frame=await page.locator('#canvas').boundingBox();
+                const area=await page.locator('.viewport').boundingBox();
+                const fittedWidth=Math.min(area.width,area.height*4/3);
+                assert.ok(Math.abs(frame.width-fittedWidth)<2,'canvas uses available viewport');
+                assert.ok(Math.abs(frame.height-fittedWidth*3/4)<2,'4:3 frame is preserved');
+                assert.ok(frame.y+frame.height<=area.y+area.height+1,'bottom of game fits');
+                assert.equal(await page.locator('footer').isVisible(),false);
+                if (scale===2 && width>=1280)
+                    await page.screenshot({path:path.join(evidence,`fit-${width}x${height}.png`)});
+            }
+        }
+        await page.setViewportSize({width:1440,height:900});
+        await page.locator('#fullscreen').click();
+        await page.waitForFunction(()=>document.fullscreenElement?.classList.contains('viewport'));
+        // Synthetic Escape is not a reliable browser-chrome gesture in
+        // headless Chromium. Exercise the actual fullscreen exit API.
+        await page.evaluate(()=>document.exitFullscreen());
+        await page.waitForFunction(()=>!document.fullscreenElement);
+        console.log('PASS fitted canvas at both window sizes, responsive viewports, fullscreen and original-font loading');
         await page.locator('#canvas').focus();
         await page.keyboard.down('ArrowUp');await page.waitForTimeout(3500);await page.keyboard.up('ArrowUp');
         await page.screenshot({path:path.join(evidence,'race.png')});

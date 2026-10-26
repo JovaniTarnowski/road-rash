@@ -5,4 +5,5 @@
 namespace rr {
 std::vector<uint8_t> web_read_asset(const std::string& path);
 bool web_asset_exists(const std::string& path);
+void web_loading(const char* stage);
 } // namespace rr

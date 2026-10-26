@@ -45,6 +45,9 @@
 #include "race_music.hpp"
 #include "render_threads.hpp"
 #include "text.hpp"
+#ifdef RR_WEB_BROWSER
+#include "platform_web.hpp"
+#endif
 #include <filesystem>
 #include <future>
 #include <chrono>
@@ -74,6 +77,12 @@ void apply_cli_overrides(rr::Settings& s, const CliDisplayOverride& o) {
 
 // Native startup feedback, available before any disc fonts/art are decoded.
 void draw_loading(SDL_Renderer* renderer, const char* stage) {
+#ifdef RR_WEB_BROWSER
+    // Browser fonts are already verified/loaded by the launcher. Use the DOM
+    // overlay so it stays readable and animates while Asyncify yields for I/O.
+    (void)renderer;
+    rr::web_loading(stage);
+#else
     SDL_SetRenderDrawColor(renderer, 15, 18, 22, 255);
     SDL_RenderClear(renderer);
     SDL_SetRenderDrawColor(renderer, 225, 225, 128, 255);
@@ -88,6 +97,7 @@ void draw_loading(SDL_Renderer* renderer, const char* stage) {
     SDL_SetRenderDrawColor(renderer, 225, 225, 128, 255);
     SDL_RenderFillRect(renderer, &pulse);
     SDL_RenderPresent(renderer);
+#endif
 }
 
 template <class Work> auto load_with_indicator(SDL_Renderer* renderer, const char* stage, Work work) {
@@ -163,6 +173,9 @@ void play_video(const rr::Assets& assets, const std::string& path, SDL_Renderer*
     display.frame = 0;
     player.update(ticks >= 0 ? 0 : SDL_GetTicksNS());
     if (ticks >= 0) player.update(uint64_t(ticks) * 1000000000ull / rr::ticks_per_second);
+#ifdef RR_WEB_BROWSER
+    rr::web_loading("");
+#endif
     while (running) {
         SDL_Event e;
         while (SDL_PollEvent(&e)) {
@@ -285,6 +298,9 @@ void write_bench_report(const rr::FrameBench& bench, const rr::Settings& s, cons
 rr::RaceEnd run_race(rr::Game& g, SDL_Renderer* renderer, const rr::RaceOptions& opt,
                      rr::DisplayDriver& display) {
     rr::RaceScreen screen(g, renderer, opt, display);
+#ifdef RR_WEB_BROWSER
+    rr::web_loading("");
+#endif
     for (;;) {
         SDL_Event e;
         while (SDL_PollEvent(&e)) {
@@ -383,6 +399,9 @@ int run_game(const rr::Assets& assets, SDL_Window* window, SDL_Renderer* rendere
         }
     }
     bool running = true, text_input = false;
+#ifdef RR_WEB_BROWSER
+    rr::web_loading("");
+#endif
     long frames = 0;
     display.frame = 0;
     while (running) {

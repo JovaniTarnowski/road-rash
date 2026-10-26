@@ -2,6 +2,17 @@
 // Hosted deployments fetch verified assets on demand; local disc import remains available.
 const $ = id => document.getElementById(id);
 let engine, storageRoot, assetDirectory, references, importing = false, cancelled = false, running = false;
+let loadingStage = '', downloadingAssets = 0;
+function updateLoading() {
+    $('loading-message').textContent = loadingStage || 'Downloading game data…';
+    $('loading').hidden = !running || (!loadingStage && !downloadingAssets);
+}
+function showGameMessage(message, title = 'Game stopped') {
+    $('loading-title').textContent = title;
+    $('loading-message').textContent = message;
+    document.querySelector('.loading-track').hidden = true;
+    $('loading').hidden = false;
+}
 const status = (message, error = false) => { $('status').textContent = message; $('status').classList.toggle('error', error); };
 // The original TEXT/*.DLL font files are TrueType data. Use the same
 // verified files as TextRenderer.
@@ -54,7 +65,7 @@ async function restoreHostedAssets() {
             } catch (error) {
                 if (error.name !== 'NotFoundError') console.warn('Game cache unavailable:', error);
             }
-            if (running) { $('loading').textContent = 'Loading ' + path + '…'; $('loading').hidden = false; }
+            downloadingAssets++; updateLoading();
             try {
                 const result = await fetch('game-assets/' + record.hash);
                 if (!result.ok) throw new Error('Game file unavailable: ' + path);
@@ -65,7 +76,7 @@ async function restoreHostedAssets() {
                 try { await writeFile(cache, record.hash, bytes); verified.add(record.hash); }
                 catch (error) { console.warn('Game file could not be cached:', error); }
                 return new File([bytes], path);
-            } finally { if (running) $('loading').hidden = true; }
+            } finally { downloadingAssets--; updateLoading(); }
         })();
         pending.set(path, request);
         try { return await request; } finally { pending.delete(path); }
@@ -208,6 +219,8 @@ async function importDisc(source, iso) {
 async function startGame(quick) {
     if (!engine || !assetDirectory || running) return;
     running = true;
+    document.body.classList.add('playing');
+    loadingStage = 'Starting game…'; updateLoading();
     $('setup').hidden = true; $('canvas').hidden = false; $('loading').hidden = false;
     $('fullscreen').disabled = false; $('reload').hidden = false;
     $('state').textContent = 'Playing';
@@ -233,11 +246,9 @@ async function startGame(quick) {
         const code = await engine.ccall('main', 'number', ['number', 'number'], [args.length, argv], {async: true});
         await sync(false);
         if (code) throw new Error(engine.assetError || 'The game stopped with an error. Re-import your disc if a stored file is missing.');
-        $('loading').textContent = 'Game closed. Use Back to launcher to play again.';
-        $('loading').hidden = false;
+        showGameMessage('Use Exit to launcher to play again.', 'Game closed');
     } catch (error) {
-        $('loading').textContent = storageError(error) + ' Use Back to launcher to try again.';
-        $('loading').hidden = false;
+        showGameMessage(storageError(error) + ' Use Exit to launcher to try again.');
     } finally { allocated.forEach(ptr => engine._free(ptr)); }
 }
 $('iso').addEventListener('change', e => e.target.files[0] && importDisc(e.target.files[0], true));
@@ -246,7 +257,7 @@ $('cancel').onclick = () => { cancelled = true; };
 $('play').onclick = () => startGame(false);
 $('quick').onclick = () => startGame(true);
 $('reload').onclick = () => location.reload();
-$('fullscreen').onclick = () => $('canvas').requestFullscreen().catch(error => { $('loading').textContent = storageError(error); $('loading').hidden = false; });
+$('fullscreen').onclick = () => document.querySelector('.viewport').requestFullscreen().catch(error => showGameMessage(storageError(error)));
 // SDL receives these events too; prevent browser scrolling while the game owns focus.
 document.addEventListener('visibilitychange', () => {
     if (running) call('rr_web_visibility', null, ['number'], [document.hidden ? 1 : 0]);
@@ -271,8 +282,9 @@ window.addEventListener('keydown', event => {
             print: console.log,
             printErr: message => { console.warn(message); },
             preRun: [module => { module.ENV.RR_PREF_OVERRIDE = '/persist'; }],
-            onAbort: reason => { $('loading').textContent = 'Engine error: ' + reason + '. Use Back to launcher to restart.'; $('loading').hidden = false; }
+            onAbort: reason => showGameMessage('Engine error: ' + reason + '. Use Exit to launcher to restart.')
         });
+        engine.webLoading = stage => { loadingStage = stage; updateLoading(); };
         engine.FS.mkdirTree('/persist');
         engine.FS.mount(engine.FS.filesystems.IDBFS, {autoPersist: true}, '/persist');
         await sync(true);
@@ -293,9 +305,6 @@ window.addEventListener('keydown', event => {
         }
         for (const input of [$('iso'), $('folder')]) input.disabled = false;
         document.querySelectorAll('label.button').forEach(el => el.classList.remove('disabled'));
-        // Hide the DOM loading label once SDL presents its first frame.
-        const observer = new MutationObserver(() => { if (running && $('canvas').width > 0) $('loading').hidden = true; });
-        observer.observe($('canvas'), {attributes: true, attributeFilter: ['width', 'height']});
     } catch (error) { status(storageError(error), true); $('retry').hidden = false; }
 })();
 $('retry').onclick = () => location.reload();

@@ -66,7 +66,13 @@
       <button id="cancel" hidden>Cancel import</button>
       <button id="retry" hidden>Retry connection</button>
     </section>
-    <div id="loading" role="status" hidden>Loading game…</div>
+    <div id="loading" role="status" aria-live="polite" hidden>
+      <div class="loading-panel">
+        <h2 id="loading-title">Loading Road Rash</h2>
+        <p id="loading-message">Starting game…</p>
+        <div class="loading-track" aria-hidden="true"></div>
+      </div>
+    </div>
   </div>
 </main>
 <footer><span>Unofficial port. Not affiliated with Electronic Arts.</span><a href="LICENSES.txt">Licences</a></footer>

@@ -25,7 +25,11 @@ EM_ASYNC_JS(int, read_local_asset, (const char* path, unsigned* length), {
     }
 });
 EM_JS(int, has_local_asset, (const char* path), { return Module.localAssets.names.has(UTF8ToString(path)); });
+EM_JS(void, report_web_loading, (const char* stage), { Module.webLoading ?.(UTF8ToString(stage)); });
 namespace rr {
+void web_loading(const char* stage) {
+    report_web_loading(stage);
+}
 std::vector<uint8_t> web_read_asset(const std::string& path) {
     unsigned length = 0;
     auto* bytes = reinterpret_cast<uint8_t*>(read_local_asset(path.c_str(), &length));
