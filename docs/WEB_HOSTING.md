@@ -73,8 +73,14 @@ session; corrupt/missing data is fetched again. Cache write failures still allow
 playing downloaded files. A local asset-free server returning manifest 404 keeps
 the original disc import mode. HTTPS and OPFS remain browser requirements.
 
-Assets have immutable cache headers; code and manifests revalidate so new
-releases do not rely on clearing users' caches. Servers support byte ranges.
+Releases do not rely on clearing users' caches. Browser engine/app/CSS/reference
+files now have content hashes in their filenames and immutable cache headers;
+the HTML entrypoint uses no-store. The engine loader embeds the exact hashed
+Wasm filename before the loader itself is hashed. This prevents Cloudflare or
+browser caches from mixing an older loader with a newly deployed Wasm import
+table. CI tests an upgrade from a poisoned, four-hour cached legacy loader
+before deployment. The hosted game-assets manifest still revalidates separately.
+Servers support byte ranges.
 The engine still loads requested media as whole files; this is on-demand file
 loading, not progressive video streaming. Startup still needs network access
 for the manifest; offline launch is not implemented.
