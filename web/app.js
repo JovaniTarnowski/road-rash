@@ -286,6 +286,7 @@ window.addEventListener('keydown', event => {
         };
         status('Connecting to game server…');
         if (!await restoreHostedAssets()) {
+            document.querySelector('.import-actions').hidden = false;
             $('setup-description').textContent = 'Choose your original PC disc image (.iso) or the ROADRASH folder. Game files stay on this device.';
             status('Engine ready. Select your original PC disc. Allow about 500 MB of browser storage.');
             await restoreDisc();

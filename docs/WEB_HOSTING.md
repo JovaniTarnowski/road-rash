@@ -6,6 +6,22 @@ requested hosting the original game files on this VPS on October 25, 2026;
 that request supersedes the earlier local-only web deployment policy for
 this deployment. Commercial files remain outside Git, CI artifacts and images.
 
+Cloudflare configuration rule `Road Rash strict origin HTTPS` matches only
+this hostname and uses strict certificate verification. Host Nginx terminates
+TLS using a Let's Encrypt certificate, then proxies to Dokku's generated HTTP
+virtual host on loopback. `deploy/road-rash-tls.conf` is installed at
+`/etc/nginx/conf.d/road-rash-tls.conf`. It binds only the public IPv4 address
+to preserve the existing Tailscale HTTPS listener. Other apps' proxy/SSL
+settings and the server firewall remain unchanged.
+
+Certbot's system timer renews the certificate using webroot
+`/var/lib/dokku/data/road-rash-acme`; Dokku's app-specific
+`nginx.conf.d/acme.conf` serves the challenge directory. The deploy hook
+`/etc/letsencrypt/renewal-hooks/deploy/road-rash-nginx` validates/reloads
+Nginx after renewal. `nginx.conf.d/https-redirect.conf` redirects Cloudflare
+requests whose original scheme was HTTP; the local TLS proxy sets the
+forwarded scheme to HTTPS, avoiding redirect loops.
+
 ## Deployment
 
 `.github/workflows/web-deploy.yml` builds the shared C++ game with pinned

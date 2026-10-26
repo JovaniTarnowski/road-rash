@@ -1,13 +1,19 @@
 # Web port (plan 23): toolchain, build and measurements
 
-The current native game is playable as WebAssembly. Build locally with
-`tools/build_web.sh`, serve `build-agent-browser/dist/`, and import the original
-PC disc ISO or ROADRASH folder in the browser. See the current implementation
-below; the October 12 sections are historical checkpoints.
+The current native game is playable at https://road-rash.archit.xyz, hosted
+on the owner's Dokku VPS. Game files load automatically on demand and cache
+locally; no disc selection is required. Pushes to main build/deploy through
+GitHub Actions. See [WEB_HOSTING.md](WEB_HOSTING.md) for the current deployment,
+persistent assets, TLS and operations.
+
+Build locally with `tools/build_web.sh`. An asset-free local server still
+supports original PC disc ISO/folder import. The Vercel deployment and
+local-only asset policy described below are historical, superseded for the
+VPS deployment by the owner's explicit October 25 hosting request.
 
 ## Playable browser implementation — October 25, 2026
 
-**Deployment:** [Play the Vercel preview](https://road-rash-o4j8h7nq2-arkits.vercel.app) — READY, engine/config
+**Historical deployment:** [Vercel preview](https://road-rash-o4j8h7nq2-arkits.vercel.app) — READY, engine/config
 shell commit `ba1fe64`, engine `096bff2` (implementation `8673a75`). This project requires Vercel
 sign-in for previews. Import your disc on this origin, then choose Quick race.
 Framework: static HTML/JavaScript + WebAssembly; prebuilt upload, no remote C++
