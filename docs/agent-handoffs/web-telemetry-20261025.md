@@ -60,3 +60,7 @@ The OG owner committed only its new image/handoff as 6881864 and explicitly left
 four overlapping edits for this integrator (see og-meta-20261026.md). Reviewed
 those prepared edits and verified the combined nine-file bundle and both cache
 and SDK tests; integrating them separately from cd14c0a. No foreign work deleted.
+
+Bundling also appends installed production SDK dependency licence texts to the
+existing LICENSES.txt. npm bundle command and nine-file validator passed after
+this packaging addition; application code unchanged.
