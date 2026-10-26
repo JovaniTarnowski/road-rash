@@ -2240,12 +2240,15 @@ void Race::crash_recovery(Rider& r, bool player, uint32_t controls) {
     recovery.player = player;
     recovery.police_owner = r.cop;
     recovery.state_elapsed = r.crash_timer;
-    if (player) {
-        if (controls & control_accelerate) recovery.walk_controls |= 0x800;
-        if (controls & control_brake) recovery.walk_controls |= 0x1000;
-        if (controls & control_left) recovery.walk_controls |= 0x4000;
-        if (controls & control_right) recovery.walk_controls |= 0x2000;
-    }
+    // 0x0040a600 walk override: raw control bits 0x7800, player bike, human
+    // branch (demo hold clear) and racing state (DAT_004c5d7c == 1, true for
+    // every race step; the arrest switches it away with the busted flag).
+    // Throttle/punch bits (0x1/0x21) never set 0x7800, so replayed inputs
+    // always auto-walk (split-left 2377 walks back toward the bike); the
+    // old accel/brake/left/right mapping invented bits the original never
+    // reads there and sent the body the wrong way.
+    if (player && !demo_hold_ && (controls & 0x7800) != 0 && !busted_)
+        recovery.walk_controls = controls & 0x7800;
     // 0x0040a6d5: the walking player (rider animation 38, rider +0xc0 bit 0x10
     // clear) on a mountain sample (bike sub-slice type 1) is wrecked once the
     // bike or the rider lateral leaves [+0x14c, +0x158], the wall bases
@@ -2300,6 +2303,9 @@ void Race::step_crash(Rider& r, bool player, uint32_t controls) {
     // Split-left 2056: native state 0/ticks 0, original state 9/ticks 1.
     // Half-think stops when the solo half is frozen (see above).
     if (half_live) {
+        // 0x00434660 wrapper regen (see think_half): player +dt when crash != 1.
+        if (player && r.bike.i32(0x2f4) != 1 && r.stamina.current < r.stamina.max)
+            r.stamina.current = std::min(r.stamina.max, r.stamina.current + r.bike.i32(0x18));
         ai_transition(r);
         const int32_t brain_dt = r.bike.i32(0x18);
         if (r.brain.state >= 0 && r.brain.state < int(r.brain.state_ticks.size()))
@@ -3636,16 +3642,114 @@ void Race::fight(Rider& r, uint32_t controls, size_t index) {
             controls = control_punch;
         }
         if (start) {
-            // 0x00434660: kick uses weapon 3, otherwise the carried weapon; side toward the nearest rider.
+            // 0x00434660: kick uses weapon 3, otherwise the carried weapon.
             r.attack.weapon = (controls & control_kick) ? 3 : r.weapon;
             r.attack.backhand = (controls & control_backhand) != 0;
-            const Rider* nearest = nullptr;
-            for (const auto& o : riders_)
-                if (&o != &r && std::abs(o.bike.i32(0x1c) - b.i32(0x1c)) < 0x100 &&
-                    (!nearest || std::abs(o.bike.i32(0x28) - b.i32(0x28)) <
-                                     std::abs(nearest->bike.i32(0x28) - b.i32(0x28))))
-                    nearest = &o;
-            r.attack.right = nearest ? b.i32(0x28) < nearest->bike.i32(0x28) : b.i32(0x60) >= 0;
+            // 0x00409400 acquire: nearest rider half within 0x1e0 positions
+            // in either direction (nearer wins, behind wins ties), same road
+            // half and on a slice; records the target in brain.+0x168
+            // (rider index, -1 when nothing qualifies). 0x004095d0 takes the
+            // swing side from the acquired target half when present (the
+            // mask-0x38 fallback node only feeds side when the mask-8 scan
+            // misses; fight keeps the yaw fallback for a total miss).
+            int acquired = -1;
+            if (!r.ai) {
+                const int32_t hp = live_schedule_ ? r.half_mirror.position : r.bike.i32(0x1c);
+                int ahead = -1, behind = -1, da = 0x1e0, db = 0x1e0;
+                for (size_t oi = 0; oi < riders_.size(); ++oi) {
+                    if (oi == index) continue;
+                    const Rider& o = riders_[oi];
+                    if (o.parked) continue;
+                    if (route_of(o)[o.sample].dual && o.route != r.route) continue;
+                    const int32_t op = live_schedule_ ? o.half_mirror.position : o.bike.i32(0x1c);
+                    const int32_t d = op - hp;
+                    if (d >= 0) {
+                        if (d < da) {
+                            da = d;
+                            ahead = int(oi);
+                        }
+                    } else if (-d < db) {
+                        db = -d;
+                        behind = int(oi);
+                    }
+                }
+                if (ahead >= 0 && behind >= 0)
+                    acquired = (db <= da) ? behind : ahead;
+                else
+                    acquired = (ahead >= 0) ? ahead : behind;
+                r.brain.target_rider = acquired;
+            }
+            if (acquired >= 0) {
+                const Rider& t = riders_[size_t(acquired)];
+                const int32_t tlat = live_schedule_ ? t.half_mirror.lateral : t.bike.i32(0x28);
+                r.attack.right = b.i32(0x28) < tlat;
+            } else if (!r.ai) {
+                // 0x00409400 mask-0x38 fallback: nearest car/pedestrian
+                // within 0x1e0 (same shape as above) feeds 0x004095d0's
+                // side when the halves scan misses; brain.+0x168 stays
+                // cleared. Total miss keeps the yaw fallback.
+                int fahead = -1, fbehind = -1, fda = 0x1e0, fdb = 0x1e0;
+                bool have_ahead = false, have_behind = false;
+                int32_t flat_ahead = 0, flat_behind = 0;
+                const int32_t hp = live_schedule_ ? r.half_mirror.position : r.bike.i32(0x1c);
+                auto consider = [&](int32_t pos, int32_t lat) {
+                    const int32_t d = pos - hp;
+                    if (d >= 0) {
+                        if (d < fda) {
+                            fda = d;
+                            have_ahead = true;
+                            flat_ahead = lat;
+                        }
+                    } else if (-d < fdb) {
+                        fdb = -d;
+                        have_behind = true;
+                        flat_behind = lat;
+                    }
+                };
+                if (traffic_)
+                    for (size_t ci = 0; ci < traffic_->cars().size(); ++ci) {
+                        const auto& c = traffic_->cars()[ci];
+                        if (!c.active) continue;
+                        consider(c.position, c.lateral);
+                    }
+                if (pedestrians_)
+                    for (size_t pi = 0; pi < pedestrians_->pool().size(); ++pi) {
+                        const auto& p = pedestrians_->pool()[pi];
+                        if (!p.active) continue;
+                        consider(p.body.bike.i32(0x1c), p.body.bike.i32(0x28));
+                    }
+                int32_t flat = 0;
+                bool have = false;
+                if (have_ahead && have_behind) {
+                    flat = (fdb <= fda) ? flat_behind : flat_ahead;
+                    have = true;
+                } else if (have_ahead) {
+                    flat = flat_ahead;
+                    have = true;
+                } else if (have_behind) {
+                    flat = flat_behind;
+                    have = true;
+                }
+                if (have) {
+                    r.attack.right = b.i32(0x28) < flat;
+                } else {
+                    const Rider* nearest = nullptr;
+                    for (const auto& o : riders_)
+                        if (&o != &r && std::abs(o.bike.i32(0x1c) - b.i32(0x1c)) < 0x100 &&
+                            (!nearest || std::abs(o.bike.i32(0x28) - b.i32(0x28)) <
+                                             std::abs(nearest->bike.i32(0x28) - b.i32(0x28))))
+                            nearest = &o;
+                    r.attack.right = nearest ? b.i32(0x28) < nearest->bike.i32(0x28) : b.i32(0x60) >= 0;
+                }
+            } else {
+                const Rider* nearest = nullptr;
+                for (const auto& o : riders_)
+                    if (&o != &r && std::abs(o.bike.i32(0x1c) - b.i32(0x1c)) < 0x100 &&
+                        (!nearest || std::abs(o.bike.i32(0x28) - b.i32(0x28)) <
+                                         std::abs(nearest->bike.i32(0x28) - b.i32(0x28))))
+                        nearest = &o;
+                r.attack.right = nearest ? b.i32(0x28) < nearest->bike.i32(0x28) : b.i32(0x60) >= 0;
+            }
             r.attack.timer = 1;
             r.attack.fired = false;
         }

@@ -60,6 +60,9 @@ struct FieldReplay {
         return out;
     }
     std::string diff;
+    // Nondeterministic sound-thread rpm channel (see the solo replay): count
+    // mismatches as diagnostic notes, never sim divergences.
+    size_t rpm_timing_notes = 0;
     // Diagnostic: RR_FIELD_ALL=1 prints every differing check of the first
     // diverging frame, not just the first.
     const bool all = std::getenv("RR_FIELD_ALL") != nullptr;
@@ -245,6 +248,18 @@ struct FieldReplay {
                                    : off == 0x10 ? r.sched_last
                                    : off == 0x14 ? r.sched_interval
                                                  : b.i32(int(off));
+            if (player && (off == 0x2dc || off == 0x2e8)) {
+                // Nondeterministic sound-thread channel (see the solo
+                // replay): diagnostic note, never a sim divergence.
+                used.insert(key);
+                const auto it = f.find(key);
+                if (it != f.end() && it->second != native) {
+                    ++rpm_timing_notes;
+                    std::cout << "rpm timing " << key << " original " << it->second << " native " << native
+                              << " (nondeterministic channel)\n";
+                }
+                continue;
+            }
             check(f, key, native);
         }
         for (uint32_t off = 0x180; off <= 0x1fc && (diff.empty() || all); off += 4) {
@@ -611,6 +626,7 @@ struct FieldReplay {
             if (frame(i)) return 1;
             if (cars_from_golden && !load_cars(f)) return 1;
             // Per-frame hook 0x00434980: the player's rpm (see the solo replay).
+            // Frame end, or crashed on the ground (direct 0x004349c0).
             bool frame_ends = true;
             if (i + 1 < g.frames.size()) {
                 const auto next44 = g.frames[i + 1].find("rider.0.bike_44");
@@ -618,7 +634,9 @@ struct FieldReplay {
                 if (next44 != g.frames[i + 1].end() && pos != f.end())
                     frame_ends = next44->second == pos->second;
             }
-            if (frame_ends) update_engine_rpm(race().riders()[0].bike);
+            const Bike& pbike = race().riders()[0].bike;
+            if (frame_ends || (pbike.i32(0x2f4) != 0 && pbike.i32(0x20) < 0x65))
+                update_engine_rpm(race().riders()[0].bike);
         }
         // Coverage: every golden key is compared or listed as non-state.
         static const std::set<std::string> exact = {"tick",
@@ -669,11 +687,12 @@ struct FieldReplay {
                          "compared\n";
         if (ignore_cars)
             std::cout << g.frames.size() << " ticks compared without free cars (diagnostic)\n";
-        else if (total == 0)
+        else if (total == 0 && rpm_timing_notes == 0)
             std::cout << g.frames.size() << " ticks identical\n";
         else
             std::cout << g.frames.size() << " ticks identical (" << total
-                      << " golden-only fields not compared)\n";
+                      << " golden-only fields not compared; " << rpm_timing_notes
+                      << " rpm-timing notes on the nondeterministic channel)\n";
         return 0;
     }
 };

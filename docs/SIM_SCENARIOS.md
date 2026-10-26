@@ -251,6 +251,15 @@ establish native traffic parity.
 - `napa-solo-jump`: airborne ticks on crest sections (solo).
 - `napa-field-l5`: 14 opponents at level 5.
 - `napa-fight`, `napa-contact`: combat and contact scenarios.
+  `napa-fight` captured October 26: course 4/seed 1/field/HUMAN=1,
+  2,400-word throttle script with punch (`0x20`) every 30th word,
+  FRAMES=2700, ended 2,581 via the quit rule (validated partial).
+  Replay `2581 ticks identical`, 0 uncovered, 57 golden-only
+  (ring/car diagnostics), 0 rpm notes. Covers punch acquire
+  (`0x00409400` target record + `0x004095d0` side incl. the ped
+  fallback), crash stamina (+3/tick at crash 2 via the wrapper regen),
+  and walk-back auto-heading (raw `0x7800` gate). No CTest registration
+  (golden-only suffix).
 - `napa-traffic-solo`, `napa-traffic-field`: traffic scenarios.
 
 ## October14 forensic SIM recovery (not acceptance)

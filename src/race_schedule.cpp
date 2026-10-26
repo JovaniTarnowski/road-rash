@@ -318,6 +318,12 @@ void Race::think_half(Rider& r, uint32_t controls, bool countdown) {
         // remount states follow it on the same half block.
         if (!r.crash_active) crash(r); // entry applies once, on the first node to run
         ai_think(r);
+        // 0x00434660 wrapper stamina regen (lines 15-24): the player half
+        // regenerates +dt whenever crash != 1, on top of the 0x00407bd0
+        // passes (fight 2239: crash 2 needs +3/tick, not the +2 the passes
+        // alone give). Uncrashed this is fight()'s regen; crash 1 gets none.
+        if (player && r.bike.i32(0x2f4) != 1 && r.stamina.current < r.stamina.max)
+            r.stamina.current = std::min(r.stamina.max, r.stamina.current + r.bike.i32(0x18));
         crash_recovery(r, player, controls);
         if (player) police_think(r); // a rider on foot can be arrested
         if (r.crash_active)

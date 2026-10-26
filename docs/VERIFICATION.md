@@ -1,5 +1,35 @@
 # Verification log (all sessions September 28, 2026)
 
+## Napa fight scenario fully green (October 26, 2026)
+
+- New capture `sim-napa-fight` (course 4, seed 1, field/HUMAN=1, 2,400-word
+  throttle script with punch every 30th word, FRAMES=2700): ended at 2,581
+  ticks via the `0xb4` quit rule; validated as a partial (`validate
+  --simulation --frames 2581`): header, contiguous ticks 1-2581, EXE hash,
+  exit 0, `control_branch human`, `complete true`. Promoted to
+  `analysis/oracle/sim-napa-fight.tsv` (git-ignored). No accepted capture
+  overwritten.
+- Baseline `14204b5` (splits green). Owned Debug build
+  `build-solo-split-845` (`oracle-sim-test`, auto human driver):
+  `sim-napa-fight.tsv` 30 -> 780 -> 2239 -> 2377 -> full `2581 ticks
+  identical`, 0 uncovered sim gaps (57 golden-only; 0 rpm notes).
+- Fixes: human punch acquire (`0x00409400` nearest-half rule + brain
+  record, `0x004095d0` side incl. car/ped fallback; REA 6.4.0 confirms
+  the export); crash stamina wrapper regen (+dt when crash != 1, on top
+  of the `0x00407bd0` passes); walk-back `0x7800` override gated on raw
+  control bits (+ human + racing), old bike-bit mapping removed;
+  harness rpm rule shared with solo + nondeterministic-channel demotion
+  (field + solo harnesses), nulled-body node listing.
+- No regressions (same build): splits 6681 each, cov2 1431, script 1801,
+  L1/schema2 2400 (all clean/unchanged).
+- Full owned-Debug gate: 105/106 + isolated pass (the one failure is the
+  known-flaky `render-threads-alloc` steady-state count under parallel
+  load -- identical 4-allocation signature as the October 18 concurrent
+  run, passes in isolation; renderer untouched by this slice).
+  `clangd --check` clean on touched sources; `rg` throughout.
+- Remaining (Task 6 order): `napa-fight` dedicated steal/isolated cases,
+  `napa-contact`, traffic-solo/field; CTest registration stays manual.
+
 ## Solo splits fully green; crash/static/half/freeze/rpm (October 26, 2026)
 
 - Baseline `a4572e0` (split 845->2056). Owned Debug build
