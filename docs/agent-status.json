@@ -55,13 +55,14 @@
     },
     {
       "area": "Frontend/settings",
-      "implementation": "Menus, career, saves, jukebox, sound mix and controls implemented; multiplayer disabled",
+      "implementation": "Menus, career, saves, jukebox, sound mix and controls implemented; mano-a-mano disabled until plan 34",
       "verification": "Seeded original-writer save byte identity; main-menu capture and 1x/2x/4x layout checks",
-      "remaining": "Driven-career original-save round trip; all-screen pixel acceptance; multiplayer decision; exact music fidelity",
+      "remaining": "Driven-career original-save round trip; all-screen pixel acceptance; online mano-a-mano (plan 34); exact music fidelity",
       "evidence": [
         "plans/18-settings-and-options.md",
         "plans/13-music-and-frontend-completion.md",
-        "agent-handoffs/frontend-layout-20261026.md"
+        "agent-handoffs/frontend-layout-20261026.md",
+        "plans/34-multiplayer.md"
       ],
       "last_verified_commit": null,
       "fidelity_level": "partial"

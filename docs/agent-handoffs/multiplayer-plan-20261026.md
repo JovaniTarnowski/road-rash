@@ -33,3 +33,24 @@ The whole of plan 34. Start with Task 1: WSOCK32 IAT hooks in
 `oracle/aweman_proxy.c` and a two-instance capture. Its Step 3 lists the
 traces this static pass left open: lobby messages, resend and timeouts, the
 networked grid, `DAT_0049bce8`, the remote mover and the type 5/7/8 meanings.
+
+## Follow-up the same day: owner decision and redesign
+
+- **Owner decisions:** multiplayer joins the definition of done; it is modern
+  internet play through the VPS; it need not match the original's netcode.
+- **Plan 34 rewritten.** The new design is a deterministic simulation that
+  every client runs, rollback against a server-sealed input timeline,
+  WebSocket and WebRTC DataChannel to `rr-netd` on `agnee`, and room codes.
+- **Other docs updated:**
+  - 00-INDEX: plan row and definition-of-done item 9;
+  - plan 15 Task 4: decision recorded;
+  - MULTIPLAYER.md: "Port design" section;
+  - PROGRESS.md;
+  - `agent-status.json` and CURRENT_STATUS.md: Frontend row only.
+
+  CURRENT_STATUS.md was edited by hand, because `tools/agent_status.py` would
+  have reverted a newer hand edit to the Napa row; the manifest and the
+  generated file already disagree there.
+- **Next action:** plan 34 Task 1 (static gameplay-rule traces) and Task 2
+  Step 1 (the player-centred inventory). Task 3 Step 4 (Android rollback cost)
+  needs the device.

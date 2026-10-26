@@ -123,7 +123,7 @@ The owner also asked for plans covering pedestrians, oil slicks, police and the 
 | **31** | [Docs and status hygiene](31-docs-and-status-hygiene.md) | **Done**: header/index refresh, handoff archive, doc checks in agent-tooling | — |
 | **32** | [Completion review follow-through](32-completion-review-next-steps.md) | New (October 14 review, [report](../agent-review/REVIEW-2026-10-14-COMPLETION.md)): R1 restart latch, R2/R3 interpolation, R4 pause texture, R5 side panels | Slice C is the active SIM work (this plan); A/B after it; D–G sequenced after parity/device evidence |
 | **33** | [Linux and Windows ports](33-linux-windows-ports.md) | New (October 17). Linux and Windows builds, packaging, CI and acceptance after macOS/Android; portability rules apply now | — |
-| **34** | [Mano-a-mano multiplayer](34-multiplayer.md) | New (October 26, owner request). Trace in [../MULTIPLAYER.md](../MULTIPLAYER.md): up to 8 players over UDP (TCP/IP, IPX) or 2 over a modem; host-relayed snapshots and AI ownership, not lockstep. Tasks: two-instance Wine capture, wire codec, networked race, lobby/chat, native↔original interop, platforms, soak. Modem/IPX dropped. Task 8 (relay/browser) owner-gated | — |
+| **34** | [Mano-a-mano online multiplayer](34-multiplayer.md) | **Active, in the definition of done** (owner, October 26). Modern design: deterministic simulation run by every client, rollback against a server-sealed input timeline, WebSocket and WebRTC DataChannel to `rr-netd` on the owner's VPS `agnee`; room codes and invite links; cross-play across Mac, Android, browser, Linux and Windows. Original trace: [../MULTIPLAYER.md](../MULTIPLAYER.md) | — |
 
 ### Order and dependencies
 
@@ -226,8 +226,9 @@ Never commit `analysis/frontend`, `analysis/oracle`, screenshots of original art
 7. The docs describe every recovered format and every known deviation from the original.
 
 8. Linux and Windows builds pass the same gates (plan 33).
+9. Mano-a-mano is playable online by two to eight players across every shipped platform. It uses the original menus and gameplay rules on the plan 34 architecture, and passes plan 34's acceptance.
 
-Plan 34 (mano-a-mano multiplayer, superseding plan 09) is outside the definition of done unless the owner decides otherwise (plan 15 Task 4). The owner asked for the plan on October 26, 2026; whether it joins the definition of done is still the owner's decision.
+Plan 34 (mano-a-mano online multiplayer, superseding plan 09) is part of the definition of done (owner decision, October 26, 2026; item 9). The owner also chose a modern internet design over a faithful port of the original netcode.
 
 ## Global risks
 

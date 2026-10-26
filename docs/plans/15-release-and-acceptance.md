@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking. Read [00-INDEX.md](00-INDEX.md) first. Requires plans 10–14.
 
-**Goal:** Prove the definition of done in 00-INDEX.md from a clean checkout, produce the final macOS and Android release artefacts, and settle the remaining owner decisions: macOS distribution signing and multiplayer.
+**Goal:** Prove the definition of done in 00-INDEX.md from a clean checkout, produce the final macOS and Android release artefacts, and settle the remaining owner decision on macOS distribution signing. Multiplayer was decided on October 26, 2026 (plan 34).
 
 **Architecture:** No new subsystems. This plan adds an acceptance script that runs every gate in sequence and a final documentation pass. Each owner decision is recorded in the docs.
 
@@ -91,8 +91,9 @@ grep -q '^ACCEPTANCE OK$' "$LOG"
 
 ### Task 4: Multiplayer decision (plan 34, superseding plan 09)
 
-- [ ] **Step 1: Ask the owner** whether mano-a-mano network play is wanted. Present the scope summary from [../MULTIPLAYER.md](../MULTIPLAYER.md) and [34-multiplayer.md](34-multiplayer.md).
-- [ ] **Step 2:** Record the decision in 00-INDEX.md and PROGRESS.md. If yes, plan 34 becomes active and its acceptance joins the definition of done. If no, the mano-a-mano menu entry stays disabled with a short native message, as now, and the user guide says so.
+- [x] **Step 1: Decided (October 26, 2026).** The owner chose: mano-a-mano is in, as online multiplayer with a modern design (plan 34), not a faithful port of the original netcode.
+- [x] **Step 2:** Recorded in 00-INDEX.md (definition of done item 9) and PROGRESS.md.
+- [ ] **Step 3:** At release, check plan 34's acceptance as part of the definition of done.
 
 ---
 

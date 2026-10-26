@@ -251,7 +251,31 @@ The tick-loop send `0x0043cdb0`:
   - lateral collision `0x004317a0`. Its first loop is the networked one, using
     the `0x00497304..0x00497404` mask (`bike-lateral-20261015.md`).
 
-## Consequences for the port
+## Port design (owner decision, October 26, 2026)
+
+The owner decided that multiplayer is part of the definition of done, and that
+it should use a modern internet design rather than the original's netcode or
+transports. [Plan 34](plans/34-multiplayer.md) therefore uses a different
+design from the original:
+- a deterministic simulation that every client runs in full;
+- rollback against a server-sealed input timeline;
+- WebSocket and WebRTC DataChannel connections to `rr-netd` on the owner's VPS.
+
+The trace above remains the source for the mano-a-mano **gameplay** rules the
+port keeps:
+- menus, strings and chat slots;
+- the 0x168 countdown;
+- traffic ×4 and the spawn gates;
+- the handicap rubber band;
+- no qualification bits, and the `DUEL` video.
+
+The transport artefacts are dropped and recorded as deviations: snapshot
+replication, AI ownership hand-off, host relay, modem, IPX and LAN discovery.
+
+The section below was written before that decision. It describes what a
+faithful port of the original netcode would need.
+
+## Consequences for a faithful port (superseded by the owner decision)
 
 1. Multiplayer fidelity means porting this **distributed-authority, host-relayed
    snapshot model**. Each peer is authoritative for its own rider and owned AIs.

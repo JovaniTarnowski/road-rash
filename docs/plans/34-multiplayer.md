@@ -1,293 +1,516 @@
-# Plan 34: Mano-a-mano multiplayer
+# Plan 34: Mano-a-mano online multiplayer
 
-> **Status (October 26, 2026):** New. Supersedes [plan 09](09-multiplayer.md), whose premise (two-player lockstep) the trace disproved. The analysis that plan 09 Task 1 asked for is in [../MULTIPLAYER.md](../MULTIPLAYER.md). The owner asked for this plan. Two items remain decision-gated: whether it joins the definition of done ([plan 15](15-release-and-acceptance.md) Task 4), and Task 8 (a hosted relay). Tasks 1–7 have no external blocker.
+> **Status (October 26, 2026):** Active and part of the definition of done (owner decision, October 26, 2026). Supersedes [plan 09](09-multiplayer.md). The original netcode is traced in [../MULTIPLAYER.md](../MULTIPLAYER.md). The owner also decided:
+> - multiplayer does **not** need to reproduce the original's netcode or transports;
+> - it must work **over the internet** with no LAN discovery or port forwarding;
+> - the owner's VPS (`agnee`, see [../WEB_HOSTING.md](../WEB_HOSTING.md)) is the server.
+>
+> This replaces the October 26 draft of this plan (original wire format, Wine interop, LAN ports).
 
-> **For agentic workers:** Read [00-INDEX.md](00-INDEX.md) and [../MULTIPLAYER.md](../MULTIPLAYER.md) first. Use superpowers:subagent-driven-development or superpowers:executing-plans. Steps use `- [ ]` checkboxes. Shared files need claims and serialized edits (AGENTS.md):
-> - `src/race.*` and `src/game_main.cpp`;
-> - `src/frontend.*`;
-> - `oracle/aweman_proxy.c`.
+> **For agentic workers:** Read [00-INDEX.md](00-INDEX.md), this whole plan and [../MULTIPLAYER.md](../MULTIPLAYER.md) first. Use superpowers:subagent-driven-development or superpowers:executing-plans. Steps use `- [ ]` checkboxes. Claim and serialize shared files (AGENTS.md):
+> - `src/race.*`, `src/race_schedule.cpp`, `src/traffic.*`, `src/track_ring.*`;
+> - `src/race_screen.cpp`, `src/game_main.cpp`, `src/frontend.*`;
+> - `CMakeLists.txt`.
+>
+> VPS changes (Dokku app, Nginx route, firewall) are owner-approved here only for the items listed in Task 8. Anything else on `agnee` needs a fresh request.
 
-**Goal:** Mano-a-mano plays like the original in the native port:
-- host and join;
-- two to eight humans on a LAN or over the internet;
-- level choice, character choice and course vote;
-- optional AI bikers and cars;
-- F1–F8 chat;
-- the original's distributed race simulation, results and disconnect rules.
-
-macOS and Android first, then Linux and Windows (plan 33). The browser comes last.
-
-**Architecture:** The original does not run lockstep (see MULTIPLAYER.md):
-- every peer simulates its own human rider at 60 Hz, plus the AI riders it currently owns;
-- each peer sends 24-byte records (snapshots and events), batched into 0x4c-byte frames, every 2nd tick;
-- clients send only to the host, and the host relays to everyone;
-- remote riders (`+0x324 == −1`) are moved from snapshots;
-- the host owns the shared tables: AI owner table, interest masks, handicap bytes and cop.
-
-The port reproduces exactly that model:
-- **Wire format:** byte-identical frames and records, so a native peer can play an original peer under Wine. That interop is the acceptance oracle.
-- **Socket layer:** modern UDP sockets underneath, IPv4 and IPv6.
-- **Main-thread I/O:** the I/O runs on the main thread at tick boundaries, with no receive thread.
-- **Replay:** a per-tick log of received records lets any networked race replay offline with identical results.
-
-**Tech stack:**
-- C++20 and SDL3;
-- BSD sockets on macOS, Android and Linux; Winsock 2 on Windows;
-- no new dependency for Tasks 1–7;
-- CTest, libFuzzer (plan 22) and the Wine oracle.
-
-## Recorded decisions
-
-| Decision | Choice | Why |
-| --- | --- | --- |
-| Netcode model | Port the original's snapshot/ownership model, not deterministic lockstep | Fidelity: lockstep changes how remote riders move, how AI is handed off, and stalls on loss. The original tolerates loss through extrapolation |
-| Wire format | The original's frames, records, ports 6996/6995, and lobby messages as traced in Task 1 | Lets the original under Wine act as a live peer oracle. No invented envelope on the classic path |
-| Transports | TCP/IP only, shown as "Internet/LAN". **Modem and IP/X are dropped** and the popup shows them disabled with a native note | IPX has no modern OS stack. TAPI modems are not practical. Recorded deviation |
-| Threads | Non-blocking sockets polled on the main thread once per frame before the tick batch; received records are applied at the start of the next simulated tick | The original applies packets asynchronously under critical sections, so its application tick is already arbitrary. A fixed rule keeps native races replayable |
-| Internet reachability | Direct address entry ("Unlisted games") plus port forwarding, as in the original. Discovery is LAN broadcast | No project-run server is needed for Tasks 1–7. NAT traversal is Task 8, owner-gated |
-| Untrusted input | Every received byte is parsed through bounds-checked codecs. Malformed frames are dropped and counted. The codecs have fuzz targets | The original trusts the wire. The port must not, because it can be reached from the internet |
-
-## Global constraints
-
-- **Offline is untouched.** Single-player races stay bit-identical. Every multiplayer branch is gated on the session flags, as `DAT_004c5af9`/`DAT_004c5b00` are. The CTest suite and `make verify-sim` stay green after every task.
-- **Simulation code stays pure.** The network layer feeds records in and takes records out. Simulation code has no sockets, wall clock, allocation in the tick path, or floats.
-- **Port line by line.** Every networked branch is ported from its cited address in the same style as the rest of `race.cpp`. Speculative mappings stay labelled until a Task 1 capture confirms them.
-- **Evidence stays local.** Original captures go in git-ignored `analysis/oracle/net-*`. Committed tests use synthetic frames.
+**Goal:** Two to eight people play Road Rash races together over the internet:
+- from macOS, Android, Linux, Windows and the browser, in any mix;
+- by sharing a room code or invite link;
+- in the original mano-a-mano menus and rules (level, character, course vote, AI bikers, cars, F1–F8 chat, results);
+- with a race that feels as responsive as single player and comes out identical on every screen.
 
 ---
 
-### Task 1: Two-instance original capture and the remaining traces
+## Architecture
 
-**Files:**
-- Modify: `oracle/aweman_proxy.c`, `oracle/run.sh`, `oracle/install.sh`
-- Create: `tools/net_capture_validate.py`
-- Update: `docs/MULTIPLAYER.md`, `docs/REVERSE_ENGINEERING.md`, `docs/TOOLING.md`
+### Overview
 
-- [ ] **Step 1: WSOCK32 hooks.** Under `RR_ORACLE_NET=<instance>`, the proxy rewrites the WSOCK32 import slots (`0x004ca990..0x004ca9d8`; see the MULTIPLAYER.md ordinal table). The hooks:
-  - remap ports 6995/6996 to an instance-specific pair, so two instances run on one Mac;
-  - turn the broadcast address into a send to the other instance's port;
-  - log every `sendto`/`send`/`recv`/`recvfrom` as `tick, direction, peer, length, bytes` to `analysis/oracle/net-<name>-<instance>.log`.
-
-  The log has a header, contiguous sequence numbers and a completion marker (the plan 10 capture rules).
-- [ ] **Step 2: Scripted sessions.** Drive instance A as host and instance B as join with menu hooks of the `RR_ORACLE_MENU` kind: call handlers `0x0042fc40`/`0x0042fef0`, fix the popup choices and pick the course. Inject controls per tick as plan 10 does. Each instance runs from its own install directory and log names; the prefix is shared, so serialize it (claims). Capture:
-  - (a) lobby only;
-  - (b) a two-human Napa race with AI bikers None and cars disabled;
-  - (c) the same race with Full AI and cars on;
-  - (d) a crash, a remount and a walk-back on one peer;
-  - (e) the client disconnecting mid-race;
-  - (f) the host leaving.
-- [ ] **Step 3: Trace what the static pass left open.** Use captures plus disassembly; record addresses and field widths for each:
-  - lobby message kinds other than 0x0a (advertise, join request/accept/reject, roster, character, course vote, chat, start, leave). Start from timer `0x004301e0`, `0x0043b2b0`, `0x0043b320`, `0x00431020`, `0x00431740`, `0x0043b390`;
-  - any acknowledgement or resend;
-  - timeouts and drop detection (`0x004972d8`);
-  - the networked grid count and slot layout in `0x00405600`;
-  - how `DAT_0049bce8` is agreed;
-  - the `0x0043fe90` remote-mover algorithm;
-  - the `0x0040a9e0` remote walk;
-  - the AI ownership hand-off rules (`0x00431e00`, `0x00431db0`, `0x00432a30`);
-  - type 5/7/8 record meanings;
-  - chat send and on-screen display;
-  - the results-official flow (441/442);
-  - which options the host sets (AI bikers, cars) and how they reach clients.
-- [ ] **Step 4:** `tools/net_capture_validate.py` checks header, contiguity and completion, and decodes every frame with the record table. Unknown types fail it.
-- [ ] **Step 5:** Update MULTIPLAYER.md: move every confirmed item from "inferred" to "traced", correct anything wrong, and record which earlier claim changed. Add a REVERSE_ENGINEERING.md section. Commit: `oracle: two-instance mano-a-mano capture and protocol trace`.
-
-**Acceptance:** Captures (a)–(f) validate, and every byte position in every observed frame has a named meaning.
-
----
-
-### Task 2: Wire codec and transport
-
-**Files:**
-- Create: `src/net/wire.hpp`, `src/net/wire.cpp`, `src/net/transport.hpp`, `src/net/udp_transport.cpp`, `src/net/loopback_transport.cpp`
-- Create: `tests/net_wire_test.cpp`, `tests/net_transport_test.cpp`, `fuzz/fuzz_net_wire.cpp` (picked up by the `fuzz/fuzz_*.cpp` glob)
-- Modify: `CMakeLists.txt`
-
-**Interfaces:**
-```cpp
-namespace rr::net {
-struct Record { uint8_t type, slot; std::array<uint8_t, 24> bytes; };         // 48-byte crash = two slots
-struct Frame { uint8_t kind; std::vector<Record> records; };                  // 0x4c bytes on the wire
-std::optional<Frame> decode_frame(std::span<const uint8_t>);                   // nullopt on any violation
-std::array<uint8_t, 0x4c> encode_frame(const Frame&);
-// Lobby messages: one struct per kind recovered in Task 1, same decode/encode pair.
-struct Endpoint { /* v4 or v6 address + port */ };
-class Transport {
-  public:
-    virtual void send(const Endpoint&, std::span<const uint8_t>) = 0;
-    virtual void broadcast(uint16_t port, std::span<const uint8_t>) = 0;     // LAN discovery
-    virtual std::optional<std::pair<Endpoint, std::vector<uint8_t>>> poll() = 0; // non-blocking
-    virtual ~Transport() = default;
-};
-std::unique_ptr<Transport> udp_transport(uint16_t game_port, uint16_t discovery_port);
-// Tests: N endpoints sharing one seeded network with loss, duplication, reordering and delay.
-struct LossyNet { double loss, duplicate; int min_delay_ticks, max_delay_ticks; uint32_t seed; };
-std::vector<std::unique_ptr<Transport>> loopback_net(int peers, LossyNet);
-}
+```
+ client (Mac / Android / browser / Linux / Windows)          rr-netd on agnee (no game data, no sim)
+ ┌──────────────────────────────────────────┐   inputs   ┌──────────────────────────────────────┐
+ │ Front end ── Race screen ── Rollback ────┼──────────► │ rooms, roster, options, chat         │
+ │                              engine      │            │ 60 Hz tick clock per race            │
+ │                                │         │ ◄──────────┼ input sealer: one authoritative      │
+ │                     deterministic Race   │   sealed   │   input timeline per race            │
+ │                     (every rider, car,   │   frames   │ race log: reconnect, spectate,       │
+ │                      pedestrian, cop)    │            │   desync check                       │
+ └──────────────────────────────────────────┘            └──────────────────────────────────────┘
+        wss:// on 443 via Cloudflare + Nginx (lobby, control, fallback race traffic)
+        WebRTC DataChannel, UDP direct to the VPS IP (race traffic when available)
 ```
 
-- [ ] **Step 1: Tests first.**
-  - Every frame from the Task 1 captures round-trips byte-identically. This test is golden-gated with exit 77.
-  - Synthetic frames for each record type round-trip.
-  - Truncated, oversized and wrong-kind frames are rejected, as are out-of-range slots and unknown types.
-  - The loopback net delivers in order with zero loss, and is reproducible from its seed under loss.
-- [ ] **Step 2:** Implement. Sockets are non-blocking; the UDP transport binds dual-stack where available and sets `SO_BROADCAST`. Errors become a typed status; there are no exceptions in the poll path.
-- [ ] **Step 3:** Add the fuzz target to the plan 22 fuzz set and CI. Commit: `net: original frame codec and UDP transport`.
+Each client (macOS, Android, browser, Linux, Windows) has three layers:
+
+| Layer | What it does |
+| --- | --- |
+| Front end | Original menus: rooms, vote and chat |
+| Race screen | Draws the latest predicted tick; HUD, camera and sound for the local rider |
+| Rollback engine | Holds the input timeline and per-tick snapshots, predicts other players' inputs, re-simulates; drives the shared deterministic `Race` |
+
+Each client talks to the server over a channel:
+- WebSocket over TLS (`wss://`, port 443) carries the lobby, control and fallback traffic;
+- a WebRTC DataChannel (UDP, unreliable and unordered) carries the race inputs and frames.
+
+The server, `rr-netd` on the VPS `agnee`, runs as a Dokku app behind Nginx. Cloudflare proxies its WebSocket traffic. It holds:
+- rooms, roster, options and chat;
+- a 60 Hz tick clock per race;
+- the input sealer, which publishes the authoritative input timeline;
+- a race log (inputs and hashes) used for reconnect, spectators and desync checks.
+
+It holds **no game data** and runs **no simulation**.
+
+### Decisions
+
+**1. The race is the existing deterministic simulation, run identically by every client.**
+- The port's simulation is integer-only, 60 Hz, single-RNG and already verified bit-exact against the original.
+- Every client runs the **whole race**: every human, AI rider, car, pedestrian and cop.
+- Only **inputs** cross the network: one 16-bit control word per human per tick.
+
+The consequences:
+- every screen agrees on who hit whom, every crash, every car and the finish order;
+- AI and traffic need no replication or ownership hand-off;
+- a modified client can only send inputs, never positions;
+- bandwidth is a few KB/s.
+
+**2. Netcode: rollback against a server-sealed input timeline.**
+- **Prediction:** each client simulates ahead of the server by about half the round trip plus jitter. It uses its own real input and, for others, their last known input (repeat-last).
+- **Sealing:** for each tick the server *seals* a frame: every human's input for that tick. An input that arrives after the deadline is replaced by that player's previous input and flagged.
+- **Correction:** when a sealed frame differs from what a client predicted, the client restores its snapshot of the first wrong tick and re-simulates to the present. This includes the client's own input, if the server replaced a late one.
+
+Because the server owns the timeline:
+- a slow or vanished player never stalls the others;
+- there is no host advantage and no host migration;
+- the log is a complete, replayable record of the race.
+
+This is the model fighting and racing games use (GGPO-style rollback with a server-authoritative input stream).
+
+**3. Transport: one `Channel` interface, two implementations.**
+- **WebSocket (TLS, port 443) first.** It works from every platform and network, passes Cloudflare, and needs no new firewall rule. It carries all lobby and control messages, and race traffic until a DataChannel is up.
+- **WebRTC DataChannel to the server second.** It is unreliable and unordered (`maxRetransmits = 0`), so a lost packet never delays newer inputs (no TCP head-of-line blocking).
+  - The server is a WebRTC peer with a public IP. It offers its own host candidate, and clients behind any NAT connect out to it, so no STUN, TURN or peer-to-peer is needed.
+  - Signalling (SDP and candidates) travels over the already-open WebSocket.
+  - When UDP is blocked, the race simply stays on the WebSocket; rollback absorbs the extra jitter.
+- **Library: [libdatachannel](https://github.com/paullouisageneau/libdatachannel)** (MPL-2.0, C++17). It has a WebSocket client and server plus WebRTC DataChannels on macOS, Linux, Windows and Android, so client and server share one library. In the browser, the same messages use the browser's own `WebSocket` and `RTCPeerConnection` through Emscripten JS glue (or `datachannel-wasm`, which mirrors the libdatachannel API).
+- **Pin the version** and add its licence and dependency licences (libjuice, usrsctp, the TLS library) to `third_party/` and the user guide (00-INDEX code rules).
+
+**4. Server: `rr-netd`, C++20 in this repository (`server/`).**
+- It shares the message codecs in `src/net/` with the clients, so client and server cannot disagree on bytes.
+- It is a single process with rooms in memory and a 60 Hz sealing timer per racing room.
+- Deployment is a Dokku app `road-rash-net` on `agnee`, reached at `wss://road-rash.archit.xyz/net` through the existing Nginx and Cloudflare. There is no new DNS name and no new certificate.
+- WebRTC UDP goes **directly** to the VPS IP (`5.161.142.20`), not through Cloudflare, which does not proxy arbitrary UDP. It uses a small fixed UDP port range that the owner opens in Task 8.
+
+**5. Identity and rooms: no accounts.**
+- **Display name:** the player's mano-a-mano alias.
+- **Rooms:**
+  - a room has a short code (6 characters, ambiguity-free alphabet, about 2^30 codes) and an invite link `https://road-rash.archit.xyz/?room=CODE`. Native clients accept the code;
+  - a room is public or unlisted, like the original's "Public games" and "Unlisted games". Public rooms appear in the Join list with the original columns Host / Level / Avail / Status.
+- **Seats:** each player gets a random 128-bit **seat token** for reconnecting. It is kept in memory and in the client's settings for the life of the room.
+
+**6. Compatibility gate.**
+
+The simulation must be bit-identical on every client. The handshake therefore carries:
+- the protocol version;
+- a **simulation fingerprint**: a hash of the build's `src/` simulation sources plus a self-test, a fixed input log run for N ticks with a hash of the result, computed at start-up;
+- the **reference data digest** (the disc EXE and data hashes the client verified; already known to every build through `reference_hashes.inc`).
+
+A room only admits clients whose three values match the host's. The game data never leaves the client.
+
+**7. Single player stays untouched.**
+- All multiplayer code is behind `RaceConfig::net`. When it is empty, `make verify-sim`, the oracle goldens and offline replays stay bit-identical.
+- The multi-human generalisation in Task 2 must reduce exactly to today's behaviour when there is one human.
+
+### The hard part: a simulation with several centres
+
+The original simulation is **player-centred**:
+- the track ring of built slices surrounds the player;
+- scheduler LOD intervals depend on distance from the camera;
+- traffic spawns relative to the camera;
+- police spawn relative to the player;
+- `Race` treats `riders_[0]` as "the player".
+
+The original's networked version avoided this: each machine simulated its own neighbourhood and replicated state. With every client simulating the whole race, all of those rules must become deterministic functions of **shared** state only. The rule:
+
+> **No simulation input may depend on which client is running it.** Camera, HUD, sound perspective, rendering and the local player index are *views*, derived from the shared state and never fed back into it.
+
+Concretely (Task 2): every player-centred rule is generalised to a **set of humans**:
+- one ring window per human, merged;
+- LOD distance to the nearest human;
+- traffic spawn zones around each human, using the original networked gates `0x0044f0d0`/`0x0044df60` and density ×4 as the starting rule;
+- police targeting the nearest eligible human.
+
+With one human, each generalisation must reduce to the current code path; the offline goldens prove that.
+
+### Race flow
+
+1. **Lobby.**
+   - The host picks the level, AI bikers (None / Limited / Full), cars (on/off) and public/unlisted.
+   - Players join and pick characters; the roster announcements use the original strings 402–408.
+   - Players vote on the course ("Choose a race. %d/%d players have chosen.").
+   - F1–F8 chat works in the lobby.
+2. **Start.**
+   - The server sends `Start{race_id, seed, course, level, options, roster[slot → alias, character, bike], start_tick}`. It also sends the server tick at which the green light comes, after the original networked countdown of 0x168 ticks.
+   - Every client builds the race through `make_race_setup` with the same `NetRaceConfig`. Every client then holds the same initial state, which the first hash exchange confirms.
+3. **Race.** The server seals ticks. Clients predict, roll back and render. F1–F8 chat messages are server-relayed, timestamped events shown as the original shows them; they are not simulation input.
+4. **Leaving and reconnecting.**
+   - A player who disconnects becomes **AI-driven from a sealed tick**. The server flags it in the frame, so the switch happens on the same tick for everyone.
+   - A player who reconnects within 60 s with their seat token gets the race log and fast-forwards (no rendering, no sound) to the live tick, then takes the rider back at a sealed tick.
+   - Spectators and late joiners use the same catch-up path.
+5. **Finish.**
+   - Each human's outcome (finished #n, wrecked, busted) appears as the original announcements 427–429.
+   - The race ends when every human is done, or 60 s after the last human still racing falls more than one lap of ticks behind the leader. That timeout is a native rule, chosen because the original's "you are the master" wait has no host here.
+   - The server collects each client's final result hash; matching hashes make the results "official" (441).
+   - Mano-a-mano results have no career effect (original rule) and play the `DUEL` video.
+
+### Rollback engine, in detail
+
+**Input timeline.**
+- Local input is sampled once per simulated tick into a ring.
+- An optional local input delay of 0–3 ticks trades responsiveness for fewer rollbacks. It is adaptive, and capped by a user setting.
+- Each client packet carries the latest unacknowledged inputs (up to 16 ticks), so a lost packet is repaired by the next one with no retransmit.
+
+**Clock.**
+- Ping/pong over the active channel measures round trip and offset.
+- The client keeps its prediction lead at about half the round trip plus the p95 jitter plus one tick.
+- It corrects drift by **time dilation**: 59–61 simulated ticks per second, never jumps.
+
+**Snapshots.**
+- `Race`, `TrafficSystem`, `PedestrianSystem`, `TrackRing` and the RNG are saved each tick into a ring of `max_rollback + 1` slots (default 16 ticks, about 267 ms).
+- A snapshot is a flat byte copy of the mutable state. Assets and immutable tables are referenced, never copied.
+- Restoring rebinds the internal pointers.
+
+**Re-simulation.**
+- When sealed frames arrive, compare them with the predictions. At the first mismatch, restore and re-simulate to the current tick in one frame.
+- If the client falls behind the rollback window, it stalls rendering of new ticks until sealed frames catch up, and slows its clock.
+
+**Side effects.**
+- Sound events from re-simulated ticks are deduplicated by `(tick, source, event)`. An event that was already played and is still predicted is not replayed. An event that disappears after a correction is allowed to finish, as is standard for rollback.
+- Cutscenes, results and chat use only sealed ticks.
+
+**Presentation.** The screen shows the latest predicted tick. Remote riders can be smoothed *in the renderer only* (plan 21 interpolation) to hide corrections; the simulation state is never smoothed.
+
+**Desync detection.**
+- Every 60 sealed ticks, each client sends a 64-bit hash of its sealed-tick snapshot, and the server compares them.
+- On a mismatch, the server:
+  - records the race log and the hashes (kept 7 days on the VPS);
+  - tells clients, which report it through the existing Sentry integration;
+  - resynchronises the minority clients by log fast-forward.
+
+  A desync is always treated as a bug to fix, never as acceptable.
+
+### Messages (binary, little-endian; `src/net/protocol.hpp`)
+
+| Message | Direction | Channel | Content |
+| --- | --- | --- | --- |
+| `Hello` | C→S | WS | protocol, simulation fingerprint, data digest, platform, alias, seat token (if reconnecting) |
+| `Welcome` / `Reject{reason}` | S→C | WS | client id, server time, room (if reconnecting) |
+| `RoomCreate{level, ai, cars, public}` / `RoomJoin{code}` / `RoomList` / `RoomLeave` | C→S | WS | lobby actions |
+| `RoomState` | S→C | WS | code, options, seats (alias, character, vote, ready, ping), host |
+| `PickCharacter`, `VoteCourse`, `Chat{slot 0..7 or text}` | C→S | WS | lobby and race events (text ≤ 60 bytes, as the original) |
+| `Start` | S→C | WS | see race flow |
+| `RtcOffer` / `RtcAnswer` / `RtcCandidate` | both | WS | DataChannel signalling |
+| `Input{first_tick, count ≤ 16, words[]}` | C→S | DC or WS | unacknowledged local inputs |
+| `Frames{first_tick, count, per tick: present mask, late mask, words[]}` | S→C | DC or WS | sealed frames, repeated until acknowledged |
+| `Ack{sealed_tick}` | C→S | DC or WS | highest contiguous sealed tick held |
+| `Ping{t}` / `Pong{t, server_tick}` | both | DC and WS | clock sync |
+| `Hash{tick, h64}` / `Desync{tick}` | both | WS | determinism check |
+| `Result{tick, outcome, place, h64}` / `Official{table}` | both | WS | race end |
+| `LogChunk` | S→C | WS | reconnect and spectate catch-up |
+
+Every decoder is bounds-checked and fuzzed, and drops (and counts) malformed messages; nothing from the network is trusted. Server limits:
+- 8 players per room;
+- a configurable room cap;
+- per-connection message rate limits;
+- a 64 KB maximum message size;
+- idle and lobby timeouts.
+
+**Bandwidth estimate** at 60 Hz with 8 players, before transport overhead:
+- client→server: about 40 B per packet, about 2.4 KB/s;
+- server→client: about 30 B per sealed tick plus repeats, about 3 KB/s.
+
+### Gameplay rules kept from the original networked mode
+
+The following are kept, because they are gameplay rather than transport:
+- the countdown 0x168;
+- traffic density ×4 and the spawn gates around remote riders;
+- the heartbeat handicap rubber band (`0x00442f60`), recomputed deterministically inside the simulation every 0x39 ticks;
+- no qualification bits;
+- the mano menus, strings, chat slots and `DUEL` video.
+
+The following are dropped as transport artefacts, and documented as deviations:
+- AI ownership hand-off;
+- snapshot replication;
+- `DAT_0049bce8` shared draws;
+- modem, IPX and LAN discovery;
+- host relay.
 
 ---
 
-### Task 3: Networked race simulation
+## Tasks
+
+### Task 1: Original mano-a-mano gameplay rules
+
+**Files:** Update `docs/MULTIPLAYER.md`, `docs/REVERSE_ENGINEERING.md`.
+
+- [ ] **Step 1: Static traces.** Record each with its address, from disassembly and exports:
+  - the networked grid count and slot layout in `0x00405600`;
+  - AI biker counts for None / Limited / Full;
+  - how the `0x00442f60` handicap byte is applied to riders;
+  - the chat display in a race (where and how long);
+  - the finish, wreck and bust flow when other humans are still racing (strings 427–430, 441–442);
+  - the `DUEL` video trigger;
+  - which restroom options are locked in mode 3 (`0x00444fb0`).
+- [ ] **Step 2: Capture if needed.** Only if a rule stays ambiguous, capture it from two original instances under Wine, using WSOCK32 IAT hooks in `oracle/aweman_proxy.c` that remap the ports per instance. This was the old Task 1; it is now optional evidence.
+- [ ] **Step 3:** Commit: `docs: original mano-a-mano gameplay rules`.
+
+**Acceptance:** each rule that Task 2 or Task 7 uses has an address or a capture behind it.
+
+---
+
+### Task 2: Multi-human deterministic race
 
 **Files:**
-- Modify: `src/race.hpp`, `src/race.cpp`, `src/race_schedule.cpp`, `src/race_setup.hpp`, `src/race_setup.cpp`, `src/traffic.cpp`, `src/police.cpp`, `src/crash.cpp`, `src/hud.cpp`
-- Create: `src/net/race_link.hpp`, `src/net/race_link.cpp`, `tests/net_race_test.cpp`
+- Modify: `src/race.hpp`, `src/race.cpp`, `src/race_schedule.cpp`, `src/race_setup.*`, `src/traffic.*`, `src/track_ring.*`, `src/police.*`, `src/pedestrians.*`, `src/hud.*`, `src/race_screen.cpp`
+- Create: `tests/race_multi_test.cpp`
 
 **Interfaces:**
 ```cpp
 namespace rr {
-struct NetRaceConfig {                     // all-zero = offline (bit-identical to today)
-    bool host = false, client = false;     // DAT_004c5af9 / DAT_004c5b00
-    int local_slot = 0;                    // game state +0, rider +0x328
-    std::array<bool, 8> slot_in_use{};     // 0x00497304 table
-    int snapshot_mask = 1;                 // DAT_004c5afc
-    int ai_bikers = 0;                     // 0 none, 1 limited, 2 full
+struct NetRaceConfig {                      // empty humans = offline, bit-identical to today
+    std::vector<HumanSeat> humans;          // slot, character, bike, alias; slot 0..7
+    int ai_bikers = 2;                      // 0 none, 1 limited, 2 full (Task 1 counts)
     bool cars = true;
-    int32_t shared_draw = 0;               // DAT_0049bce8
+    uint32_t seed = 0;                      // srand for the race (replaces local seeding)
 };
 // RaceConfig gains `NetRaceConfig net;`.
-class RaceLink {                           // owns the 0x00499430 frame buffers and tables
-  public:
-    void receive(int from_slot, const net::Frame&); // 0x0043e9c0: queue, applied at next tick start
-    void before_tick(Race&);                        // apply queued records in arrival order
-    void after_tick(Race&);                         // 0x0043cdb0 / 0x0044f040 / 0x00442f60 cadence
-    std::vector<std::pair<int, net::Frame>> take_outgoing();
-};
+// Race::step takes one control word per human, in slot order; offline passes one.
+void Race::step(std::span<const uint32_t> controls);
+int Race::human_rider(int slot) const;      // view helper; never read by the simulation
 }
 ```
 
-- [ ] **Step 1: Record/apply harness.** A networked race writes a log of everything it received, per tick. `net_race_test` replays a log into a fresh `Race` and requires identical per-tick field dumps. This makes every later step testable offline.
-- [ ] **Step 2: Grid and roles.** Port the networked branch of `0x00405600` (Task 1 grid count and slots). Port rider `+0x324`/`+0x328` assignment, AI biker count by option, the countdown 0x168 (`0x00442dd0`), and `0x00441750` returning the shared draw in mode 3. Offline replays must stay identical.
-- [ ] **Step 3: Send path.**
-  - `0x0043cdb0` with `0x0043c7e0` (rider/bike snapshot), `0x0043cc80` (crash) and `0x0043cd50` (remount);
-  - `0x0043c4a0` pending flags, `0x0043d040`/`0x0043d7d0`/`0x0043d610` frame filling, `0x0043cff0` flush;
-  - the heartbeat and handicap `0x00442f60`.
-
-  Test: frames built from a scripted local race are byte-identical to the original's frames for the same tick inputs in capture (b). This is a component comparison of what the sender produces.
-- [ ] **Step 4: Receive path and remote riders.**
-  - `0x0043e9c0` dispatch;
-  - the `0x0043fe90` remote mover;
-  - `0x0040a9e0` remote walk with `0x00440410`;
-  - `0x00404480` remote remount;
-  - remote crash entry;
-  - `0x0043cbb0`;
-  - host relay `0x0043f170`/`0x0043f2e0`/`0x0043f3a0`.
-
-  Test: feed capture (b)'s received frames into instance B's native race. The remote rider's fields must match B's per-tick dump. This needs plan 10 field dumps from both instances, added to the Task 1 captures.
-- [ ] **Step 5: Shared systems.**
-  - AI ownership (types 0xa/0xb and host tables 0xf/6–8);
-  - traffic: ×4 density, the odd-kind suppression and nearest-remote gates `0x0044f0d0`, car records type 6 through `0x0044e220`/`0x0044e270`;
-  - cop ownership (type 0xd, `0x00407310`);
-  - the pair events of type 7 and placements of type 8;
-  - nearest-opponent HUD `0x0044f1b0` and the networked rider lists `0x00437860`/`0x00446bf0`.
-
-  Accept each against capture (c).
-- [ ] **Step 6: Two to eight peers in process.** Run N `Race` + `RaceLink` instances over `loopback_net` with 0%, 5% and 20% loss, duplication, reordering and 0–30 ticks of delay, for 2, 4 and 8 peers. Assert:
-  - no crash, and no unbounded queue;
-  - every peer's own rider state equals a replay of its own log;
-  - every remote rider stays within the original mover's tolerance as measured in Task 1, never a native invention;
-  - finish places agree across peers.
-- [ ] **Step 7:** Run `make verify-sim` and the full gate. Commit: `race: networked mano-a-mano simulation`.
+- [ ] **Step 1: Inventory.** List every place the simulation reads "the player": `riders_[0]` special cases, camera distance, ring centre, traffic and police anchors, HUD-coupled state, `set_demo_hold`. Use `rg` and LSP references. Record the list and the generalisation chosen for each in this plan's Task 2 notes and in REVERSE_ENGINEERING.md.
+- [ ] **Step 2: Separate view from simulation.** Move camera and HUD perspective, sound listener and render-only state out of the simulation path, so the simulation never reads them. Offline goldens must stay bit-identical; run `make verify-sim` and the oracle tests.
+- [ ] **Step 3: Generalise to a set of humans** (the "several centres" rule above). One human must take exactly the old code path, re-proved by the goldens.
+- [ ] **Step 4: Multiplayer gameplay rules.** Grid layout and AI counts (Task 1), countdown 0x168, traffic ×4 and the spawn gates, the in-simulation handicap, a departed human handing over to the AI brain at a given tick, and per-human outcome without ending the race.
+- [ ] **Step 5: Tests.**
+  - Two and eight humans with scripted inputs produce identical per-tick field hashes across two runs.
+  - Swapping which slot the *view* follows changes no simulation hash.
+  - A human handing over to AI at tick T is deterministic.
+  - Every offline test and golden is unchanged.
+- [ ] **Step 6:** Commit: `race: multi-human deterministic races`.
 
 ---
 
-### Task 4: Lobby, session and race flow
+### Task 3: Snapshots, rollback core and cross-platform determinism
 
 **Files:**
-- Create: `src/net/session.hpp`, `src/net/session.cpp`, `tests/net_session_test.cpp`
-- Modify: `src/frontend.hpp`, `src/frontend.cpp`, `src/career.cpp`, `src/race_screen.cpp`, `src/game_main.cpp`, `src/native_strings.cpp`, `src/settings.*`
+- Create: `src/net/rollback.hpp`, `src/net/rollback.cpp`, `src/race_state.hpp`, `src/race_state.cpp`
+- Create: `tests/race_state_test.cpp`, `tests/rollback_test.cpp`, `tools/determinism_matrix.sh`
+- Modify: `src/race.*`, `src/traffic.*`, `src/pedestrians.*`, `src/track_ring.*`, `.github/workflows/` (CI)
 
-- [ ] **Step 1: Session state machine.** Port the Task 1 lobby protocol: host advertise (500 ms timer `0x004301e0`), discovery on 6995, join request/accept/reject, slot allocation, roster announcements (strings 402–408, 420), character choice, the host's level, AI biker and car options, course vote (312), start, drop detection and timeouts, and disconnect (`0x00431600`). Tests drive host and clients over `loopback_net`, including a full game, a rejected join, a client drop in lobby, and the host quitting.
-- [ ] **Step 2: Screens.**
-  - Enable main-menu item 2. Screens 0x0b, 0x0c (with Disconnect as the sixth item) and 0x0d (F1–F8 chat editing into 60-byte slots) use the original tables and enable rules from `0x00430140`.
-  - The original Win32 dialogs become native screens in the original menu style, like the existing save list and plan 18 screens: the join list (Host/Level/Avail/Status, public and unlisted games), address entry and connecting/waiting status. Each replacement is listed in REVERSE_ENGINEERING.md "Not ported or replaced natively".
-- [ ] **Step 3: Race flow.**
-  - Start a `RaceSetup` with `NetRaceConfig`;
-  - pump the transport before each tick batch in `RaceScreen`;
-  - show F1–F8 chat in race as the original does (Task 1 trace);
-  - show the finished/wrecked/busted announcements (427–429), the master-leave warning (430), "race results are now official" (441), and termination (442);
-  - mano results: no qualification bits, network name in the outcome, the `DUEL` video;
-  - return to screen 0x0b.
+**Interfaces:**
+```cpp
+namespace rr {
+struct RaceState { std::vector<uint8_t> bytes; };          // flat mutable state, no pointers
+void save_state(const RaceInstance&, RaceState&);          // Race + traffic + pedestrians + ring + RNG
+void load_state(RaceInstance&, const RaceState&);          // rebinds internal pointers
+uint64_t state_hash(const RaceState&);
+namespace net {
+class Rollback {
+  public:
+    Rollback(RaceInstance&, int humans, int local_slot, int max_rollback = 16);
+    void local_input(int32_t tick, uint32_t word);
+    void sealed(int32_t tick, std::span<const uint32_t> words, uint8_t late_mask);
+    int advance_to(int32_t tick);                          // returns ticks re-simulated
+    int32_t confirmed_tick() const;
+    uint64_t confirmed_hash() const;                       // hash at the newest sealed tick
+};
+}}
+```
 
-  Pause must not stop the networked simulation; follow the original's behaviour from Task 1.
-- [ ] **Step 4: Transport popup.** TCP/IP is shown as "Internet/LAN" with native string slots. Modem and IP/X stay visible but disabled, with a native description saying they are unavailable on modern systems.
-- [ ] **Step 5:** Commit: `frontend: mano-a-mano host, join, chat and results`.
+- [ ] **Step 1: Save/load tests first.**
+  - Run N ticks, save, run M, load, run M again: the field dumps and RNG are identical. Cover crashes, walking, police, pedestrians, splits and finish.
+  - Saving never allocates in steady state.
+- [ ] **Step 2: Implement `save_state`/`load_state`.** Split each system into immutable data (referenced) and mutable state (copied). Record the size and the save/load time per tick.
+- [ ] **Step 3: Rollback tests.** Scripted two- and eight-human races with random late remote inputs give the same final hash as a straight run of the sealed inputs, for every rollback depth up to the maximum.
+- [ ] **Step 4: Cost budget.** Measure simulation step, save and load in the profiler's `sim` phase on the Mac and the MANGMI AIR X. The budget is a worst-case frame (16 re-simulated ticks plus saves) of **≤ 4 ms on the device**. If the budget is missed, the agreed fallbacks are, in order: save every 2nd tick, a smaller window with adaptive input delay, then profiling the step. Record the outcome in PERFORMANCE.md.
+- [ ] **Step 5: Cross-platform determinism.**
+  - `tools/determinism_matrix.sh` runs a fixed multi-human input log on macOS ARM64, Linux x86-64 (CI), wasm32 (Node, CI), Windows x86-64 (with plan 33) and Android ARM64 (device or emulator). It compares per-tick hashes.
+  - Fix every difference at its source. Known risks: `std::sort` of equal keys (use stable or tie-broken comparisons), signed shifts and overflow (UBSan), integer widths, and uninitialised padding in snapshots.
+  - Wire the macOS, Linux and wasm runs into CI.
+- [ ] **Step 6:** Commit: `net: race snapshots, rollback core, determinism matrix`.
 
 ---
 
-### Task 5: Native-to-original interop
+### Task 4: Protocol, codecs and channels
 
 **Files:**
-- Create: `tools/net_interop.sh`
-- Update: `docs/VERIFICATION.md`, `docs/MULTIPLAYER.md`
+- Create: `src/net/protocol.hpp`, `src/net/protocol.cpp`, `src/net/channel.hpp`, `src/net/ws_channel.cpp`, `src/net/loopback_channel.cpp`, `fuzz/fuzz_net_protocol.cpp`, `tests/net_protocol_test.cpp`
+- Add: `third_party/libdatachannel` (pinned, as a CMake subproject or FetchContent with a hash), licence files
+- Modify: `CMakeLists.txt`, `docs/USER_GUIDE.md` (third-party notice)
 
-- [ ] **Step 1:** Host natively and join with the original under Wine (Task 1 proxy port remap), then the reverse. Race Napa with scripted controls on both sides.
-- [ ] **Step 2: Assert** that:
-  - both lobbies show the same roster and course;
-  - both races start on the same tick;
-  - every frame each side sends decodes cleanly on the other;
-  - remote riders track on both screens;
-  - places agree at the finish.
+**Interfaces:**
+```cpp
+namespace rr::net {
+// One struct per message in the table above; encode/decode are pure and bounds-checked.
+std::optional<Message> decode(std::span<const uint8_t>);   // std::variant of all messages
+std::vector<uint8_t> encode(const Message&);
+class Channel {                                           // reliable (WS) or unreliable (DC)
+  public:
+    virtual bool reliable() const = 0;
+    virtual void send(std::span<const uint8_t>) = 0;
+    virtual std::optional<std::vector<uint8_t>> poll() = 0;  // non-blocking, main thread
+    virtual ChannelStatus status() const = 0;
+    virtual ~Channel() = default;
+};
+std::unique_ptr<Channel> ws_connect(const std::string& url);
+// Tests: deterministic simulated network with latency, jitter, loss, duplication, reordering.
+struct NetSim { int min_ms, max_ms; double loss, duplicate; uint32_t seed; };
+std::pair<std::unique_ptr<Channel>, std::unique_ptr<Channel>> loopback_pair(NetSim, bool reliable);
+}
+```
 
-  Record the logs and screenshots under `analysis/oracle/net-interop-*`.
-- [ ] **Step 3:** Commit: `verify: native and original mano-a-mano interop`.
+- [ ] **Step 1: Codec tests first.** Every message round-trips. Truncated, oversized, wrong-version and out-of-range messages are rejected. Golden byte vectors for each message are committed as synthetic fixtures.
+- [ ] **Step 2: Implement codecs and the libdatachannel WebSocket channel.** The library's callbacks fill a lock-protected queue, and the main thread only polls, so the simulation never runs on a network thread.
+- [ ] **Step 3: Fuzz target** in the plan 22 set and CI.
+- [ ] **Step 4:** Commit: `net: protocol codecs and WebSocket channel`.
 
 ---
 
-### Task 6: Platform integration
+### Task 5: Server `rr-netd`
 
 **Files:**
-- Modify: `android/app/src/main/AndroidManifest.xml`, the Android activity (JNI multicast lock), `macos/Info.plist.in`, `docs/USER_GUIDE.md`
+- Create: `server/CMakeLists.txt`, `server/main.cpp`, `server/room.hpp`, `server/room.cpp`, `server/sealer.hpp`, `server/sealer.cpp`, `server/Dockerfile`, `tests/server_room_test.cpp`, `tests/server_sealer_test.cpp`, `tools/net_bots.cpp`
 
-- [ ] **Step 1: macOS.**
-  - Add `NSLocalNetworkUsageDescription`, because LAN broadcast and receive trigger the Local Network privacy prompt.
-  - Document the firewall prompt for incoming UDP.
-  - Confirm that a signed package gets both prompts.
+- [ ] **Step 1: Room tests first** (the server logic is a pure class, driven by in-memory channels):
+  - create, join by code, list public rooms;
+  - full-room, wrong-fingerprint and wrong-digest rejections;
+  - character pick, course vote, chat, start;
+  - leave, and the host leaving before start (the next seat becomes host);
+  - reconnect by seat token, and idle and lobby timeouts.
+- [ ] **Step 2: Sealer tests.** Inputs on time, inputs late (sealed as repeat-last with the late flag), a player vanishing (handed to AI at a sealed tick), unacknowledged frames repeated, and hash comparison with desync handling.
+- [ ] **Step 3: Implement.**
+  - One event loop; 60 Hz per racing room from a monotonic clock, catching up after a stall without drift.
+  - Limits as in the architecture section.
+  - Structured logs, a `/net/health` endpoint, and counters (rooms, players, round trip, late inputs, desyncs).
+  - Race logs kept 7 days.
+- [ ] **Step 4: Headless bots.** `tools/net_bots.cpp` connects N scripted clients that run the real `Rollback` + `Race`. It needs the local disc data, as the game does. Use it for end-to-end tests against a local `rr-netd`, and later against staging.
+- [ ] **Step 5:** Commit: `server: rr-netd rooms and input sealer`.
+
+---
+
+### Task 6: Client netcode in the race
+
+**Files:**
+- Create: `src/net/client.hpp`, `src/net/client.cpp`, `tests/net_client_test.cpp`
+- Modify: `src/race_screen.cpp`, `src/game_main.cpp`, `src/sound.*`, `src/race_overlay.*`
+
+- [ ] **Step 1: In-process end-to-end test.** Two to eight `net::Client` instances and one server `Room` run over `loopback_pair` with round trips of 0/50/150/300 ms, jitter of ±30 ms, and loss of 0/5/20%. Assert:
+  - every client's sealed-tick hashes are equal at every check;
+  - final results are equal;
+  - rollback depth stays within the window, or the client stalls cleanly;
+  - there are no unbounded queues.
+- [ ] **Step 2: Clock sync and time dilation, and adaptive input delay.**
+- [ ] **Step 3: `RaceScreen` integration.**
+  - Poll channels once per frame, then advance the rollback to the target tick.
+  - Render the newest predicted tick.
+  - Deduplicate sound events during re-simulation; trigger results and cutscenes only on sealed ticks.
+  - Show F1–F8 chat and the finished/wrecked/busted announcements.
+  - Escape opens the quit prompt (string 316) without pausing the race.
+- [ ] **Step 4: Renderer-only smoothing of remote riders** after corrections, behind a setting, default on.
+- [ ] **Step 5: Network HUD option:** round trip, rollback depth and late inputs, off by default.
+- [ ] **Step 6:** Commit: `net: online races in the race screen`.
+
+---
+
+### Task 7: Mano-a-mano front end
+
+**Files:** Modify `src/frontend.hpp`, `src/frontend.cpp`, `src/native_screens.*`, `src/native_strings.cpp`, `src/settings.*`, `src/career.cpp`, `src/platform_web.cpp` (invite links).
+
+- [ ] **Step 1: Screens.**
+  - Enable main-menu item 2.
+  - Screen 0x0b keeps the original items, with these mappings:
+    - **Host** creates a room (level popup, then native AI bikers / cars / public options in the original popup style);
+    - **Join** opens the room list or code entry;
+    - **Bulletin Board** is the course vote on screen 0x0c;
+    - **Chat Messages** is screen 0x0d;
+    - **Restroom** is unchanged;
+    - **Disconnect** leaves the room.
+  - The original transport popup is removed: there is one transport.
+- [ ] **Step 2: Native screens in the original menu style.** Room code display and copy, join by code, the public room list (Host / Level / Avail / Status), roster with characters and pings, "connecting…", errors (version mismatch, room full, server unreachable). Strings use native slots. Each replacement is listed in REVERSE_ENGINEERING.md "Not ported or replaced natively".
+- [ ] **Step 3: Invite links.** The browser reads `?room=` and opens Join. Native clients accept a pasted code or link. Android also handles `https://road-rash.archit.xyz/?room=` app links if the manifest allows.
+- [ ] **Step 4: Results.** Original mano results: places from the official table, no career change, `DUEL` video, back to screen 0x0b with the room kept for a rematch.
+- [ ] **Step 5: Tests.** Drive the front end through host → vote → race → results → rematch with the in-process server.
+- [ ] **Step 6:** Commit: `frontend: online mano-a-mano`.
+
+---
+
+### Task 8: VPS deployment
+
+**Owner-approved scope on `agnee`:**
+- a new Dokku app `road-rash-net`;
+- an Nginx `location /net` WebSocket upgrade proxy in the existing `road-rash` TLS server block;
+- one UDP port range for WebRTC (default 40000–40099/udp) opened in the host firewall and published by the container;
+- a GitHub Actions deploy key restricted the way `DOKKU_ROAD_RASH_KEY` is.
+
+Nothing else on the server changes.
+
+**Files:** Create `deploy/road-rash-net/` (Dockerfile reference, `app.json` healthcheck, Nginx snippet), `.github/workflows/net-deploy.yml`. Update `docs/WEB_HOSTING.md`.
+
+- [ ] **Step 1: Deploy workflow.** Build `rr-netd` (Linux x86-64 release) on pushes to `main` that touch `server/` or `src/net/`. Deploy with `dokku git:from-archive`, as the web app does. Health-check `/net/health` and check the exact Git revision.
+- [ ] **Step 2: Nginx route.** WebSocket upgrade headers, a long read timeout and a body size limit. Cloudflare passes WebSockets on the proxied hostname. Confirm the TLS renewal hook still validates.
+- [ ] **Step 3: WebRTC UDP.**
+  - Publish the port range and advertise `5.161.142.20` as the server's host candidate (configurable).
+  - Confirm from an outside network that a DataChannel connects.
+  - Confirm that the WebSocket fallback works when UDP is blocked; test from a network that blocks UDP, or with a client flag that blocks it.
+- [ ] **Step 4: Post-deploy smoke.** Two `net_bots` from CI race a short scripted race against production and require equal hashes and official results.
+- [ ] **Step 5:** Record everything in WEB_HOSTING.md: app, ports, firewall change, rollback procedure. Commit: `deploy: rr-netd on agnee`.
+
+---
+
+### Task 9: WebRTC DataChannel transport
+
+**Files:** Create `src/net/rtc_channel.cpp`, `src/net/rtc_channel_web.cpp`, `web/net_glue.js` (or `datachannel-wasm`). Modify `server/` for the server-side peer, and `src/net/client.cpp` for upgrade and fallback.
+
+- [ ] **Step 1: Server peer.** For each client, the server creates a peer connection with one unreliable, unordered DataChannel. Signalling goes over the client's WebSocket. Port range and public IP come from configuration.
+- [ ] **Step 2: Clients.** Native clients use libdatachannel; the browser uses `RTCPeerConnection` through JS glue. Race traffic moves to the DataChannel once it is open. If it fails within 5 s, or closes mid-race, traffic falls back to the WebSocket without a race-visible event beyond a rollback.
+- [ ] **Step 3: Measure.** At 5% loss, compare WebSocket and DataChannel on rollback depth p50/p95/p99, late-input rate and stalls. Record the result in VERIFICATION.md. The DataChannel stays default only if it measurably helps.
+- [ ] **Step 4:** Commit: `net: WebRTC DataChannel race transport`.
+
+---
+
+### Task 10: Platforms
+
+- [ ] **Step 1: macOS.** Outgoing connections only, so there is no firewall or Local Network prompt. Confirm this on a signed package.
 - [ ] **Step 2: Android.**
-  - Add the `INTERNET`, `ACCESS_NETWORK_STATE`, `ACCESS_WIFI_STATE` and `CHANGE_WIFI_MULTICAST_STATE` permissions.
-  - Hold a `WifiManager.MulticastLock` while the lobby is open; without it, broadcast receive fails on many devices.
-  - Lifecycle: going to the background in a race sends a leave, then a drop, as a client quitting does.
-- [ ] **Step 3: Linux and Windows** (with plan 33). Use Winsock 2 on Windows. Check that the Windows Defender firewall prompt appears.
-- [ ] **Step 4: Hardware validation.** Mac ↔ MANGMI AIR X on one Wi-Fi network: discover, join, race and finish. Three peers: two Mac processes on different ports plus the device. Record what was observed in VERIFICATION.md. APK assembly is not this check.
-- [ ] **Step 5:** Commit: `platform: mano-a-mano on macOS and Android`.
+  - Permissions `INTERNET` and `ACCESS_NETWORK_STATE`.
+  - Going to the background in a race keeps the seat for the reconnect window.
+  - A Wi-Fi↔cellular switch reconnects with the seat token and fast-forwards.
+  - Test on the MANGMI AIR X: record the observed race, lifecycle and reconnect in VERIFICATION.md.
+- [ ] **Step 3: Browser (plan 23).** Same rooms and races; cross-play with native in both directions. The game data comes from the existing hosted manifest. The Asyncify main loop polls the channel each frame.
+- [ ] **Step 4: Linux and Windows** with plan 33, in the determinism matrix and the cross-play tests.
+- [ ] **Step 5:** Commit: `platform: online mano-a-mano on all targets`.
 
 ---
 
-### Task 7: Robustness and acceptance
+### Task 11: Acceptance
 
-- [ ] **Step 1: Soak.** In process, run 100 eight-peer races at 20% loss with jitter. Then run a one-hour two-machine LAN session. The pass criteria are no desynced finish order, no stall over the Task 1 timeout, and no memory growth.
-- [ ] **Step 2: Hostile input.** Fuzz the codecs. Replay corrupt, truncated and spoofed-slot frames into a live session: they must be dropped and counted, never crash it or move another peer's rider.
-- [ ] **Step 3: Docs.** Update USER_GUIDE.md (how to host, join, port forward and chat), PROGRESS.md, CURRENT_STATUS.md / agent-status.json ("multiplayer disabled" becomes the measured state), and REVERSE_ENGINEERING.md (replaced dialogs, dropped transports).
-- [ ] **Step 4:** Commit: `docs: mano-a-mano acceptance`.
+- [ ] **Step 1: Soak.**
+  - 200 in-process eight-player races under simulated network chaos.
+  - A one-hour production session with four real clients (Mac, Android, two browsers) on different networks, one of them cellular.
+  - 50 concurrent bot rooms against staging, recording server CPU and memory.
+- [ ] **Step 2: Hostile input.** Fuzzed and replayed garbage, wrong-slot inputs, oversized and flooded messages against a local `rr-netd`. Each must be dropped, counted and rate-limited, with no crash and no effect on other seats.
+- [ ] **Step 3: Docs.**
+  - USER_GUIDE.md: how to host, join, invite and chat; troubleshooting.
+  - MULTIPLAYER.md: a "Port design" pointer to this plan and the deviations list.
+  - PROGRESS.md, CURRENT_STATUS.md / `agent-status.json`, and VERIFICATION.md (commands, outcomes and evidence paths).
+- [ ] **Step 4:** Commit: `docs: online mano-a-mano acceptance`.
 
-**Plan acceptance (Tasks 1–7):**
-- the Task 1 captures decode fully;
-- sender frames and remote-rider fields match the original captures;
-- native↔original interop races finish with agreed places;
-- the 2/4/8-peer lossy soak passes;
-- Mac↔Android LAN races were observed on hardware;
-- offline replays (`make verify-sim` and the oracle goldens) are unchanged.
-
----
-
-### Task 8 (owner-gated): Play beyond direct addresses, and the browser
-
-The original reaches peers by address only. Two native extensions need infrastructure the project would have to run, so the owner decides:
-
-1. **NAT traversal or relay:** a small self-hostable rendezvous/relay (UDP hole punching, falling back to relay). The classic wire format is carried unchanged inside the relay envelope, so players need no port forwarding.
-2. **Browser (plan 23):** browsers have no UDP. This needs WebRTC data channels (unreliable, unordered) with the same relay as signalling, plus a `Transport` built on them.
-
-Until the owner decides, the user guide states that internet play needs a forwarded UDP port 6996 on the host, and that the browser build has no mano-a-mano.
-
-## Not in this plan
-
-Same-screen split-screen play is not in the original. It would be a native enhancement with its own renderer and input work. If wanted, it gets a separate plan; it would build on Task 3's multiple-local-controller support.
+**Plan acceptance:**
+- all offline goldens are unchanged;
+- the determinism matrix is green on every shipped platform;
+- the in-process chaos suite and production soak pass with no undetected desync and no stall over 1 s;
+- cross-play works across Mac, Android, browser, Linux and Windows;
+- the hardware observations are recorded;
+- the server runs on `agnee` with the deploy smoke test green.

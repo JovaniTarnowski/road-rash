@@ -53,6 +53,36 @@ Detailed evidence is in [REVERSE_ENGINEERING.md](REVERSE_ENGINEERING.md) and tes
 
 ## Timeline
 
+### October 26, 2026: online multiplayer joins the definition of done; plan 34 redesigned
+
+The owner decided two things:
+- mano-a-mano multiplayer is part of the definition of done;
+- it should be modern internet play through the owner's VPS, not a faithful
+  port of the original's LAN/modem netcode.
+
+Plan 34 is rewritten around that decision.
+
+- **Simulation.** Every client runs the whole deterministic race. Only one
+  16-bit input word per human per tick crosses the network.
+- **Server.** `rr-netd` on `agnee` holds no game data and runs no simulation.
+  It runs a 60 Hz clock per race and seals one authoritative input timeline.
+- **Clients.** Each client predicts other players' inputs and rolls back to a
+  saved snapshot when a sealed frame differs.
+- **Transport.**
+  - WebSocket over 443 through the existing Cloudflare/Nginx setup carries the
+    lobby and fallback race traffic.
+  - An unreliable WebRTC DataChannel to the server's public IP carries race
+    traffic, using libdatachannel natively and the browser's own APIs on the
+    web.
+- **Rooms.** Players join by room code or invite link, using the original mano
+  menus and gameplay rules.
+
+The hardest piece is turning the player-centred simulation (track ring, LOD,
+traffic, police) into a shared one with several centres, without changing
+single-player results. Snapshot/rollback cost on Android and cross-platform
+bit-identity are measured early, in Task 3. This entry is planning only;
+nothing was built.
+
 ### October 26, 2026: mano-a-mano traced; multiplayer plan 34
 
 This is a documentation-only session. It covers the original's mano-a-mano
