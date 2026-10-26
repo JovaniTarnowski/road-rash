@@ -60,6 +60,17 @@ match where compared; `+0x130` (bend) is uncompared.
   shove (70, drift only) with RNG in sync (no sounds) -- original sees
   NO overlap (frozen lateral must differ; it is NEVER compared: solo
   dumps only player bike/half; `node.*` has no lateral). `was_clear`
+  probe (reverted): player prevpos31396/prevlat-380/hl64/hw7680 vs frozen
+  prevpos31488/prevlat16384/hl64/hw7680. Prev pos diff 92<128 (NOT clear
+  forward); prev lat diff 16764>15360 (WAS clear lateral) => push LATERAL
+  (both worlds, since prev inputs match? frozen prev 16384 spawn, should
+  match). Mass probe (reverted): `+0x194` 256/256 match -- rules out mass
+  mismatch (same tables); half-dims 7680/7680 match -- rules out dims.
+  Remaining: frozen lat drift 16384->15360 via shove history (uncompared);
+  next: dump frozen lat trajectory 1-845 to find first drift tick, then
+  compare player shove at that tick (matches through 844, so drift must
+  come from a contact where player shove matches but frozen shove differs
+  -- i.e. separate() vs contact() nudge split? Or prev-copy staleness?). `was_clear`
   probe (reverted): player pos31396/prevlat-380/hl64/hw7680 vs frozen
   pos31488/prevpos31488/lat15360/prevlat16384/hl64/hw7680. Prev pos diff
   92 <128 (NOT clear forward); prev lat diff 16764 >15360 (WAS clear
