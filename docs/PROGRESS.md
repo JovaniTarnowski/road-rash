@@ -53,6 +53,16 @@ Detailed evidence is in [REVERSE_ENGINEERING.md](REVERSE_ENGINEERING.md) and tes
 
 ## Timeline
 
+### October 26, 2026: bike +0x324 rider type (walls groundwork, no behavior change)
+
+- `0x00405990` sets bike `+0x324` 0/1/2 (player/opponent/cop; cop
+  already set in `police.cpp`). `place_rider` now sets
+  `+0x324 = (slot == 0 ? 0 : 1)`; `+0x328` stays 0 for all
+  (`DAT_004c4fb0` mapping open, plan-17), so the walls branch gate
+  still always takes the walls path. Write-only (nothing reads
+  `+0x324` yet): L5d/L1 still 2400/2400; full owned-Debug gate 106/106.
+  Remaining: `+0x328` + `DAT_004c4fb0` mapping for real branch gating.
+
 ### October 26, 2026: crashed car contact (L5d 2278 -> 2400 green)
 
 - `collide_traffic` no longer skips crashed riders (`0x004368f0` gates

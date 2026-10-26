@@ -193,6 +193,13 @@ Race::Race(std::vector<RouteSample> a, std::vector<RouteSample> b, const Physics
         r.sample = r.previous_sample = size_t(pos >> 8);
         r.bike.i32(0x1c) = pos;
         r.bike.i32(0x138) = pos;
+        // 0x00405990: bike +0x324 is the rider type (0 player, 1 opponent,
+        // 2 cop; the cop is set in police.cpp). Native left all at 0;
+        // set it here so the 0x0043a580/0x004060b0 walls gates see opponents
+        // as opponents (+0x328 stays 0 for all for now, so the branch check
+        // still always takes the walls path; +0x328 mapping via DAT_004c4fb0
+        // stays open, plan-17).
+        r.bike.i32(0x324) = (slot == 0 ? 0 : 1);
         // 0x00405990: lateral = sub-slice +0xcc (road centre, Q8) + grid offset.
         // RouteSample::offset is world units (edges/AI scale it by 256);
         // road_base_ anchors the relative route to the original absolute

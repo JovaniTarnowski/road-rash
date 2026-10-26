@@ -1,5 +1,18 @@
 # Verification log (all sessions September 28, 2026)
 
+## Bike +0x324 rider type, no behavior change (October 26, 2026)
+
+- Baseline `77b0b7c`. `src/race.cpp` `place_rider` sets bike `+0x324`
+  (`0x00405990:20`, 0 player / 1 opponent; 2 cop already in
+  `police.cpp:90`). `+0x328` stays 0 for all, so the `0x0043a580`
+  walls branch gate still always calls walls; write-only, nothing
+  reads `+0x324` yet (`rg -n "0x324" src/` shows only the two writes).
+- Replays with owned Debug build `build-agent-crash-2278`:
+  L5d `2400 identical` (+13 golden-only), L1 `2400 identical`.
+- Full owned-Debug gate: **106/106 passed** (L5d/L5e verified manually
+  outside CTest; sanitizers/Android not run: write-only fidelity
+  field, no simulation readers yet).
+
 ## Crashed car contact and L5d full green (October 26, 2026)
 
 - Baseline `f8a4c59`. `src/race.cpp` `collide_traffic` runs separation
