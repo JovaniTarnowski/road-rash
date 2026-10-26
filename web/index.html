@@ -29,12 +29,13 @@
 </head>
 <body>
 <header class="toolbar">
-  <h1>Road Rash</h1>
+  <h1 class="brand"><span>Road</span> <span>Rash</span></h1>
   <span id="state">Loading</span>
   <nav aria-label="Game controls">
     <details class="controls">
       <summary>Controls</summary>
       <div class="controls-panel">
+        <span class="kicker">Keyboard &amp; gamepad</span>
         <h2>Controls</h2>
         <dl>
           <dt>↑ / W</dt><dd>Accelerate</dd>
@@ -48,7 +49,7 @@
       </div>
     </details>
     <button id="fullscreen" disabled>Full screen</button>
-    <button id="reload" hidden>Exit to launcher</button>
+    <button id="reload" class="accent" hidden>Exit to launcher</button>
   </nav>
 </header>
 <main aria-label="Road Rash game">
@@ -92,6 +93,7 @@
     </section>
     <div id="loading" role="status" aria-live="polite" hidden>
       <div class="loading-panel">
+        <span class="kicker">Road Rash</span>
         <h2 id="loading-title">Loading Road Rash</h2>
         <p id="loading-message">Starting game…</p>
         <div class="loading-track" aria-hidden="true"></div>
@@ -99,6 +101,9 @@
     </div>
   </div>
 </main>
-<footer><span>Unofficial port. Not affiliated with Electronic Arts.</span><a href="LICENSES.txt">Licences</a></footer>
+<footer>
+  <span>Unofficial port. Not affiliated with Electronic Arts.</span>
+  <span class="footer-links"><a href="https://github.com/arkits/road-rash" target="_blank" rel="noopener">GitHub</a><a href="LICENSES.txt">Licences</a></span>
+</footer>
 </body>
 </html>
