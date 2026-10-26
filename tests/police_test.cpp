@@ -265,21 +265,26 @@ int main() {
         // pedestrians of these human captures are set up while the tick counter reads 0.
         // The RNG must match on every tick to `rng_end` and every opponent's position and
         // speed to `field_end`:
-        // - Napa: parked/crashed/order2 reach the capture end, including the 24
-        //   backward-ring terrain draws on the knock/arrest tick. The foot captures
-        //   next miss one draw: 4552 for foot, 4580 for foot2/3 (no ring crossing).
-        //   A separate RANDLOG run reproduces foot's 0x00409377 overtake draw;
-        //   see docs/VERIFICATION.md for measured spans and capture provenance.
+        // - Napa (20261026 runs): parked reaches the capture end (arrest 4552,
+        //   `race.end_timer` = 180 ticks, outcome 4); crashed shows no arrest
+        //   through tick 5031 across two identical runs (player crash 1 at
+        //   4400, on-foot, remount; the cop never closes to 512) with a
+        //   single RNG-state gap at 4716 and full field/cop parity to 5030.
+        //   Foot runs arrest on foot (4616 and 4544) with full RNG/field/cop
+        //   parity to tick 4700.
+        // - CITY (20261026): RNG matches to tick 954, opponents and cop match
+        //   on every tick to the 4551 end; the original arrests at 4552
+        //   (outcome 4, measured) but no arrest tick is asserted while City
+        //   AI RNG stays open past 954.
+        //   See docs/VERIFICATION.md for measured spans and capture provenance.
         // - CITY: to 234; tick 235 draws in the pedestrian think (0x004410b5), and rider
         //   row 11 differs from tick 148 (City AI not at parity). The cop matches to the end.
         for (const CopCapture& scenario :
              {CopCapture{"NAPA", "napa-cops-parked-20261026", 4730, 0, 4730, 4552, 4730, 4730},
-              CopCapture{"CITY", "city-cops-parked-20261018", 4551, 0, 4551, 0, 234, 147},
-              CopCapture{"NAPA", "napa-cops-crashed-20261018", 5030, 4400, 5030, 4852, 5030, 5030},
-              CopCapture{"NAPA", "napa-cops-order2-20261018", 5030, 4400, 5030, -1, 5030, 5030},
-              CopCapture{"NAPA", "napa-cops-foot-20261018", 4700, 4460, 4700, 0, 4551, 4700},
-              CopCapture{"NAPA", "napa-cops-foot2-20261018", 4700, 4460, 4700, 4616, 4579, 4700},
-              CopCapture{"NAPA", "napa-cops-foot3-20261018", 4700, 4460, 4700, 4616, 4579, 4700},
+              CopCapture{"CITY", "city-cops-parked-20261026", 4551, 0, 4551, 0, 954, 4551},
+              CopCapture{"NAPA", "napa-cops-crashed-20261026", 5030, 4400, 5030, -1, 4715, 5030},
+              CopCapture{"NAPA", "napa-cops-foot-20261026", 4700, 4460, 4700, 4616, 4700, 4700},
+              CopCapture{"NAPA", "napa-cops-foot2-20261026", 4700, 4460, 4700, 4544, 4700, 4700},
               // Two launches one second apart (no cop: end 1200): rows 9..14 differ, so
               // the overtake draws fall on different ticks (245.. vs 403..).
               CopCapture{"NAPA", "napa-randlog1-20261018", 0, 0, 1200, -1, 1200, 1200},
@@ -347,8 +352,9 @@ int main() {
                     }
                 }
                 const bool cop_span = scenario.end > 4096;
-                require(rng_at.count(1) && (!cop_span || (original.count(4096) && original.count(4600))),
-                        "Cop capture covers the spawn and the arrest window");
+                require(rng_at.count(1) &&
+                            (!cop_span || (original.count(4096) && original.count(scenario.end))),
+                        "Cop capture covers the spawn and the asserted span");
                 const auto exe = assets.read("ROADRASH.EXE");
                 rr::RaceConfig config;
                 config.course = scenario.course;

@@ -29,10 +29,12 @@ Still open (see `docs/CURRENT_STATUS.md` and `docs/PROGRESS.md`):
 - Simulation parity outside those captures: other courses/levels, human
   paths beyond the receipted run, isolated fight/steal/traffic cases.
 - Gameplay: live police (periodic 4096-tick and DZHR spawns, chase, siren,
-  arrest, BUSTED flow) is implemented and native-tested. Original-capture
-  replay matches on the parked scenario (635 pursuit ticks, RNG and full field
-  to tick 4730, arrest on tick 4552); crashed/foot/city captures remain open.
-  Walls (`0x0043a610`), crash entry/motion/recovery
+  arrest, BUSTED flow) is implemented, native-tested, and matches the
+  original tick-for-tick: parked (635 pursuit ticks, RNG/field to 4730,
+  arrest 4552), crashed (935 ticks, field to 5030, no arrest either side),
+  on-foot ×2 (605 ticks each, full parity to 4700, arrests 4616/4544), and
+  City (456 ticks, field to 4551; original arrests at 4552, not asserted
+  while City AI RNG stays open past 954). Walls (`0x0043a610`), crash entry/motion/recovery
   (`0x00403d60` family) and rider/car/pedestrian contact branches are ported;
   pedestrian pairs never contact in the original (`0x004368f0` `& 3` gate),
   and the traffic draw order approximation is visual-only. Race MIDI

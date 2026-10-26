@@ -53,6 +53,17 @@ Detailed evidence is in [REVERSE_ENGINEERING.md](REVERSE_ENGINEERING.md) and tes
 
 ## Timeline
 
+### October 26, 2026: full police pursuit parity (parked, crashed, on-foot, City)
+
+Six Wine captures (Napa/City level 3, seed 1, human parked, `ORDER=1`,
+mid-race `FRAMES`, knock variants), all contiguous, all replayed in
+`police_test` with one RNG anchor: parked 635/635 cop ticks with RNG/field
+to 4730 and arrest 4552; crashed 935/935 with field to 5030 and no arrest
+either side (single RNG-state gap at 4716); on-foot runs 605/605 each with
+full parity to 4700 and arrests at 4616/4544; City 456/456 with field to
+4551 and RNG to 954 (original arrests at 4552, measured but not asserted
+while City AI RNG stays open). Sanitizer trees clean.
+
 ### October 26, 2026: pixel acceptance extended; background-art gaps measured
 
 - `frontend_test` gains masked original-vs-native checks for the main menu

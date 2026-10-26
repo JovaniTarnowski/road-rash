@@ -1,5 +1,16 @@
 # Verification log (all sessions September 28, 2026)
 
+## Full police pursuit parity (October 26, 2026)
+
+Owned Debug `build-agent-open` + ASan/UBSan `build-agent-open-san`:
+`police-test` 0 failures — parked (cop 635 ticks, RNG/field 4730, arrest
+4552), crashed (cop 935, field 5030, RNG 4715, no arrest), foot (cop 605,
+full 4700, arrest 4616), foot2 (cop 605, full 4700, arrest 4544), city
+(cop 456, field 4551, RNG 954; original arrest 4552 measured, unasserted).
+Captures: `analysis/oracle/{napa,city}-cops-*-20261026.tsv` with receipts;
+quit-mid-race `FRAMES` + `ORDER=1` (tick reset past race end, end_timer only
+with ORDER).
+
 ## Menu pixel acceptance: fe-main + fe-street green (October 26, 2026)
 
 - `frontend-test ../cdrom/ROADRASH`: 0 failures. New: `fe-main` (60%

@@ -69,6 +69,14 @@ Build directory: `build-agent-open` (owned Debug).
   (~1% exact restroom-class; characters portrait block) and recorded as
   background/portrait art-mapping gaps, intentionally not pinned.
 
+## 20261026 batch results: full police parity + sanitizers clean
+
+- All six captures contiguous; harness updated to measured values (city
+  rng 954/field 4551; crashed rng 4715 no-arrest; foot/foot2 full 4700 with
+  arrests 4616/4544; `original.count(scenario.end)` span fix; order2/foot3
+  rows dropped as redundant with the new runs). `police-test` fully green
+  in Debug and ASan/UBSan trees, as are career/frontend/sound/music.
+
 ## Remaining work
 
 - Original-capture parity for the cop pursuit (needs `napa-cops-*` /
