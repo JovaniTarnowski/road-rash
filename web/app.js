@@ -74,12 +74,12 @@ async function restoreHostedAssets() {
     assetDirectory = {getFileHandle: async name => ({getFile: () => read(decodeURIComponent(name))})};
     engine.localAssets = {names: new Set(records.keys()), read};
     document.querySelector('.import-actions').hidden = true;
-    $('setup-description').textContent = 'Game files load automatically as you play and are cached on this device.';
+    $('setup-description').textContent = 'Choose how you want to play.';
     $('state').textContent = 'Game ready';
     try { await loadDiscFonts(assetDirectory); }
     catch (error) { console.warn('Game fonts unavailable:', error); }
     $('ready').hidden = false;
-    status('Ready to play. Choose Main Game or Quick Race.');
+    status('Ready to play.');
     return true;
 }
 const sync = populate => new Promise((resolve, reject) => engine.FS.syncfs(populate, e => e ? reject(e) : resolve()));
@@ -120,7 +120,7 @@ async function restoreDisc() {
         engine.localAssets.names = new Set(references.map(r => r.path));
         $('ready').hidden = false;
         $('state').textContent = 'Disc ready';
-        status('Your verified disc is stored on this device. Choose Main Game or Quick Race.');
+        status('Your game is ready to play.');
         return true;
     } catch (error) {
         if (hasMarker || error.name !== 'NotFoundError') status('Stored disc unavailable. Re-import your original disc. ' + storageError(error), true);

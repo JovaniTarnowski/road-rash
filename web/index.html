@@ -37,7 +37,7 @@
   <div class="viewport">
     <canvas id="canvas" tabindex="0" aria-label="Road Rash game canvas" hidden></canvas>
     <section id="setup" aria-label="Game launcher">
-      <h2>Load Game</h2>
+      <h2>Start Game</h2>
       <p id="setup-description">Connecting to the game server…</p>
       <div class="actions import-actions" hidden>
         <label class="button primary disabled" for="iso">Choose disc image</label>
@@ -46,16 +46,20 @@
         <input id="folder" type="file" disabled webkitdirectory multiple>
       </div>
       <div id="ready" hidden>
-        <label class="course-label" for="course">Quick race course</label>
-        <select id="course">
-          <option value="0">Napa Valley</option><option value="1">City</option>
-          <option value="2">Sierra Nevada</option><option value="3">Pacific Highway</option>
-          <option value="4">Peninsula</option>
-        </select>
-        <div class="actions">
-          <button id="quick" class="primary">Quick Race</button>
-          <button id="play">Main Game</button>
-        </div>
+        <button id="play" class="start-game">Start Game<span aria-hidden="true">▸</span></button>
+        <p class="start-description">Play from the original menus.</p>
+        <section class="quick-race" aria-labelledby="quick-race-title">
+          <h3 id="quick-race-title">Quick Race</h3>
+          <label class="course-label" for="course">Course</label>
+          <div class="quick-race-actions">
+            <select id="course">
+              <option value="0">Napa Valley</option><option value="1">City</option>
+              <option value="2">Sierra Nevada</option><option value="3">Pacific Highway</option>
+              <option value="4">Peninsula</option>
+            </select>
+            <button id="quick">Quick Race</button>
+          </div>
+        </section>
       </div>
       <p id="status" role="status" aria-live="polite">Loading…</p>
       <progress id="progress" max="341" value="0" hidden></progress>

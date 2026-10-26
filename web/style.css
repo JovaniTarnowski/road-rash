@@ -107,7 +107,36 @@ main { min-width: 0; min-height: 0; }
 .actions { display: flex; flex-wrap: wrap; gap: 10px; margin: 16px 0; }
 input[type=file] { position: absolute; width: 1px; height: 1px; opacity: 0; overflow: hidden; }
 .button:has(+ input:focus-visible) { outline: 2px solid var(--yellow); outline-offset: 2px; }
-#ready { border-top: 1px solid #444; margin-top: 22px; padding-top: 20px; }
+#ready { margin-top: 24px; }
+.start-game {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  min-height: 56px;
+  padding: 14px 18px;
+  background: var(--yellow);
+  color: #191a14;
+  border-color: #fff8aa #8e8941 #8e8941 #fff8aa;
+  box-shadow: 3px 3px #0d0d0b;
+  font-size: 22px;
+  text-align: left;
+}
+.start-game:hover { background: #f3e97d; color: #191a14; }
+.start-game:active { box-shadow: none; transform: translate(1px, 1px); }
+.start-game span { font-family: sans-serif; font-size: 24px; }
+#setup .start-description { margin: 10px 0 0; font-size: 13px; }
+.quick-race { margin-top: 26px; padding-top: 22px; border-top: 1px solid #444; }
+.quick-race h3 {
+  margin: 0 0 14px;
+  color: var(--text);
+  font-family: "RoadRashFuturaBold", sans-serif;
+  font-size: 18px;
+  font-weight: 400;
+}
+.quick-race-actions { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; }
+.quick-race-actions select { min-width: 0; }
+.quick-race-actions button { white-space: nowrap; font-size: 14px; }
 .course-label { display: block; color: var(--muted); margin-bottom: 6px; }
 select { width: 100%; font-family: inherit; font-size: 14px; }
 #setup #status { margin: 20px 0 0; font-size: 12px; overflow-wrap: anywhere; }
@@ -154,10 +183,19 @@ a { color: inherit; }
   nav { gap: 5px; }
   .toolbar button, summary { font-size: 13px; padding: 6px 8px; }
   #setup { padding: 22px; }
+  .quick-race-actions { grid-template-columns: 1fr; }
   footer { font-size: 9px; }
 }
 @media (max-height: 500px) {
   body { grid-template-rows: 40px minmax(0, 1fr) 0; }
   footer { display: none; }
   #setup { padding: 18px; }
+  #setup h2 { font-size: 28px; margin-bottom: 12px; }
+  #ready { margin-top: 0; }
+  #setup:has(#ready:not([hidden])) #setup-description,
+  #setup:has(#ready:not([hidden])) #status:not(.error),
+  #setup .start-description { display: none; }
+  .start-game { min-height: 44px; padding: 8px 16px; font-size: 20px; }
+  .quick-race { margin-top: 16px; padding-top: 12px; }
+  .quick-race h3 { font-size: 16px; margin-bottom: 8px; }
 }
