@@ -1,15 +1,16 @@
 # Verification log (all sessions September 28, 2026)
 
-## Full ASan/UBSan gate (October 26, 2026)
+## Focused ASan/UBSan (October 26, 2026)
 
 - Baseline `3ab6f5b` + docs (no src changes since `b619cb4`).
-  Owned ASan+UBSan build `build-agent-asan-full`
+  Owned ASan+UBSan build `build-agent-asan-split`
   (`-fsanitize=address,undefined -fno-sanitize-recover=all`):
-  configure/build exit 0. Full `ctest -j8`: **106/106 passed**
-  (L5d/L5e verified manually outside CTest; receipt
-  `/tmp/asan-full-20261026.log`, git-ignored; sanitizer build dir
-  git-ignored). Covers crash-entry/crash-car/type-word plus the full
-  native suite (sim/disc/slow/unit).
+  `race-test` 0 failures, `traffic-test` 0 failures
+  (car contact synthetic boundaries pass; CANYN walls, MEDLY/CITY/NAPA
+  intersections, Napa spawns/density all pass).
+  Receipts `analysis/agent-gates/asan-focused-20261026/` (git-ignored).
+  Full ASan suite NOT run (focused only; integer sim logic, no new
+  allocation/threading -- same justification as prior slices).
 - Android debug assembly already green (`assembleDebug BUILD SUCCESSFUL`,
   same tree). Device/hardware still open (plan 14).
 
