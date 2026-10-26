@@ -1,5 +1,19 @@
 # Verification log (all sessions September 28, 2026)
 
+## Focused ASan/UBSan for crash-contact + type-word (October 26, 2026)
+
+- Baseline `b619cb4` + docs (no src changes since the 106/106 gate).
+  Owned ASan+UBSan build `build-agent-asan-split`
+  (`-fsanitize=address,undefined -fno-sanitize-recover=all`):
+  configure/build exit 0. Focused `race-test` 0 failures,
+  `traffic-test` 0 failures (car contact synthetic boundaries pass;
+  CANYN walls, MEDLY/CITY/NAPA intersections, Napa spawns/density all
+  pass). Covers the `collide_traffic`/`contact_car` crashed paths and
+  `+0x324` writes (write-only field, no readers yet).
+- Full ASan suite / Android assembly not run (same justification as
+  prior slices: no sanitizer-sensitive allocation/threading change,
+  no Android-specific code; integer sim logic only).
+
 ## Browser layout revision (October 25, 2026)
 
 - Shell `7d8f7d7`, engine `096bff2`: Vercel preview READY at
