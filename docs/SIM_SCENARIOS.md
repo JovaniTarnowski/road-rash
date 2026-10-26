@@ -390,3 +390,38 @@ countdown natively, prove ring/build closure and anchor RNG once at green.
 `oracle-sim-field` and `oracle-sim-field-schema2` register these regressions;
 the disc-derived traces and receipts stay local. The schema2 capture also
 supersedes the legacy metadata probe, not the original golden file.
+
+## Police pursuit captures, October 26, 2026
+
+Napa level 3 (UI; `RR_ORACLE_LEVEL=3`), seed 1, human player parked on the
+grid (zero controls, `RR_ORACLE_HUMAN=1` clears demo hold, no `DRIVE` or
+`INPUT`), full field, one RNG anchor at tick 1. The periodic cop
+(`0x00407f30`, every 4096 ticks) spawns behind the player, chases, and
+arrests into the `0xb4` race-end timer. Two capture rules learned the hard
+way: set `RR_ORACLE_ORDER=1` (otherwise `race.end_timer`/`race.outcome` are
+never dumped) and quit with `RR_ORACLE_FRAMES` while the race is still
+running (past the arrest the tick counter resets for post-race and breaks
+contiguity). `police_test` replays harnesses: cop position/speed every tick
+from the 4096 spawn, player crash state, RNG and per-row field to the
+asserted end, native arrest tick vs the measured `end_timer` tick.
+
+- `napa-cops-parked-20261026`: FRAMES=4800 run ended at the race-end tick
+  reset (4731 contiguous ticks); truncated past the reset for the harness.
+  Cop matches on all 635 pursuit ticks, RNG and field identical to tick
+  4730, native arrest on tick 4552 as captured. ORDER=1 mid-race re-run
+  pending for direct `end_timer` evidence.
+- `napa-cops-crashed-20261026`: same recipe plus `RR_ORACLE_KNOCK=4400`
+  (0x00403d60 reason 1 on the player), FRAMES=5031.
+- `napa-cops-order2-20261026`: second KNOCK=4400 run, FRAMES=5031.
+- `napa-cops-foot-20261026`, `napa-cops-foot2-20261026`: KNOCK=4460,
+  FRAMES=4701 (on-foot arrest window).
+- `city-cops-parked-20261026`: `RR_ORACLE_COURSE=1`, FRAMES=4552 (City AI is
+  not at parity; cop-only comparison to tick 4551).
+
+Example recipe:
+
+```sh
+RR_ORACLE_COURSE=4 RR_ORACLE_LEVEL=3 RR_ORACLE_SEED=1 RR_ORACLE_SIM=1 \
+RR_ORACLE_HUMAN=1 RR_ORACLE_ORDER=1 RR_ORACLE_FRAMES=4731 \
+oracle/run.sh napa-cops-parked-20261026
+```
