@@ -69,7 +69,11 @@ Preserved OMP's CMake/JPEG/RRI/frontend/oracle edits; did not stage them.
 - Chromium and WebKit live probes: no page errors over 120 seconds of throttle
   with visibility events. Heap settled at 104,464,384 bytes in this scenario.
   These probes do not prove absence of memory bugs or physical Safari/iOS parity.
-- Client C++ LSP was not exposed in this session; used pinned Emscripten compile/link diagnostics and real-engine exception regression instead.
+- Client C++ LSP was not exposed. Refreshed the owned native compilation
+  database: preflight healthy (187 entries). `clangd --check` on game_main
+  exited 3 with 38 refactoring-tweak failures (ExpandDeducedType/ExtractFunction),
+  no compiler diagnostics. Full native compilation and pinned Emscripten
+  compile/link plus the real-engine exception regression passed.
 - Logs: `/tmp/rr-sentry-{build,hosted,telemetry,cache,probe,stress}.log`;
   browser evidence `analysis/sentry-fixes-hosted/`; private asset staging
   `build-agent-sentry-fixes-20261026/game-assets` (original disc hash-verified).
@@ -97,6 +101,19 @@ Preserved OMP's CMake/JPEG/RRI/frontend/oracle edits; did not stage them.
 
 ## Live processes/resources
 
-Local HTTP server exec session 82702 on port 8791 (owned); stop at handoff.
-Native integration gate and final browser probes running; results/resources to
-be appended before release. No Wine, oracle capture, or Ghidra resources used.
+Local HTTP server PID 19019 / exec session 82702 stopped. Native gate,
+Chromium/WebKit probes and deployment watcher completed. Both session claims
+released after the documentation commit. No held live processes/resources.
+No Wine, oracle capture, or Ghidra resources used.
+
+## Deployment verification
+
+Implementation commit `045cbcaa29d164fd7c83e8095e32b838a2657f9f` pushed to
+main. [GitHub Actions run 40368414082](https://github.com/arkits/road-rash/actions/runs/40368414082)
+completed successfully: clean Linux browser build, code-only package, cache/SDK/
+recovery tests, Dokku deploy, exact revision/health check and all extended hosted
+smoke cases. Direct public GET of `/revision.txt` returned the implementation
+SHA and `/healthz` returned `ok`. Deployment is live at
+https://road-rash.archit.xyz. No synthetic failures were sent to Sentry or
+PostHog (test transports intercepted). Remaining two unreproduced crash
+signatures above are still open; this is not a claim that every issue is fixed.
