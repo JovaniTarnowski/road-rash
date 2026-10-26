@@ -63,11 +63,21 @@ match where compared; `+0x130` (bend) is uncompared.
 - Naive fix (skip frozen inners) makes it WORSE: first divergence moves
   EARLIER to tick 149 RNG (original 2193798822 vs native 1793882572).
   I.e. the tick-149 draw IS a frozen contact with sounds in both worlds
-  (player pos ~13746, speed drop 3351->2739); skipping all frozen contacts
-  removes it. Correct fix must preserve sounds/RNG while fixing the 845
-  shove -- i.e. correct the frozen spawn laterals (so overlaps occur
-  exactly when original overlaps), not blanket-skip. Reverted the skip;
-  tree clean at `b619cb4` + docs.
+  (player pos ~13746, lat 15123 after -1000 shove, speed 3351->2739;
+  RNG changes in both without the skip). Correct fix must preserve
+  sounds/RNG while fixing the 845 shove -- i.e. correct the frozen
+  geometry (spawn laterals / half-widths) so overlaps occur exactly
+  when original overlaps (149: yes, both; 845: no, neither), not
+  blanket-skip. Reverted the skip; tree clean at `b619cb4` + docs.
+- Marginal overlap at 845: native lat diff 15290 <= half-widths sum
+  15360 (overlap by 70). Player lat 70/70 matches; frozen lat 15360
+  (native, never compared) must be ~70+ off vs original (outside
+  70±15360). Pos diff 56 matches (player 31432/31432; frozen 31488 via
+  `node.*` -- nodes match). Half-widths (`+0x174`, never compared)
+  may also be off. L1 spawn laterals match (L1 green), so grid tables
+  are right for live; solo frozen spawn needs its own audit
+  (`place_rider` grid vs `read_grid_slot` EXE values for frozen slots;
+  `nodeaddr.*` may carry original frozen words).
 - `+0x324` now set (0/1) but `+0x328`/branch mapping still 0 for all;
   walls gate still always takes walls path (routes 0/0 at 845).
   L1 spawn laterals match (L1 green), so grid tables are right for live;
