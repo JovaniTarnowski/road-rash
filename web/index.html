@@ -37,7 +37,7 @@
   <div class="viewport">
     <canvas id="canvas" tabindex="0" aria-label="Road Rash game canvas" hidden></canvas>
     <section id="setup" aria-label="Game launcher">
-      <h2>Start Game</h2>
+      <h2 class="launcher-title"><span>Road</span> <span>Rash</span></h2>
       <p id="setup-description">Connecting to the game server…</p>
       <div class="actions import-actions" hidden>
         <label class="button primary disabled" for="iso">Choose disc image</label>
@@ -46,20 +46,26 @@
         <input id="folder" type="file" disabled webkitdirectory multiple>
       </div>
       <div id="ready" hidden>
-        <button id="play" class="start-game">Start Game<span aria-hidden="true">▸</span></button>
-        <p class="start-description">Play from the original menus.</p>
-        <section class="quick-race" aria-labelledby="quick-race-title">
-          <h3 id="quick-race-title">Quick Race</h3>
-          <label class="course-label" for="course">Course</label>
-          <div class="quick-race-actions">
+        <div class="modes">
+          <button id="play" class="start-game" aria-describedby="start-description">
+            <span class="mode-kicker">Main game</span>
+            <span class="mode-title">Start Game</span>
+            <span id="start-description" class="start-description">Play original game</span>
+            <span class="mode-go" aria-hidden="true"><i></i><i></i><i></i></span>
+          </button>
+          <section class="quick-race" aria-labelledby="quick-race-title">
+            <span class="mode-kicker">Jump straight in</span>
+            <h3 id="quick-race-title">Quick Race</h3>
+            <label class="course-label" for="course">Course</label>
             <select id="course">
               <option value="0">Napa Valley</option><option value="1">City</option>
               <option value="2">Sierra Nevada</option><option value="3">Pacific Highway</option>
               <option value="4">Peninsula</option>
             </select>
-            <button id="quick">Quick Race</button>
-          </div>
-        </section>
+            <button id="quick">Race<span aria-hidden="true">▸</span></button>
+          </section>
+        </div>
+        <p id="cache-note" class="cache-note" hidden>Game files load automatically as you play and are cached on this device.</p>
       </div>
       <p id="status" role="status" aria-live="polite">Loading…</p>
       <progress id="progress" max="341" value="0" hidden></progress>

@@ -53,6 +53,20 @@ Detailed evidence is in [REVERSE_ENGINEERING.md](REVERSE_ENGINEERING.md) and tes
 
 ## Timeline
 
+### October 25, 2026: Road Rash title-screen launcher
+
+Redesigned the browser launcher (`web/index.html`, `web/style.css`) as a title
+screen: skewed orange/yellow Badloc "Road Rash" heading, hazard-tape panel edge,
+an animated receding road with grain/scanlines behind it, and the two modes side
+by side. Start Game is the dominant yellow slab (about 1.75x the width of Quick
+Race) with the new copy "Play original game". Quick Race is a narrower card with
+course select and an orange Race button. The hosted-only note "Game files load
+automatically as you play and are cached on this device." now sits at the bottom
+of the ready view (`#cache-note`, shown by `restoreHostedAssets`). The generic
+"Ready to play." status is hidden while the ready view is up; errors still show.
+Layout stacks on phones and compacts below 500 px height; reduced-motion disables
+the road, entrance and chevron animations. Presentation only; no engine change.
+
 ### October 25, 2026: original disc fonts in the browser shell
 
 Replaced the Impact approximation with the actual Badloc and Futura font files

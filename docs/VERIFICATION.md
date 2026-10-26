@@ -111,6 +111,16 @@
   builds. PCH terrain's 150 MB TSV expands beyond the default 2 GiB wasm heap:
   Node-test-only 4 GiB maximum fixes `std::bad_alloc`. Added scene-test exception
   reporting so this failure is readable instead of an opaque CppException.
+- Launcher redesign (October 25): built bundle from
+  `build-agent-web-viewport-loading-20261025/dist` with the new `web/` files,
+  served on localhost:8765. Ready view checked in the browser pane at 800x600,
+  375x812 and 800x420, including Start Game hover. `tests/web_browser_smoke.cjs`
+  passed every functional step (malformed ISO, folder import, cancel, quota,
+  reload, quick race + audio, pause/fullscreen, courses 1-4, frontend, missing
+  file recovery). The final console-error assertion failed on 9 404s for
+  `/game-assets/manifest.json`, the hosted-asset probe that a plain local server
+  does not provide. The probe predates this change. The smoke test's error filter
+  needs to tolerate that 404 in local-import mode.
 - `tests/web_browser_smoke.cjs` with bundled Playwright **1.62.1**, existing
   Chromium install, local static server and original disc. Also tested a local
   ISO made with `hdiutil makehybrid -iso` from `../cdrom` (fixture stays in the

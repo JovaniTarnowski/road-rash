@@ -96,53 +96,247 @@ main { min-width: 0; min-height: 0; }
 }
 #canvas:focus-visible { outline: none; }
 .viewport:fullscreen { width: 100vw; height: 100dvh; }
+/* Launcher: a title screen over a receding asphalt road. */
+body:not(.playing) .viewport {
+  background:
+    radial-gradient(120% 70% at 50% 110%, rgba(255, 96, 30, .22), transparent 60%),
+    radial-gradient(90% 60% at 50% -10%, #2a241c, transparent 70%),
+    #0b0a09;
+}
+body:not(.playing) .viewport::before {
+  /* Road surface with shoulder lines and a centre dash, tilted into the distance. */
+  content: "";
+  position: absolute;
+  left: 50%;
+  bottom: -10%;
+  width: 90%;
+  height: 140%;
+  transform: translateX(-50%) perspective(420px) rotateX(62deg);
+  transform-origin: 50% 100%;
+  background:
+    linear-gradient(90deg, transparent 3%, #e5dc60 3% 4%, transparent 4% 96%, #e5dc60 96% 97%, transparent 97%),
+    repeating-linear-gradient(180deg, transparent 0 60px, #d8dbcf 60px 120px) 50% 0 / 12px 100% no-repeat,
+    linear-gradient(90deg, #121110, #1c1b19 50%, #121110);
+  opacity: .85;
+  -webkit-mask-image: linear-gradient(to top, #000 30%, transparent 92%);
+  mask-image: linear-gradient(to top, #000 30%, transparent 92%);
+  animation: road-rush .6s linear infinite;
+  pointer-events: none;
+}
+body:not(.playing) .viewport::after {
+  /* Film grain and scanlines to pull the flat panel into the 1990s. */
+  content: "";
+  position: absolute;
+  inset: 0;
+  background:
+    repeating-linear-gradient(0deg, rgba(0, 0, 0, .28) 0 1px, transparent 1px 3px),
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.5'/%3E%3C/svg%3E");
+  mix-blend-mode: overlay;
+  opacity: .5;
+  pointer-events: none;
+}
+@keyframes road-rush { from { background-position: 0 0, 50% 0, 0 0; } to { background-position: 0 0, 50% 120px, 0 0; } }
 #setup {
-  width: min(480px, calc(100% - 32px));
+  position: relative;
+  z-index: 1;
+  width: min(820px, calc(100% - 32px));
   max-height: calc(100% - 32px);
   overflow-y: auto;
-  padding: 28px;
-  border: 1px solid #666;
-  border-right-color: #303030;
-  border-bottom-color: #303030;
-  background: var(--panel);
-  box-shadow: 5px 5px #080808;
+  padding: 30px 34px 24px;
+  background: linear-gradient(180deg, rgba(24, 22, 20, .94), rgba(14, 13, 12, .96));
+  border: 1px solid #3c3a35;
+  border-top: 0;
+  box-shadow: 0 30px 80px rgba(0, 0, 0, .7), 8px 8px 0 #000;
+  animation: launcher-in .5s cubic-bezier(.2, .9, .3, 1.2) both;
 }
+#setup::before {
+  /* Hazard tape across the top edge. */
+  content: "";
+  position: absolute;
+  inset: 0 0 auto;
+  height: 8px;
+  background: repeating-linear-gradient(-45deg, var(--yellow) 0 12px, #111 12px 24px);
+}
+@keyframes launcher-in { from { opacity: 0; transform: translateY(18px) scale(.98); } }
+.launcher-title {
+  margin: 4px 0 2px;
+  font-size: clamp(46px, 9cqw, 84px);
+  line-height: .9;
+  color: var(--orange);
+  transform: skewX(-10deg);
+  transform-origin: left bottom;
+  text-shadow: 3px 3px 0 #000, 6px 6px 0 #5c1d06;
+}
+.launcher-title span + span { color: var(--yellow); text-shadow: 3px 3px 0 #000, 6px 6px 0 #5a5520; }
 #setup p { margin: 0 0 20px; color: var(--muted); }
+#setup #setup-description {
+  margin: 10px 0 22px;
+  color: var(--text);
+  font-family: "RoadRashFuturaDemi", "Arial Narrow", sans-serif;
+  font-size: 16px;
+}
 .actions { display: flex; flex-wrap: wrap; gap: 10px; margin: 16px 0; }
 input[type=file] { position: absolute; width: 1px; height: 1px; opacity: 0; overflow: hidden; }
 .button:has(+ input:focus-visible) { outline: 2px solid var(--yellow); outline-offset: 2px; }
-#ready { margin-top: 24px; }
+.modes {
+  display: grid;
+  grid-template-columns: minmax(0, 1.75fr) minmax(0, 1fr);
+  gap: 18px;
+  align-items: stretch;
+}
+.mode-kicker {
+  display: block;
+  font-family: "RoadRashFuturaDemi", "Arial Narrow", sans-serif;
+  font-size: 12px;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+}
 .start-game {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  min-height: 210px;
+  padding: 22px 26px 22px 30px;
+  overflow: hidden;
+  text-align: left;
+  color: #17150d;
+  --slab:
+    repeating-linear-gradient(-45deg, rgba(0, 0, 0, .06) 0 2px, transparent 2px 10px),
+    linear-gradient(160deg, #fff27d, var(--yellow) 45%, #c9bd3a);
+  background: var(--slab);
+  border: 0;
+  clip-path: polygon(0 0, 100% 0, 100% calc(100% - 26px), calc(100% - 26px) 100%, 0 100%);
+  box-shadow: inset 0 0 0 2px rgba(255, 255, 255, .25);
+  transition: transform .15s ease, filter .15s ease;
+}
+.start-game::before {
+  /* Orange speed slash behind the title. */
+  content: "";
+  position: absolute;
+  top: -30%;
+  right: -4%;
+  width: 22%;
+  height: 160%;
+  background: var(--orange);
+  transform: skewX(-24deg);
+  opacity: .9;
+  transition: right .3s cubic-bezier(.2, .9, .3, 1);
+}
+.start-game::after {
+  content: "";
+  position: absolute;
+  top: -30%;
+  right: 22%;
+  width: 5%;
+  height: 160%;
+  background: var(--orange);
+  transform: skewX(-24deg);
+  opacity: .7;
+  transition: right .3s cubic-bezier(.2, .9, .3, 1);
+}
+.start-game > * { position: relative; z-index: 1; }
+.start-game .mode-kicker { margin-bottom: auto; color: #3d3a1a; }
+.start-game .mode-title {
+  font-family: "RoadRashBadloc", "Arial Narrow", sans-serif;
+  font-size: clamp(42px, 7.2cqw, 68px);
+  line-height: .95;
+  transform: skewX(-10deg);
+  transform-origin: left bottom;
+  text-shadow: 3px 3px 0 rgba(255, 255, 255, .45);
+}
+#setup .start-game .start-description {
+  margin-top: 8px;
+  color: #2c2a14;
+  font-family: "RoadRashFuturaBold", "Arial Narrow", sans-serif;
+  font-size: 17px;
+}
+.mode-go {
+  position: absolute !important;
+  right: 26px;
+  top: 22px;
+  display: flex;
+  gap: 2px;
+}
+.mode-go i {
+  width: 16px;
+  height: 26px;
+  background: #17150d;
+  clip-path: polygon(0 0, 45% 0, 100% 50%, 45% 100%, 0 100%, 55% 50%);
+  animation: chevron 1.2s ease-in-out infinite;
+}
+.mode-go i:nth-child(2) { animation-delay: .15s; }
+.mode-go i:nth-child(3) { animation-delay: .3s; }
+@keyframes chevron { 0%, 100% { opacity: .25; } 40% { opacity: 1; } }
+.start-game:hover { color: #17150d; background: var(--slab); filter: brightness(1.06); transform: translateY(-2px); }
+.start-game:hover::before { right: -1%; }
+.start-game:hover::after { right: 26%; }
+.start-game:active { transform: translate(1px, 1px); filter: brightness(.95); }
+.start-game:focus-visible { outline: 3px solid #fff; outline-offset: 3px; }
+.quick-race {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  padding: 20px 20px 18px;
+  background: #1d1b18;
+  border: 1px solid #3c3a35;
+  border-left: 4px solid var(--orange);
+}
+.quick-race .mode-kicker { color: var(--orange); }
+.quick-race h3 {
+  margin: 4px 0 auto;
+  padding-bottom: 14px;
+  color: var(--text);
+  font-family: "RoadRashBadloc", "Arial Narrow", sans-serif;
+  font-size: 32px;
+  font-weight: 400;
+  line-height: 1;
+  transform: skewX(-10deg);
+  transform-origin: left bottom;
+  text-shadow: 2px 2px 0 #000;
+}
+.course-label {
+  display: block;
+  margin-bottom: 6px;
+  color: var(--muted);
+  font-size: 12px;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+}
+select { width: 100%; font-family: inherit; font-size: 14px; }
+.quick-race select {
+  min-width: 0;
+  padding: 9px 12px;
+  background: #0f0e0d;
+  border: 1px solid #4a4741;
+  font-family: "RoadRashFuturaBold", "Arial Narrow", sans-serif;
+  font-size: 16px;
+}
+.quick-race select:hover { border-color: var(--orange); }
+#quick {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  width: 100%;
-  min-height: 56px;
-  padding: 14px 18px;
-  background: var(--yellow);
-  color: #191a14;
-  border-color: #fff8aa #8e8941 #8e8941 #fff8aa;
-  box-shadow: 3px 3px #0d0d0b;
-  font-size: 22px;
-  text-align: left;
-}
-.start-game:hover { background: #f3e97d; color: #191a14; }
-.start-game:active { box-shadow: none; transform: translate(1px, 1px); }
-.start-game span { font-family: sans-serif; font-size: 24px; }
-#setup .start-description { margin: 10px 0 0; font-size: 13px; }
-.quick-race { margin-top: 26px; padding-top: 22px; border-top: 1px solid #444; }
-.quick-race h3 {
-  margin: 0 0 14px;
-  color: var(--text);
-  font-family: "RoadRashFuturaBold", sans-serif;
+  margin-top: 10px;
+  padding: 10px 14px;
+  background: var(--orange);
+  color: #120a05;
+  border: 0;
   font-size: 18px;
-  font-weight: 400;
+  clip-path: polygon(0 0, 100% 0, 100% calc(100% - 10px), calc(100% - 10px) 100%, 0 100%);
 }
-.quick-race-actions { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; }
-.quick-race-actions select { min-width: 0; }
-.quick-race-actions button { white-space: nowrap; font-size: 14px; }
-.course-label { display: block; color: var(--muted); margin-bottom: 6px; }
-select { width: 100%; font-family: inherit; font-size: 14px; }
+#quick span { font-family: sans-serif; }
+#quick:hover { background: #ff7d45; color: #120a05; }
+#quick:active { transform: translate(1px, 1px); }
+#setup .cache-note {
+  margin: 20px 0 0;
+  padding-top: 14px;
+  border-top: 1px dashed #3c3a35;
+  color: #8c8e85;
+  font-size: 12px;
+}
+/* The ready view has its own copy; keep transient status for errors and imports. */
+#setup:has(#ready:not([hidden])) #status:not(.error) { display: none; }
 #setup #status { margin: 20px 0 0; font-size: 12px; overflow-wrap: anywhere; }
 #status.error { color: #ffb19a; }
 progress { display: block; width: 100%; height: 8px; margin-top: 14px; accent-color: var(--yellow); }
@@ -171,6 +365,7 @@ progress { display: block; width: 100%; height: 8px; margin-top: 14px; accent-co
 @keyframes loading-pulse { from { transform: translateX(-100%); } to { transform: translateX(285%); } }
 @media (prefers-reduced-motion: reduce) {
   .loading-track::after { animation: none; transform: translateX(90%); }
+  body:not(.playing) .viewport::before, #setup, .mode-go i { animation: none; }
 }
 .controls { position: relative; }
 summary { list-style: none; }
@@ -201,21 +396,21 @@ a { color: inherit; }
   #state { display: none; }
   nav { gap: 5px; }
   .toolbar button, summary { font-size: 13px; padding: 6px 8px; }
-  #setup { padding: 22px; }
-  .quick-race-actions { grid-template-columns: 1fr; }
+  #setup { padding: 26px 20px 20px; }
+  .modes { grid-template-columns: 1fr; gap: 14px; }
+  .start-game { min-height: 160px; padding: 18px 20px; }
   footer { font-size: 9px; }
 }
 @media (max-height: 500px) {
   body { grid-template-rows: 40px minmax(0, 1fr) 0; }
   body.playing { grid-template-rows: 40px minmax(0, 1fr); }
   footer { display: none; }
-  #setup { padding: 18px; }
-  #setup h2 { font-size: 28px; margin-bottom: 12px; }
-  #ready { margin-top: 0; }
+  #setup { padding: 16px 20px 14px; }
+  .launcher-title { font-size: 40px; }
   #setup:has(#ready:not([hidden])) #setup-description,
-  #setup:has(#ready:not([hidden])) #status:not(.error),
-  #setup .start-description { display: none; }
-  .start-game { min-height: 44px; padding: 8px 16px; font-size: 20px; }
-  .quick-race { margin-top: 16px; padding-top: 12px; }
-  .quick-race h3 { font-size: 16px; margin-bottom: 8px; }
+  #setup .cache-note { display: none; }
+  .start-game { min-height: 130px; padding: 14px 20px; }
+  .start-game .mode-title { font-size: 40px; }
+  .quick-race { padding: 12px 14px; }
+  .quick-race h3 { font-size: 24px; padding-bottom: 8px; }
 }

@@ -89,6 +89,7 @@ async function restoreHostedAssets() {
     $('state').textContent = 'Game ready';
     try { await loadDiscFonts(assetDirectory); }
     catch (error) { console.warn('Game fonts unavailable:', error); }
+    $('cache-note').hidden = false;
     $('ready').hidden = false;
     status('Ready to play.');
     return true;
