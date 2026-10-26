@@ -35,8 +35,8 @@ async function restoreDisc() {
         assetDirectory = dir;
         engine.localAssets.names = new Set(references.map(r => r.path));
         $('ready').hidden = false;
-        $('state').textContent = '02 / READY TO RIDE';
-        status('Your verified disc is stored on this device. Choose Start game or Quick race.');
+        $('state').textContent = 'Disc ready';
+        status('Your verified disc is stored on this device. Choose Main Game or Quick Race.');
         return true;
     } catch (error) {
         if (hasMarker || error.name !== 'NotFoundError') status('Stored disc unavailable. Re-import your original disc. ' + storageError(error), true);
@@ -126,7 +126,7 @@ async function startGame(quick) {
     running = true;
     $('setup').hidden = true; $('canvas').hidden = false; $('loading').hidden = false;
     $('fullscreen').disabled = false; $('reload').hidden = false;
-    $('state').textContent = '03 / ON THE ROAD';
+    $('state').textContent = 'Playing';
     $('canvas').focus();
     // Create/resume audio within the launch gesture, before asynchronous reads.
     const Audio = window.AudioContext || window.webkitAudioContext;

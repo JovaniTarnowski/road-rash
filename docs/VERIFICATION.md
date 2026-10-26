@@ -1,5 +1,19 @@
 # Verification log (all sessions September 28, 2026)
 
+## Browser layout revision (October 25, 2026)
+
+- HTML/CSS/status-label change only. Reused the clean, validated `096bff2`
+  wasm engine from `build-agent-browser-release/dist`, copied the changed web
+  shell into `build-agent-browser-layout/dist`, and ran the seven-file asset
+  exclusion/staging check successfully. No native source/build changes.
+- Playwright/Chromium local visual check with real disc folder import and quick
+  race: 1440×900, 1907×1280, 1280×800, 390×844 and 844×390. Canvas stays 4:3,
+  fully visible, no page scroll; desktop/landscape height is within 80 px of the
+  viewport. Title 24 px desktop / 20 px mobile. Controls popup works; no JS errors.
+- Measured 1907×1280 canvas: 1610.66×1208, y=48..1256. Screenshots and layout
+  log under `analysis/browser-layout-20261025/`. JS syntax and whitespace pass.
+  No new native/Node suite run: game binary and simulation were unchanged.
+
 ## Playable browser port (October 25, 2026)
 
 - Final Vercel preview **READY**: [https://road-rash-exd6fu2sm-arkits.vercel.app](https://road-rash-exd6fu2sm-arkits.vercel.app), deployment

@@ -53,6 +53,18 @@ Detailed evidence is in [REVERSE_ENGINEERING.md](REVERSE_ENGINEERING.md) and tes
 
 ## Timeline
 
+### October 25, 2026: browser layout revised around gameplay
+
+Removed the oversized title, promotional slogans, decorative disc and large
+below-game sections. The page now uses a compact orange/yellow/charcoal menu
+style based on the game's frontend, a 48 px toolbar, on-demand controls and a
+viewport-sized game canvas. The 4:3 frame expands to available height/width
+without the previous 960 px cap or pointer-coordinate distortion. At
+1907×1280 the game measures 1611×1208, with no scrolling or HUD crop.
+Only web HTML/CSS and status labels changed; the validated `096bff2` wasm
+engine is reused, excluding concurrent OMP simulation probes.
+
+
 ### October 25, 2026: playable browser port and Vercel output
 
 The previous web scaffold was a placeholder. `RR_WEB_BROWSER` now builds the

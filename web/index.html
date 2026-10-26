@@ -1,30 +1,69 @@
 <!doctype html>
 <html lang="en">
 <head>
-<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="theme-color" content="#151612"><title>Road Rash · Browser port</title>
-<link rel="stylesheet" href="style.css"><script src="rr-game.js" defer></script><script src="app.js" defer></script>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#101010">
+<title>Road Rash</title>
+<link rel="stylesheet" href="style.css">
+<script src="rr-game.js" defer></script>
+<script src="app.js" defer></script>
 </head>
 <body>
-<header><a class="wordmark" href="./">RR<span> / NATIVE PORT</span></a><span class="edition">WEBASSEMBLY EDITION <i></i></span></header>
-<main>
-<div class="heading"><div><p class="eyebrow">THE OPEN ROAD. IN YOUR BROWSER.</p><h1>ROAD RASH<span>↓</span></h1></div><p class="intro">The current native port, compiled for the web.<br>Your disc. Your browser. Let’s ride.</p></div>
-<section class="machine" aria-label="Road Rash game">
-<div class="machine-bar"><span id="state">01 / LOAD YOUR DISC</span><span>640 × 480 / ORIGINAL RENDERER</span></div>
-<div class="viewport">
-<canvas id="canvas" tabindex="0" aria-label="Road Rash game canvas" hidden></canvas>
-<div id="setup">
-<div class="disc-art" aria-hidden="true"><div></div><b>RR</b></div>
-<div class="setup-copy"><p class="eyebrow">BRING YOUR OWN DISC</p><h2>First, fuel up.</h2><p>Choose your original Road Rash PC disc image (.iso) or the ROADRASH folder from the disc. All 341 game files are verified and stored on this device. Nothing is uploaded.</p>
-<div class="actions"><label class="button primary disabled" for="iso">Choose disc image <span>↗</span></label><input id="iso" type="file" disabled accept=".iso"><label class="button disabled" for="folder">Choose folder</label><input id="folder" type="file" disabled webkitdirectory multiple></div>
-<div id="ready" hidden><p class="ready-label">DISC VERIFIED / READY TO RIDE</p><div class="actions"><button id="play" class="primary">Start game ↗</button><button id="quick">Quick race</button></div><label class="course-label">Quick race course <select id="course"><option value="0">Napa Valley</option><option value="1">City</option><option value="2">Sierra Nevada</option><option value="3">Pacific Highway</option><option value="4">Peninsula</option></select></label></div>
-<p id="status" role="status" aria-live="polite">Preparing the engine…</p><progress id="progress" max="341" value="0" hidden></progress><button id="cancel" hidden>Cancel import</button>
-</div></div>
-<div id="loading" hidden>Loading game…</div>
-</div>
-<div class="machine-footer"><span>LOCAL DISC DATA / PRIVATE BROWSER STORAGE</span><div><button id="fullscreen" disabled>Fullscreen ⛶</button><button id="reload" hidden>Back to launcher</button></div></div>
-</section>
-<section class="below"><div><p class="eyebrow">KEEP YOUR HANDS ON THE BARS</p><div class="keys"><span><kbd>↑</kbd><kbd>↓</kbd> Throttle / brake</span><span><kbd>←</kbd><kbd>→</kbd> Steer</span><span><kbd>Z</kbd><kbd>X</kbd><kbd>C</kbd> Fight</span><span><kbd>P</kbd> Pause</span><span><kbd>↵</kbd> Select / resume</span></div><p class="hint">WASD and gamepads also supported. Click the game to focus. Press Enter to skip the opening movie. Returning to the tab pauses the race; press Enter or use the pause menu to resume.</p></div><div class="about"><p class="eyebrow">A PORT IN PROGRESS</p><p>Runs the same simulation, menus, sound and renderer as the native build. Original-game fidelity work is ongoing.</p></div></section>
+<header class="toolbar">
+  <h1>Road Rash</h1>
+  <span id="state">Load disc</span>
+  <nav aria-label="Game controls">
+    <details class="controls">
+      <summary>Controls</summary>
+      <div class="controls-panel">
+        <h2>Controls</h2>
+        <dl>
+          <dt>↑ / W</dt><dd>Accelerate</dd>
+          <dt>↓ / S</dt><dd>Brake</dd>
+          <dt>← → / A D</dt><dd>Steer</dd>
+          <dt>Z X C</dt><dd>Fight</dd>
+          <dt>P</dt><dd>Pause</dd>
+          <dt>Enter</dt><dd>Select / resume / skip movie</dd>
+        </dl>
+        <p>Click the game to focus. Gamepads are supported. Returning to the tab pauses the race.</p>
+      </div>
+    </details>
+    <button id="fullscreen" disabled>Full screen</button>
+    <button id="reload" hidden>Exit to launcher</button>
+  </nav>
+</header>
+<main aria-label="Road Rash game">
+  <div class="viewport">
+    <canvas id="canvas" tabindex="0" aria-label="Road Rash game canvas" hidden></canvas>
+    <section id="setup" aria-label="Disc import">
+      <h2>Load Game</h2>
+      <p>Choose your original PC disc image (.iso) or the ROADRASH folder. Game files stay on this device.</p>
+      <div class="actions import-actions">
+        <label class="button primary disabled" for="iso">Choose disc image</label>
+        <input id="iso" type="file" disabled accept=".iso">
+        <label class="button disabled" for="folder">Choose folder</label>
+        <input id="folder" type="file" disabled webkitdirectory multiple>
+      </div>
+      <div id="ready" hidden>
+        <label class="course-label" for="course">Quick race course</label>
+        <select id="course">
+          <option value="0">Napa Valley</option><option value="1">City</option>
+          <option value="2">Sierra Nevada</option><option value="3">Pacific Highway</option>
+          <option value="4">Peninsula</option>
+        </select>
+        <div class="actions">
+          <button id="quick" class="primary">Quick Race</button>
+          <button id="play">Main Game</button>
+        </div>
+      </div>
+      <p id="status" role="status" aria-live="polite">Loading…</p>
+      <progress id="progress" max="341" value="0" hidden></progress>
+      <button id="cancel" hidden>Cancel import</button>
+    </section>
+    <div id="loading" role="status" hidden>Loading game…</div>
+  </div>
 </main>
-<footer><span>Unofficial research port. Not affiliated with Electronic Arts. Road Rash is a third-party trademark.</span><a href="LICENSES.txt">Licences ↗</a></footer>
-</body></html>
+<footer><span>Unofficial port. Not affiliated with Electronic Arts.</span><a href="LICENSES.txt">Licences</a></footer>
+</body>
+</html>
