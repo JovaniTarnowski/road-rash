@@ -23,13 +23,12 @@ static = output / 'static'
 if static.exists():
     shutil.rmtree(static)
 shutil.copytree(dist, static)
+# Vercel merges vercel.json with prebuilt routes. Use one header definition
+# so the tested local policy also survives that merge on the deployment.
+project = json.loads((root / 'vercel.json').read_text())
+headers = {item['key']: item['value'] for item in project['headers'][0]['headers']}
 config = {'version': 3, 'routes': [
-    {'src': '/(.*)', 'headers': {
-        'Cache-Control': 'public, max-age=0, must-revalidate',
-        'X-Content-Type-Options': 'nosniff',
-        'Referrer-Policy': 'same-origin',
-        'Content-Security-Policy': "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self'; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'self'"
-    }, 'continue': True},
+    {'src': '/(.*)', 'headers': headers, 'continue': True},
     {'handle': 'filesystem'}
 ]}
 (output / 'config.json').write_text(json.dumps(config, indent=2) + '\n')
