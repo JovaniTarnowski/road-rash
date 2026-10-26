@@ -64,3 +64,21 @@ and SDK tests; integrating them separately from cd14c0a. No foreign work deleted
 Bundling also appends installed production SDK dependency licence texts to the
 existing LICENSES.txt. npm bundle command and nine-file validator passed after
 this packaging addition; application code unchanged.
+
+## Production verification
+
+- Implementation cd14c0a, OG integration e6b6650, SDK notices f7eef0d pushed.
+- CI run https://github.com/arkits/road-rash/actions/runs/40270664432 passed:
+  fresh engine/SDK build, nine-file asset-free validator, stale cache upgrade,
+  real SDK payload tests, Dokku deployment, revision/health and full live hosted
+  gameplay acceptance. Superseded run e6b6650 was cancelled before deployment.
+- Public revision f7eef0d7097a395a3a9a35ab9cb6af3d74cf0a1e verified.
+- Public HTML no-store and CSP permits only the configured two telemetry hosts.
+- Independent real browser production probe loaded launcher, clicked Quick Race,
+  and received HTTP 200 from PostHog and Sentry ingestion. One explicitly labelled
+  intentional integration verification error sent to validate live Sentry routing.
+  Local evidence: analysis/web-telemetry-20261025/live-responses.json and
+  production-launch.png; normal CI synthetic faults remain intercepted.
+- Owned fixture server PID 33883 stopped. No native/oracle resources touched.
+- Sentry indexed the probe as ROAD-RASH-1 with one event; marked resolved after
+  confirming receipt. This is the intentional test, not a gameplay defect.
