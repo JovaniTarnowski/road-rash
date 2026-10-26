@@ -1,5 +1,14 @@
 # Verification log (all sessions September 28, 2026)
 
+## Menu pixel acceptance: fe-main + fe-street green (October 26, 2026)
+
+- `frontend-test ../cdrom/ROADRASH`: 0 failures. New: `fe-main` (60%
+  masked, 98% exact, 0% large-diff) and `fe-street` (67% masked, 96% exact,
+  0% large-diff) masked comparisons against the Wine frontend-acceptance
+  goldens. Characters/restroom/jukebox/graphics measured but not pinned:
+  restroom-class screens ~1% exact unmasked (background photo art gap),
+  characters portrait block divergent.
+
 ## Police parked-scenario parity; original-driven save (October 26, 2026)
 
 - `napa-cops-parked-20261026.tsv` (Wine, COURSE=4 LEVEL=3 SEED=1 HUMAN=1,

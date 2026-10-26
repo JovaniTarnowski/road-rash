@@ -63,6 +63,11 @@ Build directory: `build-agent-open` (owned Debug).
   for direct `race.end_timer` evidence) plus KNOCK=4400 crashed/order2,
   KNOCK=4460 foot/foot2, and CITY parked; table arrest/span values to be set
   from measured ticks.
+- Pixel acceptance (done after the above): `frontend_test` gains an
+  item-rect-driven masked comparator; `fe-main` (60%/98%/0%) and `fe-street`
+  (67%/96%/0%) pinned green. Characters/restroom/jukebox/graphics measured
+  (~1% exact restroom-class; characters portrait block) and recorded as
+  background/portrait art-mapping gaps, intentionally not pinned.
 
 ## Remaining work
 

@@ -53,6 +53,18 @@ Detailed evidence is in [REVERSE_ENGINEERING.md](REVERSE_ENGINEERING.md) and tes
 
 ## Timeline
 
+### October 26, 2026: pixel acceptance extended; background-art gaps measured
+
+- `frontend_test` gains masked original-vs-native checks for the main menu
+  (`fe-main.bmp` second golden: 60% masked, 98% exact, 0% large-diff) and the
+  Big Game street screen (`fe-career-start.bmp` from the driven-career run,
+  item-rect-driven mask: 67% masked, 96% exact, 0% large-diff). All green.
+- Characters/restroom/jukebox/graphics goldens do NOT match: restroom-class
+  screens measure ~1% exact unmasked (photo background vs native fill),
+  characters diverges in the portrait block (31% exact). Recorded as
+  background/portrait art-mapping gaps in `frontend.cpp`'s area; the checks
+  are intentionally not pinned.
+
 ### October 26, 2026: police parked-scenario parity; original-driven save round trip
 
 - `napa-cops-parked-20261026` (Napa level 3, seed 1, human parked, 4731

@@ -49,9 +49,13 @@ Still open (see `docs/CURRENT_STATUS.md` and `docs/PROGRESS.md`):
   byte-identical with its dumped game state (`career-test --save-corpus`).
   Menu layout acceptance covers all 223 original
   items plus native screens (2 scrollable, 28 hidden placeholders) with
-  main-menu 1x/2x/4x checks and the menu-09 masked capture (60% masked,
-  98% exact, 0% large-diff); full unmasked pixel equality remains open on
-  GDI-hinting text shapes.
+  main-menu 1x/2x/4x checks; masked pixel checks pass for main menu
+  (menu-09 and fe-main goldens: 60% masked, 98% exact, 0% large-diff) and the
+  Big Game street screen (fe-career-start golden, item-driven mask: 67%
+  masked, 96% exact, 0% large-diff). Characters/restroom/jukebox/graphics
+  still diverge in background/portrait art (measured ~1% exact unmasked on
+  restroom-class screens); full unmasked pixel equality remains open on
+  GDI-hinting text shapes and that art mapping.
 - Android builds and packages but hardware validation (render, input,
   import, lifecycle, performance) is pending.
 - Linux/Windows builds do not exist yet.

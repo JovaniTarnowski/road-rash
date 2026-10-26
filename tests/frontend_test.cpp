@@ -11,6 +11,7 @@
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
+#include <functional>
 #include <iostream>
 #include <unistd.h>
 
@@ -285,6 +286,62 @@ int main(int argc, char** argv) {
         fe.draw(scaled, scale);
         check_main_layout(scaled, scale);
     }
+    // Masked original-vs-native frame comparison shared by the menu goldens
+    // below: text/chrome regions are masked (GDI hinting stays open), the
+    // unmasked background/picture fills must match. Thresholds are
+    // characterization pins. Goldens live in git-ignored acceptance dirs and
+    // skip 77 when absent.
+    auto masked_compare = [&](const std::string& name, const RgbImage& frame, const RgbImage& gold,
+                              const std::function<bool(int, int)>& masked, double cover_max = 0.75) {
+        check(gold.width == 640 && gold.height == 480, name + " golden size");
+        size_t total = 0, exact = 0, big = 0, masked_px = 0;
+        int maxdiff = 0;
+        for (int y = 0; y < 480; ++y)
+            for (int x = 0; x < 640; ++x) {
+                if (masked(x, y)) {
+                    ++masked_px;
+                    continue;
+                }
+                ++total;
+                const uint32_t a = frame.at(x, y), g = gold.at(x, y);
+                const int d = std::max({abs(int(a & 0xff) - int(g & 0xff)),
+                                        abs(int(a >> 8 & 0xff) - int(g >> 8 & 0xff)),
+                                        abs(int(a >> 16 & 0xff) - int(g >> 16 & 0xff))});
+                maxdiff = std::max(maxdiff, d);
+                if (d == 0) ++exact;
+                if (d > 32) ++big;
+            }
+        const double coverage = double(masked_px) / double(640 * 480);
+        const double exact_frac = total ? double(exact) / double(total) : 0;
+        const double big_frac = total ? double(big) / double(total) : 0;
+        std::cout << name << ": masked " << int(100 * coverage) << "%, exact " << int(100 * exact_frac)
+                  << "%, maxdiff " << maxdiff << ", big " << int(100 * big_frac) << "%\n";
+        check(coverage < cover_max, name + " mask coverage ceiling");
+        check(exact_frac >= 0.12, name + " unmasked exact floor");
+        check(big_frac <= 0.05, name + " large-diff ceiling");
+    };
+    // Screen-vs-original comparison with an item-driven mask: the title
+    // banner, bio box, button band and every current item rect (dilated 3px)
+    // hold text/chrome (GDI hinting stays open); the unmasked fills compare
+    // directly. The golden must show the same screen in the same game state.
+    auto masked_compare_items = [&](const std::string& name, const std::string& golden_path,
+                                    const RgbImage& frame) {
+        RgbImage gold;
+        if (!read_bmp_24(golden_path, gold)) {
+            std::cout << "skip: no " << name << " golden\n";
+            return;
+        }
+        const auto items = fe.items();
+        auto masked = [&](int x, int y) {
+            if (y < 80) return true;                         // title banner
+            if (x < 350 && y >= 100 && y < 345) return true; // bio/description box
+            if (y >= 370) return true;                       // button band
+            for (const auto& m : items)
+                if (x >= m.x - 3 && x < m.x + m.w + 3 && y >= m.y - 3 && y < m.y + m.h + 3) return true;
+            return false;
+        };
+        masked_compare(name, frame, gold, masked);
+    };
     { // Plan 13 Task 6 Step 2, first slice: screen 9 vs the original
         // RR_ORACLE_MENU=9 capture (menu-09-<date>.bmp, git-ignored, skip 77).
         // Masked: title, description box and button row (text/chrome: GDI
@@ -301,32 +358,23 @@ int main(int argc, char** argv) {
                 if (y >= 405) return true;                       // button row
                 return false;
             };
-            check(gold.width == 640 && gold.height == 480, "menu-09 golden size");
-            size_t total = 0, exact = 0, big = 0, masked_px = 0;
-            int maxdiff = 0;
-            for (int y = 0; y < 480; ++y)
-                for (int x = 0; x < 640; ++x) {
-                    if (masked(x, y)) {
-                        ++masked_px;
-                        continue;
-                    }
-                    ++total;
-                    const uint32_t a = img.at(x, y), g = gold.at(x, y);
-                    const int d = std::max({abs(int(a & 0xff) - int(g & 0xff)),
-                                            abs(int(a >> 8 & 0xff) - int(g >> 8 & 0xff)),
-                                            abs(int(a >> 16 & 0xff) - int(g >> 16 & 0xff))});
-                    maxdiff = std::max(maxdiff, d);
-                    if (d == 0) ++exact;
-                    if (d > 32) ++big;
-                }
-            const double coverage = double(masked_px) / double(640 * 480);
-            const double exact_frac = double(exact) / double(total);
-            const double big_frac = double(big) / double(total);
-            std::cout << "menu-09: masked " << int(100 * coverage) << "%, exact " << int(100 * exact_frac)
-                      << "%, maxdiff " << maxdiff << ", big " << int(100 * big_frac) << "%\n";
-            check(coverage < 0.65, "menu-09 mask coverage under two thirds");
-            check(exact_frac >= 0.12, "menu-09 unmasked exact floor");
-            check(big_frac <= 0.05, "menu-09 large-diff ceiling");
+            masked_compare("menu-09", img, gold, masked, 0.65);
+        }
+    }
+    { // Screen 9 again: the Wine frontend-acceptance main-menu capture.
+        RgbImage gold;
+        const std::string dir = std::string(
+            RR_SOURCE_DIR "/analysis/frontend/acceptance-20261026/1f1e79684e344a44af2e1e99dc1b9509/");
+        if (!read_bmp_24(dir + "fe-main.bmp", gold)) {
+            std::cout << "skip: no fe-main golden\n";
+        } else {
+            auto masked = [&](int x, int y) {
+                if (y < 80) return true;
+                if (x < 350 && y >= 100 && y < 345) return true;
+                if (y >= 405) return true;
+                return false;
+            };
+            masked_compare("fe-main", img, gold, masked);
         }
     }
     // Plan 19 Task 5: draw at scale 2 — focus rectangles double exactly and
@@ -441,6 +489,10 @@ int main(int argc, char** argv) {
     check(fe.screen() == screen_id::street && career.state.character == 3 && career.state.cash == 1000,
           "Cydney starts on the street with $1000");
     snap("street");
+    masked_compare_items("fe-street",
+                         std::string(RR_SOURCE_DIR "/analysis/frontend/acceptance-20261026/34069bf326"
+                                                   "2241b3bdf4efa59c500751/fe-career-start.bmp"),
+                         img);
     // Olley's -> Rat bikes -> first bike -> Buy.
     key("right");
     key("select");
