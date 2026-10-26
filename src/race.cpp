@@ -1525,6 +1525,20 @@ void Race::crash_entry(Rider& r, int32_t reason, std::optional<std::array<int32_
         r.bike.i32(0x2f4) = 0;
         begin_crash(r.bike, r.crash_actor, crash_config_, crash_library_->playback[0],
                     crash_library_->fallback, uint32_t(ticks_), reason, rider_impulse, bike_impulse);
+        // 0x00403d60 copies the bike words into the half (iVar2 =
+        // *(bike+0x2fc): 0x1c..0x2c, 0x30..0x40, 0x58/0x5c/0x60, velocities
+        // and 0x104..0x110, the zeroed 0x114..0x128/0x198/0x1a0 block,
+        // 0x12c..0x160) and sets half +0xc0 |= 3 (line 112). begin_crash
+        // makes the same copies into the crash body; the half object image
+        // needs them too (split-left 2055: half ground 61 vs 37, flags 7
+        // vs 4). Impulses already landed on the body, matching the half.
+        for (int off : {0x1c,  0x20,  0x24,  0x28,  0x2c,  0x30,  0x34,  0x38,  0x3c,  0x40,  0x58,  0x5c,
+                        0x60,  0xec,  0xf0,  0xf4,  0x104, 0x108, 0x10c, 0x110, 0x118, 0x11c, 0x114, 0x120,
+                        0x124, 0x128, 0x12c, 0x130, 0x134, 0x138, 0x13c, 0x140, 0x158, 0x160, 0x198, 0x1a0})
+            r.half_object.i32(off) = r.crash_actor.motion.i32(off);
+        r.half_object.u8(0x164) = 0;
+        r.half_object.u8(0x19c) = 0;
+        r.half_object.u8(0xc0) |= 3;
         // 0x00403d60 writes the crash rider animation into the rider half's
         // +0x70 block (iVar2 = *(bike+0x2fc)) - the same block the riding
         // animation advances, so the field frame dump (half+0x80) reads the
@@ -2062,6 +2076,14 @@ void Race::crash(Rider& r) {
         r.bike.i32(0x2f4) = 0;
         begin_crash(r.bike, r.crash_actor, crash_config_, crash_library_->playback[0],
                     crash_library_->fallback, uint32_t(ticks_), 0);
+        // 0x00403d60 half copies (see crash_entry).
+        for (int off : {0x1c,  0x20,  0x24,  0x28,  0x2c,  0x30,  0x34,  0x38,  0x3c,  0x40,  0x58,  0x5c,
+                        0x60,  0xec,  0xf0,  0xf4,  0x104, 0x108, 0x10c, 0x110, 0x118, 0x11c, 0x114, 0x120,
+                        0x124, 0x128, 0x12c, 0x130, 0x134, 0x138, 0x13c, 0x140, 0x158, 0x160, 0x198, 0x1a0})
+            r.half_object.i32(off) = r.crash_actor.motion.i32(off);
+        r.half_object.u8(0x164) = 0;
+        r.half_object.u8(0x19c) = 0;
+        r.half_object.u8(0xc0) |= 3;
         r.ride_animation = r.crash_actor.animation; // 0x00403d60: the crash rider animation is the half block
         r.crash_active = true;
         r.crash_timer = 0;
@@ -2242,6 +2264,22 @@ void Race::crash_recovery(Rider& r, bool player, uint32_t controls) {
 // bike move (move_bike_live) - matching 0x00407f30/0x00406890 on the half
 // node against 0x00407a90/0x004060b0 on the bike node.
 void Race::step_crash(Rider& r, bool player, uint32_t controls) {
+    // 0x00407bd0 brain for crashed riders in the solo every-tick loop (the
+    // live scheduler runs ai_think via think_half): transition, state clock,
+    // replan and crash-gated stamina. Dispatch is a no-op for states 8/9.
+    // Split-left 2056: native state 0/ticks 0, original state 9/ticks 1.
+    ai_transition(r);
+    const int32_t brain_dt = r.bike.i32(0x18);
+    if (r.brain.state >= 0 && r.brain.state < int(r.brain.state_ticks.size()))
+        r.brain.state_ticks[size_t(r.brain.state)] += brain_dt;
+    r.brain.replan_ticks += brain_dt;
+    if (r.brain.replan_ticks > 0x3b) ai_replan(r);
+    if (ride_library_) {
+        const int crash_state = r.bike.i32(0x2f4);
+        const int passes = crash_state == 1 ? 0 : crash_state == 0 ? 1 : 2;
+        for (int i = 0; i < passes; ++i)
+            r.stamina.current = std::min(r.stamina.max, r.stamina.current + r.bike.i32(0x18));
+    }
     crash_bike_animation(r);
     crash_phases(r);
     crash_bike_motion(r, player);
@@ -3164,6 +3202,21 @@ void Race::step_rider(Rider& r, uint32_t controls, bool player) {
     // the control word is ignored. fight() with zero controls is exactly the
     // branch's stamina regen with no attacks started.
     const bool demo_player = demo_hold_ && player;
+    // 0x00407a90 scenery-mark flash for the solo every-tick loop: the live
+    // scheduler runs this in run_bike_node, and step_crash runs it for
+    // crashed riders, but an uncrashed rider in solo otherwise never
+    // refreshes +0x1e9 (split-left 1423: native stuck at 1, original 2).
+    // Same disassembly form (407acd-407b0b) as crash_bike_animation.
+    if (!live_schedule_ && b.i32(0x2f4) != 1 && b.i32(0x2f4) != 2) {
+        auto& half = r.half_object;
+        if (half.u8(0x1e9)) {
+            const int32_t pos_sample = b.i32(0x1c) >> 8;
+            const uint32_t elapsed = uint32_t(ticks_) - uint32_t(half.i32(0x1f0));
+            half.u8(0x1e9) =
+                (pos_sample == half.i32(0x1ec) && elapsed < 12) ? uint8_t((elapsed >> 2) + 1) : 0;
+        }
+        b.u8(0x81) = half.u8(0x1e9);
+    }
     fight(r, demo_player ? 0 : controls, size_t(&r - riders_.data()));
     if (player) nitro_charge_tick(r);
     rider_think(r, controls, player);
@@ -3503,7 +3556,7 @@ RaceSnapshot Race::snapshot() const {
         out.fields.push_back({p + "anim_frame", int64_t(r.ride_animation.frame)});
         out.fields.push_back({p + "anim_queued", int64_t(r.ride_animation.queued)});
         out.fields.push_back({p + "anim_loops", int64_t(r.ride_animation.loops)});
-        out.fields.push_back({p + "anim_deadline", int64_t(r.ride_animation.deadline)});
+        out.fields.push_back({p + "anim_deadline", int64_t(int32_t(r.ride_animation.deadline))});
         out.fields.push_back({p + "attack_weapon", int64_t(r.attack.weapon)});
         out.fields.push_back({p + "steal_until", int64_t(r.steal_until)});
         out.fields.push_back({p + "hit_until", int64_t(r.hit_until)});
@@ -4027,8 +4080,12 @@ void Race::collide_riders() {
         if (a.rider >= 0) {
             const Rider& r = riders_[size_t(a.rider)];
             if (r.frozen || r.finished) continue;
-            // Live scheduler: only bikes run this tick with flags & 6 == 6.
-            if (live_schedule_ && (r.sched_last != ticks_ || (r.bike.u8(0xc0) & 6) != 6)) continue;
+            // 0x004368f0 outer: +0x10 == tick with flags & 6 == 6. Live
+            // checks the scheduler image; solo keeps the frozen skip but
+            // must still enforce the flags (e.g. split-left 845: the player
+            // is 7, the overlapping frozen is 4 and must not contact).
+            if ((r.bike.u8(0xc0) & 6) != 6) continue;
+            if (live_schedule_ && r.sched_last != ticks_) continue;
         } else {
             const auto& p = pedestrians_->pool()[size_t(a.pedestrian)];
             if (freeze_actors_ || p.last_tick != ticks_ || (p.body.bike.u8(0xc0) & 6) != 6) continue;
@@ -4040,7 +4097,10 @@ void Race::collide_riders() {
             const ScanObject b = scan_[j];
             if (!rider_or_ped(b)) continue;
             Bike& bb = bike_of(b);
-            if (live_schedule_ && (bb.u8(0xc0) & 5) != 5) continue;
+            // 0x004368f0 inner: flags & 5 == 5, unconditionally (solo and
+            // live). The solo path previously skipped this, contacting
+            // frozen c0=4 nodes the original ignores (split-left 845).
+            if ((bb.u8(0xc0) & 5) != 5) continue;
             if (ab.i32(0x178) + bb.i32(0x178) < std::abs(ab.i32(0x1c) - bb.i32(0x1c))) break;
             if (std::abs(ab.i32(0x28) - bb.i32(0x28)) > ab.i32(0x174) + bb.i32(0x174)) continue;
             const Rider& ar =

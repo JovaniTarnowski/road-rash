@@ -1,5 +1,37 @@
 # Verification log (all sessions September 28, 2026)
 
+## Solo split contact gates, flash, crash entry and brain (October 26, 2026)
+
+- Baseline `e101f2d`. Owned Debug build `build-solo-split-845`
+  (`oracle-sim-test --driver=human`, git-ignored solo-split captures):
+  `sim-napa-solo-split-left.tsv` and `-right.tsv` advance from the
+  tick-845 divergence (`rider.0.lateral` original 70 vs native -1952,
+  RNG in sync) to tick 2056 (`rider.0.lateral` 212334 vs 220494,
+  RNG in sync; scripts identical through tick 4500, so shared).
+- Fixes in `src/race.cpp` (all cited to original addresses):
+  `collide_riders` enforces `0x004368f0` outer `+0xc0&6==6` and inner
+  `+0xc0&5==5` even when `!live_schedule_` (the overlapping frozen is
+  `c0=4` and correctly ignored) -> 845 to 1423; solo uncrashed
+  `0x00407a90` scenery-mark flash refresh in `step_rider` (same form as
+  `crash_bike_animation`/`run_bike_node`) -> 1423 to 2055;
+  `anim_deadline` snapshot sign (`int32_t`: `0xFFFFFFFF` as -1, harness
+  artifact, no sim change); crash-entry half copies (`0x00403d60`
+  lines 52-112: entry word set to `half_object` plus `+0xc0 |= 3` in
+  both `crash_entry` and `crash`) -> half flags/ground at the 2055
+  reason-2 gap crash; solo crash brain (`ai_transition` + state clock +
+  replan + crash-gated stamina in `step_crash`, dispatch no-op for
+  states 8/9) -> state 9/ticks/replan at 2056.
+- No regressions (same build): `napa-field-l1` 2400 identical,
+  `schema2` 2400 identical, `sched-human-cov2` 1431 identical,
+  `sim-napa-solo-script` 1801 identical (+5 golden-only).
+- Full owned-Debug gate: **106/106 passed** (`ctest -j8`, exit 0).
+  `tools/agent_lsp.py` healthy (187 entries);
+  `clangd --check=src/race.cpp` exit 0. `rg` used throughout.
+- Remaining: tick-2056 crash-motion gap (lateral + velocity + steer,
+  RNG in sync; likely riderless-bike vertical `0x0043a190` and/or
+  `0x0043a610` wall stand-ins, plan 11 Task 4). Split captures stay
+  manual (golden-only suffix), not registered as CTest.
+
 ## Focused ASan/UBSan (October 26, 2026)
 
 - Baseline `3ab6f5b` + docs (no src changes since `b619cb4`).

@@ -240,6 +240,10 @@ establish native traffic parity.
 ## Planned (tasks 5–7)
 
 - `napa-solo-split-left`, `napa-solo-split-right`: branch commits at the first split (solo).
+  Captured October 26 (6,681 ticks each, HUMAN=1, git-ignored; scripts identical
+  through tick 4,500). Replay identical through tick 2,055 (contact-gate,
+  flash, half-entry and brain fixes, October 26); next gap at 2,056 is
+  crash-motion (riderless-bike vertical/walls stand-ins, plan 11 Task 4).
 - `napa-solo-jump`: airborne ticks on crest sections (solo).
 - `napa-field-l5`: 14 opponents at level 5.
 - `napa-fight`, `napa-contact`: combat and contact scenarios.

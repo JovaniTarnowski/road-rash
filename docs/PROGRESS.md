@@ -116,6 +116,27 @@ probes; committed implementation `8673a75` is pushed to main.
 
 
 
+### October 26, 2026: solo split contact gates, flash, crash entry, brain (845 -> 2056)
+
+- `sim-napa-solo-split-left/right` (plan 10 Task 5, 6,681-tick human
+  captures, scripts identical through tick 4,500) diverged at tick 845:
+  player lateral 70 vs -1,952 with RNG in sync. Root causes found and
+  fixed in `src/race.cpp`: the solo path skipped the `0x004368f0`
+  `+0xc0` contact gates (the overlapping frozen is `c0=4`, correctly
+  ignored by the original); the solo uncrashed path never ran the
+  `0x00407a90` scenery-mark flash (`+0x1e9` stuck at 1 vs 2 at 1,423);
+  `anim_deadline` compared `0xFFFFFFFF` vs -1 (snapshot sign artifact);
+  crash entry dropped the `0x00403d60` half copies and `+0xc0 |= 3`
+  (half flags/ground at the 2,055 reason-2 gap crash); the solo crash
+  path never ran the `0x00407bd0` brain (state 0 vs 9 at 2,056).
+  Both splits now replay identically through tick 2,055; the next gap
+  at 2,056 (crash-motion lateral/velocity/steer, RNG in sync) is the
+  known riderless-bike vertical (`0x0043a190`) / wall (`0x0043a610`)
+  stand-in area (plan 11 Task 4). No regressions: L1/schema2 2,400,
+  strict human 1,431, solo-script 1,801; full gate 106/106.
+  Remaining (same Task 5): crash-motion gap, split branch commits past
+  the crash, jump, fight/contact, traffic-solo/field (separate captures).
+
 ### October 26, 2026: solo braking/steering script green, no porting needed
 
 - New capture `sim-napa-solo-script` (plan 10 Task 5): 1,620-word
