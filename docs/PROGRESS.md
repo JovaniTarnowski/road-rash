@@ -53,6 +53,25 @@ Detailed evidence is in [REVERSE_ENGINEERING.md](REVERSE_ENGINEERING.md) and tes
 
 ## Timeline
 
+### October 25, 2026: playable browser port and Vercel output
+
+The previous web scaffold was a placeholder. `RR_WEB_BROWSER` now builds the
+current native frontend/races/audio/video with Asyncify and an OPFS-backed
+`Assets` boundary; the existing ImportJob verifies ISO ranges/folder files before
+committing a local disc generation. IDBFS persists settings/saves. The page offers
+all five quick-race courses, keyboard controls, fullscreen and recovery from
+bad discs, cancellation, quota errors and evicted data. Single-thread wasm
+rendering safely falls back to inline bands. The deploy bundle contains only
+code, metadata and licences; `tools/build_web.sh` stages validated Vercel
+Build Output API files for `vercel deploy --prebuilt`.
+
+Native gate 106/106 green; wasm 101 pass, 2 expected device skips, 1 optional
+full-colour checksum failure (golden unchanged). Browser tests cover real local
+disc import, all courses, driving/audio, persistence and recovery. Callback
+refactoring is superseded as a prerequisite by SDL's Asyncify support. See
+[WEB.md](WEB.md) and the browser handoff for evidence and limits.
+
+
 ### October 26, 2026: solo braking/steering script green, no porting needed
 
 - New capture `sim-napa-solo-script` (plan 10 Task 5): 1,620-word

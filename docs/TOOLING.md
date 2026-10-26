@@ -177,3 +177,15 @@ Local install only, owner-approved October 12, 2026 (plan 23 Task 1 Step 1):
   `std::runtime_error` pervasively, so this bit every test at once.
 - CTest logs under `--output-on-failure` are bloated by Node printing the
   whole single-line `.js` as error context; grep past it.
+
+
+## Browser release tooling (October 25, 2026)
+
+`tools/build_web.sh` uses the existing emsdk 6.0.10, bundled Node 24.19.0 and
+SDL 3.4.8. No new SDK or browser download was needed. Browser integration used
+Playwright 1.62.1 from the Codex bundled runtime and the existing Chromium build
+1234 in `~/Library/Caches/ms-playwright`. `NODE_PATH` can point to that runtime's
+`dependencies/node/node_modules`; no dependency or browser binaries are committed.
+Vercel CLI 63.1.2 is authenticated locally for `arkits/road-rash`; the connector
+required reauthentication, so preview upload uses `vercel deploy --prebuilt`.
+See WEB.md for the asset-free build/output boundary and exact test coverage.

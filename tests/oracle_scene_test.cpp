@@ -511,7 +511,7 @@ int native_terrain(const std::string& tsv, const rr::Assets& assets, bool check_
 }
 } // namespace
 
-int main(int argc, char** argv) {
+int run(int argc, char** argv) {
     bool actors_mode = false, terrain_mode = false, check_ground = true;
     const std::string dir = rr::golden::oracle_dir();
     std::string tsv = dir + "/city-scene.tsv";
@@ -619,4 +619,13 @@ int main(int argc, char** argv) {
     }
     std::cout << failures << " failures\n";
     return failures ? 1 : 0;
+}
+
+int main(int argc, char** argv) {
+    try {
+        return run(argc, argv);
+    } catch (const std::exception& e) {
+        std::cerr << "oracle scene: " << e.what() << '\n';
+        return 1;
+    }
 }

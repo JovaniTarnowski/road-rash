@@ -1,5 +1,14 @@
 # Browser Port Implementation Plan (WebAssembly)
 
+> **Current implementation (October 25, 2026):** the shared game is now playable
+> in the browser using Asyncify, OPFS disc storage, IDBFS saves and a real
+> asset-free Vercel prebuilt bundle. This supersedes Task 3's callback rewrite
+> as a prerequisite and Task 5's proposed backend shape. See [WEB.md](../WEB.md)
+> for exact coverage, build/deploy commands and remaining acceptance. The
+> historical checklist below is not a claim that every original plan item is
+> complete: optional threading/performance, cross-browser/device coverage and
+> one full-colour wasm checksum discrepancy remain open.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking. Read [00-INDEX.md](00-INDEX.md) first. Independent of the gameplay plans: the browser build runs whatever state the shared game code is in. Task 3 (main-loop refactor) touches `src/game_main.cpp`, which other sessions edit often; coordinate before starting it (see Global Constraints).
 
 **Goal:** Run the same native game in a desktop browser (Chrome, Firefox, Safari) as WebAssembly. The player opens a web page, picks their own Road Rash ISO (or the `ROADRASH` folder from the disc), the page imports it into the browser's private storage once, and the game plays with keyboard, gamepad or touch, with sound, video and saves. The page hosts only our code; no game data is ever uploaded or served.

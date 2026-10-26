@@ -5,9 +5,8 @@
 # release archive (URL and SHA-256) as the macOS bundle build; see
 # cmake/sdl3_static.cmake.
 #
-# Task 1 scope: rr-resource and the synthetic tests only. The game
-# executables keep blocking main loops and are enabled once the SDL
-# main-callback rework (Task 3) lands; CMakeLists skips them for EMSCRIPTEN.
+# RR_WEB_BROWSER builds the shared game with Asyncify and local browser
+# storage. The default configuration builds the tests for Node instead.
 
 # SDL3 for Emscripten: same pinned archive as the standalone macOS build.
 set(SDL_SHARED OFF CACHE BOOL "" FORCE)
@@ -29,9 +28,9 @@ add_compile_options(-O3 -msimd128 -sDISABLE_EXCEPTION_CATCHING=0)
 # The sim's value-type call chains (Race construction + stepping) need more
 # than Emscripten's 64 KiB default stack: race-test overruns the stack cookie
 # under Node but passes natively and with 1 MiB (plan 23 Task 2, Oct 2026).
-# The future game target steps the same paths every frame, so this is set
+# The browser game steps the same paths every frame, so this is set
 # for all web links, not just the tests.
-add_link_options(-O3 -flto -msimd128 -sSTACK_SIZE=1MB -sALLOW_MEMORY_GROWTH=1 -sENVIRONMENT=node -sDISABLE_EXCEPTION_CATCHING=0)
+add_link_options(-O3 -flto -msimd128 -sSTACK_SIZE=1MB -sALLOW_MEMORY_GROWTH=1 -sDISABLE_EXCEPTION_CATCHING=0)
 
 # CTest runs the cross-built tests under the Node.js bundled with the pinned
 # emsdk (.tools/emsdk). The glob keeps working across emsdk updates; the
@@ -46,11 +45,21 @@ message(STATUS "Web tests run under ${CMAKE_CROSSCOMPILING_EMULATOR}")
 # the analysis/oracle/ goldens through Node's filesystem. Native tests use
 # host paths (RR_SOURCE_DIR, std::filesystem), which are invisible inside
 # the default wasm sandbox. NODERAWFS is applied per test executable, never
-# globally: the future browser game target must use the sandboxed/IDBFS
+# globally: the browser game target must use the sandboxed/IDBFS
 # filesystem, and NODERAWFS only works under Node.
+# The 150 MB PCH terrain TSV expands past 2 GB as parsed maps. This ceiling
+# is only for Node oracle tests; the browser retains its smaller default.
 function(rr_web_hostfs target)
-    target_link_options(${target} PRIVATE -sNODERAWFS=1)
+    target_link_options(${target} PRIVATE -sNODERAWFS=1 -sMAXIMUM_MEMORY=4GB)
 endfunction()
 
 # Web-planning microbenchmark for the Task 1 speed measurements.
 set(RR_BENCH_WEB ON CACHE BOOL "Build the rr-bench-web microbenchmark" FORCE)
+
+if(RR_WEB_BROWSER)
+    # Preserve the shared native frontend, video and race call stacks while
+    # yielding at frame boundaries and asynchronous local asset reads.
+    add_link_options(-sENVIRONMENT=web -sASYNCIFY=1 -sASYNCIFY_STACK_SIZE=1048576)
+else()
+    add_link_options(-sENVIRONMENT=node)
+endif()

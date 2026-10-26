@@ -36,6 +36,14 @@ Still open (see `docs/CURRENT_STATUS.md` and `docs/PROGRESS.md`):
   import, lifecycle, performance) is pending.
 - Linux/Windows builds do not exist yet.
 
+## Browser build
+
+The same game now runs as WebAssembly. Run `tools/build_web.sh`, then serve
+`build-agent-browser/dist/` with a local HTTP server. Import your original PC
+disc ISO or ROADRASH folder; files stay in private browser storage. Choose
+**Quick race** for immediate play or **Start game** for the original frontend.
+See [docs/WEB.md](docs/WEB.md) for deployment, tests and current limitations.
+
 ## Requirements
 
 - Your own 1997 Windows rerelease disc (ISO or extracted `ROADRASH`

@@ -39,6 +39,7 @@ if(RR_FUZZ)
     add_compile_options(-fsanitize=fuzzer-no-link,address,undefined -fno-sanitize-recover=undefined -fno-omit-frame-pointer -g)
     add_link_options(-fsanitize=address,undefined -fno-sanitize-recover=undefined)
 endif()
+option(RR_WEB_BROWSER "Build the playable browser application" OFF)
 if(EMSCRIPTEN)
     include(cmake/emscripten.cmake)
 elseif(RR_BUNDLE_SDL)
@@ -51,6 +52,16 @@ else()
 endif()
 add_library(rr-resource STATIC src/resource.cpp src/course.cpp src/road.cpp src/assets.cpp src/framebuffer.cpp src/bike.cpp src/race.cpp src/input.cpp src/bob.cpp src/session.cpp src/iso9660.cpp src/sha256.cpp src/importer.cpp src/import_job.cpp src/wav.cpp src/mixer.cpp src/ima_adpcm.cpp src/avi.cpp src/cinepak.cpp src/video_player.cpp src/raster.cpp src/terrain.cpp src/scene.cpp src/polygon.cpp src/texture.cpp src/cel.cpp src/world_renderer.cpp src/render_threads.cpp src/road_panels.cpp src/road_materials.cpp src/exe_tables.cpp src/pe_strings.cpp src/career.cpp src/text.cpp src/settings.cpp src/rri.cpp src/frontend.cpp src/sound.cpp src/explode.cpp src/rider_sprites.cpp src/mmpx.cpp src/upscale_cache.cpp src/atomic_file.cpp src/display.cpp src/native_strings.cpp src/native_screens.cpp src/view_state.cpp src/texture_perspective.cpp src/framebuffer_rgb.cpp src/raster_rgb.cpp src/fog.cpp src/post_chain.cpp src/upscale_import.cpp src/race_actions.cpp src/race_overlay.cpp src/race_helpers.cpp src/game_types.cpp src/race_screen.cpp)
 target_link_libraries(rr-resource PUBLIC SDL3::SDL3 Threads::Threads)
+if(EMSCRIPTEN AND RR_WEB_BROWSER)
+    target_compile_definitions(rr-resource PUBLIC RR_WEB_BROWSER=1)
+    add_executable(rr-game src/game_main.cpp src/road_draw.cpp src/import_ui.cpp src/platform_web.cpp)
+    target_link_libraries(rr-game PRIVATE rr-resource SDL3::SDL3)
+    target_link_options(rr-game PRIVATE
+        -sMODULARIZE=1 -sEXPORT_NAME=createRoadRash -sFORCE_FILESYSTEM=1
+        -sEXPORTED_RUNTIME_METHODS=ccall,FS,ENV,HEAPU8,stringToUTF8,lengthBytesUTF8
+        -sEXPORTED_FUNCTIONS=_main,_malloc,_free -lidbfs.js)
+endif()
+
 target_sources(rr-resource PRIVATE src/family.cpp src/terrain_panels.cpp src/building_panels.cpp src/terrain_ground.cpp src/course_scene.cpp src/hud.cpp src/animation.cpp src/actor_animation.cpp src/actor_descriptors.cpp src/actor_render.cpp src/actor_nodes.cpp src/crash.cpp src/police.cpp src/scenery.cpp src/traffic.cpp src/pedestrians.cpp src/race_pedestrians.cpp src/race_schedule.cpp src/race_music.cpp src/race_setup.cpp src/track_ring.cpp)
 set_target_properties(rr-resource PROPERTIES POSITION_INDEPENDENT_CODE ON)
 target_include_directories(rr-resource PUBLIC src)
@@ -74,8 +85,8 @@ if(ANDROID)
     add_library(main SHARED ${RR_GAME_SOURCES})
     set(RR_VIEWER main)
 else()
-    # Web (plan 23 Task 1): rr-resource and the tests only. The game
-    # executables keep blocking main loops and return with Task 3.
+    # Node configurations build tests only; RR_WEB_BROWSER adds the playable
+    # rr-game target above, with browser-specific imports and Asyncify.
     set(RR_GAME_SOURCES src/game_main.cpp src/road_draw.cpp src/import_ui.cpp src/race_overlay.cpp src/race_helpers.cpp src/game_types.cpp src/race_screen.cpp)
     if(NOT EMSCRIPTEN)
     add_executable(rr-import src/import_main.cpp)

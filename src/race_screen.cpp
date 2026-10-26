@@ -26,7 +26,11 @@ void DisplayDriver::apply(int logical_h) {
     render_scale = effective_render_scale(*settings, dw, dh, kMobileDisplay);
     config.supersampling = 640 * render_scale > dw || 480 * render_scale > dh;
     int cores = SDL_GetNumLogicalCPUCores();
+#ifdef RR_WEB_BROWSER
+    render_threads = 1; // Baseline browser build has no pthread workers.
+#else
     render_threads = std::max(1, std::min(8, cores - 1));
+#endif
 }
 void DisplayDriver::toggle_fullscreen() {
     settings->display_mode =

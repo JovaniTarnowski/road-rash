@@ -1,5 +1,39 @@
 # Verification log (all sessions September 28, 2026)
 
+## Playable browser port (October 25, 2026)
+
+- Owned browser build `build-agent-browser`: pinned emsdk 6.0.10 / SDL 3.4.8,
+  `tools/build_web.sh`, Release, shared `rr-game`, no pthreads. Only seven
+  allowlisted code/metadata/licence files staged in `.vercel/output/static`;
+  reference-hash exclusion passes. Wasm about 3.2 MiB raw.
+- Native Debug configure/build and full CTest in `build-agent-browser-native`:
+  **106/106 passed**, zero skips, 165.35 s (final native run). Source changes
+  after that run are launcher/test/docs and CMake comments only.
+- Node suite in `build-agent-browser-tests`: **101 pass / 2 skip / 1 fail** of
+  104 (33.07 s). `race-screen` and `mixer-device` skip 77 under Node. Remaining
+  failure is `raster-rgb-alloc`'s pre-change native pixel checksum; allocation
+  and repeat-frame checks pass. Golden unchanged. No full-colour pixel-parity
+  claim. Original renderer, hires, sim replays and terrain oracles pass.
+- Fixed wasm thread-constructor failures with inline render bands on non-pthread
+  builds. PCH terrain's 150 MB TSV expands beyond the default 2 GiB wasm heap:
+  Node-test-only 4 GiB maximum fixes `std::bad_alloc`. Added scene-test exception
+  reporting so this failure is readable instead of an opaque CppException.
+- `tests/web_browser_smoke.cjs` with bundled Playwright **1.62.1**, existing
+  Chromium install, local static server and original disc. Also tested a local
+  ISO made with `hdiutil makehybrid -iso` from `../cdrom` (fixture stays in the
+  ignored build tree). Tests cover malformed ISO, 341-file folder/ISO verification,
+  cancellation/quota preservation, OPFS and IDBFS reload, all five courses,
+  keyboard acceleration, running AudioContext + nonzero PCM, pause, lifecycle
+  bridge, fullscreen, frontend and eviction recovery. HTTP requests restricted
+  to same-origin GETs; no game-data transfer or JS errors. Deployment CSP tested
+  locally using the generated output headers. Screenshots/network evidence:
+  `analysis/browser-20261025/` (local only).
+- Native clangd check of `src/assets.cpp`: zero diagnostics using the owned
+  compilation database. Browser build compiles its guarded code. JS/shell/Python
+  syntax checks and `git diff --check` pass. No Android rebuild, device input,
+  Firefox/Safari, full career round trip, new oracle capture or sanitizers in
+  this browser slice. Other OMP captures/changes were preserved.
+
 ## Solo braking/steering script, player-control green (October 26, 2026)
 
 - Baseline `b619cb4`. New oracle capture `sim-napa-solo-script`

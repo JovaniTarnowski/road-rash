@@ -80,6 +80,12 @@ struct RenderThreads::Impl {
     std::exception_ptr first_error;
 };
 RenderThreads::RenderThreads(int threads) : threads_(threads < 1 ? 1 : threads) {
+#if defined(__EMSCRIPTEN__) && !defined(__EMSCRIPTEN_PTHREADS__)
+    // Single-thread browser/Node builds still accept settings that request
+    // workers. Run the identical band jobs inline instead of throwing from
+    // std::thread. The native/threaded builds retain their worker pool.
+    threads_ = 1;
+#endif
     if (threads_ > 1) impl_ = new Impl(threads_);
 }
 RenderThreads::~RenderThreads() {

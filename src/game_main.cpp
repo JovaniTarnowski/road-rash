@@ -280,6 +280,8 @@ void write_bench_report(const rr::FrameBench& bench, const rr::Settings& s, cons
     }
 }
 
+// SDL3's Emscripten backend yields in RenderPresent and SDL_Delay when
+// Asyncify is enabled. Do not add a second yield between presented frames.
 rr::RaceEnd run_race(rr::Game& g, SDL_Renderer* renderer, const rr::RaceOptions& opt,
                      rr::DisplayDriver& display) {
     rr::RaceScreen screen(g, renderer, opt, display);

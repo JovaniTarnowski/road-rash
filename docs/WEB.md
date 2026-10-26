@@ -1,9 +1,92 @@
 # Web port (plan 23): toolchain, build and measurements
 
-Status of the browser (WebAssembly) build. The plan lives in
-[plans/23-web-port.md](plans/23-web-port.md); this file records what Task 1
-established. The deployed page, storage and main-loop rework are Tasks 3–9
-and do not exist yet.
+The current native game is playable as WebAssembly. Build locally with
+`tools/build_web.sh`, serve `build-agent-browser/dist/`, and import the original
+PC disc ISO or ROADRASH folder in the browser. See the current implementation
+below; the October 12 sections are historical checkpoints.
+
+## Playable browser implementation — October 25, 2026
+
+- `RR_WEB_BROWSER=ON` builds `rr-game.js` + `rr-game.wasm` from the same
+  `game_main.cpp`, `RaceScreen`, simulation, renderer, frontend and audio code
+  used natively. The separate default Emscripten configuration runs tests in Node.
+- **Architecture decision:** Asyncify replaces the proposed all-platform callback
+  rewrite for this release. SDL 3.4.8 already yields inside `SDL_RenderPresent`
+  and `SDL_Delay`; explicit extra frame yields cause blank frames and must not
+  be added. Asset reads use `EM_ASYNC_JS`. The browser canvas retains its WebGL
+  drawing buffer so asynchronous reads cannot discard the last displayed frame.
+  No JSPI, pthreads, SharedArrayBuffer or COOP/COEP headers are required.
+- `platform_web.cpp` exports the existing `ImportJob` request/supply protocol.
+  It verifies the same 341 reference hashes for folder and ISO imports. The
+  browser streams ISO ranges, writes verified files into a new OPFS generation,
+  then atomically publishes `active.json` only after every file succeeds.
+  Cancellation, quota errors and bad discs preserve the prior committed disc.
+- `Assets::read` loads local OPFS files on demand. No full-disc MEMFS preload or
+  hosted game data is needed. Startup validates required paths, hashes in the
+  marker and file sizes; missing/evicted data returns to the importer.
+- Saves/settings use `/persist`, an IDBFS mount with `autoPersist`, restored
+  before the native main function starts. The existing atomic-file writer is
+  unchanged. Disc and save data belong to the deployment origin: changing the
+  URL requires a new import; browser eviction/private-mode cleanup can remove it.
+- The launch gesture creates/resumes the SDL audio context. Keyboard, existing
+  SDL gamepad/touch handling, fullscreen and native pause remain shared code.
+  `visibilitychange` pushes SDL lifecycle events, pausing audio/simulation and
+  requiring an explicit resume after returning.
+- Non-pthread wasm builds run requested renderer bands inline, including when
+  settings request multiple workers. Native worker behavior is unchanged.
+- `web/` contains the launcher, progress/cancel/retry UI, course selector,
+  controls, non-affiliation notice, canvas and error recovery. **Quick race**
+  starts directly; **Start game** runs the original frontend. Enter skips the
+  opening movie/credits. All five native course choices were browser-tested.
+
+### Build, serve, test and deploy
+
+```sh
+tools/build_web.sh
+python3 -m http.server 8765 --directory build-agent-browser/dist
+# In another terminal; use an installed Playwright through NODE_PATH if needed:
+node tests/web_browser_smoke.cjs
+# Optional ISO fixture, kept outside the served bundle:
+RR_WEB_ISO=/absolute/path/to/disc.iso node tests/web_browser_smoke.cjs
+# Authenticated, linked Vercel project; preview by default:
+vercel deploy --prebuilt --yes
+```
+
+The build uses the already installed/pinned emsdk 6.0.10 and SDL 3.4.8. It
+stages Vercel Build Output API files under `.vercel/output/`. Deploy **prebuilt**:
+the remote builder does not have the local emsdk. `RR_WEB_BUILD_DIR` selects a
+private build tree and `RR_BUILD_JOBS` controls parallelism.
+`prepare_web_deploy.py` permits only seven code/metadata/license files and rejects
+any file matching a disc hash. The wasm is about 3.2 MiB raw; the tested race used
+about 187 MiB of wasm memory. Stable filenames revalidate instead of using the
+old scaffold's one-year immutable caching. The output also sets MIME sniffing,
+referrer and content-security policies. No game data enters the upload.
+
+### Verification scope and remaining limits
+
+- Native Debug: **106/106 CTests passed**, zero skips (165.35 seconds on the
+  final native gate). Browser-specific changes do not change simulation rules.
+- Node wasm: **101 passed, 2 skipped, 1 failed** of 104. `race-screen` and
+  `mixer-device` require browser SDL devices and skip 77 under Node. The large
+  PCH terrain oracle needs a 4 GiB Node-test memory ceiling (2 GiB caused
+  `std::bad_alloc`); the browser retains its default memory ceiling.
+- `raster-rgb-alloc` still differs from its native pre-change checksum in the
+  optional full-colour enhancement. Its allocation and frame-stability checks
+  pass. The golden has **not** been changed and full enhanced-pixel parity is
+  **not** claimed. Original indexed rendering, hires fixtures and simulation
+  oracle checks pass. This portability difference remains open.
+- Local Chromium/Playwright covers folder and ISO import, malformed ISO,
+  cancellation, quota failure, disc/save reload, five courses, keyboard driving,
+  nonzero audio output under normal autoplay policy, pause, the visibility
+  bridge, fullscreen, frontend and missing-file recovery. The same flow is
+  checked with deployment CSP headers. Screenshots/network evidence are local
+  under `analysis/browser-20261025/`, never committed. No asset requests/uploads
+  or uncaught JavaScript errors were observed.
+- Browser hardware gamepads/touch, Firefox/Safari, mobile devices, a whole career
+  save round trip and long-session performance remain unverified. The original
+  native game's known fidelity gaps still apply. Optional threaded web rendering
+  and a future callback refactor remain separate work, not release prerequisites.
+
 
 ## Toolchain (Task 1, Step 1)
 
@@ -126,7 +209,7 @@ Sizes (`build-web/rr-bench-web.*`, code only — the bench links the whole
 | `rr-bench-web.js` | 14,125 B | — | — |
 | `rr-bench-web.wasm` | 54,538 B | 23,151 B | 19,879 B |
 
-## Deployment (Vercel scaffold, October 12, 2026)
+## Historical deployment scaffold (October 12, 2026)
 
 Early Task 9 Steps 1–2 scaffold; the playable game target does not exist
 yet (Tasks 3–6 open), so there is nothing playable to deploy.
