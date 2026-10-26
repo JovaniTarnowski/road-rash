@@ -1,5 +1,18 @@
 # Verification log (all sessions September 28, 2026)
 
+## Full ASan/UBSan gate (October 26, 2026)
+
+- Baseline `3ab6f5b` + docs (no src changes since `b619cb4`).
+  Owned ASan+UBSan build `build-agent-asan-full`
+  (`-fsanitize=address,undefined -fno-sanitize-recover=all`):
+  configure/build exit 0. Full `ctest -j8`: **106/106 passed**
+  (L5d/L5e verified manually outside CTest; receipt
+  `/tmp/asan-full-20261026.log`, git-ignored; sanitizer build dir
+  git-ignored). Covers crash-entry/crash-car/type-word plus the full
+  native suite (sim/disc/slow/unit).
+- Android debug assembly already green (`assembleDebug BUILD SUCCESSFUL`,
+  same tree). Device/hardware still open (plan 14).
+
 ## Original browser fonts (October 25, 2026)
 
 - Preview READY: https://road-rash-o4j8h7nq2-arkits.vercel.app, shell `ba1fe64`, engine `096bff2`.
