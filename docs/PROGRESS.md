@@ -1908,3 +1908,16 @@ combat. This changes the demo input driver, not simulation or hit rules.
 empty road and distant/invalid/crashed targets, plus swing retrigger gating.
 The corrected two-minute cut uses `--warmup 960 --courses 2 3 0 1 4`, retaining
 actual close-range combat and avoiding shadowboxing. See DEMO_VIDEO.md.
+
+### October 25, 2026: reported intersection and combat defects
+
+- Fixed player descriptor-backed attack completion: the legacy 18-tick cap
+  restarted held club swings before damage. Real-asset/live-scheduler tests now
+  cover 36 tap/hold, weapon, side and action combinations.
+- Restored the missing type-4 rural intersection pavement branch
+  (`0x0043bef0` → `0x0041d110`); marked rural side roads now use their pavement
+  tiles instead of ordinary hillside bands.
+- Full Debug and isolated committed-source Release gates: 106/106 each, no skips.
+  Browser Release build succeeds. The supplied City recording's specific road
+  gap has not been isolated; these fixes do not close City intersection pixel
+  acceptance or full combat parity. [Evidence and limits](agent-handoffs/user-road-combat-20261025.md).

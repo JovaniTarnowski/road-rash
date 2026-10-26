@@ -2178,3 +2178,21 @@ varies between otherwise identical captures") and identifies its cause.
   `73d7f9744b5b1a9482b3909950cdf3fe34119fe13d023b031e9c6739a60f18a2`
   verified against inventory. Existing dual-road split/merge ring traversal
   remains explicitly unsupported; these captures exercise ordinary-road walking.
+
+### October 25, 2026: rural cross-road renderer and player swing lifetime
+
+- `0x0043bef0` type 4 with marking flags `0x18` runs shoulder `0x0041d260`
+  followed by `0x0041d110`, replacing `0x0041c390` hill bands. The latter
+  selects category 5 frame 2 once through `0x0044a870`, walks outward from
+  projected shoulder X (+0x60/+0x68), with far/near row +0x28/+0x38 and
+  scale +0x20 times 256 (negated on side 0). `0x0043b940` returns 16 for
+  terrain type 4; `0x00443990` rejects horizontally invisible tiles. Loads,
+  shifts, negations, tile limit and dispatch verified against exported assembly
+  at `0x0041d110–0x0041d25e`. Port now includes this formerly missing branch.
+- `0x00434660` uses `0x00409510` attack-animation membership to decide when
+  a player can start a swing. The native legacy 18-tick cap is not an original
+  rule: with original club descriptors, it can restart a held swing before
+  damage. Descriptor-backed player swing lifetime now follows animation
+  completion. Static evidence plus controlled native live-scheduler damage
+  tests, not original combat replay acceptance.
+- [Investigation and evidence limits](agent-handoffs/user-road-combat-20261025.md).

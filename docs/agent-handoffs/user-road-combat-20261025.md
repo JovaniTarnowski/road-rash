@@ -72,12 +72,31 @@ the other claim-generated build dirs were not used.
 - Configure and full Debug build: passed in `build-agent-user-road-combat-20261025`.
 - Focused CTest `^(race|scene|building_panels|course_scene)$`: 4/4 pass,
   including the all-course/all-sample scene-construction sweep.
-- Full 106-test CTest: running, receipt `/tmp/rr-user-ctest.log`.
+- Full Debug CTest: 106/106 pass, zero skips (736.98 s),
+  `/tmp/rr-user-ctest.log`.
+- Isolated committed-source Release build and CTest: 106/106 pass, zero skips
+  (39.39 s, `-j 4`), `build-agent-user-road-combat-clean`,
+  `/tmp/rr-user-clean-{config,build,ctest}.log`. Source checkout is
+  `/tmp/rr-user-road-combat-release/native-port`, detached at `de9390f`,
+  with local disc and read-only capture symlinks; no commercial data copied
+  into source. The source checkout's tracked state is clean.
 - Emscripten Release browser build: passed; validated nine-file, asset-free
   bundle in `build-agent-user-road-combat-web/dist`; `/tmp/rr-user-web.log`.
-- Browser smoke: running, `/tmp/rr-user-browser.log`.
+- Isolated committed-source browser Release build: passed, nine validated
+  code/metadata files, `build-agent-user-road-combat-clean-web/dist`,
+  `/tmp/rr-user-clean-web.log`. First configure needed the SDK symlink that
+  `cmake/emscripten.cmake` expects under the source `.tools/emsdk`; corrected
+  locally, no CMake source changes.
+- Browser smoke against the first build: all flows pass in headless installed
+  Chrome (all five courses, acceleration, audible output, pause/visibility,
+  fullscreen, frontend, persistence and missing-asset recovery). The unmodified
+  older smoke fixture failed only on seven favicon.ico 404s; the local copy
+  fulfills only favicon.ico with HTTP 204 and passes its no-JS-errors assertion.
+  No product/test source was changed to suppress errors. Logs
+  `/tmp/rr-user-browser{,-final}.log`; final clean-bundle rerun passes all flows in
+  `/tmp/rr-user-clean-browser.log`.
 - C++ LSP channel unavailable in this client. Owned compile database generated.
-  Homebrew clangd check of the added terrain helper: zero errors. Apple clangd
+  Homebrew clangd checks of the added terrain helper and scene wiring: zero errors. Apple clangd
   tooling helper used the shared database and hit ExtractFunction tweak failures;
   this was a tooling feature-check failure, not a compiler diagnostic. Actual
   C++ compilation succeeds.
@@ -88,5 +107,21 @@ the other claim-generated build dirs were not used.
 
 ## Live processes / resources
 
-Private builds above. Temporary localhost browser server at port 8879; stop
-before handoff. No held Wine prefix, capture output or Ghidra resources.
+Private builds above; temporary source checkout retained for reproducibility.
+Localhost browser servers at ports 8879/8880 stopped. All three source claims released. No held Wine prefix, capture output or Ghidra resources.
+
+## Commit correction
+
+`55fcb59` initially included OMP's concurrent crash edits because the repository
+pre-commit hook formats and re-stages whole working files, overriding partial
+index staging. `de9390f` corrects the committed source without rewriting history:
+only the two combat hunks remain relative to `a4572e0`. OMP's crash edits remain
+untouched in the working tree. The corrective commit used already formatted
+index bytes and bypassed that restaging hook for this one operation. Exact
+committed-source Release verification above excludes the concurrent work.
+
+Clean native build identity after receipt refresh: `de9390f`, `dirty=false`,
+source SHA-256 `ae3dcc4555d8caf8126b72ac1c2a0ee62bebaee436895d3b5035cdfa80b46ce3`.
+The initial native receipt had `dirty=true` only because the oracle directory
+was a symlink; converting it to an ignored directory of reference symlinks and
+refreshing provenance removed that metadata issue without changing source hash.

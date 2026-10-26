@@ -2665,3 +2665,19 @@ names). Rebase preserved both progress entries; no implementation conflicts.
   relaxed. The earlier full run before endpoint integration also passed 104/104.
 - Android/device gates were not run for this simulation/iterator change. These
   results establish the replay spans above, not full gameplay or dual-road parity.
+
+### October 25, 2026: intersection / player combat report
+
+- `cmake -S . -B build-agent-user-road-combat-20261025 -DCMAKE_BUILD_TYPE=Debug
+  -DCMAKE_EXPORT_COMPILE_COMMANDS=ON`, full build, then CTest: **106/106 pass**,
+  zero skips (736.98 s). Focused `race|scene|building_panels|course_scene`: 4/4.
+- Isolated tracked-clean source `de9390f`, Release build in
+  `build-agent-user-road-combat-clean`, full `ctest -j 4`: **106/106 pass**,
+  zero skips (39.39 s). This excludes OMP's concurrent uncommitted crash work.
+- Original EXE hash checked; recovered branch checked against exported
+  disassembly. Synthetic tile coverage and 36 original-asset player-combat
+  combinations pass. Existing replay gates remain green; no new combat or
+  intersection oracle capture, City-gap reproduction, sanitizers or device
+  validation. Browser Release build succeeds.
+- [Full commands, browser checks, local evidence, remaining City report and
+  hook correction](agent-handoffs/user-road-combat-20261025.md).
