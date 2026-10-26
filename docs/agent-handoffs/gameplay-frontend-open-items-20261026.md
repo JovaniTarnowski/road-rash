@@ -44,6 +44,26 @@ Build directory: `build-agent-open` (owned Debug).
   spawn/chase/arrest + on-foot arrest pass; cop oracle fixtures absent,
   skipped).
 
+## 20261026 follow-up: parked-scenario parity + original-driven save
+
+- Capture `napa-cops-parked-20261026` (Wine, COURSE=4 LEVEL=3 SEED=1 HUMAN=1,
+  FRAMES=4800): race ran 4731 contiguous ticks then ended (0xb4 timer after
+  the 4552 arrest); truncated past the tick reset. `police_test`:
+  "cop matches on 635 ticks; RNG matches to 4730, opponents to 4730" and
+  "NAPA arrest on tick 4552 as the original" (one RNG anchor at tick 1;
+  first-tick spare rows 9..14 feed `spare_levels`). `CopCapture` parked row
+  renamed to the 20261026 TSV.
+- `fe-career.RRS` (other worker's Wine frontend acceptance run
+  `acceptance-20261026/34069bf...`: original Big Game Cydney/City race,
+  restroom-UI save): payload equals dumped `fe-career-saved.state`;
+  `career-test --save-corpus` now pins the original-driven round trip
+  (character 3, level 0, bike 2, cash 651, byte identity). Skip-guarded if
+  the acceptance dir is absent.
+- Batch in progress (background): ORDER=1 re-runs of parked (mid-race FRAMES
+  for direct `race.end_timer` evidence) plus KNOCK=4400 crashed/order2,
+  KNOCK=4460 foot/foot2, and CITY parked; table arrest/span values to be set
+  from measured ticks.
+
 ## Remaining work
 
 - Original-capture parity for the cop pursuit (needs `napa-cops-*` /

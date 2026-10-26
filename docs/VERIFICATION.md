@@ -1,5 +1,17 @@
 # Verification log (all sessions September 28, 2026)
 
+## Police parked-scenario parity; original-driven save (October 26, 2026)
+
+- `napa-cops-parked-20261026.tsv` (Wine, COURSE=4 LEVEL=3 SEED=1 HUMAN=1,
+  FRAMES=4800, quit at race end): `police-test` reports
+  "cop matches on 635 ticks; RNG matches to 4730, opponents to 4730" and
+  "NAPA arrest on tick 4552 as the original". Truncated past the race-end
+  tick reset (frames 4732+ belong to post-race); re-run with
+  `RR_ORACLE_ORDER=1` and mid-race `FRAMES` in progress for direct
+  `race.end_timer` evidence.
+- `fe-career.RRS` + `fe-career-saved.state`: `career-test --save-corpus`
+  passes (0 failures), pinning the original-driven round trip.
+
 ## Tunnel engine variant (October 26, 2026)
 
 Owned Debug build `build-agent-open` plus ASan/UBSan tree `build-agent-open-san`:

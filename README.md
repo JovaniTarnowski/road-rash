@@ -29,8 +29,10 @@ Still open (see `docs/CURRENT_STATUS.md` and `docs/PROGRESS.md`):
 - Simulation parity outside those captures: other courses/levels, human
   paths beyond the receipted run, isolated fight/steal/traffic cases.
 - Gameplay: live police (periodic 4096-tick and DZHR spawns, chase, siren,
-  arrest, BUSTED flow) is implemented and native-tested; original-capture
-  comparison remains open. Walls (`0x0043a610`), crash entry/motion/recovery
+  arrest, BUSTED flow) is implemented and native-tested. Original-capture
+  replay matches on the parked scenario (635 pursuit ticks, RNG and full field
+  to tick 4730, arrest on tick 4552); crashed/foot/city captures remain open.
+  Walls (`0x0043a610`), crash entry/motion/recovery
   (`0x00403d60` family) and rider/car/pedestrian contact branches are ported;
   pedestrian pairs never contact in the original (`0x004368f0` `& 3` gate),
   and the traffic draw order approximation is visual-only. Race MIDI
@@ -43,7 +45,9 @@ Still open (see `docs/CURRENT_STATUS.md` and `docs/PROGRESS.md`):
   stays disabled — online multiplayer (plan 34) is in scope per the owner's
   October 26 decision and is not yet implemented. Seeded original-writer saves round-trip byte-identical and
   driven-career saves round-trip (win + purchase + save + reload pinned in
-  `career-test --corpus`). Menu layout acceptance covers all 223 original
+  `career-test --corpus`, plus an original-driven save that round-trips
+  byte-identical with its dumped game state (`career-test --save-corpus`).
+  Menu layout acceptance covers all 223 original
   items plus native screens (2 scrollable, 28 hidden placeholders) with
   main-menu 1x/2x/4x checks and the menu-09 masked capture (60% masked,
   98% exact, 0% large-diff); full unmasked pixel equality remains open on

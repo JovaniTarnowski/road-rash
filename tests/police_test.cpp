@@ -273,7 +273,7 @@ int main() {
         // - CITY: to 234; tick 235 draws in the pedestrian think (0x004410b5), and rider
         //   row 11 differs from tick 148 (City AI not at parity). The cop matches to the end.
         for (const CopCapture& scenario :
-             {CopCapture{"NAPA", "napa-cops-parked-20261018", 4730, 0, 4730, 4552, 4730, 4730},
+             {CopCapture{"NAPA", "napa-cops-parked-20261026", 4730, 0, 4730, 4552, 4730, 4730},
               CopCapture{"CITY", "city-cops-parked-20261018", 4551, 0, 4551, 0, 234, 147},
               CopCapture{"NAPA", "napa-cops-crashed-20261018", 5030, 4400, 5030, 4852, 5030, 5030},
               CopCapture{"NAPA", "napa-cops-order2-20261018", 5030, 4400, 5030, -1, 5030, 5030},

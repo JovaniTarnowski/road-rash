@@ -53,6 +53,20 @@ Detailed evidence is in [REVERSE_ENGINEERING.md](REVERSE_ENGINEERING.md) and tes
 
 ## Timeline
 
+### October 26, 2026: police parked-scenario parity; original-driven save round trip
+
+- `napa-cops-parked-20261026` (Napa level 3, seed 1, human parked, 4731
+  contiguous ticks): `police-test` replays with one RNG anchor — RNG and all
+  field rows identical to tick 4730, cop position/speed identical on all 635
+  pursuit ticks from the 4096 spawn, native arrest on tick 4552 as captured.
+  First-tick spare rows 9..14 feed `RaceConfig::spare_levels`, as the harness
+  specifies. Crashed/foot/city captures are running next.
+- `fe-career.RRS` (Wine frontend acceptance: original Big Game Cydney through
+  a City race, saved via restroom UI): `career-test --save-corpus` loads it
+  with the real tables (character 3, level 0, bike 2, cash 651), pins
+  byte-identical re-serialization, and checks the payload equals the dumped
+  `fe-career-saved.state` game state.
+
 ### October 26, 2026: tunnel engine variant wired
 
 - `Race::player_in_tunnel()` ports the `0x00434a80` tunnel flag (sub-slice

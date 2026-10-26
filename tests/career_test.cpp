@@ -231,6 +231,47 @@ int main(int argc, char** argv) {
                 }
             check(write_save(l) == golden, "original save byte identity");
         }
+        // Original-driven save from the Wine frontend acceptance run
+        // (analysis/frontend/acceptance-20261026, plan 13 Task 6 Step 1):
+        // the original played Big Game Cydney through a City race and saved
+        // via the restroom UI. Skip 77 only when no save evidence exists.
+        {
+            const std::string dir = std::string(
+                RR_SOURCE_DIR "/analysis/frontend/acceptance-20261026/34069bf3262241b3bdf4efa59c500751/");
+            std::ifstream df(dir + "fe-career.RRS", std::ios::binary);
+            if (!df) {
+                std::cout << "skip: no driven original save\n";
+            } else {
+                const std::vector<uint8_t> driven((std::istreambuf_iterator<char>(df)),
+                                                  std::istreambuf_iterator<char>());
+                Assets da(argc > 2 ? argv[2] : RR_SOURCE_DIR "/../cdrom/ROADRASH");
+                if (!da.exists("ROADRASH.EXE")) {
+                    std::cout << "skip: no disc for driven save tables\n";
+                } else {
+                    const auto real = read_career_tables(da.read("ROADRASH.EXE"));
+                    check(driven.size() == 0xa0, "driven original save size");
+                    if (driven.size() == 0xa0) {
+                        const Career d = read_save(driven, real);
+                        check(d.state.character == 3 && d.state.level == 0 && d.state.qualified == 0,
+                              "driven save header");
+                        check(d.state.bike == 2 && d.state.course == 1 && d.state.place == 0,
+                              "driven save race fields");
+                        check(d.state.cash == 651, "driven save cash after City race");
+                        check(d.mode == GameMode::big_game && !d.unsaved, "driven save forces big game");
+                        check(write_save(d) == driven, "driven original save byte identity");
+                        std::ifstream sf(dir + "fe-career-saved.state", std::ios::binary);
+                        if (sf) {
+                            const std::vector<uint8_t> state((std::istreambuf_iterator<char>(sf)),
+                                                             std::istreambuf_iterator<char>());
+                            check(state.size() == 0xa0 - 8, "driven state dump size");
+                            if (state.size() == 0xa0 - 8)
+                                check(std::vector<uint8_t>(driven.begin() + 8, driven.end()) == state,
+                                      "driven save payload equals dumped game state");
+                        }
+                    }
+                }
+            }
+        }
     }
     std::cout << failures << " failures\n";
     return failures ? 1 : 0;
