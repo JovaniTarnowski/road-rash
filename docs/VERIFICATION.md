@@ -2938,3 +2938,40 @@ names). Rebase preserved both progress entries; no implementation conflicts.
   non-text/JPEG parity, exact GDI glyphs, music listening, sanitizer/Android
   or hardware checks. Existing broad-mask picture characterization remains
   diagnostic; this change does not upgrade plan 13 Task 6 to complete.
+
+## October 26, 2026 — isolated original steal component oracle
+
+Worktree `/Users/archit/Dev/rr/.re-steal-worktree-20261026`, baseline `80f3e72`.
+Reference disc EXE SHA-256 rechecked:
+`73d7f9744b5b1a9482b3909950cdf3fe34119fe13d023b031e9c6739a60f18a2`.
+
+```sh
+python3 tools/steal_fixture_capture.py \
+  --exe /Users/archit/Dev/rr/cdrom/ROADRASH/ROADRASH.EXE \
+  --prefix /Users/archit/Dev/rr/.re-steal-prefix-20261026 \
+  --clone-prefix /Users/archit/Dev/rr/prefix
+python3 tests/steal_fixture_test.py \
+  --trace analysis/oracle/steal-fixture/de702f6e23d2418589027962870fa285/steal.tsv
+python3 tests/steal_capture_audit_test.py
+```
+
+- Capture/build: exit 0; GCC MinGW i686 16.2.0, `-O2 -Wall -Wextra -Werror
+  -shared -static-libgcc`; Wine 11.18 Staging; original resolver returned for
+  all 31 cases. Four synthetic parser/foreign-EXE guard checks pass, plus
+  all 31 original case expectations (13 transfers, 15 gate rejections,
+  three rejected rolls). Earlier capture-audit five checks still pass.
+- Original fixed-roll mode 3 controls only the roll value; a forwarding hook
+  at `0x40981c` counts exactly how often that call is reached. Synthetic
+  scheduler links, halves, bikes, animation banks and graphics descriptors;
+  victim damage deadline suppresses normal damage. No race bootstrap, real
+  assets, native simulation, CRT random stream or human controls exercised.
+- Local immutable receipt, trace, DLL and logs under
+  `analysis/oracle/steal-fixture/de702f6e23d2418589027962870fa285/`.
+  EXE/DLL/trace/source hashes recorded. Commercial/local artifacts excluded
+  from Git; only fixture source, runner, checks and documentation committed.
+- Main prefix was read only while cloning. Private prefix and output/install
+  paths are resource-claimed by the runner. Active frontend proxy, shared
+  Ghidra database and accepted captures were untouched.
+- No native production code/build configuration changed. Native CTest,
+  sanitizers, Android and device tests were not run for this standalone
+  original-function research slice. Runtime steal parity remains open.

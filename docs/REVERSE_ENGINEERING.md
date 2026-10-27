@@ -2334,3 +2334,52 @@ traced and inferred items labelled, is in [MULTIPLAYER.md](MULTIPLAYER.md).
 - **Correction.** Plan 09 assumed two-player lockstep exchanging controls. The
   code replicates state (snapshots and events), and up to eight humans can
   play over TCP/IP or IPX.
+
+## Original steal resolver component oracle (October 26, 2026)
+
+The earlier [steal gate audit](agent-handoffs/steal-gates-review-20261026.md)
+used static assembly and identified missing opponent animation coverage in
+old farm traces. `oracle/steal_fixture.c` now directly calls the original
+`0x004096f0` on synthetic linked rider halves/bikes in a private process.
+It exits before game startup, uses synthetic animation descriptors/banks,
+sets normal-damage immunity and disables player audio/network output.
+Original `0x00441750` mode 3 supplies controlled rolls 0/1/2/3; the verified
+call site at `0x0040981c` is redirected only to count and forward that call.
+Selection, reach, gates, transfer and animation functions execute original
+code. The disc EXE remains unmodified on disk.
+
+Measured 31 cases (13 successful transfers, 15 rejections before the steal
+roll, three eligible-but-failed rolls):
+
+- Attacker graphics descriptor `&0x200000` and `&0x400000` independently
+  trigger the resolver, as does attacker frame 2 without either bit. With
+  neither event, there is no roll (`0x409712–0x409723`).
+- Victim half `+0x81` values 0, 1 and signed -1 allow a transfer; 2 and
+  127 reject it before RNG. This measures the signed `jg` at `0x4097dc`
+  and confirms that the native `int8_t` frame type needs no correction.
+- Victim half `+0x1cc == tick` rejects; `tick-1` permits. The high-bit
+  deadline rejects at tick 100, but permits at unsigned tick `0x80000001`
+  when deadline is `0x80000000` (`0x4097cb`). An attacker's future deadline
+  does not block stealing; success writes **attacker** `tick+300`, leaving
+  the victim deadline unchanged (`0x409888–0x40988d`).
+- Active attacker weapon 1, active victim weapon 0/3, victim non-attack
+  animation and victim animation 9 each reject before the roll. An eligible
+  club-active victim whose inventory is a chain transfers the chain into
+  both attacker words. Victim inventory AND active weapon become zero
+  (`0x4097e8–0x409873`); inventory alone is not the eligibility field.
+- `0x409c10`: longitudinal separation 63 passes/64 rejects; fist lateral
+  separation 20479 passes/20480 rejects; height separation 12287 passes/
+  12288 rejects. Opposite attack side rejects. A null scan slice rejects.
+- Each eligible case invokes the counted steal-roll call exactly once.
+  Controlled rolls 0, 1 and 2 reject; 3 transfers. No rejected eligibility
+  case reaches that call. This does not test CRT RNG advancement.
+- Successful animation selection matches the EXE's steal table after the
+  victim's active weapon has been cleared; attacker queues 2 and victim
+  selects/queues 2 (`0x40989c–0x4098e5`).
+
+Receipt: local `analysis/oracle/steal-fixture/de702f6e23d2418589027962870fa285/receipt.json`
+in the RE worktree; trace SHA-256
+`f9cd89ec99f22187ae55c87162a74c471e712090006afeb17f061924a7355a01`.
+These are original component measurements, not native replay, live gameplay,
+real-asset animation verification, normal damage or a free-running steal.
+The plan 10 Task 6 / plan 16 Task 3 full steal acceptance remains open.

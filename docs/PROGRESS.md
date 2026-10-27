@@ -31,7 +31,7 @@ Detailed evidence is in [REVERSE_ENGINEERING.md](REVERSE_ENGINEERING.md) and tes
 | Rider sprites (`BIKERS/*.DAT`, colour remaps) | Decoded; drawn in the game; frame choice by inspection | `src/bob.cpp`, `src/game_main.cpp` |
 | AI opponents | Racing state ported (targets, curve speed, steering/speed control, re-plan, rubber band); overtaking and fight states not ported | `src/race.cpp` |
 | Rider contact | Detection and separation ported; contact response is the bike branch only | `src/race.cpp` |
-| Combat | Original live AI attack selection, descriptor/frame hit gates, relationship reactions and animation queues; measured in the 2400-tick Napa field replay; separate weapon-steal capture remains open | `src/race.cpp` |
+| Combat | Original live AI attack selection, descriptor/frame hit gates, relationship reactions and animation queues; measured in the 2400-tick Napa field replay. Steal resolver gates/transfer measured in 31 original component cases (October 26); free-running steal capture remains open | `src/race.cpp` |
 | Language strings (`TEXT/*.DLL`) | All five languages, original table assembly and continuations | `src/pe_strings.cpp` |
 | Menu text | Disc TrueType fonts (Badloc, Futura); GDI hinting not reproduced | `src/text.cpp` |
 | Front end (menus, Thrash/Big Game flow, shop, Schmooze, restroom, results, credits) | Ported from the EXE screen tables and handlers; mano-a-mano, jukebox, sound mix and controls screens not ported; not pixel-compared. Native Display/Sound/Pause/Enhancements screens, visual-style presets, single widescreen setting (October 13) | `src/frontend.cpp` |
@@ -2149,3 +2149,20 @@ is live. [Evidence and remaining fidelity scope](agent-handoffs/napa-merge-terra
   broad-mask menu characterization pin is not an acceptance claim.
 - Verification and limitations: see the matching VERIFICATION entry and
   `docs/agent-handoffs/frontend-layout-20261026.md`.
+
+### October 26, 2026 — original steal resolver measured in an isolated worktree
+
+- Followed the worktree request: all changes in `.re-steal-worktree-20261026`,
+  with a private APFS-cloned Wine prefix and standalone fixture DLL. No edits
+  to the main checkout's active frontend proxy or simulation.
+- `0x004096f0` now has 31 measured original component cases: 13 transfers,
+  15 eligibility rejections before the steal roll, three rejected rolls.
+  Signed victim frame, strict unsigned victim cooldown, attacker cooldown
+  write, inventory transfer, reach boundaries and animation queues all agree
+  with the recovered trace. Four synthetic parser/hash guard checks pass.
+- Added `oracle/steal_fixture.c`, `tools/steal_fixture_capture.py` and
+  `tests/steal_fixture_test.py`; results and exact scope in
+  [the handoff](agent-handoffs/steal-original-fixture-20261026.md).
+  This closes the original resolver gate/transfer component measurement;
+  plan 10/16 free-running steal parity remains open. Controlled original
+  mode-3 rolls do not establish CRT RNG or full-race fidelity.
