@@ -415,8 +415,10 @@ std::string Frontend::background_for(int previous, int screen, int title) {
     default:
         break;
     }
-    // 0x0041d7d0 with a random picture number 1..6.
+    // 0x0041d7d0 with a random picture number 1..6. The test override pins
+    // rest_picture_ after the draw so the RNG stream still advances once.
     rest_picture_ = int(next_random() % 6) + 1;
+    if (rest_picture_override_ >= 1 && rest_picture_override_ <= 6) rest_picture_ = rest_picture_override_;
     switch (screen) {
     case 8: {
         const int c = career_.state.character;
@@ -508,6 +510,10 @@ void Frontend::describe(const MenuItem& m) {
         desc_slot_ = m.desc;
     desc_format_ = m.format;
     desc_flags_ = m.flags & ~0x900u;
+    // 0x00420470 `test edi,8` gates the dark-box repaint; caller 0x4208d0
+    // (`or ebx,0xc`) forces it for flags & 0x20f00 dynamic descriptions.
+    // Other items (e.g. characters 0x0e flags 0x5) draw text with no box.
+    desc_fill_ = (m.flags & 0x20f08u) != 0;
 }
 
 void Frontend::set_focus(size_t index) {
@@ -526,8 +532,10 @@ void Frontend::set_focus(size_t index) {
         price_text_ = format_c(str(159), {A(tables_.bike_price.at(size_t(showroom_bike(m.desc))))});
     if (m.flags & item_flag::description)
         describe(m);
-    else if (!(m.flags & item_flag::popup_item))
+    else if (!(m.flags & item_flag::popup_item)) {
         desc_slot_ = 0;
+        desc_fill_ = false;
+    }
 }
 
 void Frontend::apply_restroom_pattern() {
@@ -735,6 +743,7 @@ void Frontend::enter(int screen) {
     dark_screen_ = screen == 0x22;
     if (!dark_screen_) set_background(background_for(previous_, screen, data_.screens[size_t(screen)].title));
     desc_slot_ = 0;
+    desc_fill_ = false;
     price_text_.clear();
     qualified_overlay_ = false;
     title_box(data_.screens[size_t(screen)].title, data_.screens[size_t(screen)].title_format);
@@ -2073,7 +2082,9 @@ void Frontend::draw_scale1(RgbImage& out) const {
             }
             box = {x, y, x + w + 16, y + h + 16};
         }
-        fill_from(out, dark_, box.left, box.top, box.right - box.left, box.bottom - box.top);
+        // 0x00420470 repaints the dark box only when the focused item takes
+        // it (desc_fill_): characters-screen bios are text on the photo.
+        if (desc_fill_) fill_from(out, dark_, box.left, box.top, box.right - box.left, box.bottom - box.top);
         const auto [t, flags] = description_text_layout(box, desc_flags_, desc_format_);
         draw_text_box(out, t, face, height, desc, flags, colour_light);
     }
@@ -2292,7 +2303,7 @@ void Frontend::draw_scaled(RgbImage& out, int scale) const {
             }
             box = {x, y, x + w + 16, y + h + 16};
         }
-        fill(box.left, box.top, box.right - box.left, box.bottom - box.top);
+        if (desc_fill_) fill(box.left, box.top, box.right - box.left, box.bottom - box.top);
         const auto [t, flags] = description_text_layout(box, desc_flags_, desc_format_);
         textbox(t, face, height, desc, flags, colour_light);
     }

@@ -53,6 +53,31 @@ Detailed evidence is in [REVERSE_ENGINEERING.md](REVERSE_ENGINEERING.md) and tes
 
 ## Timeline
 
+### October 26, 2026: all-screen menu pixel acceptance pinned (plan 13 Task 6 Step 2)
+
+- `frontend_test` replays the Wine frontend-acceptance script from boot
+  (main menu, Big Game to characters, Cydney to the street, then direct
+  entry to restroom/jukebox/controls/graphics — the golden game states) and
+  pins all five remaining goldens with the item-rect-driven mask:
+  characters 82% exact / 13% large-diff, restroom 84%/4%, jukebox 85%/4%,
+  controls 80%/2% (92% masked: item rows cover the screen), graphics
+  75%/7%. Menu-09, fe-main and fe-street stay 98%/98%/96% exact, 0% big.
+- Two fidelity fixes from the gaps: a test-only `Restroom/Rest1..6` pin
+  (`set_rest_picture_for_test(3)`; the RNG stream still advances once per
+  entry) and the `0x00420470` description-box rule — the dark fill repaints
+  only when the focused item's flags take it (`flags & 0x20f08`: characters
+  bios at flags `0x5` are text on the photo; restroom/jukebox/graphics at
+  `0x8` keep the fill). Static disassembly evidence in
+  REVERSE_ENGINEERING.md.
+- Jukebox/graphics keep the previous (Restroom/Rest3) background exactly as
+  the original does (trace cache 1); the stale-bio label column on the
+  direct-enter controls golden is a capture-method artifact inside masked
+  item rects (real play always reaches `0x12` through the restroom-row
+  handler, which refreshes labels). GDI glyph hinting and its knock-on
+  desc-box width deltas stay open; looser pins on characters/graphics are
+  characterization, not mask weakening. Full gate 106/106 in
+  `build-agent-menu-gaps`.
+
 ### October 26, 2026: full police pursuit parity (parked, crashed, on-foot, City)
 
 Six Wine captures (Napa/City level 3, seed 1, human parked, `ORDER=1`,
@@ -70,11 +95,10 @@ while City AI RNG stays open). Sanitizer trees clean.
   (`fe-main.bmp` second golden: 60% masked, 98% exact, 0% large-diff) and the
   Big Game street screen (`fe-career-start.bmp` from the driven-career run,
   item-rect-driven mask: 67% masked, 96% exact, 0% large-diff). All green.
-- Characters/restroom/jukebox/graphics goldens do NOT match: restroom-class
-  screens measure ~1% exact unmasked (photo background vs native fill),
-  characters diverges in the portrait block (31% exact). Recorded as
-  background/portrait art-mapping gaps in `frontend.cpp`'s area; the checks
-  are intentionally not pinned.
+- Characters/restroom/jukebox/graphics goldens are now pinned too — see the
+  all-screen entry above. The gap analysis that led there (variant control,
+  portrait reconciliation) is preserved in
+  `docs/agent-handoffs/menu-text-art-gaps-20261026.md`.
 
 ### October 26, 2026: police parked-scenario parity; original-driven save round trip
 

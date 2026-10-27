@@ -11,14 +11,27 @@ Captures: `analysis/oracle/{napa,city}-cops-*-20261026.tsv` with receipts;
 quit-mid-race `FRAMES` + `ORDER=1` (tick reset past race end, end_timer only
 with ORDER).
 
-## Menu pixel acceptance: fe-main + fe-street green (October 26, 2026)
+## Menu pixel acceptance: all acceptance-run screens green (October 26, 2026)
 
-- `frontend-test ../cdrom/ROADRASH`: 0 failures. New: `fe-main` (60%
-  masked, 98% exact, 0% large-diff) and `fe-street` (67% masked, 96% exact,
-  0% large-diff) masked comparisons against the Wine frontend-acceptance
-  goldens. Characters/restroom/jukebox/graphics measured but not pinned:
-  restroom-class screens ~1% exact unmasked (background photo art gap),
-  characters portrait block divergent.
+- `frontend-test ../cdrom/ROADRASH`: 0 failures (full gate 106/106 in
+  `build-agent-menu-gaps`). Still green: `menu-09` (60% masked, 98% exact,
+  0% large-diff), `fe-main` (60%/98%/0%), `fe-street` (67%/96%/0%).
+- New: the test replays the frontend-acceptance script and pins
+  `fe-characters` (67% masked, 82% exact, 13% large-diff),
+  `fe-restroom` (69%/84%/4%), `fe-jukebox` (69%/85%/4%),
+  `fe-controls` (92%/80%/2%), `fe-graphics` (68%/75%/7%) with the same
+  item-rect-driven mask (title banner, bio box, y>=370 button band, every
+  item rect dilated 3px). Characters/graphics carry looser pins:
+  unmasked bio/desc text is GDI-fringe dominated (hinting research open),
+  and the desc-box width derives from text metrics. Controls needs the
+  0.95 mask ceiling (item rows cover the screen). Goldens are git-ignored;
+  checks skip cleanly when absent.
+- Fidelity fixes behind the pins: `Frontend::set_rest_picture_for_test(3)`
+  pins `Restroom/Rest3` (RNG stream still advances once per entry);
+  jukebox/graphics background inheritance verified against the trace;
+  `0x00420470` description-box fill gated on `flags & 0x20f08` (characters
+  bios are text on the photo). Disassembly evidence in
+  REVERSE_ENGINEERING.md "Front end".
 
 ## Police parked-scenario parity; original-driven save (October 26, 2026)
 

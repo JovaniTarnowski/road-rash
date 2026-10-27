@@ -292,7 +292,8 @@ int main(int argc, char** argv) {
     // characterization pins. Goldens live in git-ignored acceptance dirs and
     // skip 77 when absent.
     auto masked_compare = [&](const std::string& name, const RgbImage& frame, const RgbImage& gold,
-                              const std::function<bool(int, int)>& masked, double cover_max = 0.75) {
+                              const std::function<bool(int, int)>& masked, double cover_max = 0.75,
+                              double exact_min = 0.12, double big_max = 0.05) {
         check(gold.width == 640 && gold.height == 480, name + " golden size");
         size_t total = 0, exact = 0, big = 0, masked_px = 0;
         int maxdiff = 0;
@@ -317,21 +318,21 @@ int main(int argc, char** argv) {
         std::cout << name << ": masked " << int(100 * coverage) << "%, exact " << int(100 * exact_frac)
                   << "%, maxdiff " << maxdiff << ", big " << int(100 * big_frac) << "%\n";
         check(coverage < cover_max, name + " mask coverage ceiling");
-        check(exact_frac >= 0.12, name + " unmasked exact floor");
-        check(big_frac <= 0.05, name + " large-diff ceiling");
+        check(exact_frac >= exact_min, name + " unmasked exact floor");
+        check(big_frac <= big_max, name + " large-diff ceiling");
     };
     // Screen-vs-original comparison with an item-driven mask: the title
     // banner, bio box, button band and every current item rect (dilated 3px)
     // hold text/chrome (GDI hinting stays open); the unmasked fills compare
     // directly. The golden must show the same screen in the same game state.
     auto masked_compare_items = [&](const std::string& name, const std::string& golden_path,
-                                    const RgbImage& frame) {
+                                    const RgbImage& frame, const std::vector<MenuItem>& items,
+                                    double exact_min = 0.12, double big_max = 0.05, double cover_max = 0.75) {
         RgbImage gold;
         if (!read_bmp_24(golden_path, gold)) {
             std::cout << "skip: no " << name << " golden\n";
             return;
         }
-        const auto items = fe.items();
         auto masked = [&](int x, int y) {
             if (y < 80) return true;                         // title banner
             if (x < 350 && y >= 100 && y < 345) return true; // bio/description box
@@ -340,7 +341,7 @@ int main(int argc, char** argv) {
                 if (x >= m.x - 3 && x < m.x + m.w + 3 && y >= m.y - 3 && y < m.y + m.h + 3) return true;
             return false;
         };
-        masked_compare(name, frame, gold, masked);
+        masked_compare(name, frame, gold, masked, cover_max, exact_min, big_max);
     };
     { // Plan 13 Task 6 Step 2, first slice: screen 9 vs the original
         // RR_ORACLE_MENU=9 capture (menu-09-<date>.bmp, git-ignored, skip 77).
@@ -492,7 +493,7 @@ int main(int argc, char** argv) {
     masked_compare_items("fe-street",
                          std::string(RR_SOURCE_DIR "/analysis/frontend/acceptance-20261026/34069bf326"
                                                    "2241b3bdf4efa59c500751/fe-career-start.bmp"),
-                         img);
+                         img, fe.items());
     // Olley's -> Rat bikes -> first bike -> Buy.
     key("right");
     key("select");
@@ -990,5 +991,91 @@ int main(int argc, char** argv) {
     check(fe.caption_text(fe.items()[3]).find("15)") != std::string::npos &&
               fe.caption_text(fe.items()[3]).find("Last Player") != std::string::npos,
           "fifteenth-place player's row is shown with correct name");
+    // Plan 13 Task 6 Step 2 remainder: all-screen pixel acceptance for the
+    // Wine frontend-acceptance goldens (git-ignored, skip when absent). A
+    // second frontend replays the oracle script from boot: main menu, Big
+    // Game to characters, Cydney to the street (matching the golden game
+    // states), then direct entry to restroom/jukebox/controls/graphics like
+    // the script's `enter` commands. Restroom/Rest3 is pinned with the test
+    // override; jukebox/graphics inherit it as the original does (trace
+    // cache 1 keeps Restroom/Rest3 through all four screens).
+    {
+        const std::string acc = std::string(
+            RR_SOURCE_DIR "/analysis/frontend/acceptance-20261026/1f1e79684e344a44af2e1e99dc1b9509/");
+        FrontendData data2 = read_frontend_data(exe);
+        add_native_screens(data2, false);
+        Career career2;
+        Settings settings2;
+        settings2.video_mode = 2;
+        Frontend fe2(assets, text, strings, credits, data2, tables, career2, settings2, saves);
+        uint64_t now2 = 0;
+        RgbImage img2;
+        auto snap2 = [&](const char* name) {
+            fe2.draw(img2);
+            check(img2.width == 640 && img2.height == 480, std::string("fe2 frame size ") + name);
+            if (!dump.empty()) write_bmp(dump + "/" + std::to_string(shot++) + "-" + name + ".bmp", img2);
+        };
+        auto press2 = [&](MenuInput in) {
+            now2 += 50;
+            fe2.update(in, now2);
+        };
+        auto key2 = [&](const char* k) {
+            MenuInput in;
+            std::string s = k;
+            if (s == "down")
+                in.down = true;
+            else if (s == "right")
+                in.right = true;
+            else if (s == "select")
+                in.select = true;
+            else if (s == "back")
+                in.back = true;
+            press2(in);
+        };
+        fe2.start();
+        FrontendEvent drained;
+        while (fe2.poll(drained)) {
+        }
+        now2 += 3000;
+        fe2.update({}, now2);
+        key2("back");
+        check(fe2.screen() == screen_id::main_menu, "acceptance replay reaches the main menu");
+        key2("right");
+        key2("select");
+        check(fe2.screen() == 0x0e, "acceptance replay reaches characters");
+        snap2("acc-characters");
+        // Bio text sits on the photo outside the masked bands, so GDI glyph
+        // fringes dominate: characterization pin, tightened when hinting lands.
+        masked_compare_items("fe-characters", acc + "fe-characters.bmp", img2, fe2.items(), 0.70, 0.15);
+        key2("down");
+        key2("down");
+        key2("select");
+        check(fe2.screen() == 0x0f && career2.state.character == 3 && career2.state.cash == 1000,
+              "acceptance replay reaches the street as Cydney");
+        fe2.set_rest_picture_for_test(3);
+        fe2.enter(0x10);
+        check(fe2.screen() == 0x10, "acceptance replay reaches the restroom");
+        snap2("acc-restroom");
+        masked_compare_items("fe-restroom", acc + "fe-restroom.bmp", img2, fe2.items());
+        fe2.enter(0x11);
+        check(fe2.screen() == 0x11, "acceptance replay reaches the jukebox");
+        snap2("acc-jukebox");
+        masked_compare_items("fe-jukebox", acc + "fe-jukebox.bmp", img2, fe2.items());
+        fe2.enter(0x12);
+        check(fe2.screen() == 0x12, "acceptance replay reaches Configure Input");
+        snap2("acc-controls");
+        // Item rows cover most of this screen; the mask is structural.
+        // The golden's label column shows stale character-bio slots from the
+        // script's direct `enter` (the original refreshes them in the
+        // restroom-row handler path, which real play always takes); both sit
+        // inside masked item rects.
+        masked_compare_items("fe-controls", acc + "fe-controls.bmp", img2, fe2.items(), 0.12, 0.05, 0.95);
+        fe2.enter(0x13);
+        check(fe2.screen() == 0x13, "acceptance replay reaches Graphics Options");
+        snap2("acc-graphics");
+        // Desc text and its metric-derived box edge extend past the masked
+        // bands: pin looser until GDI hinting lands.
+        masked_compare_items("fe-graphics", acc + "fe-graphics.bmp", img2, fe2.items(), 0.65, 0.10);
+    }
     return failures ? 1 : 0;
 }
