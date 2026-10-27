@@ -1,5 +1,9 @@
 #include "display.hpp"
 #include "view.hpp"
+#ifdef RR_WEB_BROWSER
+#include <emscripten/html5.h>
+#include <cmath>
+#endif
 
 namespace rr {
 DisplayConfig display_config(const Settings& s, int logical_h, bool mobile) {
@@ -37,9 +41,22 @@ void apply_display(SDL_Window* window, SDL_Renderer* renderer, const DisplayConf
     const bool is_full = (SDL_GetWindowFlags(window) & SDL_WINDOW_FULLSCREEN) != 0;
     if (is_full != c.fullscreen) SDL_SetWindowFullscreen(window, c.fullscreen);
     if (!c.fullscreen) {
+        int want_w = c.window_w, want_h = c.window_h;
+#ifdef RR_WEB_BROWSER
+        // The page lays the canvas out to fill the play area. The SDL window
+        // follows that CSS box, so the render buffer (times the device pixel
+        // ratio) and SDL's mouse mapping match it and a widescreen frame is
+        // not letterboxed inside a fixed 640x480 window.
+        double css_w = 0, css_h = 0;
+        if (emscripten_get_element_css_size("#canvas", &css_w, &css_h) == EMSCRIPTEN_RESULT_SUCCESS &&
+            css_w >= 1 && css_h >= 1) {
+            want_w = int(std::lround(css_w));
+            want_h = int(std::lround(css_h));
+        }
+#endif
         int w = 0, h = 0;
         SDL_GetWindowSize(window, &w, &h);
-        if (w != c.window_w || h != c.window_h) SDL_SetWindowSize(window, c.window_w, c.window_h);
+        if (w != want_w || h != want_h) SDL_SetWindowSize(window, want_w, want_h);
     }
     int lw = 0, lh = 0;
     SDL_RendererLogicalPresentation mode{};

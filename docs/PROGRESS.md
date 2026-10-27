@@ -53,6 +53,25 @@ Detailed evidence is in [REVERSE_ENGINEERING.md](REVERSE_ENGINEERING.md) and tes
 
 ## Timeline
 
+### October 26, 2026: web canvas fills the play area; widescreen without letterbox
+
+- The web page pinned `#canvas` to a 4:3 box, and `apply_display` reset the
+  SDL window to 640x480 x window scale on every frame. A widescreen frame
+  (16:10, 16:9, match) was therefore letterboxed inside a 4:3 element that was
+  itself pillarboxed: bars on all four sides, and a 1280x960 buffer however
+  large the screen.
+- `web/style.css`: the canvas now fills the viewport container (`100cqw` x
+  `100cqh`). `src/display.cpp` (web only): the SDL window follows the canvas
+  CSS box (`emscripten_get_element_css_size`), so the render buffer is CSS size
+  x devicePixelRatio and SDL's mouse mapping keeps the same aspect. SDL's own
+  resizable/external-size handler resizes during a race; menus re-apply each frame.
+- `Game::logical_width()` passes the window size to `logical_width_for`, so
+  `Widescreen::match` picks the window's aspect in the race (clamped
+  320..426), as menus already did. It previously always used 426. Applies to
+  native too. Rendering only: no simulation input.
+- Remaining bars are intentional: 4:3 with widescreen off, or wider than 16:9
+  (the cap). Videos keep their own aspect through `VideoPlayer::fit`.
+
 ### October 26, 2026: GDI text ground truth; all remaining screens captured
 
 - Wine-GDI probe (`tools/textprobe.c`, i686 mingw, headless memory DC)

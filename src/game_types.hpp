@@ -77,6 +77,7 @@ struct Game {
     int texture_detail = 0;                  // plan 20 Task 3: 0 original, 1 enhanced (MMPX)
     mutable bool upscaled_attached = false;  // scene textures carry MMPX levels
     Widescreen widescreen = Widescreen::off; // plan 21 Task 8: live setting
+    int display_w = 0, display_h = 0;        // window size for Widescreen::match (0 = unknown)
     Enhancements enhancements;               // plan 21 Task 1: synced per frame; all-off = original
     mutable bool post_teleported = true;     // plan 21 Task 7: first frame seeds blur history
     mutable bool view_ready = false;

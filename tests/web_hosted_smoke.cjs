@@ -92,7 +92,8 @@ fs.mkdirSync(evidence, {recursive:true});
             return sky>15 && document.querySelector('#loading').hidden;
         }, null, {timeout:90000});
         // SDL applies these inline CSS sizes when its native Window Size
-        // setting changes. Neither may override the page's fitted display size.
+        // setting changes. Neither may override the page layout: the canvas
+        // fills the play area and SDL letterboxes 4:3/widescreen inside it.
         for (const [width,height] of [[1907,1280],[1280,960],[1440,900],[390,844],[844,390]]) {
             await page.setViewportSize({width,height});
             for (const scale of [1,2]) {
@@ -101,9 +102,14 @@ fs.mkdirSync(evidence, {recursive:true});
                 },scale);
                 const frame=await page.locator('#canvas').boundingBox();
                 const area=await page.locator('.viewport').boundingBox();
-                const fittedWidth=Math.min(area.width,area.height*4/3);
-                assert.ok(Math.abs(frame.width-fittedWidth)<2,'canvas uses available viewport');
-                assert.ok(Math.abs(frame.height-fittedWidth*3/4)<2,'4:3 frame is preserved');
+                assert.ok(Math.abs(frame.width-area.width)<2,'canvas fills viewport width');
+                assert.ok(Math.abs(frame.height-area.height)<2,'canvas fills viewport height');
+                // The render buffer follows the CSS box (window size tracks it),
+                // so pixels are never stretched and mouse mapping holds.
+                await page.waitForFunction(()=>{
+                    const c=document.querySelector('#canvas'),r=c.getBoundingClientRect();
+                    return Math.abs(c.width/c.height-r.width/r.height)<0.02;
+                },null,{timeout:5000});
                 assert.ok(frame.y+frame.height<=area.y+area.height+1,'bottom of game fits');
                 assert.equal(await page.locator('footer').isVisible(),false);
                 if (scale===2 && width>=1280)
