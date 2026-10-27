@@ -13,7 +13,18 @@ struct TextRenderer::FontData {
     std::vector<uint8_t> bytes;
     stbtt_fontinfo info{};
     int win_ascent = 0, win_descent = 0; // OS/2 usWinAscent/usWinDescent: GDI cell metrics
+    int units_per_em = 0;                // head.unitsPerEm for the GDI ppem rule
 };
+
+// GDI pixel size for a positive lfHeight cell (0x0042f720 table): ppem rounds
+// H*upm/cell, then steps down once when the rounded scaled cell would exceed
+// H. Probed under Wine-GDI (textprobe sweeps, heights 8..80, all four faces:
+// 260/292 match plain rounding; the 32 outliers all take exactly one less).
+int gdi_ppem(int height, int upm, int cell) {
+    int p = (height * upm + cell / 2) / cell;
+    if ((cell * p + upm / 2) / upm > height) --p;
+    return p < 1 ? 1 : p;
+}
 
 TextRenderer::TextRenderer(const Assets& assets) {
     // 0x0042f720 installs Badloc, Futura Bold, Futura Demi and Futura Regular from Text\.
@@ -40,7 +51,10 @@ TextRenderer::TextRenderer(const Assets& assets) {
             f->win_ascent = a;
             f->win_descent = -d;
         }
+        const uint32_t head = stbtt__find_table(f->info.data, uint32_t(f->info.fontstart), "head");
+        if (head && head + 20 <= f->bytes.size()) f->units_per_em = ttUSHORT(f->info.data + head + 18);
         if (f->win_ascent + f->win_descent <= 0) throw std::runtime_error("Font has no vertical metrics");
+        if (f->units_per_em <= 0) throw std::runtime_error("Font has no units-per-em");
     }
 }
 
@@ -54,6 +68,9 @@ TextRenderer::TextRenderer(Face face, std::vector<uint8_t> ttf) {
     stbtt_GetFontVMetrics(&f->info, &a, &d, &g);
     f->win_ascent = a;
     f->win_descent = -d;
+    const uint32_t head = stbtt__find_table(f->info.data, uint32_t(f->info.fontstart), "head");
+    if (head && head + 20 <= f->bytes.size()) f->units_per_em = ttUSHORT(f->info.data + head + 18);
+    if (f->units_per_em <= 0) throw std::runtime_error("Font has no units-per-em");
     fonts_[face] = std::move(f);
 }
 
@@ -75,11 +92,14 @@ const TextRenderer::Glyph& TextRenderer::glyph(Face face, int height, uint8_t ch
     if (it != cache_.end()) return it->second;
     const FontData& f = font(face);
     const float scale = float(height) / float(f.win_ascent + f.win_descent);
+    // GDI advances: design advance rounded at the ppem scale (textprobe ABC
+    // dumps match 380/380 ASCII advances; the bitmap stays unhinted stb).
+    const int ppem = gdi_ppem(height, f.units_per_em, f.win_ascent + f.win_descent);
     const int codepoint = int(cp1252_codepoint(ch));
     Glyph g;
     int advance = 0, bearing = 0;
     stbtt_GetCodepointHMetrics(&f.info, codepoint, &advance, &bearing);
-    g.advance = int(std::lround(advance * scale));
+    g.advance = (advance * ppem + f.units_per_em / 2) / f.units_per_em;
     int w = 0, h = 0, xo = 0, yo = 0;
     unsigned char* bitmap = stbtt_GetCodepointBitmap(&f.info, scale, scale, codepoint, &w, &h, &xo, &yo);
     if (bitmap) {
@@ -100,8 +120,13 @@ int TextRenderer::width(Face face, int height, const std::string& text) const {
     return w;
 }
 
-int TextRenderer::line_height(Face, int height) const {
-    return height;
+int TextRenderer::line_height(Face face, int height) const {
+    // GDI multiline pitch: tmAscent + tmDescent at the ppem scale (textprobe
+    // TEXTMETRIC sweeps; e.g. 32px Futura Regular advances 33, not 32).
+    const FontData& f = font(face);
+    const int ppem = gdi_ppem(height, f.units_per_em, f.win_ascent + f.win_descent);
+    return (f.win_ascent * ppem + f.units_per_em / 2) / f.units_per_em +
+           (f.win_descent * ppem + f.units_per_em / 2) / f.units_per_em;
 }
 
 void TextRenderer::draw(RgbImage& image, Face face, int height, int x, int y, uint32_t rgb,
@@ -154,7 +179,8 @@ int TextRenderer::draw_box(RgbImage* image, Face face, int height, TextRect& rec
             paragraph.push_back(c == '\n' ? ' ' : c);
     }
     flush(paragraph);
-    const int total = int(lines.size()) * height;
+    const int pitch = line_height(face, height);
+    const int total = int(lines.size()) * pitch;
     if (flags & dt::calcrect) {
         int w = 0;
         for (const auto& l : lines) w = std::max(w, width(face, height, l));
@@ -177,7 +203,7 @@ int TextRenderer::draw_box(RgbImage* image, Face face, int height, TextRect& rec
         else if (flags & dt::right)
             x = rect.right - w;
         if (image) draw(*image, face, height, x, y, rgb, l);
-        y += height;
+        y += pitch;
     }
     return total;
 }

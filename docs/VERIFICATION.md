@@ -30,22 +30,30 @@ with ORDER).
 - `frontend-test ../cdrom/ROADRASH`: 0 failures (full gate 106/106 in
   `build-agent-menu-gaps`). Still green: `menu-09` (60% masked, 98% exact,
   0% large-diff), `fe-main` (60%/98%/0%), `fe-street` (67%/96%/0%).
-- New: the test replays the frontend-acceptance script and pins
-  `fe-characters` (67% masked, 82% exact, 13% large-diff),
-  `fe-restroom` (69%/84%/4%), `fe-jukebox` (69%/85%/4%),
-  `fe-controls` (92%/80%/2%), `fe-graphics` (68%/75%/7%) with the same
-  item-rect-driven mask (title banner, bio box, y>=370 button band, every
-  item rect dilated 3px). Characters/graphics carry looser pins:
-  unmasked bio/desc text is GDI-fringe dominated (hinting research open),
-  and the desc-box width derives from text metrics. Controls needs the
-  0.95 mask ceiling (item rows cover the screen). Goldens are git-ignored;
-  checks skip cleanly when absent.
-- Fidelity fixes behind the pins: `Frontend::set_rest_picture_for_test(3)`
-  pins `Restroom/Rest3` (RNG stream still advances once per entry);
-  jukebox/graphics background inheritance verified against the trace;
-  `0x00420470` description-box fill gated on `flags & 0x20f08` (characters
-  bios are text on the photo). Disassembly evidence in
+- GDI rule (ppem advances + tmHeight pitch from the Wine textprobe ground
+  truth, 292/292 metrics, 380/380 ASCII advances) replaces the cell-scale
+  renderer: characters 86%/6% (pin 0.80/0.08), graphics 77%/4% (standard
+  pins now). Bitmaps stay unhinted stb: remaining fringe is GDI-shape
+  residual, documented open.
+- New: the test replays both 20261027 acceptance runs and pins twelve more
+  goldens with the same item-rect-driven mask, all at standard pins unless
+  noted: `fe-thrash`/`fe-bulletin` 98%/0%, `fe-olleys`/`fe-panzer` 98%/0%,
+  `fe-loading` 94%/0%, `fe-wrecked` 93%/0%, `fe-busted` 96%/0%,
+  `fe-won` 97%/0%, `fe-lost` 96%/0%, `fe-penalty` 100%/0%,
+  `fe-standings` 100%/0% (mask 94%, ceiling 0.95),
+  `fe-showroom` 93%/5% (pin 0.85/0.08: Length footer ported, price footer
+  and a ~3px right-aligned pen offset remain open, both masked/documented).
+  Result variants (Wreck4/Bust4/Win4/Lose1) come from the run-2 trace and
+  the test override; jukebox/graphics inheritance re-verified.
+- Fidelity fixes behind the pins: desc fill gated on raw `flags & 8`
+  (course/showroom/characters bios have no box); standings rows/title move
+  to the 0x00421290 handler with conditional darken (bare direct entry,
+  footer from the dynamic slot); showroom blurb-only desc + Demi-24 Length
+  footer at the traced y=301. Disassembly evidence in
   REVERSE_ENGINEERING.md "Front end".
+- `race_cache_test`: scale-2/scale-4 RGB baselines re-recorded after the
+  advance rule (HUD glyphs move by whole pixels); `original_scene` scene
+  hashes unchanged, all downstream pixel/allocation checks pass.
 
 ## Police parked-scenario parity; original-driven save (October 26, 2026)
 

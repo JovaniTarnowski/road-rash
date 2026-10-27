@@ -165,15 +165,22 @@
   - October 26, 2026 (slice done, step open): the frontend-acceptance run
     screens are pinned in `tests/frontend_test.cpp` with the item-rect mask
     (title banner, bio box, y>=370 button band, every item rect dilated
-    3px): fe-main 60%/98%/0%, fe-street 67%/96%/0%, fe-characters 67%/82%/13%,
-    fe-restroom 69%/84%/4%, fe-jukebox 69%/85%/4%, fe-controls 92%/80%/2%,
-    fe-graphics 68%/75%/7% (masked/exact/big). Fixes: test-only
-    Restroom/Rest3 pin, jukebox/graphics background inheritance verified,
-    `0x00420470` desc-fill gate (`flags & 0x20f08`). Remaining screens
-    (Thrash/bulletin course lists, loading, Olley's/showroom, Panzer,
-    schmooze, results/standings/penalty, dialogs, pause, native pages) have
-    no original captures yet; GDI-hinting text and its desc-box width
-    knock-on stay open (looser characters/graphics pins are characterization).
+    3px): fe-main 60%/98%/0%, fe-street 67%/96%/0%, fe-characters 67%/86%/6%
+    (pin 0.80/0.08), fe-restroom 69%/85%/2%, fe-jukebox 69%/85%/4%,
+    fe-controls 92%/80%/2% (cover 0.95), fe-graphics 68%/77%/4% (standard).
+    Second slice (20261027 runs): thrash/bulletin/panzer/olleys/loading/
+    wrecked/busted/won/lost at standard pins (93-100% exact, 0-4% big),
+    penalty 100%/0%, standings 100%/0% (cover 0.95), showroom 93%/5%
+    (pin 0.85/0.08). Fixes: test-only Restroom/Rest3 + Wreck4/Bust4/Win4/
+    Lose1 pins; jukebox/graphics background inheritance re-verified;
+    `0x00420470` desc-fill gate (raw `flags & 8`); standings rows/title/
+    darken moved to the 0x00421290 handler with bare direct entry and a
+    dynamic-slot footer; showroom blurb-only desc + Demi-24 Length footer;
+    GDI ppem advances + tmHeight pitch in `src/text.cpp` (380/380 ASCII,
+    292/292 metrics; bitmaps stay unhinted). Open: schmooze (random rider,
+    no deterministic golden), price/player footers (masked; arg mapping
+    recovered, not ported), exact hinted bitmaps, ~3px right-aligned pen
+    offset, native dialogs/pause/pages (no original).
 - [ ] **Step 3:** Record the results in VERIFICATION.md and commit: `test: original save round trip and menu frame comparison`.
 
 ## Exit criteria

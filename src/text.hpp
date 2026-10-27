@@ -36,7 +36,10 @@ constexpr unsigned center = 0x1, right = 0x2, vcenter = 0x4, bottom = 0x8, wordb
 
 // Text drawing with the original's own TrueType fonts, read from the user's disc at runtime.
 // GDI of the period renders without anti-aliasing and advances by whole pixels; this renderer
-// does the same (coverage >= 50% is ink). Exact GDI hinting is not reproduced.
+// does the same (coverage >= 50% is ink). Horizontal advances and multiline pitch follow the
+// GDI ppem rule (rounded design advance at the fitted ppem; tmHeight line step — textprobe
+// ground truth, 380/380 ASCII advances, 292/292 TEXTMETRIC points). The glyph bitmaps stay
+// unhinted stb coverage: exact edge pixels are not reproduced.
 class TextRenderer {
   public:
     explicit TextRenderer(const Assets&);

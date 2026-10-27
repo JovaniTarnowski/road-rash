@@ -226,7 +226,8 @@ class Frontend {
     uint32_t title_format_ = 0;
     int desc_slot_ = 0;
     uint32_t desc_format_ = 0, desc_flags_ = 0;
-    bool desc_fill_ = false; // 0x00420470 repaints the dark box only when the item takes it
+    bool desc_fill_ = false;    // 0x00420470 repaints the dark box only for flags & 8 items
+    std::string length_footer_; // course Length line for the showroom footer (stale = faithful)
     std::string price_text_;
     bool qualified_overlay_ = false;
     bool dark_screen_ = false; // standings: the darkened copy fills the screen
@@ -245,6 +246,7 @@ class Frontend {
     std::vector<std::string> save_list_;
     std::vector<Standing> standings_;
     RaceReport report_;
+    bool standings_ready_ = false; // 0x22 rows/title/darken set by the 0x00421290 handler
     uint32_t next_random();
 };
 } // namespace rr

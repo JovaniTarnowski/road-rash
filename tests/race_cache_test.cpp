@@ -113,9 +113,13 @@ int main(int argc, char** argv) {
                     // the field runs the live rider scheduler (0x00438170 cadences,
                     // window parking), so opponents move on their own intervals; the
                     // scale-1 frames are unchanged.
+                    // Scale 2/4 rgb re-recorded 2026-10-26 (menu-gdi-20261026):
+                    // the GDI ppem advance rule (textprobe ground truth) shifts
+                    // HUD/dashboard glyphs by whole pixels; scene bytes
+                    // (original_scene hashes) are unchanged.
                     static constexpr uint64_t rgb_baseline[] = {
-                        5580241488231030766ULL,  16911564171020350757ULL, 13624535667755419058ULL,
-                        13664611030281557249ULL, 17683900989714944697ULL, 7260162631364834522ULL};
+                        5580241488231030766ULL,  16911564171020350757ULL, 15835571388324234354ULL,
+                        16940178151090854797ULL, 15087233233538186610ULL, 15342141872932947841ULL};
                     if (rgb)
                         check(checksum == rgb_baseline[(row - 1) / 2],
                               "RGB canvas output changed from pre-optimization baseline");

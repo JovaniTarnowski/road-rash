@@ -1045,8 +1045,9 @@ int main(int argc, char** argv) {
         check(fe2.screen() == 0x0e, "acceptance replay reaches characters");
         snap2("acc-characters");
         // Bio text sits on the photo outside the masked bands, so GDI glyph
-        // fringes dominate: characterization pin, tightened when hinting lands.
-        masked_compare_items("fe-characters", acc + "fe-characters.bmp", img2, fe2.items(), 0.70, 0.15);
+        // fringes dominate: characterization pin. Advances and pitch now match
+        // (ppem rule); only unhinted bitmap edges remain.
+        masked_compare_items("fe-characters", acc + "fe-characters.bmp", img2, fe2.items(), 0.80, 0.08);
         key2("down");
         key2("down");
         key2("select");
@@ -1074,8 +1075,70 @@ int main(int argc, char** argv) {
         check(fe2.screen() == 0x13, "acceptance replay reaches Graphics Options");
         snap2("acc-graphics");
         // Desc text and its metric-derived box edge extend past the masked
-        // bands: pin looser until GDI hinting lands.
-        masked_compare_items("fe-graphics", acc + "fe-graphics.bmp", img2, fe2.items(), 0.65, 0.10);
+        // bands; fringe-only residual now (ppem rule), standard ceiling.
+        masked_compare_items("fe-graphics", acc + "fe-graphics.bmp", img2, fe2.items(), 0.70, 0.05);
+        // Plan 13 Task 6 Step 2 screens run (new Wine goldens, 20261027):
+        // course/shop/result screens in script order so backgrounds chain
+        // exactly like the oracle `enter` sequence. Result variants come
+        // from the run-2 trace caches (Wreck4/Bust4/Win4/Lose1).
+        const std::string acc2 = std::string(
+            RR_SOURCE_DIR "/analysis/frontend/acceptance-20261027/40c6e154036a4fac89e4101116bc7ed0/");
+        const std::string acc3 = std::string(
+            RR_SOURCE_DIR "/analysis/frontend/acceptance-20261027/6fc8190a10464dc39bd7af9feb32cfe3/");
+        fe2.enter(0x0a);
+        check(fe2.screen() == 0x0a, "acceptance replay reaches Thrash courses");
+        snap2("acc-thrash");
+        masked_compare_items("fe-thrash", acc2 + "fe-thrash.bmp", img2, fe2.items());
+        fe2.enter(8);
+        check(fe2.screen() == 8, "acceptance replay reaches race loading");
+        snap2("acc-loading");
+        masked_compare_items("fe-loading", acc2 + "fe-loading.bmp", img2, fe2.items());
+        fe2.enter(0x14);
+        check(fe2.screen() == 0x14, "acceptance replay reaches Olley's");
+        snap2("acc-olleys");
+        masked_compare_items("fe-olleys", acc2 + "fe-olleys.bmp", img2, fe2.items());
+        fe2.enter(0x18);
+        check(fe2.screen() == 0x18, "acceptance replay reaches the showroom");
+        snap2("acc-showroom");
+        // Length footer + desc truncation are pinned, but a ~3px GDI pen
+        // offset in the right-aligned desc block remains (unhinted shapes):
+        // characterization pin.
+        masked_compare_items("fe-showroom", acc2 + "fe-showroom.bmp", img2, fe2.items(), 0.85, 0.08);
+        fe2.enter(0x19);
+        check(fe2.screen() == 0x19, "acceptance replay reaches Der Panzer Klub");
+        snap2("acc-panzer");
+        masked_compare_items("fe-panzer", acc2 + "fe-panzer.bmp", img2, fe2.items());
+        fe2.enter(0x1b);
+        check(fe2.screen() == 0x1b, "acceptance replay reaches the bulletin board");
+        snap2("acc-bulletin");
+        masked_compare_items("fe-bulletin", acc2 + "fe-bulletin.bmp", img2, fe2.items());
+        fe2.set_rest_picture_for_test(4);
+        fe2.enter(0x1c);
+        check(fe2.screen() == 0x1c, "acceptance replay reaches the wrecked screen");
+        snap2("acc-wrecked");
+        masked_compare_items("fe-wrecked", acc3 + "fe-wrecked.bmp", img2, fe2.items());
+        fe2.enter(0x1d);
+        check(fe2.screen() == 0x1d, "acceptance replay reaches the busted screen");
+        snap2("acc-busted");
+        masked_compare_items("fe-busted", acc3 + "fe-busted.bmp", img2, fe2.items());
+        fe2.enter(0x1e);
+        check(fe2.screen() == 0x1e, "acceptance replay reaches the won screen");
+        snap2("acc-won");
+        masked_compare_items("fe-won", acc3 + "fe-won.bmp", img2, fe2.items());
+        fe2.set_rest_picture_for_test(1);
+        fe2.enter(0x1f);
+        check(fe2.screen() == 0x1f, "acceptance replay reaches the lost screen");
+        snap2("acc-lost");
+        masked_compare_items("fe-lost", acc3 + "fe-lost.bmp", img2, fe2.items());
+        fe2.enter(0x21);
+        check(fe2.screen() == 0x21, "acceptance replay reaches the penalty screen");
+        snap2("acc-penalty");
+        masked_compare_items("fe-penalty", acc3 + "fe-penalty.bmp", img2, fe2.items());
+        fe2.enter(0x22);
+        check(fe2.screen() == 0x22, "acceptance replay reaches the standings screen");
+        snap2("acc-standings");
+        // Rows cover most of this screen; the mask is structural.
+        masked_compare_items("fe-standings", acc3 + "fe-standings.bmp", img2, fe2.items(), 0.12, 0.05, 0.95);
     }
     return failures ? 1 : 0;
 }

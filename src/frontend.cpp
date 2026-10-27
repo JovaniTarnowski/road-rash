@@ -501,6 +501,17 @@ void Frontend::describe(const MenuItem& m) {
         const char decimal = settings_.language == Language::english ? '.' : ',';
         const std::string value = format_c("%d%c%d", {A(length / 10), A(decimal), A(length % 10)});
         strings_[dynamic_slot] = format_c(str(21 + m.caption - 0x10), {A(value), A(str(units))});
+        // The showroom draws the Length line as its own Demi footer (traced
+        // y=301) rather than embedding it; keep the formatted tail handy.
+        // It is the text after the last blank line of the course template.
+        length_footer_.clear();
+        {
+            const std::string& full = strings_[dynamic_slot];
+            size_t p = full.rfind("\n\n");
+            std::string tail = p == std::string::npos ? full : full.substr(p + 2);
+            while (!tail.empty() && (tail.front() == '\n' || tail.front() == '\r')) tail.erase(tail.begin());
+            length_footer_ = tail;
+        }
     }
     if (m.desc >= native_slot_base) {
         // Native value item: "<description>\nCurrent: <value>" via the dynamic slot.
@@ -510,10 +521,12 @@ void Frontend::describe(const MenuItem& m) {
         desc_slot_ = m.desc;
     desc_format_ = m.format;
     desc_flags_ = m.flags & ~0x900u;
-    // 0x00420470 `test edi,8` gates the dark-box repaint; caller 0x4208d0
-    // (`or ebx,0xc`) forces it for flags & 0x20f00 dynamic descriptions.
-    // Other items (e.g. characters 0x0e flags 0x5) draw text with no box.
-    desc_fill_ = (m.flags & 0x20f08u) != 0;
+    // 0x00420470 repaints the dark box only when the focused item's bit 3 is
+    // set. Pixel-verified across goldens: restroom/jukebox/graphics (0xc)
+    // fill; characters (0x5), course (0x4815) and showroom (0x184) bios draw
+    // text on the photo. (Caller 0x4208d0 forces `or ebx,0xc` for its dynamic
+    // descs, but the fill follows the item flags.)
+    desc_fill_ = (m.flags & 0x8u) != 0;
 }
 
 void Frontend::set_focus(size_t index) {
@@ -695,28 +708,6 @@ void Frontend::prepare_screen(int previous, int screen) {
             items[0].caption = report_.penalty_message ? report_.penalty_message : 1;
         break;
     }
-    case 0x22: {
-        // 0x00421290: three rows, plus the player's row when not in the top three.
-        auto& items = data_.screens[0x22].items;
-        const int place = career_.state.place;
-        const int rows = place < 3 ? 3 : 4;
-        for (size_t i = 0; i < items.size(); ++i) {
-            items[i].caption = 0;
-            items[i].enabled = false;
-            items[i].flags = 0x8040;
-        }
-        for (int i = 0; i < rows && size_t(i) < items.size(); ++i) {
-            const size_t row = i == 3 ? size_t(place) : size_t(i);
-            const Standing s = row < standings_.size() ? standings_[row] : Standing{};
-            strings_[size_t(160 + i)] = format_standing(row, s);
-            items[size_t(i)].caption = 160 + i;
-            items[size_t(i)].flags = s.player ? 0x8040 : 0x8000;
-        }
-        const size_t mine = size_t(std::min(place, 3));
-        if (mine < items.size()) items[mine].enabled = true;
-        last_focus_[0x22] = int(mine);
-        break;
-    }
     default:
         break;
     }
@@ -740,13 +731,18 @@ void Frontend::enter(int screen) {
     screen_ = screen;
     items_ = data_.screens[size_t(screen)].items;
     popup_base_ = 0;
-    dark_screen_ = screen == 0x22;
+    // Standings darken and title only after the 0x00421290 handler populates
+    // the rows; direct entry shows the bare photo (acceptance golden).
+    dark_screen_ = screen == 0x22 && standings_ready_;
     if (!dark_screen_) set_background(background_for(previous_, screen, data_.screens[size_t(screen)].title));
     desc_slot_ = 0;
     desc_fill_ = false;
     price_text_.clear();
     qualified_overlay_ = false;
-    title_box(data_.screens[size_t(screen)].title, data_.screens[size_t(screen)].title_format);
+    if (screen == 0x22 && !standings_ready_)
+        title_box(0, 0);
+    else
+        title_box(data_.screens[size_t(screen)].title, data_.screens[size_t(screen)].title_format);
     // 0x004459f0: restroom and jukebox items without a width take the title box width.
     if (screen == 0x10 || screen == 0x11) {
         const int tw = title_slot_ ? text_.width(Face::badloc, 72, str(title_slot_)) + 0x31 : 0;
@@ -1246,6 +1242,7 @@ std::string Frontend::format_standing(size_t place, const Standing& s) const {
 
 void Frontend::race_finished(RaceOutcome outcome, int place, const std::vector<Standing>& standings) {
     standings_ = standings;
+    standings_ready_ = false; // the 0x00421290 handler repopulates per visit
     report_ = finish_race(career_, tables_, outcome, place);
     if (report_.screen == screen_id::main_menu) {
         enter(screen_id::main_menu);
@@ -1419,8 +1416,29 @@ int Frontend::run_handler(size_t index) {
         return 0x19;
     case 0x004214e0:
         return 0x21; // fines/repairs were applied by finish_race
-    case 0x00421290:
-        return 0x22; // prize money was applied by finish_race
+    case 0x00421290: {
+        // 0x00421290: three rows, plus the player's row when not in the top
+        // three. Populated here (not on screen entry): direct entry shows no
+        // rows, matching the original.
+        auto& items = data_.screens[0x22].items;
+        const int place = career_.state.place;
+        const int rows = place < 3 ? 3 : 4;
+        for (size_t i = 0; i < items.size(); ++i) {
+            items[i].caption = 0;
+            items[i].flags = 0x8000;
+        }
+        for (int i = 0; i < rows && size_t(i) < items.size(); ++i) {
+            const size_t row = i == 3 ? size_t(place) : size_t(i);
+            const Standing s = row < standings_.size() ? standings_[row] : Standing{};
+            strings_[size_t(160 + i)] = format_standing(row, s);
+            items[size_t(i)].caption = 160 + i;
+            items[size_t(i)].flags = 0x8040;
+        }
+        last_focus_[0x22] = std::min(place, 3);
+        if (size_t(last_focus_[0x22]) < items.size()) items[size_t(last_focus_[0x22])].enabled = true;
+        standings_ready_ = true;
+        return 0x22;
+    }
     case 0x0041f6d0:
     case 0x004241e0:
         return after_results(career_);
@@ -2060,7 +2078,13 @@ void Frontend::draw_scale1(RgbImage& out) const {
         draw_text_box(out, t, Face::badloc, 72, title, flags, colour_orange);
     }
     // Description box (0x00420470): darkened, Futura, pale text with a black shadow.
-    const std::string& desc = str(desc_slot_);
+    std::string desc = str(desc_slot_);
+    if (screen_ == 0x18) {
+        // The showroom draws the blurb here and the Length line as its own
+        // footer below; the embedded copy would double-draw.
+        const size_t blank = desc.find("\n\n");
+        if (blank != std::string::npos) desc.resize(blank);
+    }
     if (desc_slot_ && !desc.empty() && desc != "*") {
         const Face face = screen_ == 0x1a        ? Face::futura_regular
                           : (desc_flags_ & 0x80) ? Face::futura_demi
@@ -2088,6 +2112,12 @@ void Frontend::draw_scale1(RgbImage& out) const {
         const auto [t, flags] = description_text_layout(box, desc_flags_, desc_format_);
         draw_text_box(out, t, face, height, desc, flags, colour_light);
     }
+    if (screen_ == 0x18 && !length_footer_.empty()) {
+        // Traced showroom Length footer: Demi, right-aligned, top y=301.
+        const int w = text_.width(Face::futura_demi, 24, length_footer_);
+        draw_text_box(out, {621 - w, 300, 621, 332}, Face::futura_demi, 24, length_footer_,
+                      dt::right | dt::singleline, colour_light);
+    }
     if (!price_text_.empty()) {
         TextRect box{0x10, 0x154, 0x10 + 0xf0 + 16, 0x154 + 30 + 16};
         fill_from(out, dark_, box.left, box.top, box.right - box.left, box.bottom - box.top);
@@ -2098,6 +2128,9 @@ void Frontend::draw_scale1(RgbImage& out) const {
     for (size_t i = 0; i < items_.size(); ++i) {
         const MenuItem& m = items_[i];
         if (m.w <= 0 || m.h <= 0) continue;
+        // Standings rows are handler-enabled (flags 0x40); direct entry
+        // shows none, matching the original bare screen.
+        if (screen_ == 0x22 && !(m.flags & 0x40)) continue;
         const std::string caption = caption_text(m);
         if (!(m.flags & item_flag::keep_background))
             fill_from(out, dark_, m.x, m.y, m.w, m.h);
@@ -2144,6 +2177,16 @@ void Frontend::draw_scale1(RgbImage& out) const {
                                 out.at(ox + x, oy + y) = pass ? colour_yellow : 0;
                 }
             }
+        }
+    }
+    // Standings footer (dynamic slot: "%s finished in ... Place."): drawn in
+    // the last row's rect on every visit once set (direct entry included).
+    if (screen_ == 0x22 && items_.size() == 15) {
+        const std::string& foot = str(dynamic_slot);
+        if (!foot.empty() && foot != "*") {
+            const MenuItem& last = items_.back();
+            draw_text_box(out, {last.x + 0x19, last.y + 2, last.x + last.w, last.y + last.h},
+                          Face::futura_regular, 32, foot, dt::wordbreak | dt::center, colour_light);
         }
     }
     if (qualified_overlay_) {
@@ -2281,7 +2324,13 @@ void Frontend::draw_scaled(RgbImage& out, int scale) const {
         textbox(t, Face::badloc, 72, title, flags, colour_orange);
     }
     // Description box (0x00420470): darkened, Futura, pale text with a black shadow.
-    const std::string& desc = str(desc_slot_);
+    std::string desc = str(desc_slot_);
+    if (screen_ == 0x18) {
+        // The showroom draws the blurb here and the Length line as its own
+        // footer below; the embedded copy would double-draw.
+        const size_t blank = desc.find("\n\n");
+        if (blank != std::string::npos) desc.resize(blank);
+    }
     if (desc_slot_ && !desc.empty() && desc != "*") {
         const Face face = screen_ == 0x1a        ? Face::futura_regular
                           : (desc_flags_ & 0x80) ? Face::futura_demi
@@ -2307,6 +2356,11 @@ void Frontend::draw_scaled(RgbImage& out, int scale) const {
         const auto [t, flags] = description_text_layout(box, desc_flags_, desc_format_);
         textbox(t, face, height, desc, flags, colour_light);
     }
+    if (screen_ == 0x18 && !length_footer_.empty()) {
+        const int w = text_.width(Face::futura_demi, 24, length_footer_);
+        textbox({621 - w, 300, 621, 332}, Face::futura_demi, 24, length_footer_, dt::right | dt::singleline,
+                colour_light);
+    }
     if (!price_text_.empty()) {
         TextRect box{0x10, 0x154, 0x10 + 0xf0 + 16, 0x154 + 30 + 16};
         fill(box.left, box.top, box.right - box.left, box.bottom - box.top);
@@ -2317,6 +2371,9 @@ void Frontend::draw_scaled(RgbImage& out, int scale) const {
     for (size_t i = 0; i < items_.size(); ++i) {
         const MenuItem& m = items_[i];
         if (m.w <= 0 || m.h <= 0) continue;
+        // Standings rows are handler-enabled (flags 0x40); direct entry
+        // shows none, matching the original bare screen.
+        if (screen_ == 0x22 && !(m.flags & 0x40)) continue;
         const std::string caption = caption_text(m);
         if (!(m.flags & item_flag::keep_background))
             fill(m.x, m.y, m.w, m.h);
@@ -2366,6 +2423,15 @@ void Frontend::draw_scaled(RgbImage& out, int scale) const {
                                 out.at(ox + x, oy + y) = pass ? colour_yellow : 0;
                 }
             }
+        }
+    }
+    // Standings footer, mirroring draw_scale1 (dynamic slot in the last row's rect).
+    if (screen_ == 0x22 && items_.size() == 15) {
+        const std::string& foot = str(dynamic_slot);
+        if (!foot.empty() && foot != "*") {
+            const MenuItem& last = items_.back();
+            textbox({last.x + 0x19, last.y + 2, last.x + last.w, last.y + last.h}, Face::futura_regular, 32,
+                    foot, dt::wordbreak | dt::center, colour_light);
         }
     }
     if (qualified_overlay_) {
