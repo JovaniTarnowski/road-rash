@@ -189,8 +189,7 @@ The regression gate after any change to shared code:
 - `tools/ci.sh` before closing a plan, which includes the Android assemble and asset-exclusion checks
 
 ### Code rules
-- C++20 (`CMakeLists.txt`), SDL3 only, plus pinned single-header libraries already in `third_party/`. A new dependency needs its licence file in `third_party/` and a mention in the user guide.
-- Exception: the multiplayer server `rr-netd` (plan 34) is Rust, in the `server/` Cargo workspace, with a committed `Cargo.lock`, a pinned toolchain and `cargo deny` licence checks. It is never linked into the game; only the net tests link its C ABI.
+- C++20 (`CMakeLists.txt`; this includes the plan 34 server `rr-netd`), SDL3 only, plus pinned single-header libraries already in `third_party/`. A new dependency needs its licence file in `third_party/` and a mention in the user guide.
 - All parsing of original data is bounds-checked and throws `std::runtime_error`. Every parser gets a truncation/garbage test.
 - Use fixed-width integers for anything ported, emulate wraparound with `uint32_t`, and cite original addresses in comments (`// 0x00444630`).
 - **Never embed original game data** (tables, images, text, audio) in source or tests. Read it at runtime from the user's files. Goldens live in git-ignored `analysis/oracle/`. Tests that need them exit 77 (`rr::golden::skip`) and are registered with `SKIP_RETURN_CODE 77`.

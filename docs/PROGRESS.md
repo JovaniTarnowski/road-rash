@@ -138,26 +138,12 @@ while City AI RNG stays open). Sanitizer trees clean.
   `pedestrian-test`, `car_contact-test`, `music-test`, `race-test` all pass
   in `build-agent-open`.
 
-### October 26, 2026: plan 34 server moves to Rust
+### October 26, 2026: plan 34 server stays C++
 
-The owner decided that the multiplayer server `rr-netd` is written in Rust;
-clients stay C++. Plan 34 is amended:
-
-- **Layout.** `server/` is a Cargo workspace: `rr-net-protocol` (codecs),
-  `rr-netd-core` (sans-I/O rooms, sealer, limits, log), `rr-netd-ffi` (a C ABI
-  so C++ tests and `net_bots` drive a real room in process) and the `rr-netd`
-  binary (tokio, axum, `str0m` for the server WebRTC peer).
-- **Wire agreement.** Client and server no longer share codec source, so
-  `docs/NET_PROTOCOL.md` becomes the normative byte layout, both suites test
-  one synthetic vectors file, and a differential fuzz target compares the C++
-  and Rust decoders.
-- **Gates.** `tools/ci.sh` adds `cargo fmt`, `clippy -D warnings`, `cargo
-  test` and `cargo deny`; Cargo is needed only for the net tests and the
-  server, never for the game, Android or web builds.
-- `00-INDEX.md` code rules record the exception (and now say C++20, matching
-  `CMakeLists.txt`).
-
-Planning only; nothing was built.
+A Rust `rr-netd` was planned and then reverted the same day (owner decision).
+The server stays C++20 in `server/`, sharing `src/net/` codecs and
+libdatachannel with the clients, as plan 34 Decision 4 says. `00-INDEX.md`
+code rules now say C++20, matching `CMakeLists.txt`.
 
 ### October 26, 2026: online multiplayer joins the definition of done; plan 34 redesigned
 
