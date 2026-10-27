@@ -1,5 +1,20 @@
 # Verification log (all sessions September 28, 2026)
 
+## Plan 34 Task 2 first slice: multi-human races (October 26, 2026)
+
+- `make verify-sim BUILD_DIR=build-p34`: passed after the change (receipt
+  under the worktree's `analysis/agent-gates/oracle-*`), so the receipted
+  human capture stays bit-identical.
+- `ctest --test-dir build-p34 -j8`: 111/111 passed, 0 skipped (goldens from
+  the main checkout), including every sim/disc test.
+- `race_multi` (new, disc, ~10 s): 6-human limited field layout (grid
+  `0x00464258`, seats on rows, A.I. rows by entry), humans-only field, two-
+  and eight-human 1500-tick runs with identical per-tick field hashes, view
+  seat 7 vs 0 identical, AI hand-over at tick 700 deterministic and
+  unchanged before T.
+- Not covered yet: merged ring windows, LOD/traffic/police per human,
+  traffic gates; cross-platform identity (Task 3).
+
 ## Plan 34 Tasks 4–5: protocol, channels, rr-netd core (October 26, 2026)
 
 - Worktree build `build-p34` (Debug, macOS ARM64, AppleClang):

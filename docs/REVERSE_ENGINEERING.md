@@ -2331,6 +2331,16 @@ traced and inferred items labelled, is in [MULTIPLAYER.md](MULTIPLAYER.md).
     "DUEL is the mano cutscene" reading is withdrawn;
   - restroom patterns 5/6/7 for mode 3 unconnected/host/client
     (`0x00444fb0`).
+- **Start grid `0x00464218` is indexed by network slot, not level**
+  (October 26, 2026, plan 34 Task 2): `0x00405600` reads
+  `PTR_DAT_00464298 + DAT_004b8a10 * 8` (`DAT_004b8a10` = local network
+  slot, 0 offline), and the table holds eight seats: lateral 16384, −3616,
+  −23616, −43616 at position 0x3200 (seats 0–3) and again at 0x3300 (seats
+  4–7); `0x00464258` swaps the rows for more than four humans. The
+  `race_bounds` comment "0x00464218[level]" and the "level-4 start 0x3300
+  waits for the grid port" note in `race_setup.cpp` therefore misread the
+  table: offline the player starts at 0x3200 on every level, as the game
+  already does. Static evidence only.
 - **Port simulation inventory** (October 26, 2026, plan 34 Task 2 Step 1):
   the native simulation's player-centred reads are listed with their
   generalisation in [plan 34 "Task 2 notes"](plans/34-multiplayer.md). A

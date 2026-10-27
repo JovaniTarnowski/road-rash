@@ -150,7 +150,7 @@ int32_t race_road_base_q8(int32_t golden_lateral, int32_t route_offset, int32_t 
 Race::Race(std::vector<RouteSample> a, std::vector<RouteSample> b, const PhysicsTables& t,
            const BikeSpec& spec, int32_t rider_value, std::vector<Opponent> opponents, int level,
            int32_t road_base_q8, const std::vector<Personality>& personalities,
-           const std::vector<uint8_t>& exe_image)
+           const std::vector<uint8_t>& exe_image, int32_t player_grid_pos, int32_t player_grid_lat)
     : routes_{std::move(a), std::move(b)}, tables_(t), level_(level), road_base_(road_base_q8) {
     if (!exe_image.empty()) {
         std::array<int32_t, 5> eager{};
@@ -217,23 +217,34 @@ Race::Race(std::vector<RouteSample> a, std::vector<RouteSample> b, const Physics
         for (int k = 0; k < 5; ++k) r.bike.i32(0x30 + 4 * k) = r.bike.i32(0x1c + 4 * k);
         return r;
     };
-    Rider player = place_rider(spec, rider_value, 0, 0, 0);
+    Rider player = place_rider(spec, rider_value, 0, player_grid_pos, player_grid_lat);
     if (!personalities.empty()) brain_from(player.brain, personalities[0]);
+    player.human = 0;
     riders_.push_back(player);
     int colour = 1;
     for (const auto& o : opponents) {
         if (o.slot < 1 || o.slot > 15) throw std::runtime_error("Opponent grid slot must be 1..15");
         Rider r = place_rider(o.spec, o.rider_value, o.slot, o.grid_pos, o.grid_lat);
-        r.ai = true;
+        r.ai = o.human < 0;
+        r.human = o.human;
         r.rider_idx = o.rider;
         r.frozen = o.frozen;
         r.colour = colour++ % 9;
-        // 0x00405990 for AI riders: level throttle scale and softer low gears.
-        r.bike.i32(0x260) = (o.throttle_percent * r.bike.i32(0x260)) / 100;
-        r.bike.i32(0x1d0) -= 0x19;
-        r.bike.i32(0x1e0) -= 0xf;
-        r.bike.i32(0x1f0) -= 8;
-        r.bike.i32(0x200) -= 4;
+        if (o.human >= 0) {
+            // Plan 34: another human seat, built like the player (0x00405990
+            // player tables, no AI scaling); 0x004317a0 puts seats on grid
+            // rows by slot.
+            r.bike.i32(0x324) = 0;
+            if (size_t(o.human) >= human_riders_.size()) human_riders_.resize(size_t(o.human) + 1, -1);
+            human_riders_[size_t(o.human)] = int(riders_.size());
+        } else {
+            // 0x00405990 for AI riders: level throttle scale and softer low gears.
+            r.bike.i32(0x260) = (o.throttle_percent * r.bike.i32(0x260)) / 100;
+            r.bike.i32(0x1d0) -= 0x19;
+            r.bike.i32(0x1e0) -= 0xf;
+            r.bike.i32(0x1f0) -= 8;
+            r.bike.i32(0x200) -= 4;
+        }
         r.brain.base_speed = r.brain.current_speed = o.base_speed;
         r.brain.current2 = o.cur2_speed;
         // Synthetic-test fallback: the traced replan resets speeds from the
@@ -253,6 +264,8 @@ Race::Race(std::vector<RouteSample> a, std::vector<RouteSample> b, const Physics
         r.weapon = o.weapon;
         riders_.push_back(r);
     }
+    if (std::find(human_riders_.begin(), human_riders_.end(), -1) != human_riders_.end())
+        throw std::runtime_error("Human seats must be 0..n-1 without gaps");
     riders_.reserve(riders_.size() + 1); // the cop is appended mid-race; references into riders_ stay valid
     // Nitro setup (0x0040b0e0): copy the six words from the player spec
     // at +0x14c when the spec carries them, else keep EXE defaults; the
@@ -762,8 +775,7 @@ void Race::collide_traffic(Rider& r) {
             // 0x0044efa0: the second object's contact callback follows
             // the first on the ascending pair walk, including the horn draw.
             auto car_response = [&] {
-                if (&r == &riders_[0] && random() % 10 == 1 && car.kind != 0)
-                    sound(SoundEvent::horn, car.motion);
+                if (human(r) && random() % 10 == 1 && car.kind != 0) sound(SoundEvent::horn, car.motion);
                 car.motion.u8(0x1f4) = 1;
                 if ((car.kind & 1) && car.motion.i32(0x1f8) == 0)
                     car.motion.i32(0x1f8) = 0xf0; // partner is a bike (type &0xc)
@@ -1103,7 +1115,7 @@ void Race::contact_half_static(Rider& detached, Rider& owner, Rider& other) {
     auto& animation = owner.crash_actor.animation;
     const auto& library = *crash_library_;
     if (o.i32(0xc4) != 2) {
-        if (&owner == &riders_[0]) sound(SoundEvent::grunt_b, s); // event 4
+        if (human(owner)) sound(SoundEvent::grunt_b, s); // event 4
         if (owner.bike.i32(0x2f4) != 2 || o.i32(0xec) >= 1700) {
             if (o.i32(0xc4) & 0x15) s.i32(0x20) = o.i32(0x17c) * 2;
             if (s.i32(0x20) > 0x5000) s.i32(0x20) = 0x5000;
@@ -1123,7 +1135,7 @@ void Race::contact_half_static(Rider& detached, Rider& owner, Rider& other) {
                                             library.fallback);
                 queue_animation_with_fallback(animation, library.playback[0], 38, library.fallback);
             }
-            if (&owner == &riders_[0] && s.i32(0xec) >= 2001)
+            if (human(owner) && s.i32(0xec) >= 2001)
                 sound(SoundEvent((random() & 1) + (s.i32(0xec) >= 6001 ? 4 : 3)), s);
         }
         if (s.i32(0xf4) < 3000) {
@@ -1152,7 +1164,7 @@ void Race::contact_static(Rider& self, Rider& other) {
         s.i32(0xf4) += 0x150;
     } else {
         o.i32(0x17c) = o.i32(0x17c) / 2; // short object (+0xc4 == 1)
-        if (&self == &riders_[0]) {
+        if (human(self)) {
             const int32_t hit = std::abs(raw184);
             if (hit < 0x1771) {
                 if (hit >= 0x7d1 || std::abs(raw188) >= 0x3e9) {
@@ -1252,7 +1264,7 @@ void Race::contact_hazard(Rider& self, int32_t hazard_lo_q8, int32_t hazard_hi_q
     s.i32(0x188) = div256(int64_t(s.i32(0x188)) * elasticity);
     s.i32(0x184) = div256(int64_t(s.i32(0x184)) * elasticity);
     const int32_t hit = std::abs(s.i32(0x184));
-    if (&self == &riders_[0]) {
+    if (human(self)) {
         if (hit < 0x1771) {
             if (hit >= 0x7d1 || std::abs(s.i32(0x188)) >= 0x3e9) {
                 sound(SoundEvent((random() & 1) + 3), s);
@@ -1416,7 +1428,7 @@ void Race::contact_car(Rider& self, TrafficCar& car) {
     // thresholds (0x004049c0 jumps to LAB_00404c2d with iVar9 = 6, which the
     // geometry block below then recomputes). Silence only skips the sounds;
     // routing stays geometric.
-    if (&self == &riders_[0]) {
+    if (human(self)) {
         if (hit < 0x1771) {
             if (hit >= 0x7d1 || std::abs(raw188) >= 0x3e9) {
                 sound(SoundEvent((random() & 1) + 3), s);
@@ -1632,7 +1644,7 @@ void Race::contact(Rider& self, Rider& other) {
         s.i32(0xf4) += 0x150;
     } else {
         self.half_object.u8(0x1e9) = 0; // line 37: contact clears the half's wobble
-        if (&self == &riders_[0]) {
+        if (human(self)) {
             // 0x004049c0: the player grunts and the contact makes a crash sound by its strength.
             const int32_t hit = std::abs(raw184);
             if (hit < 0x1771) {
@@ -1747,6 +1759,12 @@ void Race::move(Rider& r, bool player) {
     b.i32(0x108) = b.i32(0xec);
     b.i32(0x10c) = b.i32(0x104);
     b.i32(0x110) = 0;
+    // 0x004395e0:30-32 networked handicap: an uncrashed moving human with a
+    // positive byte moves faster this tick (never slower).
+    if (net_ && human(r) && b.i32(0x2f4) == 0 && b.i32(0xec) > 0) {
+        const int32_t h = handicap_[size_t(r.human)];
+        if (h > 0) b.i32(0x108) = ((h * b.i32(0xec)) >> 8) + b.i32(0xec);
+    }
     int32_t effective = b.i32(0x108), lateral = b.i32(0x104), forward;
     if (effective < 0) {
         lateral = -lateral;
@@ -1829,7 +1847,7 @@ void Race::walls(Rider& r, const Bike* owner) {
         b.i32(0xf0) = 0;
         b.i32(0x288) = 0;
         if (b.i32(0xec) > 4000) {
-            if (&r == &riders_[0]) sound(SoundEvent::grunt_c, b);
+            if (human(r)) sound(SoundEvent::grunt_c, b);
             if (b.i32(0xc4) == 4)
                 crash(r);
             else
@@ -1854,7 +1872,9 @@ void Race::walls(Rider& r, const Bike* owner) {
     const int32_t lo = (b.i32(0x28) - hw) >> 8;
     if (cur.e0 < lo && hi < cur.e4) return;
     const int32_t c4 = b.i32(0xc4);
-    const bool player = &r == &riders_[0] || owner == &riders_[0].bike;
+    const bool player =
+        human(r) || (owner && std::any_of(riders_.begin(), riders_.end(),
+                                          [&](const Rider& h) { return human(h) && owner == &h.bike; }));
     auto rail_height = [](uint8_t b3b) { return (b3b & 0xfc) ? int32_t(b3b & 0xfc) << 8 : 0x40; };
     uint32_t hit = 0;
     bool angled = false;
@@ -2003,7 +2023,7 @@ void Race::walls(Rider& r, const Bike* owner) {
             b.i32(0x5c) = 0;
     }
     if ((angled || (std::abs(b.i32(0xf0)) > 0x9c3 && hit != 3)) && c4 == 4) {
-        if (angled && &r == &riders_[0]) sound(SoundEvent::grunt_c, b); // 0x00436830(5), local rider
+        if (angled && human(r)) sound(SoundEvent::grunt_c, b); // 0x00436830(5), local rider
         crash_reason(r, 6, std::array<int32_t, 3>{0, 0, 0x50}, std::array<int32_t, 3>{0, 0, 0x10});
     }
     b.i32(0x28) = lateral;
@@ -2075,7 +2095,7 @@ void Race::vertical(Rider& r) {
         b.i32(0xfc) = -0x1000;
         b.i32(0x160) = tables_.contact_base;
         height_above = 0;
-        if (&r == &riders_[0]) sound(SoundEvent::bounce, b); // 0x0043a190
+        if (human(r)) sound(SoundEvent::bounce, b); // 0x0043a190
     } else {
         grounded = true;
     }
@@ -3542,8 +3562,14 @@ void Race::police_think(Rider& player) {
         in.cop_speed = riders_[size_t(cop)].bike.i32(0xec);
         in.cop_position = riders_[size_t(cop)].bike.i32(0x1c);
     }
-    if (police_arrest(in)) busted_ = true; // 0x00416010(4, 0xb4): the screen sees the outcome once
-    if (police_spawn_due(uint32_t(ticks_), 0, half_flags, cop_index() >= 0)) spawn_cop(-0x27);
+    if (police_arrest(in)) { // 0x00416010(4, 0xb4): the screen sees the outcome once
+        player.busted = true;
+        if (&player == &riders_[0]) busted_ = true;
+    }
+    // Plan 34: the periodic spawn check runs once per tick, from seat 0's
+    // think (one human: the original call); its anchor is part of Task 2 C4.
+    if (&player == &riders_[0] && police_spawn_due(uint32_t(ticks_), 0, half_flags, cop_index() >= 0))
+        spawn_cop(-0x27);
 }
 
 // 0x004073a0: the cop is unlinked and freed. The cop is always the last
@@ -3849,7 +3875,7 @@ void Race::resolve_hit(Rider& r, size_t index) {
                 target = &o;
         }
     const int w = r.attack.weapon;
-    const bool involves_player = index == 0 || target == &riders_[0];
+    const bool involves_player = human(riders_[index]) || (target && human(*target));
     // 0x004096f0: weapon swish when the player swings or is swung at.
     if (involves_player) {
         if (w == 1)
@@ -3950,9 +3976,12 @@ void Race::nitro_think(Rider& r, uint32_t controls, bool player) {
 void Race::nitro_think_activate(Rider& r) {
     Bike& b = r.bike;
     if ((b.u8(0xc0) & 0x20) != 0) return;
-    if (nitro_charges_ <= 0) return;
-    if ((r.nitro_charge + ((r.nitro_charge >> 31) & 0xff)) / 256 < nitro_.minimum) return;
-    --nitro_charges_;
+    // Plan 34: seats 1..7 keep their own charges and spec words.
+    int32_t& charges = r.human > 0 ? r.nitro_count : nitro_charges_;
+    const NitroConfig& cfg = r.human > 0 ? r.nitro_cfg : nitro_;
+    if (charges <= 0) return;
+    if ((r.nitro_charge + ((r.nitro_charge >> 31) & 0xff)) / 256 < cfg.minimum) return;
+    --charges;
     b.u8(0xc0) = uint8_t(b.u8(0xc0) | 0x20);
     sound(SoundEvent::nitro_on, b);
 }
@@ -3965,17 +3994,18 @@ void Race::nitro_think_stop(Rider& r) {
 void Race::nitro_charge_tick(Rider& r) {
     Bike& b = r.bike;
     if ((b.u8(0xc0) & 0x20) == 0) {
-        if ((r.nitro_charge + ((r.nitro_charge >> 31) & 0xff)) / 256 < nitro_.max)
-            r.nitro_charge += b.i32(0x18) * nitro_.recharge;
+        const NitroConfig& cfg = r.human > 0 ? r.nitro_cfg : nitro_;
+        if ((r.nitro_charge + ((r.nitro_charge >> 31) & 0xff)) / 256 < cfg.max)
+            r.nitro_charge += b.i32(0x18) * cfg.recharge;
     } else {
         r.nitro_charge += b.i32(0x18) * -0x100;
         if (r.nitro_charge < 1) nitro_think_stop(r);
     }
 }
-int32_t Race::nitro_throttle_force(Rider&, int32_t force) {
+int32_t Race::nitro_throttle_force(Rider& r, int32_t force) {
     // 0x0040adb0 boost branch: force * multiplier, arithmetic >>8. int64
     // product then narrowed matches the 32-bit imul before the sar.
-    const int64_t prod = int64_t(force) * int64_t(nitro_.boost);
+    const int64_t prod = int64_t(force) * int64_t((r.human > 0 ? r.nitro_cfg : nitro_).boost);
     return int32_t(prod >> 8);
 }
 // Riding animation advanced in the Race tick before snapshots (0x00407a90
@@ -4158,6 +4188,7 @@ void Race::update_halves() {
 
 void Race::countdown_step() {
     ++ticks_;
+    controls_.fill(0); // countdown thinks see no input (schedule_pass(0, ...))
     // 0x00438930 stores the player bike's last run as creation tick - 1
     // (template interval 1), so its first scheduled tick sees dt 2
     // (measured: solo captures, tick 1). Hydrated riders (sched_live) step
@@ -4325,6 +4356,107 @@ void Race::prepare_traffic_obstacles() {
 }
 
 void Race::step(uint32_t controls) {
+    const uint32_t one[1] = {controls};
+    step(std::span<const uint32_t>(one));
+}
+
+void Race::set_human_driven(int seat, bool driven) {
+    const int i = human_rider(seat);
+    if (i < 0) return;
+    riders_[size_t(i)].ai = !driven;
+}
+
+void Race::set_human_nitro(int seat, const NitroConfig& c) {
+    const int i = human_rider(seat);
+    if (i <= 0) return; // seat 0 uses set_nitro
+    Rider& r = riders_[size_t(i)];
+    r.nitro_cfg = c;
+    r.nitro_count = c.charges;
+    r.nitro_charge = c.max << 8;
+}
+
+const Rider& Race::nearest_human(int32_t position) const {
+    const Rider* best = &riders_[0];
+    if (human_riders_.size() < 2) return *best;
+    int64_t best_d = -1;
+    for (int i : human_riders_) {
+        const Rider& h = riders_[size_t(i)];
+        if (!human(h)) continue;
+        const int64_t d = std::abs(int64_t(h.bike.i32(0x1c)) - position);
+        if (best_d < 0 || d < best_d) best_d = d, best = &h;
+    }
+    return *best;
+}
+
+Race::HumanOutcome Race::human_outcome(int seat) const {
+    HumanOutcome o;
+    const int i = human_rider(seat);
+    if (i < 0) return o;
+    const Rider& r = riders_[size_t(i)];
+    if (r.finished) {
+        o.place = place(size_t(i));
+        o.code = o.place == 1 ? 2 : 3; // networked: only first place wins (0x00416010)
+        o.tick = r.finish_tick;
+    } else if (r.busted) {
+        o.code = 4;
+    } else if (r.bike.i32(0x2f0) == 0) {
+        o.code = 5;
+    }
+    return o;
+}
+
+bool Race::all_humans_done() const {
+    for (int seat = 0; seat < humans(); ++seat) {
+        const Rider& r = riders_[size_t(human_rider(seat))];
+        if (r.ai) continue; // departed: AI-driven, not waited for
+        if (human_outcome(seat).code == 1) return false;
+    }
+    return true;
+}
+
+void Race::update_handicap() {
+    // 0x00442f60 (host branch), run every 0x39 ticks from shared state.
+    if (!(handicap_tick_ < ticks_)) return;
+    handicap_tick_ += 0x39;
+    int64_t sum = 0;
+    int count = 0;
+    int32_t hi = 0, lo = 0;
+    for (int seat = 0; seat < humans(); ++seat) {
+        const Rider& h = riders_[size_t(human_rider(seat))];
+        if (seat != 0 && !human(h)) continue; // rider 0 always counts (0x00442f60 seeds with it)
+        const int32_t d = h.finish_distance;
+        if (count == 0) hi = lo = d;
+        hi = std::max(hi, d);
+        lo = std::min(lo, d);
+        sum += d;
+        ++count;
+    }
+    if (sum == 0 || count == 0) return;
+    const int32_t spread = hi - lo < 0x4201 ? (hi - lo) * 0x40 / 0x4200 : 0x40;
+    const int32_t mean = int32_t(sum / count);
+    if (lo == mean || hi == mean) {
+        handicap_.fill(0); // the original clears 16 bytes; seats are 0..7
+        return;
+    }
+    for (int seat = 0; seat < humans(); ++seat) {
+        const Rider& h = riders_[size_t(human_rider(seat))];
+        if (seat != 0 && !human(h)) continue;
+        int32_t e = h.finish_distance - mean;
+        if (e < 0) {
+            e = spread * e / (mean - lo);
+            if (e < -0x7f) e = -0x80;
+        } else {
+            e = spread * e / (hi - mean);
+            if (e > 0x7e) e = 0x7f;
+        }
+        handicap_[size_t(seat)] = int8_t(e);
+    }
+}
+
+void Race::step(std::span<const uint32_t> words) {
+    controls_.fill(0);
+    for (size_t i = 0; i < words.size() && i < controls_.size(); ++i) controls_[i] = words[i];
+    const uint32_t controls = controls_[0];
     if (riders_[0].finished &&
         std::all_of(riders_.begin(), riders_.end(), [](const Rider& r) { return r.cop || r.finished; }))
         return;
@@ -4341,7 +4473,8 @@ void Race::step(uint32_t controls) {
         sort_schedule();                // 0x004383e0 after the pass
     } else {
         if (countdown_started_ && !riders_.empty() && !riders_[0].sched_live) riders_[0].bike.i32(0x18) = 1;
-        for (size_t i = 0; i < riders_.size(); ++i) step_rider(riders_[i], controls, i == 0);
+        for (size_t i = 0; i < riders_.size(); ++i)
+            step_rider(riders_[i], word(riders_[i]), human(riders_[i]));
         // Scheduler metadata runs after drive/think and before contact: drive
         // consumes the previous run's dt (tick-2 launch ramps on dt 2), contact
         // the fresh one. Hydrated riders only; legacy/live keep prior behavior.
@@ -4389,5 +4522,6 @@ void Race::step(uint32_t controls) {
     previous_camera_position_ = camera_position();
     load_pedestrian_looks(); // the frame render after this step draws them
     if (cop_removal_pending_) remove_cop();
+    if (net_) update_handicap(); // 0x00442f60 runs on the networked tick path
 }
 } // namespace rr

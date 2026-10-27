@@ -9,6 +9,7 @@
 #include <vector>
 #include <functional>
 #include <optional>
+#include <span>
 #include <string>
 
 namespace rr {
@@ -106,6 +107,10 @@ struct Opponent {
     int32_t throttle_percent = 100; // 0x004642a0[level]
     RiderStats stats{};
     int weapon = 0; // rider table word 6 + level
+    // Plan 34: online human seat driving this rider (0..7), -1 for an AI
+    // opponent. A human rider is built like the player (no AI throttle
+    // scaling, +0x324 = 0) but keeps a full AI brain for a hand-over.
+    int human = -1;
 };
 
 // The original opponents for a level: personalities 1..count (0x00464558, 0x204 bytes each),
@@ -282,6 +287,13 @@ struct Rider {
     // per-rider copies of the charge accumulator (Q8) and throttle force.
     int32_t nitro_charge = 0;   // accumulator Q8 (DAT_004c5f10)
     int32_t nitro_throttle = 0; // +0x240 throttle force holding 0x0040adb0 output
+    // Plan 34: online human seat (0..7) or -1. Rider 0 is seat 0 offline.
+    // A departed human is handed to its AI brain (ai = true) at a sealed
+    // tick; Race::human() is false from then on.
+    int human = -1;
+    NitroConfig nitro_cfg{}; // humans 1..7: from their own bike spec
+    bool busted = false;     // arrested (0x00407f30); Race::busted() mirrors rider 0
+    int32_t nitro_count = 0; // humans 1..7: charges left (rider 0 keeps Race::nitro_charges_)
 };
 
 // Live-scheduler rules (race_schedule.cpp), pure for unit tests.
@@ -326,7 +338,8 @@ class Race {
     Race(std::vector<RouteSample> route_a, std::vector<RouteSample> route_b, const PhysicsTables&,
          const BikeSpec&, int32_t rider_value, std::vector<Opponent> opponents = {}, int level = 0,
          int32_t road_base_q8 = 0, const std::vector<Personality>& personalities = {},
-         const std::vector<uint8_t>& exe_image = {}); // level 0..4 (0x004b8a12)
+         const std::vector<uint8_t>& exe_image = {},                // level 0..4 (0x004b8a12)
+         int32_t player_grid_pos = 0, int32_t player_grid_lat = 0); // plan 34: seat 0 grid row (0 = legacy)
     void set_terrain_source(std::function<const TerrainSlice&(const RouteSample&)> source) {
         terrain_source_ = std::move(source);
         attach_terrain_type();
@@ -434,7 +447,34 @@ class Race {
     // +0x18+level*4, stats +0x30..+0x3c); rider 8: 91, 2, 7/3000/3000/3000.
     void set_demo_hold(bool v, int base_speed = 0, int lane = 0, int32_t bias = 0, int weapon = 0,
                        RiderStats stats = {});
-    void step(uint32_t controls); // one simulation tick
+    void step(uint32_t controls); // one simulation tick (one human)
+    // Plan 34: one control word per human seat, in seat order; the offline
+    // game passes one. A single word takes exactly the old path.
+    void step(std::span<const uint32_t> controls);
+    int humans() const { return int(human_riders_.size()); }
+    // Rider index driven by a human seat (view helper; the simulation never
+    // reads the view's choice).
+    int human_rider(int seat) const {
+        return seat >= 0 && seat < humans() ? human_riders_[size_t(seat)] : -1;
+    }
+    // A departed human is driven by its AI brain from this tick on (the
+    // server flags it in the sealed frame); `back` returns it to its seat.
+    void set_human_driven(int seat, bool driven);
+    void set_human_nitro(int seat, const NitroConfig&);
+    // Plan 34: mano-a-mano rules inside the simulation (handicap 0x00442f60
+    // every 0x39 ticks, applied in 0x004395e0). Off offline.
+    void set_net(bool v) { net_ = v; }
+    bool net() const { return net_; }
+    // Plan 34 per-human outcome (original codes, 0x00416010): 1 racing,
+    // 2 won (first place), 3 finished, 4 busted, 5 wrecked.
+    struct HumanOutcome {
+        int code = 1;
+        int place = 0; // 1-based when finished
+        int32_t tick = -1;
+    };
+    HumanOutcome human_outcome(int seat) const;
+    bool all_humans_done() const;
+    int8_t handicap(int seat) const { return seat >= 0 && seat < 8 ? handicap_[size_t(seat)] : int8_t(0); }
     // Pre-green countdown tick (0x0044b3b0 while DAT_004c5d7c != 1): the
     // rider-half thinks run their AI branch (0x00434660 -> 0x00407bd0) but
     // nothing moves along the road. No draws were measured in the
@@ -749,6 +789,19 @@ class Race {
     StaticFrames static_frames_;
     Rider static_actor_{}; // 0x004c3e90 static hazard object (rebuilt per hit)
     std::vector<Rider> riders_;
+    std::vector<int> human_riders_{0};   // seat -> rider index (plan 34)
+    std::array<uint32_t, 8> controls_{}; // this tick's word per seat
+    bool net_ = false;
+    std::array<int8_t, 8> handicap_{}; // 0x004c1200[slot]
+    int32_t handicap_tick_ = 0;        // DAT_0049bdd0
+    void update_handicap();            // 0x00442f60
+    bool human(const Rider& r) const { return r.human >= 0 && !r.ai; }
+    // The word a rider's think receives: its own seat's, or seat 0's for AI
+    // riders (they always received the player's word and ignore it).
+    uint32_t word(const Rider& r) const { return controls_[size_t(r.human > 0 && !r.ai ? r.human : 0)]; }
+    // The human an AI or the scheduler measures against: nearest by track
+    // position, ties to the lower seat; rider 0 with one human (plan 34).
+    const Rider& nearest_human(int32_t position) const;
     int32_t ticks_ = 0;
     int level_ = 0;
     int last_target_ = -1;

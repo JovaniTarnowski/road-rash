@@ -538,7 +538,7 @@ void Race::contact_pedestrian(Rider& self, Pedestrian& p) {
     Bike& s = self.bike;
     const Bike& q = p.body.bike;
     const int32_t steer = s.i32(0xf0);
-    if (&self == &riders_[0]) {
+    if (human(self)) {
         const int32_t hit = magnitude(s.i32(0x184));
         if (hit < 0x1771) {
             if (hit >= 0x7d1 || magnitude(s.i32(0x188)) >= 0x3e9) {

@@ -119,8 +119,9 @@ RaceAssets load_race_assets(const Assets& assets, const std::vector<uint8_t>& ex
         static const char* originals[] = {"CITY", "HIWAY", "MEDLY", "NAPA", "CANYN"}; // 0x0046df58
         for (int c = 0; c < 5; ++c)
             if (config.course == originals[c]) {
-                // Finish only: the grid still places slot 0 at 0x3200, so the
-                // level-4 start 0x3300 waits for the grid port.
+                // Finish only: 0x00464218 is indexed by network slot (0
+                // offline), so the player starts at 0x3200 on every level;
+                // race_bounds' start reads the table by level and is unused.
                 out.bounds.finish_position_q8 =
                     race_bounds(exe, *out.course, c + 1, config.level).finish_position_q8;
                 break;
@@ -210,6 +211,65 @@ std::vector<std::string> race_rider_names(const std::vector<uint8_t>& exe, const
     return names;
 }
 
+int net_rider_count(int humans, int ai_bikers) {
+    // 0x00405600:21-31: Full keeps the offline 0x10 (15 riders), Limited 9
+    // (8 riders), humans only 0x00431840() + 1 (seats are contiguous here).
+    const int riders = ai_bikers >= 2 ? 15 : ai_bikers == 1 ? 8 : humans;
+    return std::max(riders, humans);
+}
+
+namespace {
+// Plan 34: human seats 1..n-1 as player-built riders on grid rows 1..n-1
+// (0x00464218, or 0x00464258 above four humans, 0x004056a6), and the A.I.
+// on rows n..riders-1 with rider rows equal to their entry (0x00405600).
+void net_field(const RaceAssets& assets, const std::vector<uint8_t>& exe, const RaceConfig& config,
+               std::vector<Opponent>& opponents, int32_t& seat0_pos, int32_t& seat0_lat,
+               std::vector<NitroConfig>& nitro) {
+    const auto& humans = config.net.humans;
+    const int n = int(humans.size());
+    if (n < 1 || n > 8) throw std::runtime_error("net race: 1..8 humans");
+    for (int k = 0; k < n; ++k)
+        if (humans[size_t(k)].seat != k) throw std::runtime_error("net race: seats must be 0..n-1 in order");
+    const int riders = net_rider_count(n, config.net.ai_bikers);
+    const CareerTables tables = read_career_tables(exe);
+    const uint32_t grid = n > 4 ? 0x00464258u : 0x00464218u;
+    auto grid_row = [&](int seat, int32_t& pos, int32_t& lat) {
+        const auto bytes = read_exe_data(exe, grid + 8u * uint32_t(seat), 8);
+        lat = int32_t(uint32_t(bytes[0]) | uint32_t(bytes[1]) << 8 | uint32_t(bytes[2]) << 16 |
+                      uint32_t(bytes[3]) << 24);
+        pos = int32_t(uint32_t(bytes[4]) | uint32_t(bytes[5]) << 8 | uint32_t(bytes[6]) << 16 |
+                      uint32_t(bytes[7]) << 24);
+    };
+    grid_row(0, seat0_pos, seat0_lat);
+    auto all =
+        original_opponents(exe, assets.specs, config.level, riders - 1); // rows 1..riders-1, slot = row
+    std::vector<Opponent> out;
+    for (int k = 1; k < n; ++k) {
+        const HumanSeat& h = humans[size_t(k)];
+        const int rider = character_rider(h.character >= 1 && h.character <= 8 ? h.character : 1);
+        int bike = h.bike;
+        if (bike < 0) bike = tables.level_bike.at(size_t(config.level) + size_t(rider) * 5);
+        if (size_t(bike) >= assets.specs.size())
+            throw std::runtime_error("net race: bike index out of range");
+        // The human's own rider row: value, stats, weapon (0x00405c80); the
+        // brain comes from the same row's personality, ready for a hand-over.
+        Opponent o = original_opponents(exe, assets.specs, config.level, std::max(rider, 1)).back();
+        if (rider == 0) o = original_opponents(exe, assets.specs, config.level, 1).front();
+        o.spec = assets.specs[size_t(bike)];
+        nitro.push_back(nitro_from_spec(o.spec));
+        o.rider = rider;
+        o.slot = k;
+        grid_row(k, o.grid_pos, o.grid_lat);
+        o.human = k;
+        o.lane = -1;
+        out.push_back(o);
+    }
+    for (Opponent& o : all)
+        if (o.slot >= n) out.push_back(o);
+    opponents = std::move(out);
+}
+} // namespace
+
 RaceInstance build_race(const RaceAssets& assets, const std::vector<uint8_t>& exe, const RaceConfig& config) {
     RaceInstance out;
     // 1. Routes, Race ctor (player bike/rider, opponents, level, anchor,
@@ -228,10 +288,15 @@ RaceInstance build_race(const RaceAssets& assets, const std::vector<uint8_t>& ex
     }
     if (config.solo)
         for (auto& o : opponents) o.frozen = true;
+    int32_t seat0_pos = 0, seat0_lat = 0;
+    std::vector<NitroConfig> human_nitro; // seats 1..n-1
+    if (!config.net.humans.empty())
+        net_field(assets, exe, config, opponents, seat0_pos, seat0_lat, human_nitro);
     auto race = std::make_unique<Race>(std::move(route_a), std::move(route_b), assets.physics,
                                        assets.specs[size_t(assets.bike_index)], assets.rider_value,
                                        std::move(opponents), config.level, config.road_base_q8,
-                                       assets.personalities, exe);
+                                       assets.personalities, exe, seat0_pos, seat0_lat);
+    if (!config.net.humans.empty()) race->set_net(true);
     race->set_pedestrian_setup_tick(config.pedestrian_setup_tick);
     // 0x00407990 builds rows 9..14 from the 0x004c5f20 copies: base and
     // current speed are the jittered +0x1bc[level], spd_b the five words.
@@ -274,6 +339,7 @@ RaceInstance build_race(const RaceAssets& assets, const std::vector<uint8_t>& ex
     }
     // 4. RNG state, then the track ring (0x004552e0 setup on the loaded state).
     if (config.ring_rng_state) race->set_rng_state(*config.ring_rng_state);
+    if (!config.net.humans.empty()) race->set_rng_state(config.net.seed); // every client: the server's seed
     if (config.track_ring) {
         out.ring = std::make_unique<TrackRing>(*assets.course, config.level);
         // Live slice statics for the 0x004373f0 sweep (boxes via the scene's
@@ -330,10 +396,24 @@ RaceInstance build_race(const RaceAssets& assets, const std::vector<uint8_t>& ex
     race->set_crash_library(assets.actors->library(), assets.crash);
     race->set_ride_library(&assets.actors->library(), assets.attack_codes.get());
     race->set_nitro(nitro_from_spec(assets.specs[size_t(assets.bike_index)]));
+    for (size_t k = 0; k < human_nitro.size(); ++k) race->set_human_nitro(int(k) + 1, human_nitro[k]);
+    if (out.traffic && !config.net.humans.empty() && !config.net.cars) out.traffic->set_spawn_enabled(false);
     // 8. Police (0x00406b80 / 0x00407f30): periodic and DZHR cops, arrest -> busted.
     if (!config.solo) race->set_police(assets.police, assets.specs, &assets.actors->library());
     out.race = std::move(race);
     return out;
+}
+
+RaceConfig net_race_config(const std::string& course, int level, const NetRaceConfig& net) {
+    RaceConfig c;
+    c.course = course;
+    c.level = level;
+    c.career = true;
+    c.bike_from_table = true; // each human rides the character's level bike (0x004641c8)
+    c.character = net.humans.empty() ? 1 : net.humans[0].character;
+    c.mode = GameMode::mano;
+    c.net = net;
+    return c;
 }
 
 RaceSetup make_race_setup(const Assets& assets, const std::vector<uint8_t>& exe, const RaceConfig& config) {

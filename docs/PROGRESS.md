@@ -53,6 +53,24 @@ Detailed evidence is in [REVERSE_ENGINEERING.md](REVERSE_ENGINEERING.md) and tes
 
 ## Timeline
 
+### October 26, 2026: plan 34 Task 2 first slice, multi-human races
+
+- `Race::step(std::span<const uint32_t>)`: one control word per human seat;
+  `Rider::human`, `Race::human_rider(seat)`, `set_human_driven` (AI
+  hand-over at a tick), `human_outcome`/`all_humans_done` (networked: only
+  first place wins), per-seat nitro, per-rider busted.
+- The original's "local human" gates that draw `rand()` (contact sounds,
+  horn, swish) now run for every human; AI and scheduler reads of "the
+  player" (replan place/distance, parked pace, pace band, parking) use the
+  nearest human.
+- `NetRaceConfig`/`net_race_config`/`net_rider_count` in the race factory:
+  seats on grid rows (`0x00464218`, `0x00464258` above four humans), A.I.
+  rows by entry, the server seed, cars off; the `0x00442f60` handicap inside
+  the simulation.
+- One-human races take the old path: `make verify-sim` and every sim/disc
+  test unchanged. Open in Task 2: merged ring windows, LOD/traffic/police
+  centred on every human, traffic ×4 and spawn gates.
+
 ### October 26, 2026: plan 34 Tasks 4–5, wire protocol, channels and rr-netd core
 
 - `src/net/protocol.*`: 28 binary messages, bounds-checked, canonical
