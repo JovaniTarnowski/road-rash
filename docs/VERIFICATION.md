@@ -3205,3 +3205,12 @@ An SSH unlock request is pending. Task 8 remains open, including its production
 smoke and TLS renewal-hook check. Its DataChannel/blocked-UDP acceptance also
 depends on the unimplemented Task 9 peer/negotiation/fallback; no unused UDP
 range was opened. [Resume details](agent-handoffs/net-deploy-20261027.md).
+
+
+CI receipt: [multiplayer build 40523572291](https://github.com/arkits/road-rash/actions/runs/40523572291)
+passed for `a731defe26bf95480c5115033f2729e71ea10f38` (build 1m21s;
+deploy skipped by the provisioning gate). Downloaded artifact contains exactly
+`rr-netd`, `Dockerfile`, `app.json`; the executable is ELF64 x86-64. Rebuilt
+that artifact's runtime locally and verified `/net/health` returns `ok:true`
+and the exact CI revision. All test containers stopped. No multiplayer VPS
+provisioning or host configuration change was performed.

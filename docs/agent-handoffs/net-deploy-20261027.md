@@ -63,3 +63,12 @@ Owner helper PID 77961 and claim token above are released at completion.
 No VPS resource was held; all local port claims/test containers released.
 Main checkout's unrelated frontend acceptance work and pre-existing analysis
 symlinks were preserved.
+
+
+CI receipt: [multiplayer build 40523572291](https://github.com/arkits/road-rash/actions/runs/40523572291)
+passed for `a731defe26bf95480c5115033f2729e71ea10f38` (build 1m21s;
+deploy skipped by the provisioning gate). Downloaded artifact contains exactly
+`rr-netd`, `Dockerfile`, `app.json`; the executable is ELF64 x86-64. Rebuilt
+that artifact's runtime locally and verified `/net/health` returns `ok:true`
+and the exact CI revision. All test containers stopped. No multiplayer VPS
+provisioning or host configuration change was performed.
