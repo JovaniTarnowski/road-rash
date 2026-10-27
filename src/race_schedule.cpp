@@ -175,19 +175,23 @@ void pace_band(std::array<std::optional<int32_t>, 16>& by_place, int player_plac
 }
 
 int32_t Race::schedule_interval(const Rider& r, bool half) const {
-    const int32_t camera = ring_ ? ring_->front_q8() - 0x5000 : int32_t(camera_position()) + 0x100;
+    // Plan 34 C2: LOD distance from the nearest human's ring camera.
+    const TrackRing* nearest = nearest_ring(half ? r.half_mirror.position : r.bike.i32(0x1c));
+    const int32_t camera = nearest ? nearest->front_q8() - 0x5000 : int32_t(camera_position()) + 0x100;
     return live_interval(half ? r.half_slice_present : r.bike_slice_present,
                          half ? r.half_mirror.position : r.bike.i32(0x1c), camera,
-                         half ? r.half_mirror.speed : r.bike.i32(0xec), ticks_, &r == &riders_[0]);
+                         half ? r.half_mirror.speed : r.bike.i32(0xec), ticks_, human(r));
 }
 
 void Race::schedule_pass(uint32_t controls, bool countdown) {
+    (void)controls; // plan 34: each rider's word comes from controls_ via word()
     // 0x00438170(0): every node whose +0x0c is due runs 0x00437e60 with
     // param_3 = (+0x2c != 0) sampled before the call.
     std::vector<ScheduleNode> order = schedule_order();
     const int32_t camera = ring_ ? ring_->front_q8() - 0x5000 : int32_t(previous_camera_position_) + 0x100;
     std::vector<std::pair<int32_t, size_t>> cars;
     car_scan_keys_.clear();
+    update_traffic_windows(false);
     if (traffic_ &&
         traffic_->begin_schedule(
             route_of(riders_[0]), camera + 0x5000, [this] { return random(); }, uint32_t(ticks_))) {
@@ -239,9 +243,9 @@ void Race::schedule_pass(uint32_t controls, bool countdown) {
         Rider& r = riders_[size_t(n.rider)];
         if (r.cop && cop_removal_pending_) continue; // 0x004073a0 already unlinked it
         if (n.type == 8) {
-            if (r.half_sched_next <= ticks_) run_half_node(r, controls, countdown);
+            if (r.half_sched_next <= ticks_) run_half_node(r, word(r), countdown);
         } else if (r.sched_next <= ticks_)
-            run_bike_node(r, controls, countdown);
+            run_bike_node(r, word(r), countdown);
         if (schedule_.size() != order.size()) {
             // The original walks the live ring (0x00438170): a node inserted
             // mid-pass (the periodic cop, 0x00406b80) behind the cursor is met
@@ -277,7 +281,12 @@ void Race::parked_pace_band() {
             by_place[size_t(r.place - 1)] = r.bike.i32(0x314);
             who[size_t(r.place - 1)] = &r;
         }
-    pace_band(by_place, riders_[0].place);
+    // Plan 34: the band forms around every human in seat order (one human:
+    // the original band around the player).
+    for (int seat = 0; seat < humans(); ++seat) {
+        const Rider& h = riders_[size_t(human_rider(seat))];
+        if (seat == 0 || human(h)) pace_band(by_place, h.place);
+    }
     for (size_t k = 0; k < 16; ++k)
         if (who[k]) who[k]->bike.i32(0x314) = *by_place[k];
 }
@@ -302,7 +311,7 @@ void Race::run_half_node(Rider& r, uint32_t controls, bool countdown) {
 }
 
 void Race::think_half(Rider& r, uint32_t controls, bool countdown) {
-    const bool player = &r == &riders_[0];
+    const bool player = human(r);
     if (r.finished) return;
     // The countdown ticks run the whole think (0x00407f30 advances the
     // riding animation from tick 1 on napa-field-l1-20261017).
@@ -363,7 +372,7 @@ void Race::run_bike_node(Rider& r, uint32_t controls, bool countdown) {
     }
     // Think 0x00407a90 (nulled while parked): the player's nitro charge
     // 0x0040b1a0; its animation mirror is part of the native riding block.
-    if (!r.parked && &r == &riders_[0] && !countdown) nitro_charge_tick(r);
+    if (!r.parked && human(r) && !countdown) nitro_charge_tick(r);
     // Move 0x004060b0.
     if (r.live)
         move_bike_live(r, controls, countdown);
@@ -372,7 +381,10 @@ void Race::run_bike_node(Rider& r, uint32_t controls, bool countdown) {
     // 0x00437e60: a bike left on an end slice of the ring parks (+0xe8, edx 0).
     if (ring_ && r.bike_slice_present) {
         const int32_t s = b.i32(0x1c) >> 8;
-        if (s < (ring_->back_q8() >> 8) || s > (ring_->front_q8() >> 8) - 1) park(r);
+        bool outside = true; // every window (plan 34 C2; one ring: the original test)
+        for (const TrackRing* w : rings_)
+            if (w && !(s < (w->back_q8() >> 8) || s > (w->front_q8() >> 8) - 1)) outside = false;
+        if (outside) park(r);
     }
     r.sched_interval = schedule_interval(r, false);
     // Lateral beyond +-0xc8000: 0x00406940 with edx 1 clamps a live bike.
@@ -381,17 +393,14 @@ void Race::run_bike_node(Rider& r, uint32_t controls, bool countdown) {
     r.sched_next = ticks_ + r.sched_interval;
     // 0x00438108 window test on a run that began with a slice: within 0x1e00
     // of the ring front or 0x800 of the ring back parks the bike.
-    if (slice && ring_) {
-        const int32_t pos = b.i32(0x1c);
-        if (ring_->front_q8() - pos < 0x1e00 || pos - ring_->back_q8() < 0x800) park(r);
-    }
+    if (slice && ring_ && outside_windows(b.i32(0x1c), 0x1e00, 0x800)) park(r);
 }
 
 void Race::move_bike_live(Rider& r, uint32_t controls, bool countdown) {
     // 0x004060b0 live branch: physics 0x0043a580, then (uncrashed) the half
     // copy 0x004067d0 and standings, and the +0x30c/+0x310 sums.
     Bike& b = r.bike;
-    const bool player = &r == &riders_[0];
+    const bool player = human(r);
     const int32_t before = b.i32(0x1c);
     const auto& road = route_of(r);
     const uint32_t node_before = road[std::min(r.sample, road.size() - 1)].node;
@@ -451,7 +460,7 @@ void Race::move_bike_live(Rider& r, uint32_t controls, bool countdown) {
 }
 
 void Race::refresh_place(Rider& r) {
-    const bool player = &r == &riders_[0];
+    const bool player = human(r);
     const size_t i = size_t(&r - riders_.data());
     int place = 1;
     for (size_t j = 0; j < riders_.size(); ++j) {
@@ -477,8 +486,8 @@ void Race::live_standings(Rider& r) {
 
 void Race::park(Rider& r) {
     // 0x00406940 with edx 0 on a live opponent (+0x324 != 0).
-    if (!r.live || &r == &riders_[0]) return;
-    if (r.cop) { // single player: 0x004073a0 deletes the cop instead of parking it
+    if (!r.live || human(r)) return; // humans never park (0x00406940 skips +0x324 == 0)
+    if (r.cop) {                     // single player: 0x004073a0 deletes the cop instead of parking it
         cop_removal_pending_ = true;
         return;
     }
@@ -512,7 +521,8 @@ void Race::park(Rider& r) {
     const auto& road = route_of(r);
     r.virtual_section = section_start(road, r.sample);
     r.virtual_local = int32_t(r.sample - r.virtual_section) * 256;
-    b.i32(0x314) = parked_pace(b.i32(0x310), b.i32(0x30c), riders_[0].bike.i32(0x1c) < b.i32(0x1c));
+    b.i32(0x314) =
+        parked_pace(b.i32(0x310), b.i32(0x30c), nearest_human(b.i32(0x1c)).bike.i32(0x1c) < b.i32(0x1c));
     r.live = false;  // 0x00431960(bike, 0)
     r.parked = true; // +0xdc/+0xe0 of bike and half to +0x31c/+0x320 / +0x200/+0x204
     b.u8(0xc0) &= 0xfc;
@@ -528,7 +538,7 @@ void Race::move_bike_parked(Rider& r) {
         int32_t step = 0;
         const int32_t dt = b.i32(0x18), pace = b.i32(0x314);
         if (b.i32(0x318) < 1) {
-            if (riders_[0].bike.i32(0x2f4) == 0)
+            if (nearest_human(b.i32(0x1c)).bike.i32(0x2f4) == 0)
                 step = dt * pace >> 8;
             else if (level_ == 3)
                 step = sar(pace * 3, 2) * dt >> 8;
@@ -581,26 +591,31 @@ void Race::move_bike_parked(Rider& r) {
     // Wake test against the ring trackers in this section (TrackRing walks
     // both split branches in lockstep, so road[t0]/road[t1] are the tracker
     // positions on r's branch).
-    if (!ring_) return;
-    const int32_t back = ring_->back_q8() >> 8, front = ring_->front_q8() >> 8;
-    const size_t t0 = size_t(back + tracker_back), t1 = size_t(back + tracker_front);
-    if (t1 >= road.size()) return;
-    const uint32_t section = road[r.virtual_section].section;
-    const bool has0 = road[t0].section == section, has1 = road[t1].section == section;
-    if (!has0 && !has1) return;
-    const int32_t length = section_length(road, r.virtual_section);
-    const int32_t lo = has0 ? int32_t(road[t0].local) * 256 : 0;
-    const int32_t hi = has1 ? int32_t(road[t1].local) * 256 : length * 256 - 1;
-    const int32_t v = r.virtual_local;
-    if (v < lo || hi < v) return;
-    bool use0 = has0;
-    if (has0 && has1) use0 = std::abs(v - lo) <= std::abs(v - hi);
-    const int32_t slice = int32_t(use0 ? t0 : t1);
-    // 0x00449910: step whole slices from the tracker's slice, clamped to the ring.
-    int32_t steps = sar(v - (use0 ? lo : hi), 8);
-    if (steps >= 1 && front <= steps + slice) steps = front - slice - 1;
-    if (steps < 0 && steps + slice < back) steps = back - slice;
-    wake(r, size_t(slice + steps));
+    // Plan 34 C1: every human's window, in seat order; the first that
+    // reaches the rider wakes it (one ring: the original test).
+    for (const TrackRing* w : rings_) {
+        if (!w) continue;
+        const int32_t back = w->back_q8() >> 8, front = w->front_q8() >> 8;
+        const size_t t0 = size_t(back + tracker_back), t1 = size_t(back + tracker_front);
+        if (t1 >= road.size()) continue;
+        const uint32_t section = road[r.virtual_section].section;
+        const bool has0 = road[t0].section == section, has1 = road[t1].section == section;
+        if (!has0 && !has1) continue;
+        const int32_t length = section_length(road, r.virtual_section);
+        const int32_t lo = has0 ? int32_t(road[t0].local) * 256 : 0;
+        const int32_t hi = has1 ? int32_t(road[t1].local) * 256 : length * 256 - 1;
+        const int32_t v = r.virtual_local;
+        if (v < lo || hi < v) continue;
+        bool use0 = has0;
+        if (has0 && has1) use0 = std::abs(v - lo) <= std::abs(v - hi);
+        const int32_t slice = int32_t(use0 ? t0 : t1);
+        // 0x00449910: step whole slices from the tracker's slice, clamped to the ring.
+        int32_t steps = sar(v - (use0 ? lo : hi), 8);
+        if (steps >= 1 && front <= steps + slice) steps = front - slice - 1;
+        if (steps < 0 && steps + slice < back) steps = back - slice;
+        wake(r, size_t(slice + steps));
+        return;
+    }
 }
 
 void Race::wake(Rider& r, size_t sample) {

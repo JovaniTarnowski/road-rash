@@ -415,9 +415,10 @@ RaceBounds race_bounds(const std::vector<uint8_t>& exe, const Course& course, in
         throw std::runtime_error("Original course out of range (1..5)");
     if (level < 0 || level > 4) throw std::runtime_error("Race level out of range (0..4)");
     // Player start: 0x00405600 builds the player from the start-grid row at
-    // 0x00464218[level] (8 bytes: lateral, position). This EXE holds
-    // (16384, 0x3200) at levels 0..3 and (16384, 0x3300) at level 4
-    // (samples 50/51; the 0x004552e0 ring origin is the constant 0x3200).
+    // 0x00464218 + slot*8 (8 bytes: lateral, position), slot = network seat
+    // DAT_004b8a10 (0 offline; plan 34 Task 2 correction). Reading it by
+    // level, as here, gives seat `level`'s position: 0x3200 for 0..3,
+    // seat 4's 0x3300 for level 4. build_race keeps 0x3200 (seat 0).
     // read_exe_data throws when the table is missing/unreadable.
     const uint32_t row = 0x00464218u + 8u * uint32_t(level);
     const auto position = read_exe_data(exe, row + 4, 4);

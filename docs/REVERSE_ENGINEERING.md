@@ -2339,6 +2339,88 @@ traced and inferred items labelled, is in [MULTIPLAYER.md](MULTIPLAYER.md).
     "DUEL is the mano cutscene" reading is withdrawn;
   - restroom patterns 5/6/7 for mode 3 unconnected/host/client
     (`0x00444fb0`).
+- **Start grid `0x00464218` is indexed by network slot, not level**
+  (October 26, 2026, plan 34 Task 2): `0x00405600` reads
+  `PTR_DAT_00464298 + DAT_004b8a10 * 8` (`DAT_004b8a10` = local network
+  slot, 0 offline), and the table holds eight seats: lateral 16384, −3616,
+  −23616, −43616 at position 0x3200 (seats 0–3) and again at 0x3300 (seats
+  4–7); `0x00464258` swaps the rows for more than four humans. The
+  `race_bounds` comment "0x00464218[level]" and the "level-4 start 0x3300
+  waits for the grid port" note in `race_setup.cpp` therefore misread the
+  table: offline the player starts at 0x3200 on every level, as the game
+  already does. Static evidence only.
+- **Networked traffic gates** (October 26, 2026, plan 34 Task 2 C3; static):
+  `0x0044f040` (every send tick) calls `0x0044f0d0(local bike)`, which picks
+  the nearest live remote rider (`+0x300` set, `+0x324 == −1`, sharing the
+  slice `+0x36 & 3` roadway bits) ahead within 0x4600 (distance ≥ 0) and
+  behind within 0x2d00; it sets `DAT_00475688` (ahead) / `DAT_0047568c`
+  (behind) and hands cars near them to that peer (`0x0044f270`/`0x0044f300`,
+  transport). `0x0044df60` then returns before its `_rand()` for an odd kind
+  and, with the ahead flag, unless the spawn slice position (+8, plus 0x80 for
+  odd kinds) ≤ the local bike `+0x1c`; with the behind flag, unless ≥ it.
+  `0x0044dd00` shifts the density left by 2 (char) when networked. The port
+  applies the gates per human window; the hand-offs are not needed because
+  every client simulates every car. The shared-roadway test is approximated
+  as "same route or a single-road sample".
+- **Port simulation inventory** (October 26, 2026, plan 34 Task 2 Step 1):
+  the native simulation's player-centred reads are listed with their
+  generalisation in [plan 34 "Task 2 notes"](plans/34-multiplayer.md). A
+  finding for the port: the player-only contact sound blocks
+  (`race.cpp` contact paths of `0x004049c0`/`0x004052c0`, the car horn of
+  `0x0044efa0`, the weapon swish of `0x004096f0`) **draw `rand()`** for the
+  sound choice, so in the original the local human changes the RNG stream.
+  With every client simulating every human, those draws run for every human
+  rider on every client (identical streams); only the playback is filtered
+  to the local human.
 - **Correction.** Plan 09 assumed two-player lockstep exchanging controls. The
   code replicates state (snapshots and events), and up to eight humans can
   play over TCP/IP or IPX.
+
+## Original steal resolver component oracle (October 26, 2026)
+
+The earlier [steal gate audit](agent-handoffs/steal-gates-review-20261026.md)
+used static assembly and identified missing opponent animation coverage in
+old farm traces. `oracle/steal_fixture.c` now directly calls the original
+`0x004096f0` on synthetic linked rider halves/bikes in a private process.
+It exits before game startup, uses synthetic animation descriptors/banks,
+sets normal-damage immunity and disables player audio/network output.
+Original `0x00441750` mode 3 supplies controlled rolls 0/1/2/3; the verified
+call site at `0x0040981c` is redirected only to count and forward that call.
+Selection, reach, gates, transfer and animation functions execute original
+code. The disc EXE remains unmodified on disk.
+
+Measured 31 cases (13 successful transfers, 15 rejections before the steal
+roll, three eligible-but-failed rolls):
+
+- Attacker graphics descriptor `&0x200000` and `&0x400000` independently
+  trigger the resolver, as does attacker frame 2 without either bit. With
+  neither event, there is no roll (`0x409712–0x409723`).
+- Victim half `+0x81` values 0, 1 and signed -1 allow a transfer; 2 and
+  127 reject it before RNG. This measures the signed `jg` at `0x4097dc`
+  and confirms that the native `int8_t` frame type needs no correction.
+- Victim half `+0x1cc == tick` rejects; `tick-1` permits. The high-bit
+  deadline rejects at tick 100, but permits at unsigned tick `0x80000001`
+  when deadline is `0x80000000` (`0x4097cb`). An attacker's future deadline
+  does not block stealing; success writes **attacker** `tick+300`, leaving
+  the victim deadline unchanged (`0x409888–0x40988d`).
+- Active attacker weapon 1, active victim weapon 0/3, victim non-attack
+  animation and victim animation 9 each reject before the roll. An eligible
+  club-active victim whose inventory is a chain transfers the chain into
+  both attacker words. Victim inventory AND active weapon become zero
+  (`0x4097e8–0x409873`); inventory alone is not the eligibility field.
+- `0x409c10`: longitudinal separation 63 passes/64 rejects; fist lateral
+  separation 20479 passes/20480 rejects; height separation 12287 passes/
+  12288 rejects. Opposite attack side rejects. A null scan slice rejects.
+- Each eligible case invokes the counted steal-roll call exactly once.
+  Controlled rolls 0, 1 and 2 reject; 3 transfers. No rejected eligibility
+  case reaches that call. This does not test CRT RNG advancement.
+- Successful animation selection matches the EXE's steal table after the
+  victim's active weapon has been cleared; attacker queues 2 and victim
+  selects/queues 2 (`0x40989c–0x4098e5`).
+
+Receipt: local `analysis/oracle/steal-fixture/46883e0ec8734a20b8c9496c15184dc7/receipt.json`
+in the RE worktree; trace SHA-256
+`f9cd89ec99f22187ae55c87162a74c471e712090006afeb17f061924a7355a01`.
+These are original component measurements, not native replay, live gameplay,
+real-asset animation verification, normal damage or a free-running steal.
+The plan 10 Task 6 / plan 16 Task 3 full steal acceptance remains open.

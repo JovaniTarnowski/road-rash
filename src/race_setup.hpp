@@ -36,6 +36,24 @@ using AttackCodes = std::array<std::array<std::array<int8_t, 4>, 2>, 2>;
 AttackCodes read_attack_codes(const std::vector<uint8_t>& exe); // 0x004644f8 / 0x00464518, 8 words each
 NitroConfig nitro_from_spec(const BikeSpec&); // words 77..82 (+0x14c); all zero -> NitroConfig{}
 
+// Plan 34: an online mano-a-mano race. Empty humans = offline, bit-identical
+// to the single-player path. Seat k drives rider k (grid row k, 0x004317a0);
+// seat 0 is built through the player path below (character/level bike).
+struct HumanSeat {
+    int seat = 0;      // 0..7, contiguous
+    int character = 1; // 1..8 front-end character (0x00415fc0)
+    int bike = -1;     // BIKESPEC index; -1 = the character's level bike (0x004641c8)
+    std::string alias;
+};
+struct NetRaceConfig {
+    std::vector<HumanSeat> humans;
+    int ai_bikers = 2; // 0 humans only, 1 limited (8 riders), 2 full (15 riders); 0x00405600
+    bool cars = true;  // strings 398-399
+    uint32_t seed = 0; // race RNG state at ring setup (replaces local seeding)
+};
+// Riders in a networked race (0x00405600: DAT_004642d4 - 1).
+int net_rider_count(int humans, int ai_bikers);
+
 struct RaceConfig {
     std::string course = "NAPA";  // original file name: "CITY", "HIWAY", "MEDLY", "NAPA", "CANYN"
     int level = 0;                // 0..4 (DAT_004b8a12)
@@ -61,6 +79,7 @@ struct RaceConfig {
     // 0x004078f0 from the time-seeded stream); unset keeps personality 0's unjittered words.
     std::optional<std::array<std::array<int32_t, 5>, 6>> spare_levels;
     std::function<void(Race&)> prepare; // runs after ctor, before ring (demo hold)
+    NetRaceConfig net;                  // plan 34; empty = offline
 };
 // Original per-course/per-level start and finish (plan 17 Task 1 traces the
 // exact nodes; until then the grid slot-0 position and the route finish).
@@ -94,6 +113,7 @@ struct RaceInstance { // race-scoped: rebuilt on restart
     std::unique_ptr<TrafficSystem> traffic;
     std::unique_ptr<PedestrianSystem> pedestrians;
     std::unique_ptr<TrackRing> ring;
+    std::vector<std::unique_ptr<TrackRing>> seat_rings; // plan 34: ring windows of seats 1..n-1
     std::unique_ptr<Race> race;
 };
 RaceAssets load_race_assets(const Assets&, const std::vector<uint8_t>& exe, const RaceConfig&);
@@ -108,4 +128,8 @@ struct RaceSetup {
 };
 // The only production/replay constructor of Race; tests with synthetic routes may build Race directly.
 RaceSetup make_race_setup(const Assets&, const std::vector<uint8_t>& exe, const RaceConfig&); // load + build
+// Plan 34: the RaceConfig every client builds from a server Start: seat 0's
+// character and level bike through the player path, Thrash rules, live
+// scheduler, the server's seed. `course` is the original file name.
+RaceConfig net_race_config(const std::string& course, int level, const NetRaceConfig&);
 } // namespace rr

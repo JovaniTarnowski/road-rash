@@ -292,11 +292,11 @@ int Race::human_rider(int slot) const;      // view helper; never read by the si
 }
 ```
 
-- [ ] **Step 1: Inventory.** List every place the simulation reads "the player": `riders_[0]` special cases, camera distance, ring centre, traffic and police anchors, HUD-coupled state, `set_demo_hold`. Use `rg` and LSP references. Record the list and the generalisation chosen for each in this plan's Task 2 notes and in REVERSE_ENGINEERING.md.
-- [ ] **Step 2: Separate view from simulation.** Move camera and HUD perspective, sound listener and render-only state out of the simulation path, so the simulation never reads them. Offline goldens must stay bit-identical; run `make verify-sim` and the oracle tests.
-- [ ] **Step 3: Generalise to a set of humans** (the "several centres" rule above). One human must take exactly the old code path, re-proved by the goldens.
-- [ ] **Step 4: Multiplayer gameplay rules.** Grid layout and AI counts (Task 1), countdown 0x168, traffic ×4 and the spawn gates, the in-simulation handicap, a departed human handing over to the AI brain at a given tick, and per-human outcome without ending the race.
-- [ ] **Step 5: Tests.**
+- [x] **Step 1: Inventory.** (Done October 26: "Task 2 notes" below.) List every place the simulation reads "the player": `riders_[0]` special cases, camera distance, ring centre, traffic and police anchors, HUD-coupled state, `set_demo_hold`. Use `rg` and LSP references. Record the list and the generalisation chosen for each in this plan's Task 2 notes and in REVERSE_ENGINEERING.md.
+- [ ] **Step 2: Separate view from simulation.** (Partly done October 26: the simulation reads the view's seat nowhere; `bike()`/`camera()` still mean seat 0 and the camera still follows rider 0, which is a deterministic shared centre until C1 below.) Move camera and HUD perspective, sound listener and render-only state out of the simulation path, so the simulation never reads them. Offline goldens must stay bit-identical; run `make verify-sim` and the oracle tests.
+- [ ] **Step 3: Generalise to a set of humans** (Done October 26, all classes: A, B, C1 one ring window per seat, C2 nearest-window LOD and every-window parking/wake, C3 one traffic window per seat with its own timers, slice cursor and 16-car pool partition, retirement/teardown outside every window, C4 police anchored on the human whose think or ring window spawns it with every human's relationship row, D nearest human for the AI, E per-human outcome.) (the "several centres" rule above). One human must take exactly the old code path, re-proved by the goldens.
+- [ ] **Step 4: Multiplayer gameplay rules.** (Done: grid rows and A.I. counts, the in-simulation handicap, AI hand-over at a tick, per-human outcome; the 0x168 countdown is the client's tick mapping (`countdown_step` for race ticks < 0x168). Traffic ×4 and the `0x0044df60` gates landed with C3.) Grid layout and AI counts (Task 1), countdown 0x168, traffic ×4 and the spawn gates, the in-simulation handicap, a departed human handing over to the AI brain at a given tick, and per-human outcome without ending the race.
+- [ ] **Step 5: Tests.** (`tests/race_multi_test.cpp` covers the first three bullets plus C1/C3/C4 cases; every offline test and `make verify-sim` unchanged.)
   - Two and eight humans with scripted inputs produce identical per-tick field hashes across two runs.
   - Swapping which slot the *view* follows changes no simulation hash.
   - A human handing over to AI at tick T is deterministic.
@@ -304,6 +304,25 @@ int Race::human_rider(int slot) const;      // view helper; never read by the si
 - [ ] **Step 6:** Commit: `race: multi-human deterministic races`.
 
 ---
+
+#### Task 2 notes: inventory of player-centred simulation reads (October 26, 2026)
+
+Found with `rg 'riders_\[0\]|player|camera'` over `src/race*.cpp`,
+`src/traffic.cpp`, `src/track_ring.cpp`, `src/police.cpp`,
+`src/pedestrians.cpp` (baseline `796f251`). Classes and the generalisation
+chosen for each (one human must reduce to the old path):
+
+| Class | Sites | Generalisation |
+| --- | --- | --- |
+| **A. Who is driven by controls** | `Race::step` (`step_rider(..., i == 0)`), `think_half`/`run_bike_node`/`run_half_node`/`move_bike_live` `player` flags (`race_schedule.cpp:305/394/454`), nitro charge (`:366`), crash recovery controls, fight start from controls (`race.cpp:3645`), `set_demo_hold` | per-rider human slot; `step(span)` gives each human its own word; AI riders keep the AI branch; demo hold applies to rider 0 only offline |
+| **B. "Local human" gates with simulation effects** | horn `random() % 10` on car contact (`race.cpp:765`), player-only grunt/crash sound blocks in the contact code (`:1106/1126/1155/1255/1419/1635/1832/2006/2078`), swish events (`:3852`), pedestrian contact (`race_pedestrians.cpp:541`) | the original's "local human" (`+0x324 == 0`) becomes **any human**: every client runs the same draws. Sound events carry their rider; the view keeps only the local human's (presentation filter, never fed back) |
+| **C1. Camera / ring centre** | `camera_position()` follows rider 0's half (`race.cpp:4090`); `update_camera`, `camera_heading_`; ring advance by camera delta (`:4372`); ring setup and DZHR spawns (`race_pedestrians.cpp:50/84/114/273/313`) | **one ring window per human, merged**: slices are built once when they enter the union of the human windows, in ascending human-slot order, so every client consumes ring draws identically; with one human the union is the old window. The camera itself becomes a per-view object outside the simulation |
+| **C2. Scheduler LOD and parking** | `live_interval(..., ring_camera, ..., player_object)` (`race_schedule.cpp:181`), window parking (`:193`), parked pace vs the player (`:515`), wake gating on the player's crash (`:531`), standings `pace_band` from the player's place (`:280`) | distance to the **nearest human** ring camera; `player_object` = any human's bike/half; parked pace and pace band against the nearest human; crash gate on that human |
+| **C3. Traffic** | `TrafficSystem::step(road, camera+0x100, camera+0x5100, ..., player pos/lat/speed)` (`race.cpp:4380`), countdown step (`:4175/4202`), dual-roadway route = player's route (`:726/736/4311`) | spawn window per human with the original networked gates (`0x0044f0d0`/`0x0044df60`: no spawn between a human and the nearest other human ahead within 0x4600 / behind within 0x2d00, no odd kinds) and density ×4 when `net` is set; car route per car, not the player's |
+| **C4. Police** | `spawn_cop` from rider 0 (`race.cpp:3429`), player relationship toward the cop (`:3495`), chase target | target and spawn anchor = nearest eligible human; relationship rows for every human |
+| **D. AI reading the player** | replan reads the player's place (`race.cpp:2582`) and distance (`:2633`), AI attack stand-in strikes the player (`:3648`) | nearest human by track position (ties: lower slot) |
+| **E. Race end** | `finished()`/`Race::step` early return on rider 0, outcome on rider 0 | per-human outcome; the race runs until every human is done (plus the plan's 60 s rule); `finished()` keeps meaning "the view's human" |
+| **View only (no change to the sim)** | `bike()`, `route()`, `camera()`, `horizon_scroll`, `player_in_tunnel`, `last_target`, HUD, sound listener | become functions of a view slot (`Race::human_rider(slot)`), default slot 0 |
 
 ### Task 3: Snapshots, rollback core and cross-platform determinism
 
@@ -353,6 +372,8 @@ class Rollback {
 - Add: `third_party/libdatachannel` (pinned, as a CMake subproject or FetchContent with a hash), licence files
 - Modify: `CMakeLists.txt`, `docs/USER_GUIDE.md` (third-party notice)
 
+**Done (October 26, 2026):** `rr-net` (codecs, loopback network; no SDL) always builds; `rr-net-transport` adds libdatachannel v0.24.6 (pinned commit, OpenSSL static on macOS) behind `RR_NET_TRANSPORT` (default on for native desktop). Protocol notes: `Start.your_seat` and Frames words use the **race slot** (humans compacted in seat order); `StartHuman.seat` is the room seat; `Welcome` is also sent when a seat is taken, carrying the seat token; `Ready` and `RoomListReply` were added. The type byte and Hello's protocol field are frozen so old clients get `Reject{protocol}`.
+
 **Interfaces:**
 ```cpp
 namespace rr::net {
@@ -374,10 +395,10 @@ std::pair<std::unique_ptr<Channel>, std::unique_ptr<Channel>> loopback_pair(NetS
 }
 ```
 
-- [ ] **Step 1: Codec tests first.** Every message round-trips. Truncated, oversized, wrong-version and out-of-range messages are rejected. Golden byte vectors for each message are committed as synthetic fixtures.
-- [ ] **Step 2: Implement codecs and the libdatachannel WebSocket channel.** The library's callbacks fill a lock-protected queue, and the main thread only polls, so the simulation never runs on a network thread.
-- [ ] **Step 3: Fuzz target** in the plan 22 set and CI.
-- [ ] **Step 4:** Commit: `net: protocol codecs and WebSocket channel`.
+- [x] **Step 1: Codec tests first.** Every message round-trips. Truncated, oversized, wrong-version and out-of-range messages are rejected. Golden byte vectors for each message are committed as synthetic fixtures.
+- [x] **Step 2: Implement codecs and the libdatachannel WebSocket channel.** The library's callbacks fill a lock-protected queue, and the main thread only polls, so the simulation never runs on a network thread.
+- [x] **Step 3: Fuzz target** in the plan 22 set and CI. (`fuzz/fuzz_net_protocol.cpp`, seeds from `fuzz-seeds`, run by `tools/fuzz.sh`; the repository has no fuzz CI workflow yet, that is plan 22's open item.)
+- [x] **Step 4:** Commit: `net: protocol codecs and WebSocket channel`.
 
 ---
 
@@ -386,20 +407,22 @@ std::pair<std::unique_ptr<Channel>, std::unique_ptr<Channel>> loopback_pair(NetS
 **Files:**
 - Create: `server/CMakeLists.txt`, `server/main.cpp`, `server/room.hpp`, `server/room.cpp`, `server/sealer.hpp`, `server/sealer.cpp`, `server/Dockerfile`, `tests/server_room_test.cpp`, `tests/server_sealer_test.cpp`, `tools/net_bots.cpp`
 
-- [ ] **Step 1: Room tests first** (the server logic is a pure class, driven by in-memory channels):
+**Built (October 26, 2026):** `server/room.*` (lobby, rooms, race clock, results), `server/sealer.*`, `server/main.cpp` (`/net/health` on a plain HTTP port, JSON logs, `.rrlog` race logs pruned after 7 days), `server/Dockerfile`; `server/CMakeLists.txt` also builds standalone. Rules chosen: a race starts when every seat has a character and a course vote (≥ `min_humans`, default 2); the course is the most-voted, ties go to the host's vote, then the lowest course; a tick is sealed 3 ticks after its time; a flood (a full burst dropped in one second) or 4 throttled seconds close the connection.
+
+- [x] **Step 1: Room tests first** (the server logic is a pure class, driven by in-memory channels):
   - create, join by code, list public rooms;
   - full-room, wrong-fingerprint and wrong-digest rejections;
   - character pick, course vote, chat, start;
   - leave, and the host leaving before start (the next seat becomes host);
   - reconnect by seat token, and idle and lobby timeouts.
-- [ ] **Step 2: Sealer tests.** Inputs on time, inputs late (sealed as repeat-last with the late flag), a player vanishing (handed to AI at a sealed tick), unacknowledged frames repeated, and hash comparison with desync handling.
-- [ ] **Step 3: Implement.**
+- [x] **Step 2: Sealer tests.** Inputs on time, inputs late (sealed as repeat-last with the late flag), a player vanishing (handed to AI at a sealed tick), unacknowledged frames repeated, and hash comparison with desync handling.
+- [x] **Step 3: Implement.**
   - One event loop; 60 Hz per racing room from a monotonic clock, catching up after a stall without drift.
   - Limits as in the architecture section.
   - Structured logs, a `/net/health` endpoint, and counters (rooms, players, round trip, late inputs, desyncs).
   - Race logs kept 7 days.
-- [ ] **Step 4: Headless bots.** `tools/net_bots.cpp` connects N scripted clients that run the real `Rollback` + `Race`. It needs the local disc data, as the game does. Use it for end-to-end tests against a local `rr-netd`, and later against staging.
-- [ ] **Step 5:** Commit: `server: rr-netd rooms and input sealer`.
+- [ ] **Step 4: Headless bots.** (Needs the Task 6 client: the bots run the real `net::Client` + `Rollback` + `Race`.) `tools/net_bots.cpp` connects N scripted clients that run the real `Rollback` + `Race`. It needs the local disc data, as the game does. Use it for end-to-end tests against a local `rr-netd`, and later against staging.
+- [x] **Step 5:** Commit (Steps 1–3; Step 4 lands with Task 6): `server: rr-netd rooms and input sealer`.
 
 ---
 

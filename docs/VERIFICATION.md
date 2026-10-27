@@ -18,6 +18,65 @@
 - Not checked: Safari/Firefox, real mobile devices, browser fullscreen
   on hardware.
 
+## Plan 34 Task 2 C3/C4: traffic and police per human (October 26, 2026)
+
+- `make verify-sim BUILD_DIR=build-p34`: passed. `ctest -j8`: 111/111, 0
+  skipped (all traffic, actor_traffic, police and oracle tests unchanged).
+- `race_multi` (NAPA L0, seat 0 brakes, seat 1 accelerates): 5,626 car-ticks
+  inside seat 1's own window beyond seat 0's (ticks 1200–2400); no odd-kind
+  car in any tick; a cop spawned from seat 1 at sample 404 inside its
+  window, with the same relationship row on both humans. Before the pool
+  partition all 16 (then 32) slots filled in seat 0's window — the reason
+  each window now owns 16 slots.
+
+## Plan 34 Task 2 C1/C2 and rr-netd image (October 26, 2026)
+
+- `make verify-sim BUILD_DIR=build-p34`: passed; `ctest -L sim`: 19/19.
+- `race_multi` new C1 case (NAPA L0, full field): seat 0 brakes, seat 1
+  accelerates 2400 ticks; seat 0 window samples 2..130, seat 1 at sample 311
+  inside its own window 263..391, two live A.I. near seat 1.
+- Docker (OrbStack): `docker build --platform linux/amd64 -f server/Dockerfile`
+  over a context of only `cmake/net.cmake`, `src/net`, `server` — passed,
+  image 86 MB; `docker run` → `GET /net/health` 200 with
+  `"rev":"7402147…"`, SIGTERM logs `stop`. This is also the first Linux
+  (GCC 12) compile of `src/net` and `server/`.
+
+## Plan 34 Task 2 first slice: multi-human races (October 26, 2026)
+
+- `make verify-sim BUILD_DIR=build-p34`: passed after the change (receipt
+  under the worktree's `analysis/agent-gates/oracle-*`), so the receipted
+  human capture stays bit-identical.
+- `ctest --test-dir build-p34 -j8`: 111/111 passed, 0 skipped (goldens from
+  the main checkout), including every sim/disc test.
+- `race_multi` (new, disc, ~10 s): 6-human limited field layout (grid
+  `0x00464258`, seats on rows, A.I. rows by entry), humans-only field, two-
+  and eight-human 1500-tick runs with identical per-tick field hashes, view
+  seat 7 vs 0 identical, AI hand-over at tick 700 deterministic and
+  unchanged before T.
+- Not covered yet: merged ring windows, LOD/traffic/police per human,
+  traffic gates; cross-platform identity (Task 3).
+
+## Plan 34 Tasks 4–5: protocol, channels, rr-netd core (October 26, 2026)
+
+- Worktree build `build-p34` (Debug, macOS ARM64, AppleClang):
+  `cmake --build build-p34 --parallel` clean; full `ctest` 108/108 passed,
+  0 skipped (goldens from the main checkout's `analysis/oracle`, symlinked),
+  before the server tests were added; then
+  `ctest -R "net_|server_"` 4/4 (`net_protocol`, `net_ws`, `server_sealer`,
+  `server_room`).
+- `net_ws` uses a real localhost libdatachannel WebSocket server/client:
+  100 ordered messages, a 18,445-byte LogChunk, close propagation.
+- Strict warnings: every new file passes `-Wall -Wextra -Wshadow -Wconversion
+  -Wno-sign-conversion` (`-fsyntax-only`).
+- Fuzz: `build-p34-fuzz` (Homebrew LLVM, ASan/UBSan/libFuzzer)
+  `fuzz_net_protocol` 120 s, 5,238,043 runs, 0 crashes, 638 new units
+  (local corpus, not committed); `fuzz-seeds` rewrote only the new
+  `fuzz/seeds/fuzz_net_protocol/`.
+- `rr-netd` smoke (local): `GET /net/health` → 200 JSON, unknown path → 404,
+  SIGTERM logs `stop`. Standalone `cmake -S server` Release build links.
+- Not run: the Docker image build (OrbStack daemon not running), Linux
+  compile, `net_bots` (needs Task 6).
+
 ## Plan 34 Task 1: mano-a-mano rules trace (October 26, 2026)
 
 - Documentation only; no build or capture. Sources: `analysis/decompiled/`
@@ -2964,3 +3023,46 @@ names). Rebase preserved both progress entries; no implementation conflicts.
   non-text/JPEG parity, exact GDI glyphs, music listening, sanitizer/Android
   or hardware checks. Existing broad-mask picture characterization remains
   diagnostic; this change does not upgrade plan 13 Task 6 to complete.
+
+## October 26, 2026 — isolated original steal component oracle
+
+Worktree `/Users/archit/Dev/rr/.re-steal-worktree-20261026`, baseline `80f3e72`.
+Reference disc EXE SHA-256 rechecked:
+`73d7f9744b5b1a9482b3909950cdf3fe34119fe13d023b031e9c6739a60f18a2`.
+
+```sh
+python3 tools/steal_fixture_capture.py \
+  --exe /Users/archit/Dev/rr/cdrom/ROADRASH/ROADRASH.EXE \
+  --prefix /Users/archit/Dev/rr/.re-steal-prefix-20261026 \
+  --clone-prefix /Users/archit/Dev/rr/prefix
+python3 tests/steal_fixture_test.py \
+  --trace analysis/oracle/steal-fixture/46883e0ec8734a20b8c9496c15184dc7/steal.tsv
+python3 tests/steal_capture_audit_test.py
+```
+
+- Capture/build: exit 0; GCC MinGW i686 16.2.0, `-O2 -Wall -Wextra -Werror
+  -shared -static-libgcc`; Wine 11.18 Staging; original resolver returned for
+  all 31 cases. Four synthetic parser/foreign-EXE guard checks pass, plus
+  all 31 original case expectations (13 transfers, 15 gate rejections,
+  three rejected rolls). Earlier capture-audit five checks still pass.
+- Original fixed-roll mode 3 controls only the roll value; a forwarding hook
+  at `0x40981c` counts exactly how often that call is reached. Synthetic
+  scheduler links, halves, bikes, animation banks and graphics descriptors;
+  victim damage deadline suppresses normal damage. No race bootstrap, real
+  assets, native simulation, CRT random stream or human controls exercised.
+- Local immutable receipt, trace, DLL and logs under
+  `analysis/oracle/steal-fixture/46883e0ec8734a20b8c9496c15184dc7/`.
+  EXE/DLL/trace/source hashes recorded. Commercial/local artifacts excluded
+  from Git; only fixture source, runner, checks and documentation committed.
+- Main prefix was read only while cloning. Private prefix and output/install
+  paths are resource-claimed by the runner. Active frontend proxy, shared
+  Ghidra database and accepted captures were untouched.
+- No native production code/build configuration changed. Native CTest,
+  sanitizers, Android and device tests were not run for this standalone
+  original-function research slice. Runtime steal parity remains open.
+
+- Committed-source repeat: the commit hook formatted `steal_fixture.c`;
+  rebuilt and recaptured from committed source. Final run above has source
+  SHA-256 `6463bd19626c35b0c457594267c56d8c30a9f436d78bc3d9288ea727a2a19f3e`
+  and byte-identical trace to the initial run. Receipt-aware checks pass on
+  the final run. Concurrent multiplayer commits merged without conflicts.

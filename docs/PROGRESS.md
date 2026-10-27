@@ -31,7 +31,7 @@ Detailed evidence is in [REVERSE_ENGINEERING.md](REVERSE_ENGINEERING.md) and tes
 | Rider sprites (`BIKERS/*.DAT`, colour remaps) | Decoded; drawn in the game; frame choice by inspection | `src/bob.cpp`, `src/game_main.cpp` |
 | AI opponents | Racing state ported (targets, curve speed, steering/speed control, re-plan, rubber band); overtaking and fight states not ported | `src/race.cpp` |
 | Rider contact | Detection and separation ported; contact response is the bike branch only | `src/race.cpp` |
-| Combat | Original live AI attack selection, descriptor/frame hit gates, relationship reactions and animation queues; measured in the 2400-tick Napa field replay; separate weapon-steal capture remains open | `src/race.cpp` |
+| Combat | Original live AI attack selection, descriptor/frame hit gates, relationship reactions and animation queues; measured in the 2400-tick Napa field replay. Steal resolver gates/transfer measured in 31 original component cases (October 26); free-running steal capture remains open | `src/race.cpp` |
 | Language strings (`TEXT/*.DLL`) | All five languages, original table assembly and continuations | `src/pe_strings.cpp` |
 | Menu text | Disc TrueType fonts (Badloc, Futura); GDI hinting not reproduced | `src/text.cpp` |
 | Front end (menus, Thrash/Big Game flow, shop, Schmooze, restroom, results, credits) | Ported from the EXE screen tables and handlers; mano-a-mano, jukebox, sound mix and controls screens not ported; not pixel-compared. Native Display/Sound/Pause/Enhancements screens, visual-style presets, single widescreen setting (October 13) | `src/frontend.cpp` |
@@ -105,6 +105,69 @@ Detailed evidence is in [REVERSE_ENGINEERING.md](REVERSE_ENGINEERING.md) and tes
   rule shifts HUD glyphs by whole pixels; scene bytes
   (`original_scene` hashes) are unchanged. Full gate 106/106 in
   `build-agent-menu-gaps`.
+### October 26, 2026: plan 34 Task 2 C3/C4, traffic and police per human
+
+- `TrafficSystem`: one window per human seat (`set_seat_windows`), each with
+  its own spawn timers, slice cursor and 16 pool slots (every original
+  machine had its own pool); a slice another window already built places no
+  intersection again; cars retire and controllers tear down only outside
+  every window; LOD from the nearest window. Networked: density ×4, no
+  crossing kinds, and the `0x0044df60` ahead/behind gates per window.
+- Police: the cop spawns from the human whose think (periodic) or ring
+  window (DZHR) fires, clamped to that human's window; every human gets the
+  relationship row. AI replan place/distance and the attack stand-in now
+  read the nearest human (the earlier note claimed this already; it landed
+  here).
+- One human: unchanged. Task 2 complete apart from the cross-platform proof
+  in Task 3.
+
+### October 26, 2026: plan 34 Task 2 C1/C2, ring windows per human; rr-netd image
+
+- Each human seat has its own `TrackRing` window (`RaceInstance::seat_rings`,
+  `Race::add_human_ring`), advanced in seat order from that seat's camera;
+  a slice inside another seat's window fires no DZHR actors or statics.
+  Scheduler LOD uses the nearest seat's ring camera; parking, end-slice
+  parking and waking test every window. One human: unchanged (verify-sim,
+  19/19 sim tests).
+- `rr-netd` Docker image builds for linux/amd64 (Debian bookworm, GCC 12)
+  from the minimal deploy context and serves `/net/health` with its revision.
+- Open in Task 2: per-human traffic windows with the networked gates and
+  density ×4 (C3), police targeting the nearest human (C4).
+
+### October 26, 2026: plan 34 Task 2 first slice, multi-human races
+
+- `Race::step(std::span<const uint32_t>)`: one control word per human seat;
+  `Rider::human`, `Race::human_rider(seat)`, `set_human_driven` (AI
+  hand-over at a tick), `human_outcome`/`all_humans_done` (networked: only
+  first place wins), per-seat nitro, per-rider busted.
+- The original's "local human" gates that draw `rand()` (contact sounds,
+  horn, swish) now run for every human; AI and scheduler reads of "the
+  player" (replan place/distance, parked pace, pace band, parking) use the
+  nearest human.
+- `NetRaceConfig`/`net_race_config`/`net_rider_count` in the race factory:
+  seats on grid rows (`0x00464218`, `0x00464258` above four humans), A.I.
+  rows by entry, the server seed, cars off; the `0x00442f60` handicap inside
+  the simulation.
+- One-human races take the old path: `make verify-sim` and every sim/disc
+  test unchanged. Open in Task 2: merged ring windows, LOD/traffic/police
+  centred on every human, traffic ×4 and spawn gates.
+
+### October 26, 2026: plan 34 Tasks 4–5, wire protocol, channels and rr-netd core
+
+- `src/net/protocol.*`: 28 binary messages, bounds-checked, canonical
+  encoding, golden vectors (`tests/data/net_protocol_vectors.txt`), fuzz
+  target `fuzz_net_protocol`. `src/net/channel.hpp` + deterministic
+  `loopback_pair` network (latency/jitter/loss/duplication/reorder) and the
+  libdatachannel WebSocket channel (`ws_channel.cpp`, v0.24.6 pinned).
+- `server/`: rr-netd lobby/rooms (create, join by code, public list, seats,
+  host hand-over, seat-token reconnect, timeouts, rate limits), the input
+  sealer (repeat-last + late flag, AI hand-over at a sealed tick, hand-back),
+  race clock, frame delivery (once over WS, repeated until acked over
+  unreliable channels), desync detection with log catch-up, official
+  results, `/net/health`, JSON logs, 7-day race logs, Dockerfile.
+- Remaining in these tasks: `tools/net_bots.cpp` (needs the Task 6 client);
+  the Linux Docker image build is unverified locally (Docker daemon off) and
+  moves to the Task 8 deploy workflow.
 
 ### October 26, 2026: plan 34 Task 1, original mano-a-mano gameplay rules
 
@@ -2202,3 +2265,20 @@ is live. [Evidence and remaining fidelity scope](agent-handoffs/napa-merge-terra
   broad-mask menu characterization pin is not an acceptance claim.
 - Verification and limitations: see the matching VERIFICATION entry and
   `docs/agent-handoffs/frontend-layout-20261026.md`.
+
+### October 26, 2026 — original steal resolver measured in an isolated worktree
+
+- Followed the worktree request: all changes in `.re-steal-worktree-20261026`,
+  with a private APFS-cloned Wine prefix and standalone fixture DLL. No edits
+  to the main checkout's active frontend proxy or simulation.
+- `0x004096f0` now has 31 measured original component cases: 13 transfers,
+  15 eligibility rejections before the steal roll, three rejected rolls.
+  Signed victim frame, strict unsigned victim cooldown, attacker cooldown
+  write, inventory transfer, reach boundaries and animation queues all agree
+  with the recovered trace. Four synthetic parser/hash guard checks pass.
+- Added `oracle/steal_fixture.c`, `tools/steal_fixture_capture.py` and
+  `tests/steal_fixture_test.py`; results and exact scope in
+  [the handoff](agent-handoffs/steal-original-fixture-20261026.md).
+  This closes the original resolver gate/transfer component measurement;
+  plan 10/16 free-running steal parity remains open. Controlled original
+  mode-3 rolls do not establish CRT RNG or full-race fidelity.
