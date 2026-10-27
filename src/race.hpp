@@ -485,6 +485,9 @@ class Race {
     };
     HumanOutcome human_outcome(int seat) const;
     bool all_humans_done() const;
+    // Render/audio only: a detached copy with the followed rider in row zero.
+    // Never step this copy or feed its state back to the authoritative race.
+    Race presentation_copy(int seat) const;
     int8_t handicap(int seat) const { return seat >= 0 && seat < 8 ? handicap_[size_t(seat)] : int8_t(0); }
     // Pre-green countdown tick (0x0044b3b0 while DAT_004c5d7c != 1): the
     // rider-half thinks run their AI branch (0x00434660 -> 0x00407bd0) but
@@ -780,7 +783,8 @@ class Race {
     TrackRing* ring_ = nullptr;
     std::array<TrackRing*, 8> rings_{};                    // seat -> ring window (rings_[0] == ring_)
     std::array<int32_t, 8> seat_back_{}, seat_previous_{}; // seats >= 1: camera pull-back, last ring camera
-    std::array<int32_t, 8> seat_moved_{};                  // seats >= 1: camera advance this step
+    std::array<int32_t, 8> seat_heading_{};   // presentation headings, one independent view per human
+    std::array<int32_t, 8> seat_moved_{};     // seats >= 1: camera advance this step
     int actor_seat_ = 0;                      // whose ring window is firing DZHR actors (plan 34 C4)
     void update_traffic_windows(bool moving); // plan 34 C3: seat windows + 0x0044f0d0 gates
     std::array<std::function<void(const RingActor&, uint32_t)>, 8> seat_sink_{};

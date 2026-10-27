@@ -171,6 +171,10 @@ Settings parse_settings(const std::string& text) {
             if (parse_int(v, 0, 1, x)) s.filter = FilterMode(x);
         } else if (k == "vsync")
             flag(s.vsync);
+        else if (k == "network_hud")
+            flag(s.network_hud);
+        else if (k == "smooth_remote")
+            flag(s.smooth_remote);
         else if (k == "show_fps")
             flag(s.show_fps);
         else if (k == "render_scale") {
@@ -240,6 +244,7 @@ std::string format_settings(const Settings& s) {
       << "\nmute=" << s.mute << "\nswap_speakers=" << s.swap_speakers
       << "\ndisplay_mode=" << int(s.display_mode) << "\nwindow_scale=" << s.window_scale
       << "\nscale_mode=" << int(s.scale_mode) << "\nfilter=" << int(s.filter) << "\nvsync=" << s.vsync
+      << "\nnetwork_hud=" << s.network_hud << "\nsmooth_remote=" << s.smooth_remote
       << "\nshow_fps=" << s.show_fps << "\nrender_scale=" << s.render_scale
       << "\nwidescreen=" << int(s.widescreen) << "\ntexture_detail=" << s.texture_detail
       << "\nenh_interpolate=" << s.enhancements.interpolate

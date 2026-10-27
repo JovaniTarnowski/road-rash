@@ -265,6 +265,11 @@ void Game::tick(uint32_t controls) {
         update_engine_rpm(race().riders()[0].bike); // 0x00434980 without sound
     }
 }
+void Game::present_online(const RaceInstance& source, int seat) {
+    copy_race_presentation(instance, source, seat);
+    actor_states.clear();
+    for (const auto& rider : race().riders()) actor_states.push_back(rider.ride_animation);
+}
 std::string pref_directory() {
     if (const char* o = SDL_getenv("RR_PREF_OVERRIDE")) return o;
     char* p = SDL_GetPrefPath("RoadRashNative", "RoadRash");

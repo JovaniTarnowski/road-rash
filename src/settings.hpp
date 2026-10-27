@@ -63,12 +63,13 @@ struct Settings {
     FilterMode filter = FilterMode::sharp;
     bool vsync = true;
     bool show_fps = false;
-    int render_scale = 1;                    // plan 19 Task 8: 0 = match display, 1..4 fixed
-    Widescreen widescreen = Widescreen::off; // plan 21 Task 8: Hor+ logical width
-    int texture_detail = 0;                  // plan 20 Task 3: 0 original, 1 enhanced (MMPX)
-    Enhancements enhancements;               // plan 21 Task 1: all off = original renderer
-    int touch_opacity = 50;                  // 0..100, Android touch overlay (plan 14 Task 3)
-    bool haptics = true;                     // Android rumble on crash/hit where the device supports it
+    bool network_hud = false, smooth_remote = true; // plan 34 presentation options
+    int render_scale = 1;                           // plan 19 Task 8: 0 = match display, 1..4 fixed
+    Widescreen widescreen = Widescreen::off;        // plan 21 Task 8: Hor+ logical width
+    int texture_detail = 0;                         // plan 20 Task 3: 0 original, 1 enhanced (MMPX)
+    Enhancements enhancements;                      // plan 21 Task 1: all off = original renderer
+    int touch_opacity = 50;                         // 0..100, Android touch overlay (plan 14 Task 3)
+    bool haptics = true; // Android rumble on crash/hit where the device supports it
 };
 Settings default_settings();                      // language and units from the system locale
 Settings parse_settings(const std::string& text); // unknown keys and malformed values are ignored

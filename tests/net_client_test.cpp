@@ -11,16 +11,10 @@
 namespace {
 std::unique_ptr<rr::RaceSetup> make(const rr::Assets& assets, const std::vector<uint8_t>& exe,
                                     const rr::net::Start& s) {
-    rr::NetRaceConfig net;
-    for (auto h : s.humans) net.humans.push_back({h.seat, h.character, h.bike, h.alias});
-    net.ai_bikers = s.options.ai;
-    net.cars = s.options.cars;
-    net.seed = s.seed;
-    return std::make_unique<rr::RaceSetup>(
-        rr::make_race_setup(assets, exe, rr::net_race_config("NAPA", s.options.level, net)));
+    return std::make_unique<rr::RaceSetup>(rr::make_race_setup(assets, exe, rr::net::race_config(s)));
 }
 void scenario(rr::test::Checks& check, const rr::Assets& assets, const std::vector<uint8_t>& exe, int humans,
-              int rtt, double loss) {
+              int rtt, double loss, bool terminal = false) {
     using namespace rr::net;
     uint64_t now = 1000;
     rr::netd::ServerConfig cfg;
@@ -29,7 +23,8 @@ void scenario(rr::test::Checks& check, const rr::Assets& assets, const std::vect
     cfg.min_humans = humans;
     rr::netd::Server server(cfg);
     server.on_race_finished = [&](const rr::netd::RaceRecord& record) {
-        check(record.hashes.size() == 8, "all eight periodic hash checks reached server");
+        check(record.hashes.size() == size_t(terminal ? 0 : 8),
+              "all eight periodic hash checks reached server");
         for (const auto& [tick, seats] : record.hashes) {
             (void)tick;
             check(seats.size() == size_t(humans), "every seat supplied every hash check");
@@ -47,13 +42,19 @@ void scenario(rr::test::Checks& check, const rr::Assets& assets, const std::vect
         auto c = std::make_unique<Client>(
             std::move(reliable.first),
             Hello{protocol_version, 123, {}, Platform::bot, "P" + std::to_string(k), {}},
-            [&](const Start& s) { return make(assets, exe, s); });
+            [&](const Start& s) {
+                auto setup = make(assets, exe, s);
+                if (terminal)
+                    for (auto& rider : setup->instance.race->riders()) rider.bike.i32(0x2f0) = 0;
+                return setup;
+            });
+        c->set_automatic_results(terminal);
         auto unreliable = loopback_pair(sim, false, [&] { return now; });
         server.attach_unreliable(id, std::move(unreliable.second));
         c->attach_unreliable(std::move(unreliable.first));
         clients.push_back(std::move(c));
     }
-    constexpr int end = 480;
+    const int end = terminal ? 1 : 480;
     std::string code;
     std::vector<bool> joined(size_t(humans), false), ready(size_t(humans), false);
     std::vector<std::map<int32_t, uint64_t>> hashes(size_t(humans), std::map<int32_t, uint64_t>{});
@@ -92,6 +93,10 @@ void scenario(rr::test::Checks& check, const rr::Assets& assets, const std::vect
                 }
                 if (auto o = std::get_if<Official>(&*m)) {
                     check(o->agreed, "official hashes agreed");
+                    if (terminal)
+                        for (const auto& row : o->rows)
+                            check(row.outcome == Outcome::wrecked,
+                                  "automatic confirmed results preserve outcomes");
                     if (result) check(*result == *o, "all final result tables equal");
                     result = *o;
                     official[size_t(k)] = true;
@@ -111,7 +116,7 @@ void scenario(rr::test::Checks& check, const rr::Assets& assets, const std::vect
                 check(c.pending_inputs() <= size_t(r->max_rollback() + 1), "bounded resend queue");
                 if (r->confirmed_tick() >= end - 1 && !reported[size_t(k)]) {
                     hashes[size_t(k)][end - 1] = rr::state_hash(*c.race());
-                    c.send(Result{end - 1, Outcome::left, 0, hashes[size_t(k)][end - 1]});
+                    if (!terminal) c.send(Result{end - 1, Outcome::left, 0, hashes[size_t(k)][end - 1]});
                     reported[size_t(k)] = true;
                 }
             }
@@ -161,5 +166,6 @@ int main() {
     for (int n : {2, 3, 4, 5, 6, 7, 8})
         for (int rtt : {0, 50, 150, 300})
             for (double loss : {0., .05, .20}) scenario(check, assets, exe, n, rtt, loss);
+    for (int n : {2, 8}) scenario(check, assets, exe, n, 150, .20, true);
     return check.finish("net_client");
 }

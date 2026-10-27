@@ -122,4 +122,24 @@ void blend_view(ViewState& out, const ViewState& a, const ViewState& b, uint32_t
         out.actors.push_back(m);
     }
 }
+void RemoteSmoothing::apply(ViewState& view, int humans, uint64_t now) {
+    if (!active_) return;
+    const uint64_t elapsed = now >= began_ ? now - began_ : 0;
+    if (elapsed >= 100) {
+        active_ = false;
+        return;
+    }
+    ViewState blended;
+    blend_view(blended, before_, view, uint32_t(elapsed * 65536 / 100));
+    for (auto& actor : view.actors) {
+        const bool remote = (actor.id >= 2 && actor.id <= uint32_t(humans)) ||
+                            (actor.id >= 1001 && actor.id < uint32_t(1000 + humans));
+        if (remote)
+            for (const auto& smoothed : blended.actors)
+                if (smoothed.id == actor.id) {
+                    actor = smoothed;
+                    break;
+                }
+    }
+}
 } // namespace rr

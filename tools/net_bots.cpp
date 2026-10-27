@@ -45,14 +45,7 @@ int main(int argc, char** argv) {
         if (exe.empty()) throw std::runtime_error("disc executable not found");
         using namespace rr::net;
         auto factory = [&](const Start& s) {
-            static constexpr const char* courses[] = {"CITY", "HIWAY", "MEDLY", "NAPA", "CANYN"};
-            rr::NetRaceConfig n;
-            n.seed = s.seed;
-            n.ai_bikers = s.options.ai;
-            n.cars = s.options.cars;
-            for (auto h : s.humans) n.humans.push_back({h.seat, h.character, h.bike, h.alias});
-            return std::make_unique<rr::RaceSetup>(rr::make_race_setup(
-                assets, exe, rr::net_race_config(courses[s.course - 1], s.options.level, n)));
+            return std::make_unique<rr::RaceSetup>(rr::make_race_setup(assets, exe, race_config(s)));
         };
         // Diagnostic bots only admit peers built from the same source revision
         // and executable. The game startup compatibility gate is Task 7 work.
@@ -68,6 +61,7 @@ int main(int argc, char** argv) {
             hello.alias = "Bot" + std::to_string(k + 1);
             clients.push_back(std::make_unique<Client>(ws_connect(url), hello, factory));
         }
+        for (auto& client : clients) client->set_automatic_results(false);
         std::string code;
         bool created = false;
         std::vector<bool> joined(size_t(count), false), ready(size_t(count), false),

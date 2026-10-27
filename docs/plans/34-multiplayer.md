@@ -438,15 +438,17 @@ std::pair<std::unique_ptr<Channel>, std::unique_ptr<Channel>> loopback_pair(NetS
   - rollback depth stays within the window, or the client stalls cleanly;
   - there are no unbounded queues.
 - [x] **Step 2: Clock sync and time dilation, and adaptive input delay.** Ping/pong on the active channel, bounded 64-sample RTT/jitter history, 59–61 Hz drift correction, adaptive delay capped at 0–3 ticks. See [client handoff](../agent-handoffs/net-client-20261026.md).
-- [ ] **Step 3: `RaceScreen` integration.**
+- [x] **Step 3: `RaceScreen` integration.** (October 26: room client injection, detached local-seat presentation, confirmed effects/results, chat and live quit prompt; menu launch follows Task 7.)
   - Poll channels once per frame, then advance the rollback to the target tick.
   - Render the newest predicted tick.
   - Deduplicate sound events during re-simulation; trigger results and cutscenes only on sealed ticks.
   - Show F1–F8 chat and the finished/wrecked/busted announcements.
   - Escape opens the quit prompt (string 316) without pausing the race.
-- [ ] **Step 4: Renderer-only smoothing of remote riders** after corrections, behind a setting, default on.
-- [ ] **Step 5: Network HUD option:** round trip, rollback depth and late inputs, off by default.
-- [ ] **Step 6:** Commit: `net: online races in the race screen`.
+- [x] **Step 4: Renderer-only smoothing of remote riders** after corrections, behind a setting, default on.
+- [x] **Step 5: Network HUD option:** round trip, rollback depth and late inputs, off by default.
+- [x] **Step 6:** Commit: `net: online races in the race screen`.
+
+**Task 6 evidence (October 26):** [screen handoff](../agent-handoffs/net-screen-20261027.md). Debug 115/115 and Release 114/114; final focused Debug presentation/tooling checks pass after the local HUD/strings and sparse-seat changes. Host/Join launch and rematch UI are Task 7, not exposed by this screen API alone. Full-course, platform and production acceptance remain later tasks.
 
 ---
 

@@ -24,4 +24,21 @@ class TrafficSystem;
 void capture_view(ViewState&, const Race&, const TrafficSystem*);
 void blend_view(ViewState& out, const ViewState& a, const ViewState& b, uint32_t alpha_q16,
                 uint32_t teleport_q8 = 8 << 8);
+// Correction-only smoothing: affects remote human poses, never the local
+// rider, camera, AI, simulation state or the input timeline.
+class RemoteSmoothing {
+  public:
+    void correction(const ViewState& drawn, uint64_t now_ms) {
+        before_ = drawn;
+        began_ = now_ms;
+        active_ = true;
+    }
+    void apply(ViewState&, int humans, uint64_t now_ms);
+    void reset() { active_ = false; }
+
+  private:
+    ViewState before_;
+    uint64_t began_ = 0;
+    bool active_ = false;
+};
 } // namespace rr

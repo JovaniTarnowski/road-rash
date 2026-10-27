@@ -26,6 +26,7 @@ class RaceScreen {
     void event(const SDL_Event&);
     bool iterate(uint64_t now_ns); // false when the race loop would have exited
     RaceEnd result() const { return result_; }
+    const NetworkOverlay* network_overlay() const { return network_overlay_.get(); }
 
   private:
     Game& g_;
@@ -43,6 +44,11 @@ class RaceScreen {
     int pause_scale_w_ = 0;
     RgbImage pause_img_;
     std::unique_ptr<FpsOverlay> fps_;
+    std::unique_ptr<NetworkOverlay> network_overlay_;
+    RemoteSmoothing remote_smoothing_;
+    std::optional<net::Official> official_;
+    std::array<std::string, 3> announcements_{};
+    void step_online(uint64_t now, uint32_t controls);
     bool running_ = true, decided_ = false;
     int end_ticks_ = 0;
     uint64_t last_ = 0;

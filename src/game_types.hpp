@@ -21,12 +21,16 @@
 #include "race_setup.hpp"
 #include "view.hpp"
 #include "settings.hpp"
+#include "net/protocol.hpp"
 #include "sound.hpp"
 #include "text.hpp"
 #include "traffic.hpp"
 #include "view_state.hpp"
 
 namespace rr {
+namespace net {
+class Client;
+}
 struct FrameBench; // frame_profile.hpp
 // Display settings driver (plan 18 Task 3): owns the window/renderer state derived
 // from Settings. Each mode applies its logical height (480 menus/videos, 480 race:
@@ -124,9 +128,11 @@ struct Game {
                                       bool back) const;
     void tick(uint32_t controls);
     void sync_actor_states();
+    void present_online(const RaceInstance&, int seat);
 };
 
 struct RaceEnd {
+    std::optional<net::Official> official; // mano results; caller applies no career changes
     bool quit_app = false;
     RaceOutcome outcome = RaceOutcome::lost;
     int place = 0; // 0-based
@@ -147,6 +153,9 @@ struct RaceOptions {
     int render_scale = 1;                    // plan 19 Task 4: race surface is 640s x 480s
     const Settings* settings = nullptr;      // plan 19 Task 8: live scale via effective_render_scale
     class OfflineCapture* capture = nullptr; // fixed 60 Hz offline video/audio export
-    FrameBench* bench = nullptr;             // --bench: phase timings, ends the race after bench->frames
+    net::Client* online = nullptr;           // borrowed room client; already has a Start/race at screen entry
+    std::array<std::string, 8> chat_messages{};
+    bool smooth_remote = true, network_hud = false;
+    FrameBench* bench = nullptr; // --bench: phase timings, ends the race after bench->frames
 };
 } // namespace rr

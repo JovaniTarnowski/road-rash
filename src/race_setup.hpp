@@ -116,6 +116,7 @@ struct RaceInstance { // race-scoped: rebuilt on restart
     std::vector<std::unique_ptr<TrackRing>> seat_rings; // plan 34: ring windows of seats 1..n-1
     std::unique_ptr<Race> race;
 };
+void copy_race_presentation(RaceInstance& into, const RaceInstance& from, int seat);
 RaceAssets load_race_assets(const Assets&, const std::vector<uint8_t>& exe, const RaceConfig&);
 RaceInstance build_race(const RaceAssets&, const std::vector<uint8_t>& exe, const RaceConfig&);
 // 0x00446bf0 / 0x00437860: resolve built riders, including the six course

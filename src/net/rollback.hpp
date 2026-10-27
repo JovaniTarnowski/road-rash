@@ -14,6 +14,7 @@
 #include "race_state.hpp"
 
 #include <cstdint>
+#include <functional>
 #include <span>
 #include <vector>
 
@@ -57,7 +58,22 @@ class Rollback {
     };
     const std::vector<Frame>& frames() const { return frames_; }
 
+    // Immutable per-tick presentation data. Prediction can be replayed; confirmed
+    // effects are published exactly once, in order, only after all earlier
+    // inputs agree. No callback may step or mutate the race.
+    struct TickEffects {
+        int32_t tick = -1, first_finish = -1;
+        std::vector<SoundEventRecord> sounds;
+        std::vector<Race::HumanOutcome> outcomes;
+        bool terminal = false;
+        uint64_t terminal_hash = 0;
+    };
+    std::function<void(const TickEffects&)> on_predicted, on_confirmed;
+
   private:
+    void publish_confirmed();
+    std::vector<TickEffects> effects_;
+    int32_t published_ = -1;
     struct Used { // what a simulated tick actually consumed
         std::vector<uint32_t> words;
         uint8_t present = 0;

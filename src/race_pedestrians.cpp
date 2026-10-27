@@ -347,7 +347,8 @@ void Race::pedestrian_voice(Pedestrian& p, int which) {
     // 0x004351f0 plays it as the speech event.
     p.voice_tick = ticks_;
     if (sound_events_.size() < 10)
-        sound_events_.push_back({SoundEvent::speech, 0, 0, 0, 0, p.look->voices[size_t(which)]});
+        sound_events_.push_back({SoundEvent::speech, 0, 0, 0, 0, p.look->voices[size_t(which)],
+                                 pedestrians_ ? 3000 + int32_t(&p - pedestrians_->pool().data()) : -1});
 }
 
 void Race::think_pedestrian(Pedestrian& p) {

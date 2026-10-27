@@ -2,11 +2,27 @@
 #include <algorithm>
 #include <cmath>
 #include <bit>
+#include <stdexcept>
 
 namespace rr::net {
+RaceConfig race_config(const Start& start) {
+    static constexpr const char* courses[] = {"CITY", "HIWAY", "MEDLY", "NAPA", "CANYN"};
+    if (start.course < 1 || start.course > 5 || start.humans.empty() || start.humans.size() > 8)
+        throw std::invalid_argument("Invalid Start roster or course");
+    NetRaceConfig net;
+    net.seed = start.seed;
+    net.ai_bikers = start.options.ai;
+    net.cars = start.options.cars;
+    for (size_t slot = 0; slot < start.humans.size(); ++slot) {
+        const auto& human = start.humans[slot];
+        net.humans.push_back({int(slot), human.character, human.bike, human.alias});
+    }
+    return net_race_config(courses[start.course - 1], start.options.level, net);
+}
+
 Client::Client(std::unique_ptr<Channel> c, Hello h, Factory f, int w, int d)
-    : reliable_(std::move(c)), hello_(std::move(h)), factory_(std::move(f)), window_(std::clamp(w, 1, 64)),
-      delay_cap_(std::clamp(d, 0, 3)) {}
+    : reliable_(std::move(c)), hello_(std::move(h)), factory_(std::move(f)),
+      sound_history_(std::clamp(w, 1, 64)), window_(std::clamp(w, 1, 64)), delay_cap_(std::clamp(d, 0, 3)) {}
 void Client::attach_unreliable(std::unique_ptr<Channel> c) {
     unreliable_ = std::move(c);
 }
@@ -23,6 +39,12 @@ std::optional<Message> Client::poll_event() {
     Message m = std::move(events_.front());
     events_.pop_front();
     return m;
+}
+std::optional<Client::OutcomeEvent> Client::poll_outcome() {
+    if (outcomes_.empty()) return {};
+    auto event = outcomes_.front();
+    outcomes_.pop_front();
+    return event;
 }
 void Client::receive(const Message& m, uint64_t now) {
     if (std::holds_alternative<Welcome>(m)) welcomed_ = true;
@@ -63,6 +85,31 @@ void Client::receive(const Message& m, uint64_t now) {
         }
         rollback_ =
             std::make_unique<Rollback>(setup_->instance, int(s->humans.size()), local, window_, s->countdown);
+        sound_history_ = SoundHistory(window_);
+        sounds_.clear();
+        outcomes_.clear();
+        outcome_codes_.fill(1);
+        result_sent_ = false;
+        rollback_->on_predicted = [this](const Rollback::TickEffects& effects) {
+            sound_history_.deliver(effects.tick, effects.sounds, [this](const SoundEventRecord& sound) {
+                if (sounds_.size() < 256) sounds_.push_back(sound);
+            });
+        };
+        rollback_->on_confirmed = [this, local](const Rollback::TickEffects& effects) {
+            for (size_t slot = 0; slot < effects.outcomes.size(); ++slot) {
+                const auto& outcome = effects.outcomes[slot];
+                if (outcome.code != outcome_codes_[slot]) {
+                    if (outcomes_.size() < 32) outcomes_.push_back({effects.tick, int(slot), outcome});
+                    outcome_codes_[slot] = outcome.code;
+                }
+            }
+            if (automatic_results_ && effects.terminal && !result_sent_ && local >= 0) {
+                const auto& outcome = effects.outcomes[size_t(local)];
+                send(Result{effects.tick, outcome.code == 1 ? Outcome::left : Outcome(outcome.code),
+                            uint8_t(std::clamp(outcome.place, 0, 15)), effects.terminal_hash});
+                result_sent_ = true;
+            }
+        };
         start_ = *s;
         finished_ = false;
         inputs_.clear();
@@ -142,7 +189,7 @@ void Client::update(uint64_t now, const Sampler& sample, int32_t stop) {
     // rollback horizon; inputs older than an authoritative seal are obsolete.
     while (!inputs_.empty() && inputs_.front().first <= rollback_->sealed_tick()) inputs_.pop_front();
     sampled_ = std::max(sampled_, rollback_->sealed_tick());
-    while (sampled_ + 1 < sample_end) {
+    while (start_->your_seat != 0xff && sampled_ + 1 < sample_end) {
         const int32_t t = ++sampled_;
         const uint16_t w = sample(std::max(0, t - stats_.input_delay));
         rollback_->local_input(t, w);

@@ -450,4 +450,23 @@ RaceSetup make_race_setup(const Assets& assets, const std::vector<uint8_t>& exe,
     setup.instance = build_race(setup.assets, exe, config);
     return setup;
 }
+void copy_race_presentation(RaceInstance& into, const RaceInstance& from, int seat) {
+    auto copy = [](auto& target, const auto& from) {
+        if (!from) {
+            target.reset();
+            return;
+        }
+        if (target)
+            *target = *from;
+        else
+            target = std::make_unique<std::remove_reference_t<decltype(*from)>>(*from);
+    };
+    if (into.race)
+        *into.race = from.race->presentation_copy(seat);
+    else
+        into.race = std::make_unique<Race>(from.race->presentation_copy(seat));
+    copy(into.traffic, from.traffic);
+    copy(into.pedestrians, from.pedestrians);
+}
+
 } // namespace rr

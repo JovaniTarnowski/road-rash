@@ -8,6 +8,7 @@ namespace rr::net {
 Rollback::Rollback(RaceInstance& race, int humans, int local_slot, int max_rollback, int countdown)
     : race_(race), humans_(std::clamp(humans, 1, 8)), local_(local_slot), max_(std::max(max_rollback, 0)),
       countdown_(countdown), used_(size_t(max_ + 1)), snapshots_(size_t(max_ + 1)) {
+    effects_.resize(size_t(max_ + 1));
     for (auto& u : used_) u.words.assign(size_t(humans_), 0);
     scratch_.assign(size_t(humans_), 0);
 }
@@ -109,7 +110,27 @@ void Rollback::simulate_one() {
         race.countdown_step();
     else
         race.step(u.words);
+    auto& effects = effects_[slot];
+    effects.tick = t;
+    effects.first_finish = t > 0 ? effects_[size_t((t - 1) % (max_ + 1))].first_finish : -1;
+    effects.sounds = race.take_sound_events();
+    if (race_.traffic) {
+        auto traffic = race_.traffic->take_sound_events();
+        effects.sounds.insert(effects.sounds.end(), traffic.begin(), traffic.end());
+    }
+    effects.outcomes.clear();
+    for (int seat = 0; seat < humans_; ++seat) {
+        auto outcome = race.human_outcome(seat);
+        if (!(u.present & (1u << seat))) outcome.code = 6;
+        if ((outcome.code == 2 || outcome.code == 3) && effects.first_finish < 0) effects.first_finish = t;
+        effects.outcomes.push_back(outcome);
+    }
+    effects.terminal =
+        race.all_humans_done() || (effects.first_finish >= 0 && t - effects.first_finish >= 3600);
+    effects.terminal_hash = effects.terminal ? state_hash(race_) : 0;
     ++current_;
+    if (on_predicted) on_predicted(effects);
+    publish_confirmed();
     // State hash after every hash_every-th tick: confirmed when the tick ran
     // on sealed inputs; provisional ones are checked again when sealed.
     if ((t + 1) % hash_every_ == 0 && t > confirmed_hash_tick_) {
@@ -122,6 +143,15 @@ void Rollback::simulate_one() {
             std::erase_if(provisional_, [&](const auto& p) { return p.first == t; });
             provisional_.push_back({t, h});
         }
+    }
+}
+
+void Rollback::publish_confirmed() {
+    const int32_t through = confirmed_tick();
+    while (published_ < through) {
+        const auto& effects = effects_[size_t((published_ + 1) % (max_ + 1))];
+        ++published_;
+        if (on_confirmed) on_confirmed(effects);
     }
 }
 
@@ -142,6 +172,7 @@ int Rollback::advance_to(int32_t target) {
         }
         last_depth_ = resimulated;
     }
+    publish_confirmed();
     stalled_ = false;
     while (current_ < target) {
         if (current_ > sealed_tick() + max_) { // the window is full: wait for sealed frames

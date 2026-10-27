@@ -2311,3 +2311,21 @@ and eight-client cutoff smokes agree on state hashes and official results.
 RaceScreen/audio/smoothing/HUD integration remains open in Task 6 Steps 3–5.
 Scope, commands, limitations and gate receipts:
 [net-client-20261026](agent-handoffs/net-client-20261026.md).
+
+## October 26, 2026 — plan 34 Task 6 race presentation
+
+The online RaceScreen now renders a detached local-seat view of the client's
+rollback race, rather than stepping or modifying authoritative state. It keeps
+networking active through quit/focus/background events, relays F1–F8 chat,
+shows confirmed outcome announcements and waits for Official results before
+returning a result. Sound replay is deduplicated by tick/emitter/event, with
+bounded history. Remote-only correction smoothing defaults on; the network
+HUD defaults off. Both options persist in settings.
+
+Rollback now publishes confirmed per-tick effects even when predictions were
+correct and no re-simulation was needed. Automatic Result reports use a common
+confirmed terminal tick/hash. The shared Start builder handles sparse room
+seats. Native tests cover the original offline goldens, 84 chaos/cutoff rooms,
+two automatic terminal rooms and a rendered/audio screen matched against a
+headless peer. Host/Join launch and rematch UI remain Task 7.
+[Evidence and remaining scope](agent-handoffs/net-screen-20261027.md).

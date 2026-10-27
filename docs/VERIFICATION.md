@@ -3107,3 +3107,30 @@ Final gates: Debug **114/114**, Release (transport off) **113/113**, zero skips.
 Both include the complete 84-case client matrix. Native transport is included
 in Debug; final two/eight-client WebSocket smokes also pass after the clock fix.
 Local receipts: `/Users/archit/Dev/rr/.plan34-logs/net-client-20261026/`.
+
+## October 26, 2026 — plan 34 Task 6 RaceScreen/effects
+
+- Debug full native build and CTest: **115/115 passed**, zero skips (419.46 s).
+  Final focused Debug presentation/tooling checks also passed after the sparse
+  seat builder and HUD/string ownership changes; the correction/render test
+  passed again with AI, traffic and active SoundSystem playback.
+- Final Release full build/CTest (transport disabled): **114/114 passed**, zero
+  skips (35.96 s). `net_client` includes the 84 original network scenarios and
+  two controlled initial-wreck fixtures that automatically report canonical
+  confirmed results through the real Server.
+- `net_presentation` uses scripted protocol/channel fixtures and a software SDL
+  renderer. Every frame, authoritative hashes equal a headless client through
+  real corrections, quit/focus transitions, local-seat rendering and audio.
+  It also checks sealed-only results, chat, sparse seat identities, smoothing,
+  sound history bounds and correct-prediction effect promotion. This is distinct
+  from the real Server's headless chaos test and from future full menu flow.
+- Local WebSocket bot repeat: two clients, 480-tick cutoff, hash
+  `5741817043016304586` on both, official agreement. This remains a cutoff smoke,
+  not evidence of finishing a course. Final visual fixture inspected locally.
+- Focused instrumented presentation test passes under ASan/UBSan (RR_FUZZ build;
+  leak detection disabled). clangd fallback with tweak self-tests disabled and
+  clang-format 22 checks pass. No C++ LSP service was
+  exposed. No Android/device, Windows/browser cross-play, production deployment
+  or full-course multiplayer soak performed for this slice.
+- Receipts and screenshot locations, factory-rule repair and exact API contracts:
+  [net-screen-20261027](agent-handoffs/net-screen-20261027.md).

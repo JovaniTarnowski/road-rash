@@ -33,6 +33,7 @@ struct SoundEventRecord {
     SoundEvent code{};
     int32_t lateral = 0, height = 0, position = 0, speed = 0;
     int32_t argument = 0; // speech: character table index
+    int32_t source = -1;  // native stable emitter ID, presentation only; not serialized simulation input
 };
 
 } // namespace rr

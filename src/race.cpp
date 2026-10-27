@@ -3405,7 +3405,7 @@ void Race::rider_move(Rider& r, bool player) {
 void Race::siren_event(const Rider& cop, bool emitting) {
     if (sound_events_.size() >= 16) return;
     if (!emitting) {
-        sound_events_.push_back({SoundEvent::siren, 0, 0, 0, 0, 0});
+        sound_events_.push_back({SoundEvent::siren, 0, 0, 0, 0, 0, int32_t(&cop - riders_.data())});
         return;
     }
     const Bike& b = cop.bike;
@@ -3413,12 +3413,19 @@ void Race::siren_event(const Rider& cop, bool emitting) {
                                  ? HalfMirrorView{cop.half_mirror.lateral, cop.half_mirror.height,
                                                   cop.half_mirror.position, cop.half_mirror.speed}
                                  : HalfMirrorView{b.i32(0x28), b.i32(0x20), b.i32(0x1c), b.i32(0xec)};
-    sound_events_.push_back({SoundEvent::siren, h.lateral, h.height, h.position, h.speed, 0});
+    sound_events_.push_back(
+        {SoundEvent::siren, h.lateral, h.height, h.position, h.speed, 0, int32_t(&cop - riders_.data())});
 }
 
 void Race::sound(SoundEvent e, const Bike& b) {
-    if (sound_events_.size() < 16)
-        sound_events_.push_back({e, b.i32(0x28), b.i32(0x20), b.i32(0x1c), b.i32(0xec), 0});
+    if (sound_events_.size() >= 16) return;
+    int32_t source = -1;
+    for (size_t i = 0; i < riders_.size(); ++i)
+        if (&riders_[i].bike == &b || &riders_[i].crash_actor.motion == &b) source = int32_t(i);
+    if (source < 0 && pedestrians_)
+        for (size_t i = 0; i < pedestrians_->pool().size(); ++i)
+            if (&pedestrians_->pool()[i].body.bike == &b) source = 3000 + int32_t(i);
+    sound_events_.push_back({e, b.i32(0x28), b.i32(0x20), b.i32(0x1c), b.i32(0xec), 0, source});
 }
 
 void Race::build_draws() {
@@ -4514,6 +4521,30 @@ bool Race::all_humans_done() const {
     return true;
 }
 
+Race Race::presentation_copy(int seat) const {
+    Race view = *this;
+    const int rider = human_rider(seat);
+    if (rider <= 0) return view;
+    std::swap(view.riders_[0], view.riders_[size_t(rider)]);
+    const auto& local = view.riders_[0];
+    view.busted_ = local.busted;
+    view.camera_back_ = seat_back_[size_t(seat)];
+    view.camera_lift_ = view.camera_back_ / 3;
+    view.camera_heading_ = seat_heading_[size_t(seat)];
+    const auto edges = view.edges(local, local.sample);
+    const int32_t centre = (edges.left + edges.right) / 2;
+    const int32_t d = div256(local.bike.i32(0x28)) - centre;
+    int32_t off = d - div_pow2(d, 2);
+    if (d - off >= 0xc9)
+        off = d - 200;
+    else if (d - off < -200)
+        off = d + 200;
+    view.camera_x_ = centre + off;
+    view.camera_height_ = std::max(150, local.bike.i32(0x24) + view.camera_lift_);
+    view.last_target_ = -1;
+    return view;
+}
+
 void Race::update_handicap() {
     // 0x00442f60 (host branch), run every 0x39 ticks from shared state.
     if (!(handicap_tick_ < ticks_)) return;
@@ -4554,6 +4585,8 @@ void Race::update_handicap() {
 }
 
 void Race::step(std::span<const uint32_t> words) {
+    std::array<uint32_t, 8> previous_view{};
+    for (int seat = 1; seat < humans(); ++seat) previous_view[size_t(seat)] = seat_camera(seat);
     controls_.fill(0);
     for (size_t i = 0; i < words.size() && i < controls_.size(); ++i) controls_[i] = words[i];
     const uint32_t controls = controls_[0];
@@ -4599,6 +4632,14 @@ void Race::step(std::span<const uint32_t> words) {
     camera_heading_ = advance_heading(camera_heading_, previous_camera_position_, camera_position(),
                                       road[player.previous_sample].path.bend, road[player.sample].path.bend,
                                       (player.bike.u8(0xc0) & 16) != 0);
+    for (int seat = 1; seat < humans(); ++seat) {
+        const auto& rider = riders_[size_t(human_rider(seat))];
+        const auto& route = route_of(rider);
+        seat_heading_[size_t(seat)] =
+            advance_heading(seat_heading_[size_t(seat)], previous_view[size_t(seat)], seat_camera(seat),
+                            route[rider.previous_sample].path.bend, route[rider.sample].path.bend,
+                            (rider.bike.u8(0xc0) & 16) != 0);
+    }
     // 0x00454120 ring advance (terrain/BORR/DZHR draws) before 0x0044dd90.
     if (ring_) {
         ring_->advance(int32_t(camera_position()) - int32_t(previous_camera_position_), ring_random_,
