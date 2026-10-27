@@ -192,7 +192,9 @@ void play_video(const rr::Assets& assets, const std::string& path, SDL_Renderer*
             if (e.type == SDL_EVENT_KEY_DOWN && !e.key.repeat) {
                 if (e.key.key == SDLK_Q)
                     running = false;
-                else if (e.key.key == SDLK_P || e.key.key == SDLK_ESCAPE) {
+                else if (e.key.key == SDLK_ESCAPE)
+                    player.skip();
+                else if (e.key.key == SDLK_P) {
                     if (lifecycle.state.paused())
                         lifecycle.state.resume();
                     else
