@@ -515,7 +515,9 @@ void Frontend::describe(const MenuItem& m) {
     }
     if (m.desc >= native_slot_base) {
         // Native value item: "<description>\nCurrent: <value>" via the dynamic slot.
-        strings_[dynamic_slot] = native_string(m.desc) + "\nCurrent: " + native_value_text(m.caption);
+        strings_[dynamic_slot] = native_string(m.desc);
+        const std::string value = native_value_text(m.caption);
+        if (!value.empty()) strings_[dynamic_slot] += "\nCurrent: " + value;
         desc_slot_ = dynamic_slot;
     } else
         desc_slot_ = m.desc;
@@ -659,18 +661,14 @@ void Frontend::prepare_screen(int previous, int screen) {
         apply_restroom_pattern();
         break;
     case screen_id::native_display: {
-        // Plan 19 Task 8: the RENDER RESOLUTION row is disabled with an
-        // explanatory description when Graphics Options' Resolution is Low
-        // or Inset (the original choice forces render scale 1).
+        // Keep this row accessible in Low/Inset. Its help explains that
+        // applying a render resolution switches the original race mode to High.
         auto& items = data_.screens[size_t(screen_id::native_display)].items;
         const bool hires = settings_.high_resolution && !settings_.inset;
         for (auto& m : items)
             if (m.caption == ns::render_resolution) {
-                m.enabled = hires;
-                if (hires)
-                    m.flags &= ~item_flag::light;
-                else
-                    m.flags |= item_flag::light;
+                m.enabled = true;
+                m.flags &= ~item_flag::light;
                 m.desc = hires ? ns::d_render_resolution : ns::d_render_lowres;
             }
         break;
@@ -993,6 +991,13 @@ void Frontend::apply_native_setting() {
     const std::string path = (std::filesystem::path(save_dir_).parent_path() / "settings.txt").string();
     save_settings(path, settings_);
     events_.push_back({FrontendEvent::Kind::apply_display, {}, 0});
+    // Popups close before applying the value; refresh the restored row's help
+    // so its Current line reflects the new setting immediately.
+    if (focus_ >= 0 && size_t(focus_) < items_.size()) {
+        auto& row = items_[size_t(focus_)];
+        if (row.caption == ns::render_resolution) row.desc = ns::d_render_resolution;
+        if (row.desc >= native_slot_base) describe(row);
+    }
 }
 
 std::string Frontend::key_name(int action) const {
@@ -1656,6 +1661,8 @@ int Frontend::run_handler(size_t index) {
             break;
         case native_setter::render_resolution:
             settings_.render_scale = std::min(4, std::max(0, target - 1));
+            settings_.high_resolution = true;
+            settings_.inset = false;
             apply_native_setting();
             break;
         case native_setter::widescreen:
@@ -2089,9 +2096,15 @@ void Frontend::draw_scale1(RgbImage& out) const {
         const Face face = screen_ == 0x1a        ? Face::futura_regular
                           : (desc_flags_ & 0x80) ? Face::futura_demi
                                                  : Face::futura_regular;
-        const int height = screen_ == 0x1a ? 36 : (desc_flags_ & 0x80) ? 24 : 32;
+        const bool native_help =
+            desc_slot_ == dynamic_slot &&
+            (screen_ >= screen_id::native_display ||
+             (screen_ == 0x13 && focus_ >= 0 && items_[size_t(focus_)].caption == ns::display));
+        const int height = native_help ? 24 : screen_ == 0x1a ? 36 : (desc_flags_ & 0x80) ? 24 : 32;
         TextRect box;
-        if (desc_flags_ & 0x1000)
+        if (native_help)
+            box = {316, 122, 632, 296};
+        else if (desc_flags_ & 0x1000)
             box = {0, 300, 640, 0x1a4};
         else {
             const bool wide = (desc_flags_ & 0x900) != 0;
@@ -2108,8 +2121,11 @@ void Frontend::draw_scale1(RgbImage& out) const {
         }
         // 0x00420470 repaints the dark box only when the focused item takes
         // it (desc_fill_): characters-screen bios are text on the photo.
-        if (desc_fill_) fill_from(out, dark_, box.left, box.top, box.right - box.left, box.bottom - box.top);
-        const auto [t, flags] = description_text_layout(box, desc_flags_, desc_format_);
+        if (desc_fill_ || native_help)
+            fill_from(out, dark_, box.left, box.top, box.right - box.left, box.bottom - box.top);
+        const auto [t, flags] = native_help
+                                    ? std::make_pair(TextRect{326, 128, 626, 292}, unsigned(dt::wordbreak))
+                                    : description_text_layout(box, desc_flags_, desc_format_);
         draw_text_box(out, t, face, height, desc, flags, colour_light);
     }
     if (screen_ == 0x18 && !length_footer_.empty()) {
@@ -2335,9 +2351,15 @@ void Frontend::draw_scaled(RgbImage& out, int scale) const {
         const Face face = screen_ == 0x1a        ? Face::futura_regular
                           : (desc_flags_ & 0x80) ? Face::futura_demi
                                                  : Face::futura_regular;
-        const int height = screen_ == 0x1a ? 36 : (desc_flags_ & 0x80) ? 24 : 32;
+        const bool native_help =
+            desc_slot_ == dynamic_slot &&
+            (screen_ >= screen_id::native_display ||
+             (screen_ == 0x13 && focus_ >= 0 && items_[size_t(focus_)].caption == ns::display));
+        const int height = native_help ? 24 : screen_ == 0x1a ? 36 : (desc_flags_ & 0x80) ? 24 : 32;
         TextRect box;
-        if (desc_flags_ & 0x1000)
+        if (native_help)
+            box = {316, 122, 632, 296};
+        else if (desc_flags_ & 0x1000)
             box = {0, 300, 640, 0x1a4};
         else {
             const bool wide = (desc_flags_ & 0x900) != 0;
@@ -2352,8 +2374,10 @@ void Frontend::draw_scaled(RgbImage& out, int scale) const {
             }
             box = {x, y, x + w + 16, y + h + 16};
         }
-        if (desc_fill_) fill(box.left, box.top, box.right - box.left, box.bottom - box.top);
-        const auto [t, flags] = description_text_layout(box, desc_flags_, desc_format_);
+        if (desc_fill_ || native_help) fill(box.left, box.top, box.right - box.left, box.bottom - box.top);
+        const auto [t, flags] = native_help
+                                    ? std::make_pair(TextRect{326, 128, 626, 292}, unsigned(dt::wordbreak))
+                                    : description_text_layout(box, desc_flags_, desc_format_);
         textbox(t, face, height, desc, flags, colour_light);
     }
     if (screen_ == 0x18 && !length_footer_.empty()) {

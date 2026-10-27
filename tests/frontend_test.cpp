@@ -621,6 +621,7 @@ int main(int argc, char** argv) {
     if (focus_item(graphics)) key("select");
     check(fe.screen() == 0x13, "graphics options");
     snap("graphics");
+    if (focus_item(2)) snap("graphics-display-hover");
     if (focus_item(2)) key("select"); // repurposed dead item: Display entry
     check(fe.screen() == screen_id::native_display, "display screen");
     snap("display");
@@ -637,14 +638,13 @@ int main(int argc, char** argv) {
     }
     if (focus_item(10)) key("select"); // Back row
     check(fe.screen() == 0x13 && fe.focus() == 2, "back returns to the Display item");
-    // Plan 19 Task 8: RENDER RESOLUTION row — popup choice persists; Low/Inset disables it.
+    // RENDER RESOLUTION: choices persist and remain accessible in Low/Inset.
     fe.enter(screen_id::native_display);
     int res_row = -1;
     for (size_t i = 0; i < fe.items().size(); ++i)
         if (fe.items()[i].caption == rr::ns::render_resolution) res_row = int(i);
     check(res_row >= 0, "display screen has the resolution row");
-    // The resolution row starts disabled, so the nav chain skips it;
-    // enable hires first (default), then walk down to it via row 3.
+    // Start with High, then walk down to the resolution row via row 3.
     settings.high_resolution = true;
     settings.inset = false;
     fe.enter(screen_id::native_display);
@@ -683,6 +683,13 @@ int main(int argc, char** argv) {
     check(style_row >= 0, "display screen has the visual style row");
     if (focus_item(size_t(style_row))) key("select");
     check(fe.items().size() == 11 + 4, "visual style popup opens with three choices");
+    snap("visual-style-popup");
+    {
+        RgbImage scaled;
+        fe.draw(scaled, 2);
+        check(scaled.width == 1280 && scaled.height == 960, "scaled style popup renders");
+        if (!dump.empty()) write_bmp(dump + "/visual-style-popup-2x.bmp", scaled);
+    }
     key("down"); // Enhanced row (popup opens focused on current = Original)
     key("select");
     check(settings.enhancements == rr::enhanced_preset(), "Enhanced sets exactly the preset");
@@ -721,12 +728,41 @@ int main(int argc, char** argv) {
     }
     settings.high_resolution = false;
     fe.enter(screen_id::native_display);
-    bool res_disabled = false;
-    for (const auto& m : fe.items())
-        if (m.caption == rr::ns::render_resolution)
-            res_disabled = !m.enabled && (m.flags & rr::item_flag::light);
-    check(res_disabled, "low resolution disables the row with explanation");
-    settings.high_resolution = true;
+    for (bool inset : {false, true}) {
+        settings.high_resolution = false;
+        settings.inset = inset;
+        fe.enter(screen_id::native_display);
+        check(fe.items()[size_t(res_row)].enabled, "render resolution accessible in Low and Inset");
+        if (focus_item(size_t(res_row))) key("select");
+        key("select");
+        check(settings.high_resolution && !settings.inset,
+              "selecting render resolution switches Low/Inset to High");
+    }
+    // Native popup hit rectangles must be disjoint and every choice reachable
+    // by mouse, including the fourth Window Size choice.
+    check(!(data.screens[0x13].items[2].flags & item_flag::title_desc),
+          "Display help does not replace the screen title");
+    for (const auto& [id, popup] : data.popups) {
+        if (uint32_t(id) < 0xF0000000u) continue;
+        for (size_t i = 1; i < popup.size(); ++i) {
+            check(popup[i].y >= popup[i - 1].y + popup[i - 1].h, "native popup rows do not overlap");
+            check(popup[i].y + popup[i].h <= 480, "native popup fits vertically");
+        }
+    }
+    settings.widescreen = Widescreen::off;
+    for (int scale = 1; scale <= 4; ++scale) {
+        fe.enter(screen_id::native_display);
+        if (focus_item(1)) key("select");
+        if (scale == 4) snap("window-size-popup");
+        const auto choice = fe.items()[11 + size_t(scale)];
+        MenuInput click;
+        click.pointer_click = true;
+        click.pointer_x = choice.x + choice.w / 2;
+        click.pointer_y = choice.y + choice.h / 2;
+        press(click);
+        check(settings.window_scale == scale, "Window Size pointer selection applies every scale");
+    }
+    fe.enter(screen_id::native_display);
     // Plan 21 Task 10: Wide menus (blurred side fill behind Widescreen; Original style keeps black bars).
     {
         settings.widescreen = rr::Widescreen::off;

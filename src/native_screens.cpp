@@ -41,11 +41,15 @@ std::vector<MenuItem> build_popup(const std::vector<MenuItem>& tpl, int header_c
     std::vector<MenuItem> out;
     MenuItem header = tpl[0];
     header.caption = header_caption;
+    header.y = 302;
+    header.h = 28;
     out.push_back(header);
     for (size_t i = 0; i < choices.size(); ++i) {
-        const MenuItem& t = tpl[1 + (i % (tpl.size() - 1))];
-        out.push_back(choice_item(t, t.y + int(i) * t.h, choices[i].first, choices[i].second, i + 1,
-                                  choices.size() + 1));
+        const MenuItem& t = tpl[1];
+        MenuItem choice =
+            choice_item(t, 334 + int(i) * 28, choices[i].first, choices[i].second, i + 1, choices.size() + 1);
+        choice.h = 26;
+        out.push_back(choice);
     }
     return out;
 }
@@ -133,8 +137,7 @@ void add_native_screens(FrontendData& data, bool mobile) {
         screen.items[i].nav[5] = uint8_t((i + n - 1) % n);
     }
     // Native popups from the resolution popup template (header + choice rows).
-    // The template has 4 rows (header + 3 choices); popups needing more
-    // choices cycle the choice rows (plan 19 Task 8: resolution needs 5).
+    // Reuse its styling with uniform, bounded rows (resolution needs five).
     const auto& rtpl = data.popups.at(0x00474240);
     data.popups[native_popup::display_mode] =
         build_popup(rtpl, ns::display_mode, {{1, ns::windowed}, {2, ns::fullscreen}});
@@ -392,7 +395,7 @@ void add_native_screens(FrontendData& data, bool mobile) {
     link.caption = ns::display;
     link.handler = 0;
     link.desc = ns::d_display_mode;
-    link.flags = item_flag::title_desc | item_flag::description;
+    link.flags = item_flag::description;
     link.enabled = true;
 }
 } // namespace rr
