@@ -478,6 +478,14 @@ Implementation/evidence: October 27, 2026, [Task 7 handoff](../agent-handoffs/ne
 
 ### Task 8: VPS deployment
 
+October 27 preparation: Linux amd64 code archive, gated workflow, Nginx snippets
+and real Linux bot image are implemented and locally verified (direct/proxied
+420-tick agreed results). Production remains blocked by operator SSH signing/auth;
+`RR_NET_DEPLOY_ENABLED` is absent. No VPS/key/firewall change was made. See
+[handoff](../agent-handoffs/net-deploy-20261027.md). Step 3 additionally depends
+on Task 9's actual peer/negotiation/fallback; a WebSocket-only pass is not its
+acceptance. Checkboxes below remain open until their full production checks pass.
+
 **Owner-approved scope on `agnee`:**
 - a new Dokku app `road-rash-net`;
 - an Nginx `location /net` WebSocket upgrade proxy in the existing `road-rash` TLS server block;

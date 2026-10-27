@@ -97,3 +97,18 @@ curl --fail https://road-rash.archit.xyz/revision.txt
 
 Native gameplay fidelity gaps remain tracked in CURRENT_STATUS.md; deployment
 checks do not establish original-game parity or mobile/Safari acceptance.
+
+
+## Multiplayer deployment preparation (October 27, 2026)
+
+The multiplayer deployment is prepared locally and is not provisioned on
+`agnee`. See [deployment/runbook](../deploy/road-rash-net/README.md) for the
+code-only archive, two loopback listeners, restricted deploy key, health and
+revision checks, CI production smoke, retention and rollback.
+
+The workflow builds Linux amd64 code on relevant main pushes. Deployment stays
+skipped until `RR_NET_DEPLOY_ENABLED=true` is set after the app, Nginx routes
+and dedicated key exist. Operator SSH currently fails at the signing/auth stage;
+no server configuration or firewall was changed. Task 9 must supply the actual
+DataChannel before UDP/public-candidate acceptance can complete. Existing web
+health/assets/TLS renewal handling must be checked again during provisioning.

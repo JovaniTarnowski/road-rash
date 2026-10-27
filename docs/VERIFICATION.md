@@ -3177,3 +3177,31 @@ laps. Socket logs/captured race logs remain outside Git under
 `/Users/archit/Dev/rr/.plan34-logs/net-menus-20261027`. Both test servers were
 terminated; no listeners remain. The first attempt to reuse the same port
 hit TCP TIME_WAIT; the 8-client run used separate claimed ports.
+
+
+## October 27, 2026 — plan 34 Task 8 deployment preparation
+
+Prepared `.github/workflows/net-deploy.yml` and `deploy/road-rash-net/`: a
+Linux amd64 Release build, code-only Dokku archive/runtime, startup and exact
+revision checks, loopback Nginx WebSocket/health routes, and a separate Linux
+bot image. The enabled deploy job uses a dedicated forced-command key and
+verifies two production clients with hash-checked ephemeral disc data. The
+workflow is gated by `RR_NET_DEPLOY_ENABLED`; that variable is absent, so only
+its build job runs until provisioning is complete.
+
+Local checks passed: amd64 build and stripped binary package; exact revision
+health; macOS bots against the Linux server directly and through the Nginx
+proxy; Linux CI-image bots through that proxy, all reaching 420 confirmed ticks
+with matching hashes/agreed official results. Actionlint 1.7.7 and Nginx syntax
+checks passed. The data fetcher verified all 341 actual-disc fixtures and
+rejected a hostile manifest before any write; the live hosted manifest matches
+all references and one hosted object verified. Default Python user-agent got
+HTTP 403; an explicit `RoadRash-NetSmoke/1.0` client identity succeeds.
+
+Production is **not deployed**. Operator SSH is blocked: 1Password RSA signing
+fails, and the local Ed25519 key is rejected for `arkits@agnee` / the known
+public IP. No app, deploy key, Nginx, firewall or TLS change was made on the VPS.
+An SSH unlock request is pending. Task 8 remains open, including its production
+smoke and TLS renewal-hook check. Its DataChannel/blocked-UDP acceptance also
+depends on the unimplemented Task 9 peer/negotiation/fallback; no unused UDP
+range was opened. [Resume details](agent-handoffs/net-deploy-20261027.md).

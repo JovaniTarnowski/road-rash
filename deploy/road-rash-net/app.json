@@ -1,0 +1,14 @@
+{
+  "healthchecks": {
+    "web": [{
+      "type": "startup",
+      "name": "rr-netd health",
+      "path": "/net/health",
+      "port": 8081,
+      "content": "\"ok\":true",
+      "attempts": 10,
+      "timeout": 5,
+      "wait": 2
+    }]
+  }
+}

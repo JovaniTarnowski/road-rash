@@ -1,0 +1,81 @@
+name: Deploy multiplayer server
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'server/**'
+      - 'src/net/**'
+      - 'cmake/net.cmake'
+      - 'deploy/road-rash-net/**'
+      - '.github/workflows/net-deploy.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: road-rash-net-production
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build Linux amd64 release
+        run: |
+          docker build --platform linux/amd64 -f server/Dockerfile \
+            --build-arg RR_NETD_REVISION="$GITHUB_SHA" -t rr-netd-build .
+          mkdir -p build-net-deploy
+          container=$(docker create rr-netd-build)
+          docker cp "$container:/usr/local/bin/rr-netd" build-net-deploy/rr-netd
+          docker rm "$container"
+          cp deploy/road-rash-net/Dockerfile deploy/road-rash-net/app.json build-net-deploy/
+          tar -czf rr-netd-deploy.tar.gz -C build-net-deploy .
+      - uses: actions/upload-artifact@v4
+        with:
+          name: rr-netd-code-only
+          path: rr-netd-deploy.tar.gz
+          retention-days: 7
+
+  deploy:
+    needs: build
+    # Enable after the app, loopback routes and restricted deploy key exist.
+    if: vars.RR_NET_DEPLOY_ENABLED == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: rr-netd-code-only
+      - name: Deploy restricted code archive
+        env:
+          DEPLOY_KEY: ${{ secrets.DOKKU_ROAD_RASH_NET_KEY }}
+          KNOWN_HOSTS: ${{ vars.DOKKU_ROAD_RASH_KNOWN_HOSTS }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$DEPLOY_KEY" > ~/.ssh/road-rash-net
+          chmod 600 ~/.ssh/road-rash-net
+          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+          ssh -T -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
+            -i ~/.ssh/road-rash-net root@5.161.142.20 < rr-netd-deploy.tar.gz
+      - name: Verify HTTPS health and exact revision
+        run: |
+          curl --fail --retry 12 --retry-delay 5 --retry-all-errors \
+            https://road-rash.archit.xyz/net/health -o /tmp/net-health.json
+          python3 -c 'import json,os; h=json.load(open("/tmp/net-health.json")); assert h["ok"] is True and h["rev"] == os.environ["GITHUB_SHA"], h'
+      - name: Build real smoke clients
+        run: docker build --platform linux/amd64 -f deploy/road-rash-net/smoke.Dockerfile -t rr-net-smoke .
+      - name: Verify two production clients
+        run: |
+          python3 deploy/road-rash-net/fetch-smoke-data.py "$RUNNER_TEMP/rr-net-disc"
+          docker run --rm -v "$RUNNER_TEMP/rr-net-disc:/game-data:ro" rr-net-smoke \
+            --disc /game-data --url wss://road-rash.archit.xyz/net --clients 2 --ticks 420 --timeout 90
+      - name: Remove temporary credentials and data
+        if: always()
+        run: |
+          rm -f ~/.ssh/road-rash-net
+          rm -rf "$RUNNER_TEMP/rr-net-disc"
