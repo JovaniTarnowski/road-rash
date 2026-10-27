@@ -135,8 +135,18 @@ The owner also asked for plans covering pedestrians, oil slicks, police and the 
 18 settings ──► 19 high resolution ──► 20 upscaling ────────────────┤
                                     └──► 21 enhanced visuals ───────┤
 22 toolchain hardening (any time; before 19 Task 6) ───────────────┤
-14 Android (Task 1 now; rest after 11) ─────────────────────────────┘
+14 Android (Task 1 now; rest after 11) ─────────────────────────────┤
+33 Linux/Windows (after macOS complete) ───────────────────────────┤
+34 online mano-a-mano: 1 rules ──► 2 multi-human race ──► 3 rollback ┤
+                       4 codecs ─┬► 5 rr-netd ──► 6 client ──► 7 front end
+                                 └► 8 VPS ──► 9 WebRTC ──► 10 platforms ──► 11 acceptance
 ```
+
+- **Plan 34** (online mano-a-mano, definition of done item 9) runs alongside
+  the sim plans. Task 2 changes shared simulation files and must keep every
+  offline golden bit-identical; Tasks 4 (codecs/channels) and 5 (server
+  rooms/sealer) do not depend on the simulation and may proceed while Task 2
+  is in progress. Task 3's cross-platform matrix needs plan 33 for Windows.
 
 - **Plan 11a now.** The owner-visible defects come first: Tasks 1 (car collision) and 3 (bike/shadow nodes) remain.
 - **Plan 10 next.** Every behaviour change in 11, 16 and 17 is accepted against its tick goldens. Task 5 needs a single-anchor, human-control golden before anything else is called verified.

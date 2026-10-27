@@ -1,5 +1,19 @@
 # Verification log (all sessions September 28, 2026)
 
+## Plan 34 Task 1: mano-a-mano rules trace (October 26, 2026)
+
+- Documentation only; no build or capture. Sources: `analysis/decompiled/`
+  exports `00405600`, `004317a0`, `00431840`, `0042fbb0`, `00415fc0`,
+  `00442f60`, `00440340`, `004395e0`, `00442dd0`, `00430690`, `004305f0`,
+  `0042f920`, `00446c30`, `00416010`, `00416120`, `004163d0`, `00430e00`,
+  `004314d0`, `00432440`, `00444fb0`, `00421df0`, and disassembly at
+  `0x00423345..0x00423477` and `0x00423d5a..0x00423d6a`.
+- String references checked by searching the disassembly for loads at
+  `0x6ac`/`0x6b0`/`0x6b4` (427–429): none. `0x0046b1f0` (`DUEL`) has one code
+  reference (attract timer).
+- Not done: the optional two-instance Wine capture (plan 34 Task 1 Step 2);
+  no rule stayed ambiguous enough to need it.
+
 ## Full police pursuit parity (October 26, 2026)
 
 Owned Debug `build-agent-open` + ASan/UBSan `build-agent-open-san`:

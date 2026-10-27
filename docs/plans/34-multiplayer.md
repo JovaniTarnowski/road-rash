@@ -161,7 +161,7 @@ With one human, each generalisation must reduce to the current code path; the of
    - Each human's outcome (finished #n, wrecked, busted) appears as the original announcements 427–429.
    - The race ends when every human is done, or 60 s after the last human still racing falls more than one lap of ticks behind the leader. That timeout is a native rule, chosen because the original's "you are the master" wait has no host here.
    - The server collects each client's final result hash; matching hashes make the results "official" (441).
-   - Mano-a-mano results have no career effect (original rule) and play the `DUEL` video.
+   - Mano-a-mano results have no career effect (original rule). Only first place counts as won (`0x00416010`). They play the normal result-screen videos: the Task 1 trace found no result path that plays `DUEL`.
 
 ### Rollback engine, in detail
 
@@ -235,8 +235,8 @@ The following are kept, because they are gameplay rather than transport:
 - the countdown 0x168;
 - traffic density ×4 and the spawn gates around remote riders;
 - the heartbeat handicap rubber band (`0x00442f60`), recomputed deterministically inside the simulation every 0x39 ticks;
-- no qualification bits;
-- the mano menus, strings, chat slots and `DUEL` video.
+- no qualification bits; only first place is a win;
+- the mano menus, strings and chat slots.
 
 The following are dropped as transport artefacts, and documented as deviations:
 - AI ownership hand-off;
@@ -253,7 +253,7 @@ The following are dropped as transport artefacts, and documented as deviations:
 
 **Files:** Update `docs/MULTIPLAYER.md`, `docs/REVERSE_ENGINEERING.md`.
 
-- [ ] **Step 1: Static traces.** Record each with its address, from disassembly and exports:
+- [x] **Step 1: Static traces.** Record each with its address, from disassembly and exports:
   - the networked grid count and slot layout in `0x00405600`;
   - AI biker counts for None / Limited / Full;
   - how the `0x00442f60` handicap byte is applied to riders;
@@ -261,8 +261,10 @@ The following are dropped as transport artefacts, and documented as deviations:
   - the finish, wreck and bust flow when other humans are still racing (strings 427–430, 441–442);
   - the `DUEL` video trigger;
   - which restroom options are locked in mode 3 (`0x00444fb0`).
-- [ ] **Step 2: Capture if needed.** Only if a rule stays ambiguous, capture it from two original instances under Wine, using WSOCK32 IAT hooks in `oracle/aweman_proxy.c` that remap the ports per instance. This was the old Task 1; it is now optional evidence.
-- [ ] **Step 3:** Commit: `docs: original mano-a-mano gameplay rules`.
+- [x] **Step 2: Capture if needed.** (Not needed: every rule was traced statically, October 26.) Only if a rule stays ambiguous, capture it from two original instances under Wine, using WSOCK32 IAT hooks in `oracle/aweman_proxy.c` that remap the ports per instance. This was the old Task 1; it is now optional evidence.
+- [x] **Step 3:** Commit: `docs: original mano-a-mano gameplay rules`.
+
+**Done (October 26, 2026):** traces in [../MULTIPLAYER.md](../MULTIPLAYER.md) "Gameplay rules the port keeps". Corrections: `DUEL` is not a mano result video, so Task 7 plays the normal outcome videos; strings 427–429 are unreferenced, so their use is a native announcement.
 
 **Acceptance:** each rule that Task 2 or Task 7 uses has an address or a capture behind it.
 
@@ -441,7 +443,7 @@ std::pair<std::unique_ptr<Channel>, std::unique_ptr<Channel>> loopback_pair(NetS
   - The original transport popup is removed: there is one transport.
 - [ ] **Step 2: Native screens in the original menu style.** Room code display and copy, join by code, the public room list (Host / Level / Avail / Status), roster with characters and pings, "connecting…", errors (version mismatch, room full, server unreachable). Strings use native slots. Each replacement is listed in REVERSE_ENGINEERING.md "Not ported or replaced natively".
 - [ ] **Step 3: Invite links.** The browser reads `?room=` and opens Join. Native clients accept a pasted code or link. Android also handles `https://road-rash.archit.xyz/?room=` app links if the manifest allows.
-- [ ] **Step 4: Results.** Original mano results: places from the official table, no career change, `DUEL` video, back to screen 0x0b with the room kept for a rematch.
+- [ ] **Step 4: Results.** Original mano results: places from the official table, no career change, the result-screen video (not `DUEL`, Task 1), back to screen 0x0b with the room kept for a rematch.
 - [ ] **Step 5: Tests.** Drive the front end through host → vote → race → results → rematch with the in-process server.
 - [ ] **Step 6:** Commit: `frontend: online mano-a-mano`.
 

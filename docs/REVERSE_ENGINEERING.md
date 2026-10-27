@@ -2310,6 +2310,27 @@ traced and inferred items labelled, is in [MULTIPLAYER.md](MULTIPLAYER.md).
 - **Menu:** screen 0x0b (Host `0x0042fc40`, Join `0x0042fef0`, Bulletin Board,
   Chat Messages, Restroom, Disconnect `0x00431600`); screen 0x0d holds F1–F8
   chat messages of 60 bytes each at `0x00497408`.
+- **Gameplay rules for the port** (October 26, 2026, plan 34 Task 1; static,
+  from the exports and disassembly; full text in
+  [MULTIPLAYER.md](MULTIPLAYER.md) "Gameplay rules the port keeps"):
+  - rider count `DAT_004642d4 − 1` from the A.I. bikers byte `DAT_004b88f8`:
+    Full 15, Limited 8, None = highest player row + 1 (`0x00405600:21-31`);
+    humans start on grid rows = network slot, A.I. behind; grid table
+    `0x00464258` replaces `0x00464218` above four humans;
+  - handicap: every 0x39 ticks over humans' `+0x1f8`, spread
+    `(max−min)·0x40/0x4200` capped 0x40, applied only when positive, only to
+    an uncrashed moving human, as `+0x108 = v + (b·v >> 8)` in `0x004395e0`;
+  - chat log: six lines at `0x004c58c0`, no timeout, drawn at the top of the
+    race view by `0x00446c30:378-425`;
+  - networked finish: won only for first place (`0x00416010`); each machine
+    leaves the race on its own outcome and the others keep racing; kind-10
+    record removes the rider (`0x00432440`); 441/442 printed by `0x004314d0`;
+    Escape shows 430 (host) or 316 (client) without pausing (`0x00423345`);
+  - strings 427–429 are not referenced by the EXE; `DUEL` is not played by
+    any mano result path (attract and jukebox only) — the earlier
+    "DUEL is the mano cutscene" reading is withdrawn;
+  - restroom patterns 5/6/7 for mode 3 unconnected/host/client
+    (`0x00444fb0`).
 - **Correction.** Plan 09 assumed two-player lockstep exchanging controls. The
   code replicates state (snapshots and events), and up to eight humans can
   play over TCP/IP or IPX.

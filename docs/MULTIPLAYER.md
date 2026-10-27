@@ -242,7 +242,7 @@ The tick-loop send `0x0043cdb0`:
   - the results screen sits under the mano screen;
   - "Disconnect" replaces Restroom or Panzer Klub on course select;
   - busted and wrecked replay through `0x004210a0`;
-  - the `DUEL` video is the mano-a-mano cutscene (`jukebox-port-20261012.md`).
+  - ~~the `DUEL` video is the mano-a-mano cutscene~~ (corrected below: no result path plays `DUEL`).
 - **Other branches** that test `+0x324 == −1` (remote) include:
   - walk `0x0040a600`, arrest `0x00407f30` and cop `0x00406ee0`;
   - the rider list and names `0x00437860` / `0x00446bf0` / `0x00446c30`;
@@ -250,6 +250,140 @@ The tick-loop send `0x0043cdb0`:
   - remount tail `0x0043cd50`;
   - lateral collision `0x004317a0`. Its first loop is the networked one, using
     the `0x00497304..0x00497404` mask (`bike-lateral-20261015.md`).
+
+## Gameplay rules the port keeps (plan 34 Task 1, traced October 26, 2026)
+
+Static traces from the Ghidra exports (`analysis/decompiled/<address>.c`) and
+`analysis/original-disassembly.txt`. No two-instance capture was needed: every
+rule plan 34 Tasks 2 and 7 use is read directly from code. "Not referenced"
+means no load of that string-table offset (`DAT_00475378 + id*4`) exists in the
+disassembly.
+
+**Grid and rider count** (`0x00405600`, `0x004317a0`, `0x00431840`).
+- `DAT_004642d4` is riders + 1. Offline it is `0x10` (15 riders). When
+  networked it comes from the A.I. bikers byte `DAT_004b88f8` (set from the
+  session record `+0x11` in `0x00430b30`, cleared by `0x0042fdb0`/`0x00430080`):
+  - 2 (**Full**): `0x10`, 15 riders, as offline;
+  - 1 (**Limited**): 9, so 8 riders: the humans plus A.I. up to 8;
+  - 0 (**None**, "Humans only"): `0x00431840() + 1`, where `0x00431840` is the
+    highest in-use row of the player table `0x00497304` plus 1. A gap in the
+    rows still produces a remote rider for the empty row (character 1).
+- `0x004317a0` fills the layout array: every human row other than the local
+  one gets controller −1 (remote), its network slot as grid index, and its
+  character through `0x00415fc0` (menu index 1..8 → rider 8,7,2,5,4,6,3,1).
+  A.I. riders take the remaining entries `0x00431840()..riders−1`, grid index
+  = entry index, controller 1.
+- The local human is built at grid index = its own network slot
+  `DAT_004b8a10`. **Humans therefore start at grid rows 0..n−1 by slot, A.I.
+  behind them.**
+- Grid table: `0x00464218` normally; `0x00464258` when more than four humans
+  are connected (`0x0042fbb0() > 4`, `0x004056a6`). Remote humans use the
+  player's bike/half tables `0x00463ba8`/`0x00463c10`; A.I. use
+  `0x00463ad8`/`0x00463b40` with the level-split opponent rows
+  `0x00464088`/`0x00464108` (level < 4 / ≥ 4), as offline.
+- Remote humans get think `0x00407d40` (snapshot-driven). The port replaces
+  that with the player think fed by the sealed control word (plan 34 Task 2).
+
+**Handicap** (`0x00442f60` compute, `0x00440340` receive, `0x004395e0` apply).
+- Every 0x39 ticks (`DAT_0049bdd0` trails the tick counter by 0x39) the host
+  takes every human rider (controller 0 or −1) and reads half `+0x1f8`, the
+  Q8 distance still to the finish (rider 0, the local human, always
+  counts). It computes the mean, min and max, and skips the update when the
+  sum is 0; the
+  spread factor is `(max − min)·0x40/0x4200`, capped at 0x40 when the spread
+  exceeds 0x4200.
+- If the mean equals the min or the max, all handicap bytes are cleared
+  (`0x004c1200..0x004c120f`). Otherwise, with `e = d − mean` for each human:
+  - `e < 0` (ahead of the mean): byte = `spread·e/(mean − min)`, clamped to
+    −0x80 below −0x7f;
+  - `e ≥ 0` (behind): byte = `spread·e/(max − mean)`, clamped to 0x7f above
+    0x7e.
+
+  Divisions are signed and truncate toward zero; the mean is
+  `sum/count` with the same truncation.
+- Clients receive their own byte into `0x004c1200[0]`; the host uses its own
+  slot 0 byte directly.
+- **Application** (`0x004395e0:30-32`): only for the local human
+  (controller 0), only when not crashed (`+0x2f4 == 0`), only when speed
+  `+0xec > 0` and only when the byte is **positive**: `+0x108 = speed +
+  (byte·speed >> 8)`. Leaders (negative bytes) are not slowed; trailing humans
+  get up to +0x7f/256 ≈ 50% of their speed in the move step. It affects
+  movement only, not the stored speed.
+- The port computes it inside the simulation every 0x39 ticks from shared
+  state and applies each human's own byte to that human's rider (plan 34
+  Task 2). The original's one-heartbeat latency is a transport artefact.
+
+**Countdown** (`0x00442dd0`): `DAT_004753bc = 0x168` when networked, else
+0xb4.
+
+**Chat in a race** (`0x00430690`, `0x004305f0`, `0x0042f920`, `0x00446c30`).
+- F1–F8 (key messages 0x70..0x77 in the window procedure `0x004227d0:379-387`)
+  call `0x00430690(n)`. A non-empty slot `0x00497408 + n*0x3c` is broadcast as
+  record type 1 with the sender slot byte, then appended to the local log
+  through `0x0042f920`.
+- `0x0042f920` is a printf into a **six-line** log `0x004c58c0` (line count
+  `DAT_004972f8`, capped at 6; the oldest line is dropped when full; a newline
+  is appended when missing). There is **no timer**: lines stay until pushed
+  out or until disconnect (`0x00431600`) or a new session (`0x00430b30`)
+  clears the log.
+- The dashboard text pass `0x00446c30:378-425` draws the log at the top of
+  the race view: left 0, top 0, width = view width, height 0x15 (0x29 when
+  `ChatState` `0x00474f48 == 2`), bottom-aligned so the newest lines show
+  (`DrawTextA` flags 0x4c50 to measure, then 0x4850). With the inset/low
+  view (`DAT_00475380 != 0`) it moves to the right half. The menus draw the
+  same log through `0x0041ff80`.
+- The line being typed is `0x004c5b10`, drawn in a filled bar under the log
+  (colour `0xffaf93` on `0x404040`).
+
+**Finish, wreck, bust while others race** (`0x00416010`, `0x004163d0`,
+`0x00430e00`, `0x004314d0`, `0x00432440`, `0x00423345`).
+- Outcome: a finish (`0x7f`) becomes **won (2) only for first place** when
+  networked (`place ≤ 0`); offline it is won for places 0–2
+  (`0x00416010:12-14`). Busted is 4, wrecked 5.
+- When a machine's race loop ends (`0x004163d0` → `0x00442e10` true) it calls
+  `0x00430e00`: it releases the A.I. it owned, sends record kind 10 with its
+  slot, and leaves for the results screens. Each machine leaves on its own
+  outcome; **the race keeps running for the others.**
+- On receiving kind 10 (`0x004314d0`): the host marks that row done
+  (`0x00497304 + slot*0x20 + 2`) and relays; `0x00432440` clears the rider's
+  flags `+0xc0 & ~3` and its `+0xe4`/`+0xdc`, so the finished rider leaves the
+  other screens. A client receiving kind 10 from slot 0 (the host) prints 442
+  "%s has terminated the race." once and ends its own race, then 441 "The race
+  results are now official."; the host prints 441 when it finishes.
+- When the host's own outcome is set (`0x00416010:25-45`) its status line
+  `0x004c5bd0` becomes 430 "You are the master. If you leave, everyone dies!".
+- **Escape in a race** (`0x00423345`, mode 3, outcome still 1): the first press
+  shows a status line instead of the offline modal prompt: 430 on the host,
+  316 on a client (`0x6b8 + (host ? 0 : −0x72·4)`); the race is not paused. A
+  second press quits with outcome 5.
+- Strings 427 ("%s finished #%d."), 428 ("%s wrecked.") and 429 ("%s got
+  busted!") are **not referenced** by this EXE. The port uses them as native
+  announcements (a replacement, listed in REVERSE_ENGINEERING.md).
+- Results (`0x00416120:36-60`): the same result screens as offline
+  (`0x1e` won, `0x1f` lost, `0x1d` busted, `0x1c` wrecked); networked
+  outcomes call `0x004210a0(local slot, …)` to place the local human in the
+  standings. A win sets no qualification bits. Leaving a networked race
+  returns to screen 0x0b (`0x00416120:21-34`).
+
+**`DUEL` video.** `0x0046b1f0` ("DUEL") is referenced only by the attract-mode
+second timer fire (`0x00423d6a`, random JESSIE/DUEL) and the jukebox video
+table `0x00473fa0`. **No mano-a-mano result path plays it.** The earlier
+reading "DUEL is the mano-a-mano cutscene" (this file, before October 26) was
+wrong; mano results play the normal outcome videos of the result screens. The
+port follows the code: plan 34 Task 7 plays the result-screen videos, not
+`DUEL`.
+
+**Restroom in mode 3** (`0x00444fb0`, patterns `0x00473598 + i*4`). Mode 3
+selects pattern 5 (`0x004735ac`) when neither connected, 6 (`NNNNYYYY`,
+`0x004735b0`) on the host, 7 (`NNNNYNYY`, `0x004735b4`) on a client, over the
+13 restroom items at `0x00473860` (only the first eight letters exist, so items
+8–12 keep their enable bytes). The native front end used pattern 6 for every
+mano state; Task 7 selects 5/6/7. In the port every room member is a client of
+`rr-netd`; the room host takes the host pattern.
+
+**Networked menus** (`0x00421df0:142-175`): screens 8, 0x0b–0x0d, 0x10–0x13
+and 0x1c–0x22 append `DAT_0046c4c8` extra rows from `0x0046c458` (the roster
+and chat-log area) when connected.
 
 ## Port design (owner decision, October 26, 2026)
 
@@ -267,7 +401,7 @@ port keeps:
 - the 0x168 countdown;
 - traffic ×4 and the spawn gates;
 - the handicap rubber band;
-- no qualification bits, and the `DUEL` video.
+- no qualification bits; results use the normal outcome videos (`DUEL` is not a mano video, see the Task 1 traces).
 
 The transport artefacts are dropped and recorded as deviations: snapshot
 replication, AI ownership hand-off, host relay, modem, IPX and LAN discovery.
