@@ -1,10 +1,10 @@
 # Multiplayer server deployment
 
-Status (October 27, 2026): code/archive and local container verification are
-prepared. Production provisioning is blocked by the operator SSH identity:
-1Password signing fails and the local key is rejected. No VPS change has been
-made. `RR_NET_DEPLOY_ENABLED` is absent, so the workflow builds the code artifact
-and skips deployment. Task 8 is still open.
+Status (October 27, 2026): `road-rash-net` is provisioned on agnee and serves
+`wss://road-rash.archit.xyz/net` plus HTTPS `/net/health`. Native production
+bots passed a 420-tick agreed cutoff. The dedicated restricted deploy key and
+`RR_NET_DEPLOY_ENABLED=true` are installed; the enabled CI production run is
+recorded in the live handoff. WebRTC/UDP acceptance still requires Task 9.
 
 ## Package and workflow
 
@@ -29,8 +29,9 @@ DOKKU_ROAD_RASH_NET_KEY --repo arkits/road-rash < KEY_FILE`. The workflow
 uses the already authenticated `DOKKU_ROAD_RASH_KNOWN_HOSTS` variable. No host-key
 scan or unchecked host-key acceptance is used.
 
-## Provision after operator access is restored
+## Provisioning reference (already installed)
 
+Use the authorized operator identity (`root@agnee` for host changes).
 Inspect `dokku version`, apps, port listeners, the existing TLS file, firewall
 and renewal hook first. Record backups of files before changing them. Preserve
 other applications and any unrelated configuration.
@@ -39,6 +40,7 @@ For the new app only (first confirm ports 18080/18081 are free):
 
 ```sh
 dokku apps:create road-rash-net
+dokku proxy:set road-rash-net nginx
 dokku domains:set road-rash-net road-rash-net.internal
 dokku nginx:set road-rash-net bind-address-ipv4 127.0.0.1
 dokku nginx:set road-rash-net bind-address-ipv6 ::1
@@ -47,7 +49,8 @@ sudo install -d -m 750 -o 999 -g 999 /var/lib/dokku/data/storage/road-rash-net
 dokku storage:mount road-rash-net /var/lib/dokku/data/storage/road-rash-net:/data
 ```
 
-Verify these commands/properties against the installed Dokku version. Dokku
+Verified on Dokku 0.38.25. Its global default is Caddy, so the app-specific
+`proxy:set ... nginx` is required; the global proxy setting is unchanged. Dokku
 owns the loopback HTTP listeners and updates their container upstreams on each
 deploy; fixed Docker host-port bindings would prevent overlapping deployment
 health checks. Bind both listeners to loopback, and confirm that with `ss`.

@@ -99,16 +99,34 @@ Native gameplay fidelity gaps remain tracked in CURRENT_STATUS.md; deployment
 checks do not establish original-game parity or mobile/Safari acceptance.
 
 
-## Multiplayer deployment preparation (October 27, 2026)
+## Multiplayer service (October 27, 2026)
 
-The multiplayer deployment is prepared locally and is not provisioned on
-`agnee`. See [deployment/runbook](../deploy/road-rash-net/README.md) for the
-code-only archive, two loopback listeners, restricted deploy key, health and
-revision checks, CI production smoke, retention and rollback.
+Production WebSocket: `wss://road-rash.archit.xyz/net`; health:
+`https://road-rash.archit.xyz/net/health`. Dokku app `road-rash-net` runs the
+Linux amd64 code-only image with persistent `/data` mounted from
+`/var/lib/dokku/data/storage/road-rash-net` (uid/gid 999). The daemon keeps race
+logs for seven days. No game files are installed in this app/image.
 
-The workflow builds Linux amd64 code on relevant main pushes. Deployment stays
-skipped until `RR_NET_DEPLOY_ENABLED=true` is set after the app, Nginx routes
-and dedicated key exist. Operator SSH currently fails at the signing/auth stage;
-no server configuration or firewall was changed. Task 9 must supply the actual
-DataChannel before UDP/public-candidate acceptance can complete. Existing web
-health/assets/TLS renewal handling must be checked again during provisioning.
+The app explicitly selects Nginx (Dokku 0.38.25's global default remains Caddy).
+Its private listeners are `127.0.0.1` / `::1` ports 18080 (container WS 8080) and
+18081 (container health 8081). The existing TLS server includes
+`/etc/nginx/snippets/road-rash-net.conf` for `/net` and `/net/health` only.
+Other app/proxy settings and firewall rules are unchanged. The TLS file backup
+is `/etc/nginx/conf.d/road-rash-tls.conf.pre-net-20261027-80613`.
+
+`DOKKU_ROAD_RASH_NET_KEY` is restricted to
+`/usr/bin/dokku git:from-archive road-rash-net --`; the local temporary private
+key was deleted after installation/verification. `RR_NET_DEPLOY_ENABLED=true`
+enables deployment and a two-client Linux CI production smoke after exact
+revision health checks. Code archives are retained for seven days. The script
+fetches verified data into ephemeral CI storage and never uploads/includes it
+in an artifact/image. See [runbook](../deploy/road-rash-net/README.md) for
+provisioning, artifact rollback and the local verification evidence.
+
+Native bots passed matching hashes/agreed official results at a scripted
+420-tick cutoff over public Cloudflare HTTPS/WebSocket. This is transport and
+determinism evidence, not full-course or interactive cross-play acceptance.
+Existing web health/revision/341-file manifest were checked, and the renewal
+deploy hook successfully validated/reloaded Nginx (no certificate renewal was
+attempted). UDP publishing/firewall/candidate/DataChannel acceptance stays open
+until Task 9 implements that transport; no unused UDP range was opened.

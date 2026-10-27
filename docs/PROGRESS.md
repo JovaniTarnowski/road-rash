@@ -2388,3 +2388,38 @@ An SSH unlock request is pending. Task 8 remains open, including its production
 smoke and TLS renewal-hook check. Its DataChannel/blocked-UDP acceptance also
 depends on the unimplemented Task 9 peer/negotiation/fallback; no unused UDP
 range was opened. [Resume details](agent-handoffs/net-deploy-20261027.md).
+
+
+## October 27, 2026 — plan 34 live WebSocket deployment
+
+Provisioned only Dokku `road-rash-net`, its persistent `/data`, dedicated
+restricted CI archive key and `/net` routes in the existing TLS server.
+Explicit app-only `proxy:set road-rash-net nginx` is required because agnee's
+global Dokku proxy is Caddy. Nginx bindings are loopback-only 18080/18081 on
+IPv4 and IPv6. Existing web health/revision and 341-file manifest passed; the
+Certbot deploy hook validated/reloaded Nginx. Other apps/global proxy settings
+and all firewall rules were preserved.
+
+`wss://road-rash.archit.xyz/net` passed two native clients with matched hash
+`13426816110484682456` at 420 confirmed ticks and agreed official results.
+The dedicated deploy key was verified by the initial archive deployment,
+stored only in the repository secret, and its temporary local private file
+removed. `RR_NET_DEPLOY_ENABLED=true`; the enabled CI run deployed source
+`0adb9a9533ae0577dd8ae31efa8bc552be2dab9e` and its public exact-revision health
+check passed. Full CI production smoke receipt follows in the live handoff.
+
+No DataChannel or UDP fallback acceptance is claimed: Task 9 must implement
+that transport before Task 8 Step 3 can be measured. No unused UDP ports were
+published/opened. This is a scripted transport/determinism cutoff, not a full
+course or interactive cross-play acceptance. [Live handoff](agent-handoffs/net-live-20261027.md).
+
+
+Live production CI receipt: [40534691545](https://github.com/arkits/road-rash/actions/runs/40534691545)
+passed the enabled build + deployment + Linux two-client production smoke.
+All 341 hosted files verified in ephemeral storage; temporary CI credential/data
+cleanup passed. Source revision `0adb9a9533ae0577dd8ae31efa8bc552be2dab9e`
+matched public health. Both CI clients reached the scripted 420-tick cutoff
+with matching hashes and agreed official results. Public counters reported
+one finished race and zero desyncs after the run. Game assets remain outside
+Git, images and artifacts. Task 8 Steps 1/2/4/5 complete; Step 3 remains for
+Task 9's DataChannel implementation and measurements.

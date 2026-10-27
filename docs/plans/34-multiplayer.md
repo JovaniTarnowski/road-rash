@@ -478,13 +478,16 @@ Implementation/evidence: October 27, 2026, [Task 7 handoff](../agent-handoffs/ne
 
 ### Task 8: VPS deployment
 
-October 27 preparation: Linux amd64 code archive, gated workflow, Nginx snippets
-and real Linux bot image are implemented and locally verified (direct/proxied
-420-tick agreed results). Production remains blocked by operator SSH signing/auth;
-`RR_NET_DEPLOY_ENABLED` is absent. No VPS/key/firewall change was made. See
-[handoff](../agent-handoffs/net-deploy-20261027.md). Step 3 additionally depends
-on Task 9's actual peer/negotiation/fallback; a WebSocket-only pass is not its
-acceptance. Checkboxes below remain open until their full production checks pass.
+October 27 live deployment: `road-rash-net` is serving public WSS `/net` and
+HTTPS `/net/health`. The restricted CI key, persistent race logs, loopback
+Nginx ports and exact-revision checks are installed. Native public bots passed;
+[enabled production CI 40534691545](https://github.com/arkits/road-rash/actions/runs/40534691545)
+passed two Linux clients with matching hashes/agreed results. Existing web
+health/assets and TLS deploy-hook validation passed. See
+[live handoff](../agent-handoffs/net-live-20261027.md).
+Step 3 stays open until Task 9 provides actual peers/negotiation/fallback;
+WebSocket-only results do not establish UDP acceptance. No unused UDP range
+was published/opened, and no other app/global proxy/firewall setting changed.
 
 **Owner-approved scope on `agnee`:**
 - a new Dokku app `road-rash-net`;
@@ -496,14 +499,14 @@ Nothing else on the server changes.
 
 **Files:** Create `deploy/road-rash-net/` (Dockerfile reference, `app.json` healthcheck, Nginx snippet), `.github/workflows/net-deploy.yml`. Update `docs/WEB_HOSTING.md`.
 
-- [ ] **Step 1: Deploy workflow.** Build `rr-netd` (Linux x86-64 release) on pushes to `main` that touch `server/` or `src/net/`. Deploy with `dokku git:from-archive`, as the web app does. Health-check `/net/health` and check the exact Git revision.
-- [ ] **Step 2: Nginx route.** WebSocket upgrade headers, a long read timeout and a body size limit. Cloudflare passes WebSockets on the proxied hostname. Confirm the TLS renewal hook still validates.
+- [x] **Step 1: Deploy workflow.** Build `rr-netd` (Linux x86-64 release) on pushes to `main` that touch `server/` or `src/net/`. Deploy with `dokku git:from-archive`, as the web app does. Health-check `/net/health` and check the exact Git revision.
+- [x] **Step 2: Nginx route.** WebSocket upgrade headers, a long read timeout and a body size limit. Cloudflare passes WebSockets on the proxied hostname. Confirm the TLS renewal hook still validates.
 - [ ] **Step 3: WebRTC UDP.**
   - Publish the port range and advertise `5.161.142.20` as the server's host candidate (configurable).
   - Confirm from an outside network that a DataChannel connects.
   - Confirm that the WebSocket fallback works when UDP is blocked; test from a network that blocks UDP, or with a client flag that blocks it.
-- [ ] **Step 4: Post-deploy smoke.** Two `net_bots` from CI race a short scripted race against production and require equal hashes and official results.
-- [ ] **Step 5:** Record everything in WEB_HOSTING.md: app, ports, firewall change, rollback procedure. Commit: `deploy: rr-netd on agnee`.
+- [x] **Step 4: Post-deploy smoke.** Two `net_bots` from CI race a short scripted race against production and require equal hashes and official results.
+- [x] **Step 5:** Record everything in WEB_HOSTING.md: app, ports, firewall change, rollback procedure. Commit: `deploy: rr-netd on agnee`.
 
 ---
 
