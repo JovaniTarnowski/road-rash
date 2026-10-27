@@ -53,6 +53,23 @@ Detailed evidence is in [REVERSE_ENGINEERING.md](REVERSE_ENGINEERING.md) and tes
 
 ## Timeline
 
+### October 26, 2026: plan 34 Tasks 4–5, wire protocol, channels and rr-netd core
+
+- `src/net/protocol.*`: 28 binary messages, bounds-checked, canonical
+  encoding, golden vectors (`tests/data/net_protocol_vectors.txt`), fuzz
+  target `fuzz_net_protocol`. `src/net/channel.hpp` + deterministic
+  `loopback_pair` network (latency/jitter/loss/duplication/reorder) and the
+  libdatachannel WebSocket channel (`ws_channel.cpp`, v0.24.6 pinned).
+- `server/`: rr-netd lobby/rooms (create, join by code, public list, seats,
+  host hand-over, seat-token reconnect, timeouts, rate limits), the input
+  sealer (repeat-last + late flag, AI hand-over at a sealed tick, hand-back),
+  race clock, frame delivery (once over WS, repeated until acked over
+  unreliable channels), desync detection with log catch-up, official
+  results, `/net/health`, JSON logs, 7-day race logs, Dockerfile.
+- Remaining in these tasks: `tools/net_bots.cpp` (needs the Task 6 client);
+  the Linux Docker image build is unverified locally (Docker daemon off) and
+  moves to the Task 8 deploy workflow.
+
 ### October 26, 2026: plan 34 Task 1, original mano-a-mano gameplay rules
 
 - Static traces (no capture needed) in [MULTIPLAYER.md](MULTIPLAYER.md)

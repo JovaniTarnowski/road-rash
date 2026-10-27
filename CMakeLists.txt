@@ -79,6 +79,7 @@ if(RR_FUZZ)
     add_executable(fuzz-seeds fuzz/seeds.cpp)
     target_link_libraries(fuzz-seeds PRIVATE rr-resource)
 endif()
+include(cmake/net.cmake) # plan 34
 if(ANDROID)
     set(RR_GAME_SOURCES src/game_main.cpp src/road_draw.cpp src/import_ui.cpp src/race_overlay.cpp src/race_helpers.cpp src/game_types.cpp src/race_screen.cpp)
     # The Android build ships the playable game.
@@ -328,6 +329,7 @@ else()
         # Plan 30 Task 1: labels for targeted runs. `slow` = minutes-long;
         # `sim` = simulation coverage; `disc` = reads the disc (77 without it);
         # everything else gets `unit` from the loop below (Review Focus 1).
+        include(cmake/net_tests.cmake) # plan 34
         set(RR_SLOW_TESTS hires-render race-soak course_scene race_setup raster-rgb widescreen oracle-scene oracle-terrain oracle-terrain-medly)
         set(RR_SIM_TESTS oracle-sim oracle-sim-field oracle-sim-field-schema2 oracle-sim-field-l5 race race_schedule car_contact frozen_state race-soak race_setup bike crash traffic actor_traffic pedestrian police sim_fields track_ring)
         set(RR_DISC_TESTS oracle-road oracle-scene oracle-terrain oracle-terrain-medly oracle-raster hires-render raster-rgb widescreen polygon text frontend

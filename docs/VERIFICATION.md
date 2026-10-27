@@ -1,5 +1,26 @@
 # Verification log (all sessions September 28, 2026)
 
+## Plan 34 Tasks 4–5: protocol, channels, rr-netd core (October 26, 2026)
+
+- Worktree build `build-p34` (Debug, macOS ARM64, AppleClang):
+  `cmake --build build-p34 --parallel` clean; full `ctest` 108/108 passed,
+  0 skipped (goldens from the main checkout's `analysis/oracle`, symlinked),
+  before the server tests were added; then
+  `ctest -R "net_|server_"` 4/4 (`net_protocol`, `net_ws`, `server_sealer`,
+  `server_room`).
+- `net_ws` uses a real localhost libdatachannel WebSocket server/client:
+  100 ordered messages, a 18,445-byte LogChunk, close propagation.
+- Strict warnings: every new file passes `-Wall -Wextra -Wshadow -Wconversion
+  -Wno-sign-conversion` (`-fsyntax-only`).
+- Fuzz: `build-p34-fuzz` (Homebrew LLVM, ASan/UBSan/libFuzzer)
+  `fuzz_net_protocol` 120 s, 5,238,043 runs, 0 crashes, 638 new units
+  (local corpus, not committed); `fuzz-seeds` rewrote only the new
+  `fuzz/seeds/fuzz_net_protocol/`.
+- `rr-netd` smoke (local): `GET /net/health` → 200 JSON, unknown path → 404,
+  SIGTERM logs `stop`. Standalone `cmake -S server` Release build links.
+- Not run: the Docker image build (OrbStack daemon not running), Linux
+  compile, `net_bots` (needs Task 6).
+
 ## Plan 34 Task 1: mano-a-mano rules trace (October 26, 2026)
 
 - Documentation only; no build or capture. Sources: `analysis/decompiled/`

@@ -353,6 +353,8 @@ class Rollback {
 - Add: `third_party/libdatachannel` (pinned, as a CMake subproject or FetchContent with a hash), licence files
 - Modify: `CMakeLists.txt`, `docs/USER_GUIDE.md` (third-party notice)
 
+**Done (October 26, 2026):** `rr-net` (codecs, loopback network; no SDL) always builds; `rr-net-transport` adds libdatachannel v0.24.6 (pinned commit, OpenSSL static on macOS) behind `RR_NET_TRANSPORT` (default on for native desktop). Protocol notes: `Start.your_seat` and Frames words use the **race slot** (humans compacted in seat order); `StartHuman.seat` is the room seat; `Welcome` is also sent when a seat is taken, carrying the seat token; `Ready` and `RoomListReply` were added. The type byte and Hello's protocol field are frozen so old clients get `Reject{protocol}`.
+
 **Interfaces:**
 ```cpp
 namespace rr::net {
@@ -374,10 +376,10 @@ std::pair<std::unique_ptr<Channel>, std::unique_ptr<Channel>> loopback_pair(NetS
 }
 ```
 
-- [ ] **Step 1: Codec tests first.** Every message round-trips. Truncated, oversized, wrong-version and out-of-range messages are rejected. Golden byte vectors for each message are committed as synthetic fixtures.
-- [ ] **Step 2: Implement codecs and the libdatachannel WebSocket channel.** The library's callbacks fill a lock-protected queue, and the main thread only polls, so the simulation never runs on a network thread.
-- [ ] **Step 3: Fuzz target** in the plan 22 set and CI.
-- [ ] **Step 4:** Commit: `net: protocol codecs and WebSocket channel`.
+- [x] **Step 1: Codec tests first.** Every message round-trips. Truncated, oversized, wrong-version and out-of-range messages are rejected. Golden byte vectors for each message are committed as synthetic fixtures.
+- [x] **Step 2: Implement codecs and the libdatachannel WebSocket channel.** The library's callbacks fill a lock-protected queue, and the main thread only polls, so the simulation never runs on a network thread.
+- [x] **Step 3: Fuzz target** in the plan 22 set and CI. (`fuzz/fuzz_net_protocol.cpp`, seeds from `fuzz-seeds`, run by `tools/fuzz.sh`; the repository has no fuzz CI workflow yet, that is plan 22's open item.)
+- [x] **Step 4:** Commit: `net: protocol codecs and WebSocket channel`.
 
 ---
 
@@ -386,20 +388,22 @@ std::pair<std::unique_ptr<Channel>, std::unique_ptr<Channel>> loopback_pair(NetS
 **Files:**
 - Create: `server/CMakeLists.txt`, `server/main.cpp`, `server/room.hpp`, `server/room.cpp`, `server/sealer.hpp`, `server/sealer.cpp`, `server/Dockerfile`, `tests/server_room_test.cpp`, `tests/server_sealer_test.cpp`, `tools/net_bots.cpp`
 
-- [ ] **Step 1: Room tests first** (the server logic is a pure class, driven by in-memory channels):
+**Built (October 26, 2026):** `server/room.*` (lobby, rooms, race clock, results), `server/sealer.*`, `server/main.cpp` (`/net/health` on a plain HTTP port, JSON logs, `.rrlog` race logs pruned after 7 days), `server/Dockerfile`; `server/CMakeLists.txt` also builds standalone. Rules chosen: a race starts when every seat has a character and a course vote (≥ `min_humans`, default 2); the course is the most-voted, ties go to the host's vote, then the lowest course; a tick is sealed 3 ticks after its time; a flood (a full burst dropped in one second) or 4 throttled seconds close the connection.
+
+- [x] **Step 1: Room tests first** (the server logic is a pure class, driven by in-memory channels):
   - create, join by code, list public rooms;
   - full-room, wrong-fingerprint and wrong-digest rejections;
   - character pick, course vote, chat, start;
   - leave, and the host leaving before start (the next seat becomes host);
   - reconnect by seat token, and idle and lobby timeouts.
-- [ ] **Step 2: Sealer tests.** Inputs on time, inputs late (sealed as repeat-last with the late flag), a player vanishing (handed to AI at a sealed tick), unacknowledged frames repeated, and hash comparison with desync handling.
-- [ ] **Step 3: Implement.**
+- [x] **Step 2: Sealer tests.** Inputs on time, inputs late (sealed as repeat-last with the late flag), a player vanishing (handed to AI at a sealed tick), unacknowledged frames repeated, and hash comparison with desync handling.
+- [x] **Step 3: Implement.**
   - One event loop; 60 Hz per racing room from a monotonic clock, catching up after a stall without drift.
   - Limits as in the architecture section.
   - Structured logs, a `/net/health` endpoint, and counters (rooms, players, round trip, late inputs, desyncs).
   - Race logs kept 7 days.
-- [ ] **Step 4: Headless bots.** `tools/net_bots.cpp` connects N scripted clients that run the real `Rollback` + `Race`. It needs the local disc data, as the game does. Use it for end-to-end tests against a local `rr-netd`, and later against staging.
-- [ ] **Step 5:** Commit: `server: rr-netd rooms and input sealer`.
+- [ ] **Step 4: Headless bots.** (Needs the Task 6 client: the bots run the real `net::Client` + `Rollback` + `Race`.) `tools/net_bots.cpp` connects N scripted clients that run the real `Rollback` + `Race`. It needs the local disc data, as the game does. Use it for end-to-end tests against a local `rr-netd`, and later against staging.
+- [x] **Step 5:** Commit (Steps 1–3; Step 4 lands with Task 6): `server: rr-netd rooms and input sealer`.
 
 ---
 
