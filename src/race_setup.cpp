@@ -337,6 +337,16 @@ RaceInstance build_race(const RaceAssets& assets, const std::vector<uint8_t>& ex
         race->set_pedestrians(out.pedestrians.get());
         if (config.solo) race->set_freeze_actors(true);
     }
+    // 3b. Base terrain and the ring-terrain overlay before the ring builds
+    // its first slices (plan 34 Task 3: the simulation reads ring terrain
+    // from the race, not from the shared scene).
+    if (assets.scene) {
+        auto* scene = assets.scene.get();
+        race->set_terrain_source([scene](const RouteSample& sample) -> const TerrainSlice& {
+            return scene->base_terrain(sample.section, sample.local);
+        });
+        race->set_ground_layout(scene->terrain_section_sizes());
+    }
     // 4. RNG state, then the track ring (0x004552e0 setup on the loaded state).
     if (config.ring_rng_state) race->set_rng_state(*config.ring_rng_state);
     if (!config.net.humans.empty()) race->set_rng_state(config.net.seed); // every client: the server's seed
@@ -360,10 +370,12 @@ RaceInstance build_race(const RaceAssets& assets, const std::vector<uint8_t>& ex
         // not built a slice (splits/merges, the native quick setup).
         if (assets.scene) {
             auto* scene = assets.scene.get();
-            out.ring->set_slice_sink(
-                [scene](uint32_t section, uint32_t local, const PathSample& path, const TerrainSlice& slice) {
-                    scene->apply_ring_terrain(section, local, path, slice);
-                });
+            Race* r = race.get();
+            out.ring->set_slice_sink([scene, r](uint32_t section, uint32_t local, const PathSample& path,
+                                                const TerrainSlice& slice) {
+                scene->apply_ring_terrain(section, local, path, slice); // render view
+                r->apply_ring_terrain(section, local, path, slice);     // simulation
+            });
         }
         race->set_track_ring(out.ring.get());
         // Plan 34 C1: one window per further human seat. Statics go to the
@@ -390,7 +402,7 @@ RaceInstance build_race(const RaceAssets& assets, const std::vector<uint8_t>& ex
     if (assets.scene) {
         auto* scene = assets.scene.get();
         race->set_terrain_source([scene](const RouteSample& sample) -> const TerrainSlice& {
-            return scene->terrain(sample.section, sample.local);
+            return scene->base_terrain(sample.section, sample.local);
         });
         race->set_rail_height_source(
             [scene](const RouteSample& sample) { return scene->rail_height(sample.section, sample.local); });

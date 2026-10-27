@@ -351,17 +351,17 @@ class Rollback {
 }}
 ```
 
-- [ ] **Step 1: Save/load tests first.**
+- [x] **Step 1: Save/load tests first.** (`tests/race_state_test.cpp`: crashes, walking, police, pedestrians, a split, the finish, two humans; warmed saves allocate nothing.)
   - Run N ticks, save, run M, load, run M again: the field dumps and RNG are identical. Cover crashes, walking, police, pedestrians, splits and finish.
   - Saving never allocates in steady state.
-- [ ] **Step 2: Implement `save_state`/`load_state`.** Split each system into immutable data (referenced) and mutable state (copied). Record the size and the save/load time per tick.
-- [ ] **Step 3: Rollback tests.** Scripted two- and eight-human races with random late remote inputs give the same final hash as a straight run of the sealed inputs, for every rollback depth up to the maximum.
-- [ ] **Step 4: Cost budget.** Measure simulation step, save and load in the profiler's `sim` phase on the Mac and the MANGMI AIR X. The budget is a worst-case frame (16 re-simulated ticks plus saves) of **≤ 4 ms on the device**. If the budget is missed, the agreed fallbacks are, in order: save every 2nd tick, a smaller window with adaptive input delay, then profiling the step. Record the outcome in PERFORMANCE.md.
-- [ ] **Step 5: Cross-platform determinism.**
+- [x] **Step 2: Implement `save_state`/`load_state`.** (`src/race_state.*`. Implementation choice: a `RaceState` holds copies of the mutable objects rather than a byte blob; immutable data is shared (`routes_`, hazard/DZHR tables, course) and the large mutable tables are copy-on-write (`CowVector` statics and ring terrain, ring DZHR lists), restore copies back into the same live objects so cross-object pointers stay valid. The ring terrain the simulation reads moved from the shared scene into the race (`Race::apply_ring_terrain`); the scene keeps it for rendering. Sizes/times in PERFORMANCE.md.) Split each system into immutable data (referenced) and mutable state (copied). Record the size and the save/load time per tick.
+- [x] **Step 3: Rollback tests.** (`tests/rollback_test.cpp`, `src/net/rollback.*`: depths 0–16 with two humans, 0/1/4/8/16 with eight, late substitutions and an AI hand-over; equal final and per-60-tick hashes.) Scripted two- and eight-human races with random late remote inputs give the same final hash as a straight run of the sealed inputs, for every rollback depth up to the maximum.
+- [ ] **Step 4: Cost budget.** (Mac done: worst frame p50 0.22 ms, max 0.78 ms. MANGMI AIR X **blocked**: no device.) Measure simulation step, save and load in the profiler's `sim` phase on the Mac and the MANGMI AIR X. The budget is a worst-case frame (16 re-simulated ticks plus saves) of **≤ 4 ms on the device**. If the budget is missed, the agreed fallbacks are, in order: save every 2nd tick, a smaller window with adaptive input delay, then profiling the step. Record the outcome in PERFORMANCE.md.
+- [ ] **Step 5: Cross-platform determinism.** (October 26: `tools/determinism_matrix.sh` + `rr-determinism`. Bit-identical per-60-tick hashes on macOS ARM64 (AppleClang), Linux x86-64 (Debian trixie GCC, Docker) and wasm32 (Emscripten 6.0.10 under Node), for the synthetic 8-human race and the 8-human disc race (6000 ticks). CI: `.github/workflows/determinism.yml` runs macOS, Linux and wasm against `tests/data/determinism_synthetic.txt`. No difference needed fixing. Open: Windows (plan 33), Android ARM64 (**blocked**: no device or emulator image).)
   - `tools/determinism_matrix.sh` runs a fixed multi-human input log on macOS ARM64, Linux x86-64 (CI), wasm32 (Node, CI), Windows x86-64 (with plan 33) and Android ARM64 (device or emulator). It compares per-tick hashes.
   - Fix every difference at its source. Known risks: `std::sort` of equal keys (use stable or tie-broken comparisons), signed shifts and overflow (UBSan), integer widths, and uninitialised padding in snapshots.
   - Wire the macOS, Linux and wasm runs into CI.
-- [ ] **Step 6:** Commit: `net: race snapshots, rollback core, determinism matrix`.
+- [x] **Step 6:** Commit (Steps 1–3 and 5 except Windows/Android; Step 4 device part blocked): `net: race snapshots, rollback core, determinism matrix`.
 
 ---
 

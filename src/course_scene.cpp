@@ -187,6 +187,27 @@ void CourseScene::apply_ring_terrain(uint32_t section, uint32_t local, const Pat
                                      const TerrainSlice& slice) {
     if (slice.type != 1 && slice.type != 4) return;
     auto& t = terrain_.at(section).at(local);
+    base_saved_.emplace(std::make_pair(section, local), t); // keeps the first (original) value
+    const uint8_t type = t.type;
+    t.walls = slice.walls;
+    t.points = slice.points;
+    t.shades = slice.shades;
+    if (slice.type == 4 && path.marking_flags && !(path.marking_flags & 0x40))
+        for (auto& point : t.points) point[1] = 0;
+    t.type = type;
+}
+const TerrainSlice& CourseScene::base_terrain(uint32_t section, uint32_t local) const {
+    const auto it = base_saved_.find({section, local});
+    return it != base_saved_.end() ? it->second : terrain_.at(section).at(local);
+}
+std::vector<uint32_t> CourseScene::terrain_section_sizes() const {
+    std::vector<uint32_t> out;
+    for (const auto& s : terrain_) out.push_back(uint32_t(s.size()));
+    return out;
+}
+// The ring's sub-slice rules for a wall/hill sample (0x00454240), shared by
+// the render view and the simulation overlay.
+void ring_terrain_onto(TerrainSlice& t, const PathSample& path, const TerrainSlice& slice) {
     const uint8_t type = t.type;
     t.walls = slice.walls;
     t.points = slice.points;

@@ -3,6 +3,7 @@
 #include "terrain.hpp"
 #include <array>
 #include <functional>
+#include <memory>
 #include <optional>
 #include <vector>
 
@@ -71,8 +72,10 @@ class TrackRing {
     using StaticSink =
         std::function<void(int32_t ring_sample, uint32_t section, uint32_t local, const RingStatics&)>;
     void set_static_sink(StaticSink sink) { static_sink_ = std::move(sink); }
-    TrackRing(const TrackRing&) = delete;
-    TrackRing& operator=(const TrackRing&) = delete;
+    // Copyable for race snapshots (plan 34 Task 3): course data is shared,
+    // the per-node DZHR record lists are copy-on-write.
+    TrackRing(const TrackRing&) = default;
+    TrackRing& operator=(const TrackRing&) = default;
     // 0x004552e0 (random part): DZHR jitter, walker init, walk to camera -
     // 0x3000, then 128 slice builds from the front walker.
     void setup(int32_t camera_q8, const Random&, const ActorSink&);
@@ -131,9 +134,10 @@ class TrackRing {
     void enter(Walker&, uint32_t node, bool start = true);                            // 0x00452cb0
     void step(Walker&, int32_t delta);                            // 0x00453030 -> 0x00452e10
     void build_slice(Walker&, int32_t ring_q8, const ActorSink&); // 0x00454c80 -> 0x00454240
-    const Course& course_;
+    const Course* course_;
     int level_;
-    std::vector<Events> events_;                           // one per node, DFS order
+    std::vector<std::shared_ptr<Events>> events_;          // one per node, DFS order (copy-on-write)
+    Events& events_mut(size_t node);                       // clones a node's list shared with a snapshot
     std::vector<std::pair<uint32_t, size_t>> event_index_; // node offset -> events_
     const Random* random_ = nullptr;                       // stream for the current call
     Random forward_;                                       // TerrainIterator's source

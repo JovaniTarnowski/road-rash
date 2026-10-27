@@ -141,7 +141,7 @@ int traffic_lane_count(int32_t lanes_q8) {
     return int8_t(div256(lanes_q8)); // (char)(value + sign fix) >> 8
 }
 
-TrafficSystem::TrafficSystem(const VehicleLibrary& library, std::vector<uint8_t> exe) : library_(library) {
+TrafficSystem::TrafficSystem(const VehicleLibrary& library, std::vector<uint8_t> exe) : library_(&library) {
     const auto drift = read_exe_data(exe, 0x00475694, 4);
     for (int k = 0; k < 4; ++k) drift_rates_[k] = int8_t(drift[size_t(k)]) * 800; // 0x0044e710: +0x1e0
     const auto car_template = read_exe_data(exe, 0x00475698, 26 * 4);
@@ -166,7 +166,7 @@ bool TrafficSystem::place(uint8_t kind, int8_t lane, const RouteSample& at, int3
             if (w.behind && !(w.me_q8 <= at_q8)) return false;
         }
     }
-    const int vehicle = library_.choose(kind, random()); // _rand() in 0x0044df60
+    const int vehicle = library_->choose(kind, random()); // _rand() in 0x0044df60
     if (vehicle < 0) return false;
     // Plan 34 C3: with several windows each places into its own 16 slots.
     const size_t first = windows_.size() > 1 ? pool_size * size_t(building_seat_) : 0;
@@ -770,7 +770,7 @@ void TrafficSystem::place_crossing(const IntersectionController& c, int signal, 
     const int32_t s =
         std::clamp((lane + 1) * 0x100 + c.start_q8, int32_t(0), int32_t((route.size() - 1) * 256)) >> 8;
     const auto& at = route[size_t(s)];
-    const int vehicle = library_.choose(uint8_t(kind), random());
+    const int vehicle = library_->choose(uint8_t(kind), random());
     if (vehicle < 0) return;
     for (auto& car : cars_) {
         if (car.active) continue;

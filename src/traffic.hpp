@@ -222,7 +222,7 @@ class TrafficSystem {
     void set_terrain_type(std::function<int(const RouteSample&)> source) {
         terrain_type_ = std::move(source);
     }
-    const VehicleLibrary& library() const { return library_; }
+    const VehicleLibrary& library() const { return *library_; }
     // 0x00437e60 car LOD after the move, using the pre-driver ring camera.
     static int32_t schedule_interval(const TrafficCar&, int32_t camera_q8, int32_t player_velocity);
     // Contact half-width +0x174 by kind (0x00475700: 0x4000, crossing 0xa000).
@@ -255,7 +255,7 @@ class TrafficSystem {
     // words from (newest same-residue sample at/under the ring front).
     std::pair<int32_t, int32_t> plan_speed(TrafficCar&, const std::vector<RouteSample>& route,
                                            int32_t front_q8);
-    const VehicleLibrary& library_;
+    const VehicleLibrary* library_; // pointer: copied into race snapshots (plan 34 Task 3)
     PhysicsTables physics_;
     std::array<int32_t, 26> car_template_{};
     uint32_t tick_ = 0;

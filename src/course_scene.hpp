@@ -25,6 +25,8 @@ struct PedestrianLook {
 };
 // Owned imported resources and generated course terrain. Construction never
 // uses oracle snapshots or host pointers from the original executable.
+// The ring's wall/hill sub-slice rules (0x00454240) applied onto a slice.
+void ring_terrain_onto(TerrainSlice& t, const PathSample& path, const TerrainSlice& slice);
 class CourseScene {
   public:
     CourseScene(const Assets&, const std::vector<uint8_t>& exe, const Course&, const std::string& course_name,
@@ -41,6 +43,12 @@ class CourseScene {
     // empty samples are deterministic and keep their resolved heights.
     void apply_ring_terrain(uint32_t section, uint32_t local, const PathSample& path,
                             const TerrainSlice& slice);
+    // Plan 34 Task 3: the terrain before any ring slice overwrote it. The
+    // simulation reads ring terrain from its own snapshot-able overlay
+    // (Race::apply_ring_terrain) over these values; terrain() stays the
+    // render view.
+    const TerrainSlice& base_terrain(uint32_t section, uint32_t local) const;
+    std::vector<uint32_t> terrain_section_sizes() const;
     // Plan 20 Task 3: family textures for generation (read-only walk).
     const std::map<uint32_t, Family>& families() const { return families_; }
     // Plan 20 Task 3: attach cached MMPX levels to every family texture.
@@ -88,6 +96,7 @@ class CourseScene {
     std::array<int32_t, 257> sine_words_{};             // 0x004766f0
     std::array<uint8_t, 128> sine_bytes_{};             // 0x00476870
     std::vector<std::vector<TerrainSlice>> terrain_;
+    std::map<std::pair<uint32_t, uint32_t>, TerrainSlice> base_saved_; // originals of ring-written samples
     std::vector<std::vector<std::array<uint16_t, 4>>> family_slots_;
     std::map<uint32_t, Family> families_;
     RoadMaterials roads_;

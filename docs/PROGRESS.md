@@ -53,6 +53,23 @@ Detailed evidence is in [REVERSE_ENGINEERING.md](REVERSE_ENGINEERING.md) and tes
 
 ## Timeline
 
+### October 26, 2026: plan 34 Task 3, snapshots, rollback, determinism matrix
+
+- `src/race_state.*`: `save_state`/`load_state`/`state_hash` over Race,
+  traffic, pedestrians and every ring window. Immutable data is shared and
+  the large mutable tables are copy-on-write (`src/cow_vector.hpp`), so a
+  Release save is ~6 µs and a warmed save allocates nothing. The ring
+  terrain the simulation reads now lives in the race (snapshot-able); the
+  scene keeps a copy for rendering, and a restarted race no longer inherits
+  the previous race's ring terrain.
+- `src/net/rollback.*`: prediction (own input, repeat-last for others),
+  correction from the first mispredicted sealed tick, a 16-tick window with
+  stalling, AI hand-over on sealed ticks, confirmed hashes every 60 ticks.
+- `rr-determinism` + `tools/determinism_matrix.sh` + CI workflow: macOS
+  ARM64, Linux x86-64 and wasm32 bit-identical (synthetic and disc runs).
+- Open: Android/MANGMI AIR X cost and determinism (no device), Windows
+  (plan 33).
+
 ### October 26, 2026: web canvas fills the play area; widescreen without letterbox
 
 - The web page pinned `#canvas` to a 4:3 box, and `apply_display` reset the

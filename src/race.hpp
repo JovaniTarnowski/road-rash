@@ -5,6 +5,8 @@
 #include "road.hpp"
 #include "police.hpp"
 #include "sound_event.hpp"
+#include "cow_vector.hpp"
+#include <memory>
 #include <array>
 #include <vector>
 #include <functional>
@@ -495,8 +497,8 @@ class Race {
     uint32_t position() const { return uint32_t(bike().i32(0x1c)); }
     int32_t lateral() const { return bike().i32(0x28) >> 8; }
     const std::vector<RouteSample>& route() const { return route_of(riders_[0]); }
-    const std::vector<RouteSample>& route_of(const Rider& r) const { return routes_[r.route]; }
-    const std::vector<RouteSample>& route_for(int road) const { return routes_[road]; }
+    const std::vector<RouteSample>& route_of(const Rider& r) const { return *routes_[r.route]; }
+    const std::vector<RouteSample>& route_for(int road) const { return *routes_[road]; }
     // Finish line 0x00454240/0x00406890/0x00437800: nonzero global finish
     // DAT_004b6e58 (Q8 position) ends the race when the actor's +0x1c
     // reaches it (with the +0x2c nonzero scheduler gate and +0xc0 bit 0x10
@@ -506,16 +508,16 @@ class Race {
     // Course-load hazard table (plan 16 Task 2): one span list per route
     // sample per road (index by route_for(road)[sample]); empty by default.
     void set_hazards(std::vector<std::vector<RoadHazard>> road0, std::vector<std::vector<RoadHazard>> road1) {
-        hazards_[0] = std::move(road0);
-        hazards_[1] = std::move(road1);
+        hazards_[0] = std::make_shared<const std::vector<std::vector<RoadHazard>>>(std::move(road0));
+        hazards_[1] = std::make_shared<const std::vector<std::vector<RoadHazard>>>(std::move(road1));
     }
     // DZHR solid table (plan 16 Task 2): one span list per route sample per
     // road; empty by default. Wired by the race factory from the scene's
     // placed objects; tests fill it directly.
     using DzhrTable = std::vector<std::vector<DzhrSolid>>;
     void set_roadside(DzhrTable road0, DzhrTable road1) {
-        dzhr_[0] = std::move(road0);
-        dzhr_[1] = std::move(road1);
+        dzhr_[0] = std::make_shared<const DzhrTable>(std::move(road0));
+        dzhr_[1] = std::make_shared<const DzhrTable>(std::move(road1));
     }
     // Live ring statics (0x00454240 slice builds, plan 16 Task 2): BORR slots
     // and billboards of each built slice, swept by 0x004373f0 with the
@@ -526,11 +528,15 @@ class Race {
     using StaticFrames = std::function<const AnimationFrame*(uint32_t section, uint32_t local,
                                                              uint8_t selector, bool billboard)>;
     void set_static_frames(StaticFrames frames);
+    // Plan 34 Task 3: size the ring-terrain overlay (scene section lengths)
+    // and record one ring slice's terrain for the simulation.
+    void set_ground_layout(const std::vector<uint32_t>& section_sizes);
+    void apply_ring_terrain(uint32_t section, uint32_t local, const PathSample&, const TerrainSlice&);
     void ring_statics(int32_t sample, uint32_t section, uint32_t local, const RingStatics&);
     // Wiring query for the factory disc tests: total solid spans on a road.
     size_t roadside_solids(int road) const {
         size_t n = 0;
-        for (const auto& spans : dzhr_[road < 0 || road > 1 ? 0 : size_t(road)]) n += spans.size();
+        for (const auto& spans : *dzhr_[road < 0 || road > 1 ? 0 : size_t(road)]) n += spans.size();
         return n;
     }
     bool finished() const { return riders_[0].finished; }
@@ -753,7 +759,16 @@ class Race {
         return ride_library_->playback[r.cop ? 1 : 0];
     }
 
-    std::function<const TerrainSlice&(const RouteSample&)> terrain_source_;
+    std::function<const TerrainSlice&(const RouteSample&)> terrain_source_; // base terrain (no ring writes)
+    // Plan 34 Task 3: ring terrain the simulation reads (0x00451910 slices),
+    // per course (section, local), copy-on-write so snapshots restore it.
+    struct RingGround {
+        bool set = false;
+        TerrainSlice slice;
+    };
+    std::shared_ptr<const std::vector<uint32_t>> ground_base_; // section -> first index
+    CowVector<RingGround, 64> ground_;
+    const TerrainSlice& ground(const RouteSample& s) const;
     std::function<int32_t(const RouteSample&)> rail_height_source_;
     TrafficSystem* traffic_ = nullptr;
     PedestrianSystem* pedestrians_ = nullptr;
@@ -787,10 +802,16 @@ class Race {
     NitroConfig nitro_;
     bool nitro_set_ = false;
     int32_t nitro_charges_ = 0;
-    std::vector<RouteSample> routes_[2];
+    // Immutable after construction and shared between copies, so a race
+    // snapshot (plan 34 Task 3) copies only mutable state.
+    std::shared_ptr<const std::vector<RouteSample>> routes_[2];
     PhysicsTables tables_;
-    std::vector<std::vector<RoadHazard>> hazards_[2]; // BORR spans per route sample per road
-    DzhrTable dzhr_[2];                               // DZHR solid billboards per route sample per road
+    std::shared_ptr<const std::vector<std::vector<RoadHazard>>> hazards_[2]{
+        std::make_shared<const std::vector<std::vector<RoadHazard>>>(),
+        std::make_shared<
+            const std::vector<std::vector<RoadHazard>>>()}; // BORR spans per route sample per road
+    std::shared_ptr<const DzhrTable> dzhr_[2]{std::make_shared<const DzhrTable>(),
+                                              std::make_shared<const DzhrTable>()}; // DZHR solids per sample
     struct StaticSlice {
         bool built = false, boxes_ready = false;
         uint8_t borr_count = 0;
@@ -805,7 +826,7 @@ class Race {
         };
         std::array<Billboard, 2> billboard{};
     };
-    std::vector<StaticSlice> statics_[2];
+    CowVector<StaticSlice> statics_[2]; // mutable (ring builds), copy-on-write for snapshots
     StaticFrames static_frames_;
     Rider static_actor_{}; // 0x004c3e90 static hazard object (rebuilt per hit)
     std::vector<Rider> riders_;

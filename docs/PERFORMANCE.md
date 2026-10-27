@@ -124,6 +124,24 @@ One user Release run showed a single 1.1 s frame inside `present`, a window or
 OS stall that did not reproduce in the next run. Treat a single slow frame
 with `worst: present` as environment noise; repeat the run.
 
+## Rollback cost (October 26, 2026, plan 34 Task 3 Step 4)
+
+`build-p34-rel/rollback-bench` (Release, Apple M3 Pro, NAPA L0 after 1200
+race ticks, `tools/rollback_bench.cpp`):
+
+| Field | Step p50 / p99 | Save p50 / p99 | Load p50 | Worst frame (restore + 16 re-simulated ticks with saves) p50 / max |
+| --- | --- | --- | --- | --- |
+| 2 humans, 15 riders | 8.2 / 22.7 µs | 5.7 / 14.0 µs | 6.6 µs | 236 / 775 µs |
+| 8 humans, 8 riders | 6.1 / 20.2 µs | 7.0 / 20.7 µs | 7.8 µs | 216 / 246 µs |
+
+Snapshots copy only mutable state: routes, hazard/DZHR tables and course
+data are shared, and the ring statics, ring terrain and ring DZHR lists are
+copy-on-write chunks (a `Race` copy went from 68 µs to 1.4 µs in Debug).
+The budget (worst frame ≤ 4 ms) holds on the Mac with a 5× margin over the
+p99 frame; the MANGMI AIR X measurement is **blocked** (no device attached),
+so no fallback (save every 2nd tick, smaller window) has been needed or
+chosen yet.
+
 ## Open
 
 - The trilinear sampler and grade still do double-precision math per pixel.

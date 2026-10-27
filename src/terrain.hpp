@@ -59,7 +59,7 @@ class TerrainIterator {
     TerrainIteratorState diagnostic_state() const;
 
   private:
-    const TerrainDefinition& definition_;
+    const TerrainDefinition* definition_; // pointer: iterators are copied into race snapshots (plan 34)
     std::function<uint32_t()> random_;
     int32_t position_, last_sample_;
     std::array<size_t, 2> wall_record_{};

@@ -1,5 +1,30 @@
 # Verification log (all sessions September 28, 2026)
 
+## Plan 34 Task 3: snapshots, rollback, determinism (October 26, 2026)
+
+- `make verify-sim BUILD_DIR=build-p34`: passed after the shared-data and
+  ring-terrain changes. `ctest -j6`: 113/113, 0 skipped.
+- `race_state` (disc, ~9 s Debug): save at every 400th tick of a 9000-tick
+  scripted Napa race, run 120, load, re-run: 2640 compared ticks identical
+  (2186 crashed rider-ticks, 1876 walking, cop present, 3042 pedestrian
+  rider-ticks); across the split (second branch taken near tick 9393) and
+  across the finish line; a two-human race with two ring windows (840
+  ticks). Warmed `save_state` allocates 0 times.
+- `rollback` (disc, ~30 s Debug): sealed timeline with 12% late
+  substitutions and seat 1 AI-driven for ticks 300–419; frames delivered
+  with random delay 0..depth (out of order). Depths 0–16 (2 humans, 600
+  ticks) and 0/1/4/8/16 (8 humans, 480 ticks): final and every 60-tick
+  hash equal to the straight run; deepest correction equals the depth;
+  no stalls.
+- `rollback-bench` (Release, M3 Pro): see PERFORMANCE.md "Rollback cost".
+- Determinism matrix (`tools/determinism_matrix.sh macos linux` with the
+  disc mounted, then `wasm`): macOS synthetic = reference; Linux x86-64
+  (Docker `debian:trixie`, `--platform linux/amd64`) synthetic = reference
+  and disc = macOS disc; wasm32 (Emscripten 6.0.10, Node) synthetic =
+  reference and disc = macOS disc. Debug and Release macOS builds also
+  agree. Outputs in `/Users/archit/Dev/rr/.plan34-logs/det/` (local).
+- Not run: Android (no device), Windows (plan 33), the GitHub workflow
+  itself (runs on the push).
 ## Web canvas fill and widescreen (October 26, 2026)
 
 - `RR_WEB_BUILD_DIR=build-agent-web-widescreen-20261026 tools/build_web.sh`: passed.

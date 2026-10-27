@@ -91,7 +91,7 @@ TerrainDefinition read_terrain(const std::vector<uint8_t>& b, uint32_t samples) 
 }
 TerrainIterator::TerrainIterator(const TerrainDefinition& d, int32_t position,
                                  std::function<uint32_t()> random)
-    : definition_(d), random_(std::move(random)), position_(position), last_sample_(sample_of(position)) {
+    : definition_(&d), random_(std::move(random)), position_(position), last_sample_(sample_of(position)) {
     if (!random_) throw std::runtime_error("Terrain requires random source");
     if (d.kind == TerrainDefinition::Kind::wall) {
         for (int side = 0; side < 2; ++side) {
@@ -114,7 +114,7 @@ TerrainIterator::TerrainIterator(const TerrainDefinition& d, int32_t position,
     }
 }
 void TerrainIterator::hill_slopes(int32_t sample, int32_t delta) {
-    const auto& record = definition_.hills[hill_record_];
+    const auto& record = definition_->hills[hill_record_];
     for (int i = 0; i < 8; ++i) {
         auto& v = points_[i];
         const auto& p = record.points[i];
@@ -150,9 +150,9 @@ void TerrainIterator::hill_slopes(int32_t sample, int32_t delta) {
 void TerrainIterator::step(int32_t delta) {
     position_ = add(position_, delta);
     const int32_t sample = sample_of(position_);
-    if (definition_.kind == TerrainDefinition::Kind::wall && last_sample_ != sample) {
+    if (definition_->kind == TerrainDefinition::Kind::wall && last_sample_ != sample) {
         for (int side = 0; side < 2; ++side) {
-            const auto& records = definition_.walls[side];
+            const auto& records = definition_->walls[side];
             auto& index = wall_record_[side];
             if (records.size() > 1) {
                 if (delta < 1 && uint32_t(sample) < records[index].start) {
@@ -171,13 +171,13 @@ void TerrainIterator::step(int32_t delta) {
             v[1] = std::clamp(v[1], 0, int(p[7]) * 4);
             v[2] = std::clamp(v[2], 0, int(p[4]) * 4);
         }
-    } else if (definition_.kind == TerrainDefinition::Kind::hill && definition_.hills.size() > 1) {
+    } else if (definition_->kind == TerrainDefinition::Kind::hill && definition_->hills.size() > 1) {
         bool advance = false;
         if (delta < 0 && hill_record_ > 0) {
-            if (sample < int32_t(definition_.hills[hill_record_].start)) --hill_record_;
+            if (sample < int32_t(definition_->hills[hill_record_].start)) --hill_record_;
             advance = true;
-        } else if (delta > 0 && hill_record_ + 1 < definition_.hills.size()) {
-            if (int32_t(definition_.hills[hill_record_ + 1].start) <= sample) ++hill_record_;
+        } else if (delta > 0 && hill_record_ + 1 < definition_->hills.size()) {
+            if (int32_t(definition_->hills[hill_record_ + 1].start) <= sample) ++hill_record_;
             advance = true;
         }
         if (advance) {
@@ -197,10 +197,10 @@ TerrainIteratorState TerrainIterator::diagnostic_state() const {
 }
 TerrainSlice TerrainIterator::slice(int32_t left, int32_t right) const {
     TerrainSlice s;
-    if (definition_.kind == TerrainDefinition::Kind::none) return s;
-    if (definition_.kind == TerrainDefinition::Kind::hill) {
+    if (definition_->kind == TerrainDefinition::Kind::none) return s;
+    if (definition_->kind == TerrainDefinition::Kind::hill) {
         s.type = 4;
-        s.selectors = definition_.hills[hill_record_].selectors;
+        s.selectors = definition_->hills[hill_record_].selectors;
         for (int side = 0; side < 2; ++side) {
             int32_t previous = side ? right : left, previous_height = 0;
             for (int i = 0; i < 3; ++i) {
@@ -220,17 +220,17 @@ TerrainSlice TerrainIterator::slice(int32_t left, int32_t right) const {
         }
     } else {
         const int32_t sample = sample_of(position_);
-        if (sample >= 0 && size_t(sample) == definition_.selectors.size() && definition_.end_selectors)
-            s.selectors = *definition_.end_selectors;
+        if (sample >= 0 && size_t(sample) == definition_->selectors.size() && definition_->end_selectors)
+            s.selectors = *definition_->end_selectors;
         else {
-            if (sample < 0 || size_t(sample) >= definition_.selectors.size())
+            if (sample < 0 || size_t(sample) >= definition_->selectors.size())
                 throw std::runtime_error("Terrain selector beyond profile");
-            s.selectors = definition_.selectors[sample];
+            s.selectors = definition_->selectors[sample];
         }
-        s.type = definition_.kind == TerrainDefinition::Kind::wall ? 1 : 0;
+        s.type = definition_->kind == TerrainDefinition::Kind::wall ? 1 : 0;
         if (s.type == 1)
             for (int side = 0; side < 2; ++side) {
-                const auto& r = definition_.walls[side][wall_record_[side]];
+                const auto& r = definition_->walls[side][wall_record_[side]];
                 const auto& p = r.parameters;
                 const auto& v = wall_values_[side];
                 s.walls[side] = {v[0], add(v[2], (p[2] + p[5] * 2) * 2), add(r.base_height, v[1])};

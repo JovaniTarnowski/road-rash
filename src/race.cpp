@@ -1,4 +1,5 @@
 #include "race.hpp"
+#include "course_scene.hpp"
 #include "scenery.hpp"
 #include "track_ring.hpp"
 #include "animation.hpp"
@@ -151,7 +152,9 @@ Race::Race(std::vector<RouteSample> a, std::vector<RouteSample> b, const Physics
            const BikeSpec& spec, int32_t rider_value, std::vector<Opponent> opponents, int level,
            int32_t road_base_q8, const std::vector<Personality>& personalities,
            const std::vector<uint8_t>& exe_image, int32_t player_grid_pos, int32_t player_grid_lat)
-    : routes_{std::move(a), std::move(b)}, tables_(t), level_(level), road_base_(road_base_q8) {
+    : routes_{std::make_shared<const std::vector<RouteSample>>(std::move(a)),
+              std::make_shared<const std::vector<RouteSample>>(std::move(b))},
+      tables_(t), level_(level), road_base_(road_base_q8) {
     if (!exe_image.empty()) {
         std::array<int32_t, 5> eager{};
         for (uint32_t i = 0; i < 5; ++i) eager[i] = exe_word(exe_image, 0x00465a10 + 4u * i);
@@ -160,7 +163,7 @@ Race::Race(std::vector<RouteSample> a, std::vector<RouteSample> b, const Physics
         for (uint32_t i = 0; i < 8; ++i) steal[i] = int8_t(exe_word(exe_image, 0x00464538 + 4u * i));
         steal_codes_ = steal;
     }
-    if (routes_[0].size() < 64 || routes_[1].size() < 64)
+    if (routes_[0]->size() < 64 || routes_[1]->size() < 64)
         throw std::runtime_error("Route too short for a race");
     auto brain_from = [&](AiState& ai, const Personality& p) {
         for (int i = 0; i < 5; ++i) {
@@ -205,7 +208,7 @@ Race::Race(std::vector<RouteSample> a, std::vector<RouteSample> b, const Physics
         // road_base_ anchors the relative route to the original absolute
         // frame (ctor param); the default 0 keeps synthetic routes exact.
         const int32_t lat = grid_pos ? grid_lat : grid_lateral[slot % 4];
-        r.bike.i32(0x28) = routes_[0][r.sample].offset * 256 + lat + road_base_;
+        r.bike.i32(0x28) = (*routes_[0])[r.sample].offset * 256 + lat + road_base_;
         // 0x00405990 passes the same grid offset to 0x00407990 as the
         // brain's lane bias (+0x190), which 0x004091f0 adds to its target.
         r.brain.bias = lat;
@@ -355,7 +358,7 @@ SliceEdges Race::edges(const Rider& r, size_t i) const {
             s.offset - s.path.left - s.path.shoulder_left,
             s.offset + s.path.right + s.path.shoulder_right,
             terrain_source_ ? s.path.marking_flags : uint8_t(0),
-            terrain_source_ ? terrain_source_(s).type : uint8_t(0)};
+            terrain_source_ ? ground(s).type : uint8_t(0)};
 }
 
 void Race::accumulate(Rider& r, uint32_t from, uint32_t to, size_t from_sample, size_t to_sample) {
@@ -432,7 +435,7 @@ void Race::cross_sample(Rider& r, int32_t delta) {
         r.previous_sample = r.sample;
         r.sample = to >> 8;
         // Entering a split: the side of half 0's right edge decides the branch (0x00439390).
-        const auto& a = routes_[0][r.sample];
+        const auto& a = (*routes_[0])[r.sample];
         if (r.route == 0 && int32_t(to) > int32_t(from) && a.event == RoadEvent::split) {
             const int32_t half0_right = a.offset + a.path.right;
             if ((b.i32(0x28) >> 8) >= half0_right) r.route = 1;
@@ -927,7 +930,7 @@ void Race::collide_hazards(Rider& r) {
     } // live ring slices
     if (r.bike.i32(0x2f4) != 0) return; // tables reject crashed; see contact_hazard
     Bike& s = r.bike;
-    const auto& table = hazards_[r.route];
+    const auto& table = *hazards_[r.route];
     if (!table.empty() && r.sample < table.size())
         for (const auto& h : table[r.sample]) {
             const int32_t half = s.i32(0x174);
@@ -940,7 +943,7 @@ void Race::collide_hazards(Rider& r) {
     // above; types 3+ take the 0x004049c0 == 2 marking branch, which only
     // records on the (unported, nonexistent natively) static actor and never
     // crashes the rider, so they are skipped.
-    const auto& dtable = dzhr_[r.route];
+    const auto& dtable = *dzhr_[r.route];
     if (r.sample < dtable.size())
         for (const auto& o : dtable[r.sample]) {
             if ((o.type & 0xf) >= 3) continue;
@@ -950,9 +953,44 @@ void Race::collide_hazards(Rider& r) {
             if (s.i32(0x2f4) != 0) return; // knocked off: stop scanning
         }
 }
+void Race::set_ground_layout(const std::vector<uint32_t>& sizes) {
+    std::vector<uint32_t> base;
+    uint32_t total = 0;
+    for (uint32_t n : sizes) {
+        base.push_back(total);
+        total += n;
+    }
+    ground_base_ = std::make_shared<const std::vector<uint32_t>>(std::move(base));
+    ground_.assign(total, RingGround{});
+}
+
+void Race::apply_ring_terrain(uint32_t section, uint32_t local, const PathSample& path,
+                              const TerrainSlice& slice) {
+    if (!ground_base_ || slice.type != 1 && slice.type != 4 || section >= ground_base_->size()) return;
+    const size_t i = (*ground_base_)[section] + local;
+    if (i >= ground_.size()) return;
+    RingGround& g = ground_.mut(i);
+    if (!g.set) {
+        RouteSample s{};
+        s.section = section;
+        s.local = local;
+        g.slice = terrain_source_ ? terrain_source_(s) : TerrainSlice{};
+        g.set = true;
+    }
+    ring_terrain_onto(g.slice, path, slice);
+}
+
+const TerrainSlice& Race::ground(const RouteSample& s) const {
+    if (ground_base_ && s.section < ground_base_->size()) {
+        const size_t i = (*ground_base_)[s.section] + s.local;
+        if (i < ground_.size() && ground_[i].set) return ground_[i].slice;
+    }
+    return terrain_source_(s);
+}
+
 void Race::set_static_frames(StaticFrames frames) {
     static_frames_ = std::move(frames);
-    for (int road = 0; road < 2; ++road) statics_[road].assign(routes_[road].size(), StaticSlice{});
+    for (int road = 0; road < 2; ++road) statics_[road].assign(routes_[road]->size(), StaticSlice{});
 }
 
 void Race::ring_statics(int32_t sample, uint32_t section, uint32_t local, const RingStatics& in) {
@@ -964,9 +1002,9 @@ void Race::ring_statics(int32_t sample, uint32_t section, uint32_t local, const 
     for (int road = 0; road < 2; ++road) {
         auto& table = statics_[road];
         if (size_t(sample) >= table.size()) continue;
-        const auto& rs = routes_[road][size_t(sample)];
+        const auto& rs = (*routes_[road])[size_t(sample)];
         if (rs.section != section || rs.local != local) continue;
-        StaticSlice& out = table[size_t(sample)];
+        StaticSlice& out = table.mut(size_t(sample));
         out = StaticSlice{};
         out.built = true;
         out.borr_count = in.borr_count;
@@ -989,7 +1027,7 @@ void Race::prepare_static_boxes() {
     const size_t first = camera_position() >> 8;
     for (auto& road : statics_)
         for (size_t i = first; i < road.size() && i < first + view_slices; ++i)
-            if (road[i].built) road[i].boxes_ready = true;
+            if (road[i].built && !road[i].boxes_ready) road.mut(i).boxes_ready = true;
 }
 
 bool Race::sweep_statics(Rider& r, Rider* half_owner) {
@@ -1807,7 +1845,7 @@ Race::SubSliceView Race::sub_slice(const Rider& r, size_t sample) const {
     const auto& rs = route[std::min(sample, route.size() - 1)];
     const auto& path = rs.path;
     SubSliceView v;
-    const TerrainSlice& t = terrain_source_(rs);
+    const TerrainSlice& t = ground(rs);
     v.type = t.type;
     v.flags = path.marking_flags;
     v.event_type = path.event_type;
@@ -2046,7 +2084,7 @@ void Race::vertical(Rider& r) {
         const auto& route = route_of(r);
         const auto& current = route[r.sample];
         const auto& next = route[std::min(r.sample + 1, route.size() - 1)];
-        ground = terrain_height(terrain_source_(current), current.path, terrain_source_(next), next.path,
+        ground = terrain_height(this->ground(current), current.path, this->ground(next), next.path,
                                 b.i32(0x28) - current.offset * 256, uint8_t(b.i32(0x1c)),
                                 next.offset - current.offset, current.offset);
     }
@@ -2425,7 +2463,7 @@ void Race::build_scan_list() const {
             // A crashed rider's half object is the body (0x00403d60 detaches it
             // from the bike): it carries its own position, lateral and speed.
             const Bike& m = r.crash_actor.motion;
-            const auto& road = routes_[r.crash_actor.route];
+            const auto& road = *routes_[r.crash_actor.route];
             half.position = m.i32(0x1c);
             half.lateral = m.i32(0x28);
             half.speed = m.i32(0x108);

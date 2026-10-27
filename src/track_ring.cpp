@@ -12,13 +12,20 @@ const CourseNode& node_of(const Course& course, uint32_t offset) {
 } // namespace
 
 TrackRing::TrackRing(const Course& course, int level)
-    : course_(course), level_(level), events_(course.sections.size()),
+    : course_(&course), level_(level), events_(course.sections.size()),
       forward_([this] { return (*random_)(); }) {
     if (level < 0 || level > 4) throw std::runtime_error("Track ring: invalid level");
     for (size_t s = 0; s < course.sections.size(); ++s) {
-        events_[s].section = uint32_t(s);
-        events_[s].records = course.sections[s].scenery_events;
+        events_[s] = std::make_shared<Events>();
+        events_[s]->section = uint32_t(s);
+        events_[s]->records = course.sections[s].scenery_events;
     }
+}
+
+TrackRing::Events& TrackRing::events_mut(size_t node) {
+    auto& e = events_.at(node);
+    if (e.use_count() > 1) e = std::make_shared<Events>(*e);
+    return *e;
 }
 
 // 0x00453e60: depth-first over the course graph. A road node jitters its
@@ -27,7 +34,7 @@ TrackRing::TrackRing(const Course& course, int level)
 void TrackRing::jitter_events(uint32_t offset, std::vector<uint32_t>& visited, const Random& random) {
     for (;;) {
         if (std::find(visited.begin(), visited.end(), offset) != visited.end()) return;
-        const auto& node = node_of(course_, offset);
+        const auto& node = node_of(*course_, offset);
         if (node.kind > 2) return;
         visited.push_back(offset);
         if (node.kind == 1) {
@@ -41,7 +48,7 @@ void TrackRing::jitter_events(uint32_t offset, std::vector<uint32_t>& visited, c
             offset = node.link;
             continue;
         }
-        auto& records = events_.at(node.link).records;
+        auto& records = events_mut(node.link).records;
         int32_t base = 0;
         for (auto& r : records) { // 0x00451ee0
             const uint32_t word = r[0];
@@ -67,8 +74,8 @@ void TrackRing::jitter_events(uint32_t offset, std::vector<uint32_t>& visited, c
 void TrackRing::probe_enter(ProbeHalf& h, uint32_t offset, bool start) {
     // 0x00452cb0: position 0 (param_3 = 1) or the section end (0); the
     // terrain iterator 0x004510c0 initialises at that position.
-    const auto& node = node_of(course_, offset);
-    const auto& section = course_.sections.at(node.link);
+    const auto& node = node_of(*course_, offset);
+    const auto& section = course_->sections.at(node.link);
     h.node = offset;
     h.position = start ? 0 : int32_t(node.length) * 0x100;
     h.terrain.reset();
@@ -79,13 +86,13 @@ void TrackRing::probe_enter(ProbeHalf& h, uint32_t offset, bool start) {
 int TrackRing::probe_step(ProbeHalf& h, int32_t delta) {
     // 0x00452e10: 2 at a split/merge, 3 at a missing or unknown node (both
     // without moving), 1 after entering the next/previous road node.
-    const auto& node = node_of(course_, h.node);
+    const auto& node = node_of(*course_, h.node);
     const int32_t end = int32_t(node.length) * 0x100;
     int32_t next = h.position + delta;
     int result = 0;
     auto neighbour = [&](uint32_t offset) {
         if (!offset) return 3;
-        const uint32_t kind = node_of(course_, offset).kind;
+        const uint32_t kind = node_of(*course_, offset).kind;
         return kind == 0 ? 0 : kind <= 2 ? 2 : 3;
     };
     if (next >= end) {
@@ -119,7 +126,7 @@ int TrackRing::probe_step(ProbeHalf& h, int32_t delta) {
 // half first. Both halves stay well inside their sections on the original
 // courses; anything else marks the ring unsupported.
 void TrackRing::probe_window(uint32_t offset, int32_t direction) {
-    const auto& window = node_of(course_, offset);
+    const auto& window = node_of(*course_, offset);
     ProbeHalf half[2];
     probe_enter(half[0], window.link, true);
     probe_enter(half[0], window.link, direction < 0);
@@ -128,8 +135,8 @@ void TrackRing::probe_window(uint32_t offset, int32_t direction) {
         unsupported_ = true;
         return;
     }
-    const auto& reached = node_of(course_, direction > 0 ? node_of(course_, half[0].node).next
-                                                         : node_of(course_, half[0].node).previous);
+    const auto& reached = node_of(*course_, direction > 0 ? node_of(*course_, half[0].node).next
+                                                          : node_of(*course_, half[0].node).previous);
     if (reached.offset != offset) {
         unsupported_ = true;
         return;
@@ -237,8 +244,8 @@ void TrackRing::Borr::slots(const PathSample& path, const Random& draw, RingStat
 
 void TrackRing::enter(Walker& w, uint32_t offset, bool start) {
     // 0x00452cb0: road cursor at 0 or length; BORR/DZHR at length-1.
-    const auto& node = node_of(course_, offset);
-    const auto& section = course_.sections.at(node.link);
+    const auto& node = node_of(*course_, offset);
+    const auto& section = course_->sections.at(node.link);
     w.node = offset;
     w.position = start ? 0 : int32_t(node.length) * 0x100;
     w.borr.init(&section.roadside_profiles, int32_t(section.samples.size()), start);
@@ -246,18 +253,18 @@ void TrackRing::enter(Walker& w, uint32_t offset, bool start) {
     if (section.terrain.kind != TerrainDefinition::Kind::none)
         w.terrain.emplace(section.terrain, w.position, forward_);
     w.dzhr = {size_t(node.link), start ? 0 : (int32_t(section.samples.size()) - 1) * 0x100,
-              start ? 0 : int32_t(events_.at(node.link).records.size()) - 1};
+              start ? 0 : int32_t(events_.at(node.link)->records.size()) - 1};
 }
 
 void TrackRing::step(Walker& w, int32_t delta) {
     // 0x00453030 -> 0x00452e10, single road, either direction.
     if (w.stopped) return;
-    const auto& node = node_of(course_, w.node);
+    const auto& node = node_of(*course_, w.node);
     int32_t next = w.position + delta;
     if (next < 0) {
         // 0x00452e10 returns 3 without moving at a missing/terminal link.
         if (!node.previous) return;
-        const auto kind = node_of(course_, node.previous).kind;
+        const auto kind = node_of(*course_, node.previous).kind;
         if (kind > 2) return;
         if (kind != 0) {
             w.stopped = unsupported_ = true;
@@ -269,7 +276,7 @@ void TrackRing::step(Walker& w, int32_t delta) {
         delta = -old;
         next = w.position + delta;
     } else if (next >= int32_t(node.length) * 0x100) {
-        const auto& following = node_of(course_, node.next);
+        const auto& following = node_of(*course_, node.next);
         if (following.kind != 0) {
             w.stopped = unsupported_ = true;
             return;
@@ -283,7 +290,7 @@ void TrackRing::step(Walker& w, int32_t delta) {
     if (w.terrain) w.terrain->step(delta); // 0x004516e0
     // 0x00452230: skip records before the walker's sample.
     w.dzhr.position += delta;
-    const auto& records = events_.at(w.dzhr.node).records;
+    const auto& records = events_.at(w.dzhr.node)->records;
     if (delta > 0) {
         const uint32_t sample = uint32_t(w.dzhr.position >> 8);
         // The index may end one past the last record (loop test after ++).
@@ -297,7 +304,7 @@ void TrackRing::step(Walker& w, int32_t delta) {
             // Forward traversal can leave the index one past the records;
             // 0x00452256 then reads the following SGS word before decrementing.
             const uint32_t word = w.dzhr.index == int32_t(records.size())
-                                      ? course_.sections.at(w.dzhr.node).scenery_following_word
+                                      ? course_->sections.at(w.dzhr.node).scenery_following_word
                                       : records.at(size_t(w.dzhr.index))[0];
             if (sample >= (word & 0x7fff0000u) >> 16) break;
             --w.dzhr.index;
@@ -308,8 +315,8 @@ void TrackRing::step(Walker& w, int32_t delta) {
 void TrackRing::build_slice(Walker& w, int32_t ring_q8, const ActorSink& sink) {
     // 0x00454240: two 0x00451cb0 walks, then 0x004520d0.
     if (w.stopped) return;
-    const auto& node = node_of(course_, w.node);
-    const auto& section = course_.sections.at(node.link);
+    const auto& node = node_of(*course_, w.node);
+    const auto& section = course_->sections.at(node.link);
     const uint32_t local = uint32_t(w.position >> 8);
     const auto& path =
         local == section.samples.size() ? section.backward_endpoint : section.samples.at(local);
@@ -319,9 +326,9 @@ void TrackRing::build_slice(Walker& w, int32_t ring_q8, const ActorSink& sink) {
         slice_sink_(node.link, local, path,
                     w.terrain->slice(-path.left - path.shoulder_left, path.right + path.shoulder_right));
     w.borr.slots(path, *random_, statics);
-    auto& records = events_.at(w.dzhr.node).records;
-    for (size_t i = size_t(std::max(0, w.dzhr.index)); i < records.size(); ++i) {
-        auto& r = records[i];
+    const std::vector<std::array<uint32_t, 2>>* list = &events_.at(w.dzhr.node)->records;
+    for (size_t i = size_t(std::max(0, w.dzhr.index)); i < list->size(); ++i) {
+        const auto& r = (*list)[i];
         if ((r[0] & 0x7fff0000u) >> 16 != uint32_t(w.dzhr.position >> 8)) break;
         if (((r[0] >> 8) & 0x3f) == 0x3f) continue;
         if (!(r[0] & 0x80000000u)) { // billboard (+0x40 + 16n, two at most): no draw
@@ -334,7 +341,9 @@ void TrackRing::build_slice(Walker& w, int32_t ring_q8, const ActorSink& sink) {
         const uint32_t jitter = (*random_)();
         const RingActor actor{ring_q8 >> 8, local * 0x100u + (r[1] >> 24), r[0], r[1], node.link, local};
         if (sink) sink(actor, jitter);
-        r[0] |= 0x3f00u;
+        auto& mine = events_mut(w.dzhr.node).records; // copy-on-write: a snapshot may share it
+        mine[i][0] |= 0x3f00u;
+        list = &mine;
     }
     if (static_sink_) static_sink_(ring_q8 >> 8, node.link, local, statics);
 }
@@ -342,9 +351,9 @@ void TrackRing::build_slice(Walker& w, int32_t ring_q8, const ActorSink& sink) {
 void TrackRing::setup(int32_t camera, const Random& random, const ActorSink& sink) {
     random_ = &random;
     std::vector<uint32_t> visited;
-    jitter_events(course_.root, visited, random);
-    enter(front_walker_, course_.root); // 0x00452f50 front, then back
-    enter(back_walker_, course_.root);
+    jitter_events(course_->root, visited, random);
+    enter(front_walker_, course_->root); // 0x00452f50 front, then back
+    enter(back_walker_, course_->root);
     front_ = camera + 0x5000;
     back_ = camera - 0x3000;
     auto walk = [&](Walker& w, int32_t to) { // 0x00453ae0 forward

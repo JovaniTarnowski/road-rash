@@ -668,6 +668,6 @@ void Race::collide_pedestrians() {
 }
 void Race::attach_terrain_type() {
     if (traffic_ && terrain_source_)
-        traffic_->set_terrain_type([this](const RouteSample& s) { return int(terrain_source_(s).type); });
+        traffic_->set_terrain_type([this](const RouteSample& s) { return int(ground(s).type); });
 }
 } // namespace rr
