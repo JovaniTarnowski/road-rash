@@ -364,6 +364,8 @@ bool RaceScreen::iterate(uint64_t now_ns) {
                                    : opt_.render_scale;
         if (opt_.settings) {
             g_.widescreen = opt_.settings->widescreen;
+            g_.display_w = dw;
+            g_.display_h = dh;
             g_.enhancements = opt_.settings->enhancements;
             g_.texture_detail = opt_.settings->texture_detail;
         }

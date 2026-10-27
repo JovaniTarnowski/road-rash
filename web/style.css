@@ -131,15 +131,12 @@ main { min-width: 0; min-height: 0; }
 }
 #canvas {
   display: block;
-  /* Fit the entire 4:3 frame to the viewport, with no fixed pixel-size cap.
-     Keep the element itself at 4:3 so SDL mouse coordinates stay correct. */
-  /* SDL writes inline pixel sizes when its Window Size option changes.
-     The browser controls presentation; SDL's size controls the render buffer. */
-  width: min(100cqw, calc(100cqh * 4 / 3)) !important;
-  height: min(100cqh, calc(100cqw * 3 / 4)) !important;
-  max-width: 100%;
-  max-height: 100%;
-  object-fit: contain;
+  /* Fill the play area. SDL sizes its window (and render buffer) to this
+     box, then letterboxes the 4:3 or widescreen frame inside it, so the
+     element and its pixels always share one aspect and mouse mapping holds.
+     SDL may write inline pixel sizes; the stylesheet keeps layout control. */
+  width: 100cqw !important;
+  height: 100cqh !important;
   touch-action: none;
 }
 #canvas:focus-visible { outline: none; }

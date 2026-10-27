@@ -27,6 +27,9 @@ build. Vercel does not report a build duration for this upload.
   and `SDL_Delay`; explicit extra frame yields cause blank frames and must not
   be added. Asset reads use `EM_ASYNC_JS`. The browser canvas retains its WebGL
   drawing buffer so asynchronous reads cannot discard the last displayed frame.
+- The canvas fills the play area. SDL's window (and buffer, x devicePixelRatio)
+  follows the canvas CSS box, and SDL letterboxes 4:3 or widescreen output
+  inside it. `Widescreen: match` fills any aspect up to 16:9 (October 26, 2026).
   No JSPI, pthreads, SharedArrayBuffer or COOP/COEP headers are required.
 - `platform_web.cpp` exports the existing `ImportJob` request/supply protocol.
   It verifies the same 341 reference hashes for folder and ISO imports. The

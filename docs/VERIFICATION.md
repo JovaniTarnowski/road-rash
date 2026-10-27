@@ -1,5 +1,23 @@
 # Verification log (all sessions September 28, 2026)
 
+## Web canvas fill and widescreen (October 26, 2026)
+
+- `RR_WEB_BUILD_DIR=build-agent-web-widescreen-20261026 tools/build_web.sh`: passed.
+- `RR_WEB_URL=http://localhost:8791 node tests/web_hosted_smoke.cjs` (bundle +
+  local hosted assets over `python3 -m http.server`): all 9 PASS lines, exit 0.
+  The fit check now asserts that the canvas fills `.viewport` and that the buffer
+  aspect matches the CSS box at 1907x1280, 1280x960, 1440x900, 390x844 and 844x390,
+  with SDL inline sizes at scale 1 and 2.
+- Manual check in the in-app browser (DPR 2), `widescreen=3`: a quick race at
+  1280x720 has a 1280x668 CSS canvas with a 2560x1336 buffer, side bars only
+  (1.92:1 is beyond the 16:9 cap). After a live resize to 1280x860 the canvas
+  is 1280x808 with a 2560x1616 buffer, edge to edge with no bars. The Game Mode
+  menu fills at the widescreen width and mouse hover selects the right item.
+- Native Debug `build-agent-web-widescreen-native`: build passed; full CTest
+  result recorded in the handoff `docs/agent-handoffs/web-widescreen-20261026.md`.
+- Not checked: Safari/Firefox, real mobile devices, browser fullscreen
+  on hardware.
+
 ## Plan 34 Task 2 C3/C4: traffic and police per human (October 26, 2026)
 
 - `make verify-sim BUILD_DIR=build-p34`: passed. `ctest -j8`: 111/111, 0
