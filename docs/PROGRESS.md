@@ -53,6 +53,19 @@ Detailed evidence is in [REVERSE_ENGINEERING.md](REVERSE_ENGINEERING.md) and tes
 
 ## Timeline
 
+### October 26, 2026: plan 34 Task 1, original mano-a-mano gameplay rules
+
+- Static traces (no capture needed) in [MULTIPLAYER.md](MULTIPLAYER.md)
+  "Gameplay rules the port keeps" and REVERSE_ENGINEERING.md: rider count per
+  A.I. option (Full 15, Limited 8, None = humans), grid rows by network slot
+  and the >4-human grid table, the handicap formula and where it applies,
+  the six-line race chat log, the networked finish/wreck/bust flow (won only
+  for first place; others keep racing), Escape strings 430/316, restroom
+  patterns 5/6/7.
+- Corrections: `DUEL` is not a mano-a-mano result video (attract/jukebox
+  only), and strings 427–429 are unreferenced by the EXE (the port uses them
+  as native announcements).
+- Remaining: plan 34 Tasks 2–11.
 ### October 26, 2026: all-screen menu pixel acceptance pinned (plan 13 Task 6 Step 2)
 
 - `frontend_test` replays the Wine frontend-acceptance script from boot
