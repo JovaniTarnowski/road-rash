@@ -421,7 +421,7 @@ std::pair<std::unique_ptr<Channel>, std::unique_ptr<Channel>> loopback_pair(NetS
   - Limits as in the architecture section.
   - Structured logs, a `/net/health` endpoint, and counters (rooms, players, round trip, late inputs, desyncs).
   - Race logs kept 7 days.
-- [ ] **Step 4: Headless bots.** (Needs the Task 6 client: the bots run the real `net::Client` + `Rollback` + `Race`.) `tools/net_bots.cpp` connects N scripted clients that run the real `Rollback` + `Race`. It needs the local disc data, as the game does. Use it for end-to-end tests against a local `rr-netd`, and later against staging.
+- [x] **Step 4: Headless bots.** (October 26: `net-bots` runs the real `net::Client` + `Rollback` + `Race`; local WebSocket smoke with 2 and 8 clients, shared sealed cutoff and official matching results. Staging follows Task 8.) `tools/net_bots.cpp` connects N scripted clients that run the real `Rollback` + `Race`. It needs the local disc data, as the game does. Use it for end-to-end tests against a local `rr-netd`, and later against staging.
 - [x] **Step 5:** Commit (Steps 1–3; Step 4 lands with Task 6): `server: rr-netd rooms and input sealer`.
 
 ---
@@ -432,12 +432,12 @@ std::pair<std::unique_ptr<Channel>, std::unique_ptr<Channel>> loopback_pair(NetS
 - Create: `src/net/client.hpp`, `src/net/client.cpp`, `tests/net_client_test.cpp`
 - Modify: `src/race_screen.cpp`, `src/game_main.cpp`, `src/sound.*`, `src/race_overlay.*`
 
-- [ ] **Step 1: In-process end-to-end test.** Two to eight `net::Client` instances and one server `Room` run over `loopback_pair` with round trips of 0/50/150/300 ms, jitter of ±30 ms, and loss of 0/5/20%. Assert:
+- [x] **Step 1: In-process end-to-end test.** Two to eight `net::Client` instances and one server `Room` run over `loopback_pair` with round trips of 0/50/150/300 ms, jitter of ±30 ms, and loss of 0/5/20%. Assert:
   - every client's sealed-tick hashes are equal at every check;
   - final results are equal;
   - rollback depth stays within the window, or the client stalls cleanly;
   - there are no unbounded queues.
-- [ ] **Step 2: Clock sync and time dilation, and adaptive input delay.**
+- [x] **Step 2: Clock sync and time dilation, and adaptive input delay.** Ping/pong on the active channel, bounded 64-sample RTT/jitter history, 59–61 Hz drift correction, adaptive delay capped at 0–3 ticks. See [client handoff](../agent-handoffs/net-client-20261026.md).
 - [ ] **Step 3: `RaceScreen` integration.**
   - Poll channels once per frame, then advance the rollback to the target tick.
   - Render the newest predicted tick.

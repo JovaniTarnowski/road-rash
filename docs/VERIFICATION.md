@@ -3091,3 +3091,14 @@ python3 tests/steal_capture_audit_test.py
   SHA-256 `6463bd19626c35b0c457594267c56d8c30a9f436d78bc3d9288ea727a2a19f3e`
   and byte-identical trace to the initial run. Receipt-aware checks pass on
   the final run. Concurrent multiplayer commits merged without conflicts.
+
+## October 26, 2026 — plan 34 client, real server E2E and bots
+
+See [net-client-20261026](agent-handoffs/net-client-20261026.md) for commands,
+full gate results and local evidence paths. `net_client` drives real `Server`
+and `Client`/`Rollback`/disc-backed Race instances through 84 network scenarios,
+including client clock offsets/drift, required periodic seat hashes, matching
+confirmed cutoff state/results and bounded rollback/resend/event queues.
+`net-bots` local WebSocket smokes cover 2 and 8 clients, with AI and traffic.
+Cutoff results report departure, not a course finish. No production, device,
+Android, browser, renderer/audio or full-course multiplayer acceptance claimed.

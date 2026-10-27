@@ -2299,3 +2299,15 @@ is live. [Evidence and remaining fidelity scope](agent-handoffs/napa-merge-terra
   This closes the original resolver gate/transfer component measurement;
   plan 10/16 free-running steal parity remains open. Controlled original
   mode-3 rolls do not establish CRT RNG or full-race fidelity.
+
+## October 26, 2026 — plan 34 client and bots
+
+Task 6 Steps 1–2 now have a real `net::Client`: clock sync/time dilation,
+adaptive capped input delay, authoritative frame delivery into Rollback,
+bounded resend/events and confirmed hash reporting. The E2E matrix covers all
+2–8 player counts across the requested latency/loss settings (84 scenarios).
+Task 5's `net-bots` runs actual disc-backed clients over WebSockets; local two-
+and eight-client cutoff smokes agree on state hashes and official results.
+RaceScreen/audio/smoothing/HUD integration remains open in Task 6 Steps 3–5.
+Scope, commands, limitations and gate receipts:
+[net-client-20261026](agent-handoffs/net-client-20261026.md).
