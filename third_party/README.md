@@ -10,3 +10,18 @@ Standalone macOS builds fetch the official SDL3-3.4.8.tar.gz source archive,
 SHA-256 `e9fff7467fb60f037e6708da18b25560649e4c63edc2a69bb871b960d9cbfbba`.
 `cmake/sdl3_static.cmake` verifies that digest and builds SDL statically.
 The existing SDL and stb licences are copied into the application's Resources.
+
+Online multiplayer (plan 34) networking, fetched by `cmake/net.cmake` when
+`RR_NET_TRANSPORT` is on (native desktop builds, rr-netd, net bots):
+- libdatachannel v0.24.6, commit `6b1e2e620f1e37f0eafeee702eaea0043cb305fd`
+  (https://github.com/paullouisageneau/libdatachannel), MPL-2.0,
+  `libdatachannel-LICENSE.txt`. Unmodified; built without media
+  (`NO_MEDIA`), examples or tests.
+- Its submodules at that commit: libjuice v1.7.4 `b89c792e` (MPL-2.0,
+  `libjuice-LICENSE.txt`), usrsctp `fec583d5` (BSD-3-Clause,
+  `usrsctp-LICENSE.md`), plog `94899e0b` (MIT, `plog-LICENSE.txt`). The
+  json and libsrtp submodules are not fetched (examples/media only).
+- TLS: OpenSSL 3 (Apache-2.0, `OpenSSL-LICENSE.txt`), the system or
+  Homebrew library, linked statically on macOS.
+MPL-2.0 source for these libraries is available at the URLs above; the port
+does not modify it.

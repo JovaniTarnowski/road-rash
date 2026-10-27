@@ -168,3 +168,13 @@ FFmpeg is used only by tests. Runtime playback needs no FFmpeg or Wine.
 If audio cannot open, explicit video playback uses a silent wall-clock
 fallback. Device A/V latency and physical audio-focus handling are not yet
 measured. MIDI/SBK playback is still open; there is no current GM bank setting.
+
+## Third-party software
+
+The port uses these libraries; their licences are in `third_party/` and
+standalone packages copy them into the application's resources:
+- SDL 3 (zlib licence) and stb_image / stb_truetype (public domain or MIT);
+- for online mano-a-mano (plan 34), libdatachannel (MPL-2.0) with libjuice
+  (MPL-2.0), usrsctp (BSD-3-Clause) and plog (MIT), and OpenSSL 3
+  (Apache-2.0) for TLS. The port does not modify the MPL-2.0 libraries; their
+  source is at the pinned commits listed in `third_party/README.md`.

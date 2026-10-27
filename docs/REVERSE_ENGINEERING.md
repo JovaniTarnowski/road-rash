@@ -2331,6 +2331,16 @@ traced and inferred items labelled, is in [MULTIPLAYER.md](MULTIPLAYER.md).
     "DUEL is the mano cutscene" reading is withdrawn;
   - restroom patterns 5/6/7 for mode 3 unconnected/host/client
     (`0x00444fb0`).
+- **Port simulation inventory** (October 26, 2026, plan 34 Task 2 Step 1):
+  the native simulation's player-centred reads are listed with their
+  generalisation in [plan 34 "Task 2 notes"](plans/34-multiplayer.md). A
+  finding for the port: the player-only contact sound blocks
+  (`race.cpp` contact paths of `0x004049c0`/`0x004052c0`, the car horn of
+  `0x0044efa0`, the weapon swish of `0x004096f0`) **draw `rand()`** for the
+  sound choice, so in the original the local human changes the RNG stream.
+  With every client simulating every human, those draws run for every human
+  rider on every client (identical streams); only the playback is filtered
+  to the local human.
 - **Correction.** Plan 09 assumed two-player lockstep exchanging controls. The
   code replicates state (snapshots and events), and up to eight humans can
   play over TCP/IP or IPX.

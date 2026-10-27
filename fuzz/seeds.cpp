@@ -32,6 +32,7 @@
 #include "settings.hpp"
 #include "terrain.hpp"
 #include "wav.hpp"
+#include "net/protocol.hpp"
 #include "../tests/iso_fixture.hpp"
 
 namespace {
@@ -489,7 +490,7 @@ int main(int argc, char** argv) {
     for (const char* target :
          {"fuzz_settings", "fuzz_resources", "fuzz_unpack", "fuzz_cel", "fuzz_family", "fuzz_course",
           "fuzz_terrain", "fuzz_cars", "fuzz_animation", "fuzz_bobs", "fuzz_avi", "fuzz_audio", "fuzz_iso",
-          "fuzz_pe", "fuzz_rri", "fuzz_save", "fuzz_exe_tables", "fuzz_music"})
+          "fuzz_pe", "fuzz_rri", "fuzz_save", "fuzz_exe_tables", "fuzz_music", "fuzz_net_protocol"})
         write_seed(root, target, "empty", empty);
 
     { // settings: formatted defaults round-trip.
@@ -599,6 +600,29 @@ int main(int argc, char** argv) {
         const Bytes b = rr::write_save(c);
         write_seed(root, "fuzz_save", "seed-1.sav", b);
         check(rr::read_save(b, t).state.cash == 100, "save seed");
+    }
+    { // net protocol (plan 34): one message per family, built by the codec.
+        namespace n = rr::net;
+        n::Hello hello;
+        hello.alias = "Fuzzer";
+        n::Frames frames;
+        frames.humans = 2;
+        frames.frames.push_back(n::SealedFrame{3, 1, {0x0001, 0x0102}});
+        n::Start start;
+        start.humans.push_back(n::StartHuman{0, 1, 0, "Fuzzer"});
+        const std::pair<const char*, n::Message> msgs[] = {
+            {"hello.bin", hello},
+            {"input.bin", n::Input{10, {1, 2, 3}}},
+            {"frames.bin", frames},
+            {"start.bin", start},
+            {"chat.bin", n::Chat{0xff, "seed"}},
+            {"room_join.bin", n::RoomJoin{"K7MPQ2", false}},
+        };
+        for (const auto& [name, m] : msgs) {
+            const Bytes b = n::encode(m);
+            write_seed(root, "fuzz_net_protocol", name, b);
+            check(n::decode(b).has_value(), "net protocol seed");
+        }
     }
     if (failures)
         std::cerr << failures << " seed failures\n";
