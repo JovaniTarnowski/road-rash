@@ -48,7 +48,7 @@ backlog review, not a fresh acceptance run for every plan.
 | 25, 26, 28, 29, 31 | Landed infrastructure/review work; do not reopen solely because older summaries lag. |
 | 32 | Consolidated continuation checklist; use current captures/handoffs for actual blockers. |
 | 33 | Linux/Windows platform acceptance not started. |
-| 34 | In scope, C++ server selected, modern internet design. Original network background is recovered; multi-human rules/determinism and implementation remain. |
+| 34 | In scope, C++ server selected, modern internet design. Original network background and gameplay rules are recovered (Task 1 landed as `a3668db` during this review); multi-human determinism and implementation remain. |
 
 Selected plan 10 Task 6 / plan 16 Task 3: settle the steal-gate field and
 measurement questions before repeating the unproductive long capture farm.
@@ -159,3 +159,12 @@ Shared PROGRESS/VERIFICATION/REVERSE_ENGINEERING files are actively claimed
 by frontend-acceptance-all-20261026; this uniquely named handoff contains the
 progress, verification and recovered facts for integration per AGENTS.md.
 No accepted golden, simulation expectation, source file or shared doc changed.
+
+## Concurrent integration at close-out
+
+Remote `a3668db` landed plan 34 Task 1 rules research during this session.
+Read its implementation handoff and merged it without conflicts (`7617a05`);
+all pre-existing frontend work remains unstaged and preserved. Plan 34 now
+has explicit source ownership in `plan34-impl-20261026.md`; do not take its
+simulation/server files without coordination. Steal research commit `57cbcc5`
+and the merge are pushed to main.
