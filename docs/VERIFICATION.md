@@ -2972,7 +2972,7 @@ python3 tools/steal_fixture_capture.py \
   --prefix /Users/archit/Dev/rr/.re-steal-prefix-20261026 \
   --clone-prefix /Users/archit/Dev/rr/prefix
 python3 tests/steal_fixture_test.py \
-  --trace analysis/oracle/steal-fixture/de702f6e23d2418589027962870fa285/steal.tsv
+  --trace analysis/oracle/steal-fixture/46883e0ec8734a20b8c9496c15184dc7/steal.tsv
 python3 tests/steal_capture_audit_test.py
 ```
 
@@ -2987,7 +2987,7 @@ python3 tests/steal_capture_audit_test.py
   victim damage deadline suppresses normal damage. No race bootstrap, real
   assets, native simulation, CRT random stream or human controls exercised.
 - Local immutable receipt, trace, DLL and logs under
-  `analysis/oracle/steal-fixture/de702f6e23d2418589027962870fa285/`.
+  `analysis/oracle/steal-fixture/46883e0ec8734a20b8c9496c15184dc7/`.
   EXE/DLL/trace/source hashes recorded. Commercial/local artifacts excluded
   from Git; only fixture source, runner, checks and documentation committed.
 - Main prefix was read only while cloning. Private prefix and output/install
@@ -2996,3 +2996,9 @@ python3 tests/steal_capture_audit_test.py
 - No native production code/build configuration changed. Native CTest,
   sanitizers, Android and device tests were not run for this standalone
   original-function research slice. Runtime steal parity remains open.
+
+- Committed-source repeat: the commit hook formatted `steal_fixture.c`;
+  rebuilt and recaptured from committed source. Final run above has source
+  SHA-256 `6463bd19626c35b0c457594267c56d8c30a9f436d78bc3d9288ea727a2a19f3e`
+  and byte-identical trace to the initial run. Receipt-aware checks pass on
+  the final run. Concurrent multiplayer commits merged without conflicts.

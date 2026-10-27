@@ -2387,7 +2387,7 @@ roll, three eligible-but-failed rolls):
   victim's active weapon has been cleared; attacker queues 2 and victim
   selects/queues 2 (`0x40989c–0x4098e5`).
 
-Receipt: local `analysis/oracle/steal-fixture/de702f6e23d2418589027962870fa285/receipt.json`
+Receipt: local `analysis/oracle/steal-fixture/46883e0ec8734a20b8c9496c15184dc7/receipt.json`
 in the RE worktree; trace SHA-256
 `f9cd89ec99f22187ae55c87162a74c471e712090006afeb17f061924a7355a01`.
 These are original component measurements, not native replay, live gameplay,

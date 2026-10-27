@@ -47,7 +47,7 @@ Completed the original resolver gate/transfer component measurement.
   DLL, Ghidra database, accepted trace or frontend work was overwritten.
 
 Local evidence directory:
-`analysis/oracle/steal-fixture/de702f6e23d2418589027962870fa285/`.
+`analysis/oracle/steal-fixture/46883e0ec8734a20b8c9496c15184dc7/`.
 Trace SHA-256: `f9cd89ec99f22187ae55c87162a74c471e712090006afeb17f061924a7355a01`.
 EXE SHA-256: `73d7f9744b5b1a9482b3909950cdf3fe34119fe13d023b031e9c6739a60f18a2`.
 GCC MinGW i686 16.2.0; Wine 11.18 Staging. The binary, original EXE and
@@ -67,7 +67,7 @@ python3 tools/steal_fixture_capture.py \
   --prefix /Users/archit/Dev/rr/.re-steal-prefix-20261026 \
   --clone-prefix /Users/archit/Dev/rr/prefix
 python3 tests/steal_fixture_test.py \
-  --trace analysis/oracle/steal-fixture/de702f6e23d2418589027962870fa285/steal.tsv
+  --trace analysis/oracle/steal-fixture/46883e0ec8734a20b8c9496c15184dc7/steal.tsv
 python3 tests/steal_capture_audit_test.py
 git diff --check
 ```
@@ -94,3 +94,15 @@ Do not infer this coverage from the old zero-steal farm traces.
 No live Wine, game, capture, Ghidra or build processes. Only the dedicated
 prefix remains on disk for reuse. File claims released at completion.
 Private worktree retained as requested; no shared checkout edits.
+
+## Final integration and committed-source repeat
+
+- Initial fixture commit: `876a584`. The commit hook formatted the C source,
+  so the original-function capture was rebuilt/repeated from committed source
+  instead of reusing a stale source-hash receipt. Final receipt is the run
+  `46883e0ec8734a20b8c9496c15184dc7` above; all 31 rows are byte-identical
+  to the initial capture (same trace SHA-256), and source/DLL provenance checks
+  pass against the committed C source.
+- Concurrent multiplayer commits `796f251` and `7ecda13` merged without
+  conflicts; their simulation/server/source changes were preserved.
+  No unrelated source was edited or restaged.
