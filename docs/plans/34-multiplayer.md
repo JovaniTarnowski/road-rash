@@ -3,14 +3,16 @@
 > **Status (October 26, 2026):** Active and part of the definition of done (owner decision, October 26, 2026). Supersedes [plan 09](09-multiplayer.md). The original netcode is traced in [../MULTIPLAYER.md](../MULTIPLAYER.md). The owner also decided:
 > - multiplayer does **not** need to reproduce the original's netcode or transports;
 > - it must work **over the internet** with no LAN discovery or port forwarding;
-> - the owner's VPS (`agnee`, see [../WEB_HOSTING.md](../WEB_HOSTING.md)) is the server.
+> - the owner's VPS (`agnee`, see [../WEB_HOSTING.md](../WEB_HOSTING.md)) is the server;
+> - the server `rr-netd` is written in **Rust** (owner decision, October 26, 2026). Clients stay C++. Decision 4 says how the two codecs are kept byte-identical.
 >
 > This replaces the October 26 draft of this plan (original wire format, Wine interop, LAN ports).
 
 > **For agentic workers:** Read [00-INDEX.md](00-INDEX.md), this whole plan and [../MULTIPLAYER.md](../MULTIPLAYER.md) first. Use superpowers:subagent-driven-development or superpowers:executing-plans. Steps use `- [ ]` checkboxes. Claim and serialize shared files (AGENTS.md):
 > - `src/race.*`, `src/race_schedule.cpp`, `src/traffic.*`, `src/track_ring.*`;
 > - `src/race_screen.cpp`, `src/game_main.cpp`, `src/frontend.*`;
-> - `CMakeLists.txt`.
+> - `CMakeLists.txt`, `tools/ci.sh`;
+> - `server/` (the Rust workspace) and `docs/NET_PROTOCOL.md` with its vectors, which client and server both test against.
 >
 > VPS changes (Dokku app, Nginx route, firewall) are owner-approved here only for the items listed in Task 8. Anything else on `agnee` needs a fresh request.
 
@@ -91,11 +93,24 @@ This is the model fighting and racing games use (GGPO-style rollback with a serv
   - The server is a WebRTC peer with a public IP. It offers its own host candidate, and clients behind any NAT connect out to it, so no STUN, TURN or peer-to-peer is needed.
   - Signalling (SDP and candidates) travels over the already-open WebSocket.
   - When UDP is blocked, the race simply stays on the WebSocket; rollback absorbs the extra jitter.
-- **Library: [libdatachannel](https://github.com/paullouisageneau/libdatachannel)** (MPL-2.0, C++17). It has a WebSocket client and server plus WebRTC DataChannels on macOS, Linux, Windows and Android, so client and server share one library. In the browser, the same messages use the browser's own `WebSocket` and `RTCPeerConnection` through Emscripten JS glue (or `datachannel-wasm`, which mirrors the libdatachannel API).
-- **Pin the version** and add its licence and dependency licences (libjuice, usrsctp, the TLS library) to `third_party/` and the user guide (00-INDEX code rules).
+- **Client library: [libdatachannel](https://github.com/paullouisageneau/libdatachannel)** (MPL-2.0, C++17). It has a WebSocket client plus WebRTC DataChannels on macOS, Linux, Windows and Android. In the browser, the same messages use the browser's own `WebSocket` and `RTCPeerConnection` through Emscripten JS glue (or `datachannel-wasm`, which mirrors the libdatachannel API).
+- **Server libraries (Rust):** `tokio` and `axum` for the WebSocket endpoint and `/net/health`; [`str0m`](https://github.com/algesten/str0m) (MIT/Apache-2.0), a sans-I/O WebRTC stack, for the server-side DataChannel peer on one fixed UDP port range. Because client and server no longer share a WebRTC stack, Task 9 must prove libdatachannel↔str0m and browser↔str0m interop.
+- **Pin versions.** Client: add libdatachannel's licence and its dependency licences (libjuice, usrsctp, the TLS library) to `third_party/` and the user guide (00-INDEX code rules). Server: commit `server/Cargo.lock` and `server/rust-toolchain.toml`; `cargo deny check` enforces a licence allowlist and advisories, and `server/THIRD_PARTY.md` is generated from the lock file. The server binary is not distributed to players, so it needs no user-guide notice.
 
-**4. Server: `rr-netd`, C++20 in this repository (`server/`).**
-- It shares the message codecs in `src/net/` with the clients, so client and server cannot disagree on bytes.
+**4. Server: `rr-netd`, Rust in this repository (`server/`, a Cargo workspace).**
+- Why Rust (owner decision): memory safety for the one component that faces the internet and parses untrusted bytes from everyone, and a mature async and WebRTC ecosystem for a long-running service. The server holds no game data and runs no simulation, so nothing in it needs the C++ simulation.
+- Crates:
+  - `rr-net-protocol`: the message codecs, no dependencies, `#![forbid(unsafe_code)]`;
+  - `rr-netd-core`: rooms, roster, sealer, limits and race log as a **sans-I/O** state machine. Time is passed in and bytes go in and out, so tests are deterministic and need no sockets. `#![forbid(unsafe_code)]`;
+  - `rr-netd-ffi`: a `staticlib` with a small C ABI (`server/ffi/rr_netd_ffi.h`) over the core and codecs, so C++ tests and `net_bots` can drive a real server room in process. This is the only crate allowed `unsafe`;
+  - `rr-netd`: the binary (tokio, axum, str0m, configuration, structured logs, health and counters);
+  - `server/fuzz/`: `cargo-fuzz` targets.
+- **Two codecs, one wire format.** Clients keep the C++ codecs in `src/net/`; the server has its own in Rust. To stop them disagreeing on bytes:
+  - `docs/NET_PROTOCOL.md` is the normative byte layout of every message (field order, widths, signedness, limits, rejection rules);
+  - `tests/data/net_protocol_vectors.json` holds synthetic golden vectors, valid and invalid, that **both** test suites must encode and decode exactly;
+  - a C++ differential fuzz target feeds the same bytes to the C++ decoder and to the Rust decoder through `rr-netd-ffi`, and fails on any accept/reject or re-encode difference.
+  
+  A protocol change is one commit that updates the spec, the vectors and both codecs, and bumps the protocol version.
 - It is a single process with rooms in memory and a 60 Hz sealing timer per racing room.
 - Deployment is a Dokku app `road-rash-net` on `agnee`, reached at `wss://road-rash.archit.xyz/net` through the existing Nginx and Cloudflare. There is no new DNS name and no new certificate.
 - WebRTC UDP goes **directly** to the VPS IP (`5.161.142.20`), not through Cloudflare, which does not proxy arbitrary UDP. It uses a small fixed UDP port range that the owner opens in Task 8.
@@ -198,7 +213,7 @@ With one human, each generalisation must reduce to the current code path; the of
 
   A desync is always treated as a bug to fix, never as acceptable.
 
-### Messages (binary, little-endian; `src/net/protocol.hpp`)
+### Messages (binary, little-endian; normative layout in `docs/NET_PROTOCOL.md`)
 
 | Message | Direction | Channel | Content |
 | --- | --- | --- | --- |
@@ -346,9 +361,11 @@ class Rollback {
 ### Task 4: Protocol, codecs and channels
 
 **Files:**
-- Create: `src/net/protocol.hpp`, `src/net/protocol.cpp`, `src/net/channel.hpp`, `src/net/ws_channel.cpp`, `src/net/loopback_channel.cpp`, `fuzz/fuzz_net_protocol.cpp`, `tests/net_protocol_test.cpp`
+- Create: `docs/NET_PROTOCOL.md`, `tests/data/net_protocol_vectors.json`
+- Create (C++ client): `src/net/protocol.hpp`, `src/net/protocol.cpp`, `src/net/channel.hpp`, `src/net/ws_channel.cpp`, `src/net/loopback_channel.cpp`, `fuzz/fuzz_net_protocol.cpp`, `fuzz/fuzz_net_protocol_diff.cpp`, `tests/net_protocol_test.cpp`
+- Create (Rust): `server/Cargo.toml` (workspace), `server/Cargo.lock`, `server/rust-toolchain.toml`, `server/deny.toml`, `server/protocol/` (`rr-net-protocol`, with a vectors test), `server/ffi/` (`rr-netd-ffi`, codec entry points first), `server/fuzz/fuzz_targets/decode.rs`
 - Add: `third_party/libdatachannel` (pinned, as a CMake subproject or FetchContent with a hash), licence files
-- Modify: `CMakeLists.txt`, `docs/USER_GUIDE.md` (third-party notice)
+- Modify: `CMakeLists.txt` (build `rr-netd-ffi` through [Corrosion](https://github.com/corrosion-rs/corrosion), pinned, for the net tests only; the game, Android and web builds never need Cargo), `tools/ci.sh`, `docs/USER_GUIDE.md` (third-party notice), `docs/TOOLING.md` (Rust toolchain)
 
 **Interfaces:**
 ```cpp
@@ -371,19 +388,23 @@ std::pair<std::unique_ptr<Channel>, std::unique_ptr<Channel>> loopback_pair(NetS
 }
 ```
 
-- [ ] **Step 1: Codec tests first.** Every message round-trips. Truncated, oversized, wrong-version and out-of-range messages are rejected. Golden byte vectors for each message are committed as synthetic fixtures.
-- [ ] **Step 2: Implement codecs and the libdatachannel WebSocket channel.** The library's callbacks fill a lock-protected queue, and the main thread only polls, so the simulation never runs on a network thread.
-- [ ] **Step 3: Fuzz target** in the plan 22 set and CI.
-- [ ] **Step 4:** Commit: `net: protocol codecs and WebSocket channel`.
+- [ ] **Step 1: Spec and vectors first.** Write `docs/NET_PROTOCOL.md` and the vectors: every message, plus truncated, oversized, wrong-version and out-of-range cases with the expected rejection.
+- [ ] **Step 2: Codec tests first, in both languages.** `tests/net_protocol_test.cpp` and the `rr-net-protocol` tests read the same vectors file. Every message round-trips; every invalid vector is rejected.
+- [ ] **Step 3: Implement both codecs and the libdatachannel WebSocket channel.** The library's callbacks fill a lock-protected queue, and the main thread only polls, so the simulation never runs on a network thread.
+- [ ] **Step 4: Fuzz targets** in the plan 22 set and CI: the C++ decoder, the Rust decoder (`cargo fuzz`), and the C++/Rust differential target.
+- [ ] **Step 5: Gate.** `tools/ci.sh` runs, in `server/`: `cargo fmt --check`, `cargo clippy --workspace --all-targets --locked -- -D warnings`, `cargo test --workspace --locked`, `cargo deny check`. A missing Rust toolchain fails CI; it is never a skip.
+- [ ] **Step 6:** Commit: `net: protocol spec, C++ and Rust codecs, WebSocket channel`.
 
 ---
 
 ### Task 5: Server `rr-netd`
 
 **Files:**
-- Create: `server/CMakeLists.txt`, `server/main.cpp`, `server/room.hpp`, `server/room.cpp`, `server/sealer.hpp`, `server/sealer.cpp`, `server/Dockerfile`, `tests/server_room_test.cpp`, `tests/server_sealer_test.cpp`, `tools/net_bots.cpp`
+- Create (Rust): `server/core/src/{lib,room,sealer,limits,log}.rs` (`rr-netd-core`), `server/core/tests/{room,sealer}.rs`, `server/netd/src/{main,config,ws,health,metrics}.rs` (`rr-netd`), `server/Dockerfile`
+- Modify: `server/ffi/` (room and sealer entry points), `server/ffi/rr_netd_ffi.h`
+- Create (C++): `tools/net_bots.cpp`, `tests/net_ffi_test.cpp` (drives a room through the C ABI)
 
-- [ ] **Step 1: Room tests first** (the server logic is a pure class, driven by in-memory channels):
+- [ ] **Step 1: Room tests first** (`rr-netd-core` is sans-I/O: tests feed messages and a fake clock, and read the messages it emits):
   - create, join by code, list public rooms;
   - full-room, wrong-fingerprint and wrong-digest rejections;
   - character pick, course vote, chat, start;
@@ -391,11 +412,12 @@ std::pair<std::unique_ptr<Channel>, std::unique_ptr<Channel>> loopback_pair(NetS
   - reconnect by seat token, and idle and lobby timeouts.
 - [ ] **Step 2: Sealer tests.** Inputs on time, inputs late (sealed as repeat-last with the late flag), a player vanishing (handed to AI at a sealed tick), unacknowledged frames repeated, and hash comparison with desync handling.
 - [ ] **Step 3: Implement.**
-  - One event loop; 60 Hz per racing room from a monotonic clock, catching up after a stall without drift.
+  - `rr-netd-core` owns all room and sealer logic. `rr-netd` only moves bytes between sockets and the core and supplies the time: one tokio runtime, 60 Hz per racing room from a monotonic clock, catching up after a stall without drift.
+  - No panics on network input: decoding and room handling return errors that are counted and dropped. Any panic is a bug; Dokku restarts the process, and reconnecting clients resume through their seat tokens and the race log.
   - Limits as in the architecture section.
   - Structured logs, a `/net/health` endpoint, and counters (rooms, players, round trip, late inputs, desyncs).
   - Race logs kept 7 days.
-- [ ] **Step 4: Headless bots.** `tools/net_bots.cpp` connects N scripted clients that run the real `Rollback` + `Race`. It needs the local disc data, as the game does. Use it for end-to-end tests against a local `rr-netd`, and later against staging.
+- [ ] **Step 4: Headless bots.** `tools/net_bots.cpp` (C++, because it runs the simulation) connects N scripted clients that run the real `Rollback` + `Race`. It needs the local disc data, as the game does. Use it for end-to-end tests against a local `rr-netd`, and later against staging.
 - [ ] **Step 5:** Commit: `server: rr-netd rooms and input sealer`.
 
 ---
@@ -406,7 +428,7 @@ std::pair<std::unique_ptr<Channel>, std::unique_ptr<Channel>> loopback_pair(NetS
 - Create: `src/net/client.hpp`, `src/net/client.cpp`, `tests/net_client_test.cpp`
 - Modify: `src/race_screen.cpp`, `src/game_main.cpp`, `src/sound.*`, `src/race_overlay.*`
 
-- [ ] **Step 1: In-process end-to-end test.** Two to eight `net::Client` instances and one server `Room` run over `loopback_pair` with round trips of 0/50/150/300 ms, jitter of ±30 ms, and loss of 0/5/20%. Assert:
+- [ ] **Step 1: In-process end-to-end test.** Two to eight `net::Client` instances and one real server room (`rr-netd-core` through `rr-netd-ffi`, driven by the test's clock) run over `loopback_pair` with round trips of 0/50/150/300 ms, jitter of ±30 ms, and loss of 0/5/20%. Assert:
   - every client's sealed-tick hashes are equal at every check;
   - final results are equal;
   - rollback depth stays within the window, or the client stalls cleanly;
@@ -458,7 +480,7 @@ Nothing else on the server changes.
 
 **Files:** Create `deploy/road-rash-net/` (Dockerfile reference, `app.json` healthcheck, Nginx snippet), `.github/workflows/net-deploy.yml`. Update `docs/WEB_HOSTING.md`.
 
-- [ ] **Step 1: Deploy workflow.** Build `rr-netd` (Linux x86-64 release) on pushes to `main` that touch `server/` or `src/net/`. Deploy with `dokku git:from-archive`, as the web app does. Health-check `/net/health` and check the exact Git revision.
+- [ ] **Step 1: Deploy workflow.** Build `rr-netd` (Linux x86-64 release, `cargo build --release --locked` in a multi-stage Docker build on the pinned toolchain, with a minimal runtime image) on pushes to `main` that touch `server/`, `docs/NET_PROTOCOL.md` or the protocol vectors. The workflow runs the Task 4 Rust gate before deploying. Deploy with `dokku git:from-archive`, as the web app does. Health-check `/net/health` and check the exact Git revision.
 - [ ] **Step 2: Nginx route.** WebSocket upgrade headers, a long read timeout and a body size limit. Cloudflare passes WebSockets on the proxied hostname. Confirm the TLS renewal hook still validates.
 - [ ] **Step 3: WebRTC UDP.**
   - Publish the port range and advertise `5.161.142.20` as the server's host candidate (configurable).
@@ -471,9 +493,9 @@ Nothing else on the server changes.
 
 ### Task 9: WebRTC DataChannel transport
 
-**Files:** Create `src/net/rtc_channel.cpp`, `src/net/rtc_channel_web.cpp`, `web/net_glue.js` (or `datachannel-wasm`). Modify `server/` for the server-side peer, and `src/net/client.cpp` for upgrade and fallback.
+**Files:** Create `src/net/rtc_channel.cpp`, `src/net/rtc_channel_web.cpp`, `web/net_glue.js` (or `datachannel-wasm`), `server/netd/src/rtc.rs`. Modify `src/net/client.cpp` for upgrade and fallback.
 
-- [ ] **Step 1: Server peer.** For each client, the server creates a peer connection with one unreliable, unordered DataChannel. Signalling goes over the client's WebSocket. Port range and public IP come from configuration.
+- [ ] **Step 1: Server peer.** For each client, `rr-netd` creates a `str0m` peer with one unreliable, unordered DataChannel. Signalling goes over the client's WebSocket. Port range and public IP come from configuration. Interop tests: a libdatachannel client and a headless browser each open a DataChannel to a local `rr-netd` and exchange `Input`/`Frames`.
 - [ ] **Step 2: Clients.** Native clients use libdatachannel; the browser uses `RTCPeerConnection` through JS glue. Race traffic moves to the DataChannel once it is open. If it fails within 5 s, or closes mid-race, traffic falls back to the WebSocket without a race-visible event beyond a rollback.
 - [ ] **Step 3: Measure.** At 5% loss, compare WebSocket and DataChannel on rollback depth p50/p95/p99, late-input rate and stalls. Record the result in VERIFICATION.md. The DataChannel stays default only if it measurably helps.
 - [ ] **Step 4:** Commit: `net: WebRTC DataChannel race transport`.
@@ -500,7 +522,7 @@ Nothing else on the server changes.
   - 200 in-process eight-player races under simulated network chaos.
   - A one-hour production session with four real clients (Mac, Android, two browsers) on different networks, one of them cellular.
   - 50 concurrent bot rooms against staging, recording server CPU and memory.
-- [ ] **Step 2: Hostile input.** Fuzzed and replayed garbage, wrong-slot inputs, oversized and flooded messages against a local `rr-netd`. Each must be dropped, counted and rate-limited, with no crash and no effect on other seats.
+- [ ] **Step 2: Hostile input.** Fuzzed and replayed garbage, wrong-slot inputs, oversized and flooded messages against a local `rr-netd`, plus a long `cargo fuzz` run of each server target and the differential target. Each must be dropped, counted and rate-limited, with no crash and no effect on other seats.
 - [ ] **Step 3: Docs.**
   - USER_GUIDE.md: how to host, join, invite and chat; troubleshooting.
   - MULTIPLAYER.md: a "Port design" pointer to this plan and the deviations list.
