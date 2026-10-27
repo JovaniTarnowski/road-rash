@@ -28,7 +28,14 @@ EM_JS(int, has_local_asset, (const char* path), { return Module.localAssets.name
 EM_JS(void, copy_asset_error, (char* message, unsigned capacity),
       { stringToUTF8(Module.assetError || 'Game data unavailable. Reload to retry.', message, capacity); });
 EM_JS(void, report_web_loading, (const char* stage), { Module.webLoading ?.(UTF8ToString(stage)); });
+EM_JS(void, copy_room_invite, (char* out, unsigned capacity),
+      { stringToUTF8(new URLSearchParams(globalThis.location.search).get("room") || "", out, capacity); });
 namespace rr {
+std::string web_room_invite() {
+    char room[257]{};
+    copy_room_invite(room, sizeof(room));
+    return room;
+}
 void web_loading(const char* stage) {
     report_web_loading(stage);
 }

@@ -97,6 +97,8 @@ constexpr uint32_t jukebox_tracks[6][2] = {{0x00473b38, 3}, {0x00473be0, 2}, {0x
 // Dialog kinds and the action that follows a confirmed "save before continuing?" (0x004450e0).
 enum Then { then_none = 0, then_quit = 1, then_load = 2, then_mode = 3, then_characters = 4 };
 enum DialogKind { dialog_message = 0, dialog_unsaved = 1, dialog_quit_race = 2 };
+// Plan 34 Task 7: lobby dialogs (handled in finish_dialog).
+enum DialogNet { dialog_net_error = 3, dialog_net_connecting = 4 };
 
 constexpr uint32_t colour_light = 0xdefff0, colour_grey = 0xa0a0a0, colour_orange = 0xff6432,
                    colour_focus = 0xe1e180, colour_yellow = 0xffff00;
@@ -276,9 +278,10 @@ Frontend::Frontend(const Assets& assets, const TextRenderer& text, std::vector<s
       career_(career), settings_(settings), save_dir_(std::move(save_directory)),
       credits_(std::move(credits)) {
     if (strings_.size() < 4004) strings_.resize(4004);
+    chat_messages_ = settings_.net_chat;
     background_ = RgbImage(640, 480, 0);
     dark_ = background_;
-    // Native: mano-a-mano network play (plan 09) is not available.
+    // The host enables online play after installing the compatibility/transport gate.
     for (auto& m : data_.screens[9].items)
         if (m.handler == 0x00430140) m.enabled = false;
 }
@@ -295,6 +298,12 @@ const std::string& Frontend::str(int slot) const {
 
 std::string Frontend::caption_text(const MenuItem& m) const {
     if (m.caption == edit_slot && editing_name_) return edit_buffer_ + "_";
+    // Plan 34 Task 7: Join code entry and F1-F8 slot editing show the buffer.
+    if (m.caption == ns::net_enter_code && editing_code_) return net_code_buffer_ + "_";
+    if (m.caption >= 1056 && m.caption < 1064)
+        return "F" + std::to_string(m.caption - 1055) + " " + chat_messages_[size_t(m.caption - 1056)] +
+               (editing_chat_ == m.caption - 1056 ? "_" : "");
+    if (m.caption == ns::net_spectate) return str(m.caption) + (net_spectate_ ? " On" : " Off");
     if (m.flags & item_flag::native_slider) {
         // Plan 18 Task 6/7: caption plus ten segments plus the numeric value,
         // segments scaled to the slider's own range.
@@ -394,6 +403,8 @@ std::string Frontend::background_for(int previous, int screen, int title) {
     case 12:
     case 0x1b:
         return "Postcard";
+    case screen_id::net_lobby:
+    case screen_id::net_rooms:
     case 0x0b:
         return "Chars/ManoMano";
     case 0x0f:
@@ -417,7 +428,11 @@ std::string Frontend::background_for(int previous, int screen, int title) {
     }
     // 0x0041d7d0 with a random picture number 1..6. The test override pins
     // rest_picture_ after the draw so the RNG stream still advances once.
-    rest_picture_ = int(next_random() % 6) + 1;
+    if (career_.mode == GameMode::mano) {
+        net_video_rng_ = net_video_rng_ * 1664525u + 1013904223u;
+        rest_picture_ = int(net_video_rng_ % 6) + 1;
+    } else
+        rest_picture_ = int(next_random() % 6) + 1;
     if (rest_picture_override_ >= 1 && rest_picture_override_ <= 6) rest_picture_ = rest_picture_override_;
     switch (screen) {
     case 8: {
@@ -431,7 +446,9 @@ std::string Frontend::background_for(int previous, int screen, int title) {
     case 0x1d:
         return numbered("Results/Bust", rest_picture_);
     case 0x1e:
-        if (career_.state.level == 4 && career_.state.qualified == all_qualified) return "Results/Finale";
+        if (career_.mode != GameMode::mano && career_.state.level == 4 &&
+            career_.state.qualified == all_qualified)
+            return "Results/Finale";
         return numbered("Results/Win", rest_picture_);
     case 0x1f:
         return numbered("Results/Lose", rest_picture_);
@@ -601,7 +618,9 @@ void Frontend::prepare_characters() {
         else if (!hf.empty() && hf[0] == '-')
             height = format_c(hf.substr(1), {A(h / div), A(h % div)});
         weight = format_c(wf, {A(settings_.metric ? int(double(body[1]) * 0.454) : body[1])}); // 0x004626a8
-        const int bike = tables_.level_bike.at(size_t(career_.state.level) + size_t(rider) * 5);
+        const int level = career_.mode == GameMode::mano && net_in_room() ? net_->room()->options.level
+                                                                          : career_.state.level;
+        const int bike = tables_.level_bike.at(size_t(level) + size_t(rider) * 5);
         int slot = 0x80; // 0x00422400: bike id -> name slot
         for (int s = 0x80; s <= 0x8e; ++s)
             if (showroom_bike(s) == bike) slot = s;
@@ -649,6 +668,42 @@ void Frontend::prepare_schmooze(int previous) {
 
 void Frontend::prepare_screen(int previous, int screen) {
     switch (screen) {
+    case screen_id::net_lobby:
+        net_prepare_lobby();
+        break;
+    case screen_id::net_rooms:
+        net_prepare_rooms();
+        break;
+    case 11:
+        for (auto& item : data_.screens[11].items) {
+            if (item.handler == 0x0042fc40 || item.handler == 0x0042fef0)
+                item.enabled = net_attached() && !net_in_room();
+            if (item.target == 12) item.enabled = net_in_room();
+            if (item.handler == 0x00431600) item.enabled = true;
+        }
+        break;
+    case 13: {
+        auto& rows = data_.screens[13].items;
+        const auto prototype = rows.front();
+        rows.clear();
+        for (int i = 0; i < 9; ++i) {
+            auto row = prototype;
+            row.x = 16;
+            row.y = 122 + i * 38;
+            row.w = 608;
+            row.h = 34;
+            row.caption = i < 8 ? 1056 + i : ns::back;
+            row.desc = 0;
+            row.handler = i < 8 ? 0x00430380 : 0;
+            row.target = i < 8 ? i : 11;
+            row.enabled = true;
+            row.flags = i < 8 ? 0 : item_flag::escape;
+            row.nav = {uint8_t(i ? i - 1 : 8), uint8_t(i < 8 ? i + 1 : 0), uint8_t(i ? i - 1 : 8),
+                       uint8_t(i < 8 ? i + 1 : 0)};
+            rows.push_back(row);
+        }
+        break;
+    }
     case 10:
     case 12:
     case 0x1b:
@@ -683,6 +738,10 @@ void Frontend::prepare_screen(int previous, int screen) {
         prepare_schmooze(previous);
         break;
     case 0x1e: {
+        if (mano_results_) {
+            data_.screens[0x1e].title = 441;
+            break;
+        }
         // Results title and "%s finished in ... Place."
         data_.screens[0x1e].title =
             career_.state.level == 4 && career_.state.qualified == all_qualified ? 0x178 : 0xb2;
@@ -754,7 +813,8 @@ void Frontend::enter(int screen) {
     }
     size_t index =
         size_t(last_focus_[size_t(screen)]) < items_.size() ? size_t(last_focus_[size_t(screen)]) : 0;
-    if ((screen == 10 || screen == 12 || screen == 0x1b) && career_.state.qualified != all_qualified)
+    if ((screen == 10 || screen == 12 || screen == 0x1b) && career_.mode != GameMode::mano &&
+        career_.state.qualified != all_qualified)
         while (career_.state.qualified & (1u << index)) index = (index + 1) % 5;
     // 0x00421cf0: a disabled focus follows the tab chain.
     for (int guard = 0; guard < 64 && (!items_[index].enabled || (items_[index].flags & item_flag::skip));
@@ -1130,6 +1190,21 @@ void Frontend::finish_dialog(int choice) {
         }
         return;
     }
+    // Plan 34 Task 7: lobby dialogs. Leave drops the room and returns to 0x0b;
+    // anything else just dismisses (a shown error is not reshown).
+    if (kind == dialog_net_error) {
+        if (choice == 2 && net_) {
+            net_->leave();
+            net_shown_error_.clear();
+            enter(0x0b);
+        }
+        return;
+    }
+    if (kind == dialog_net_connecting) {
+        if (net_) net_->leave();
+        net_connecting_ = false;
+        return;
+    }
     if (kind != dialog_unsaved || choice == 0) return;
     if (choice == 1) save_current();
     const int then = dialog_then_;
@@ -1246,6 +1321,11 @@ std::string Frontend::format_standing(size_t place, const Standing& s) const {
 }
 
 void Frontend::race_finished(RaceOutcome outcome, int place, const std::vector<Standing>& standings) {
+    mano_results_ = false;
+    if (offline_standings_) {
+        data_.screens[0x22] = *offline_standings_;
+        offline_standings_.reset();
+    }
     standings_ = standings;
     standings_ready_ = false; // the 0x00421290 handler repopulates per visit
     report_ = finish_race(career_, tables_, outcome, place);
@@ -1341,8 +1421,56 @@ int Frontend::run_handler(size_t index) {
         select_mode(career_, tables_, GameMode::big_game);
         return m.target;
     case 0x00430140:
-        return 0; // mano-a-mano: plan 09
+        if (!net_attached()) return 0;
+        career_.mode = GameMode::mano;
+        return 11;
+    case 0x0042fc40:
+        net_open_host();
+        return 0;
+    case 0x0042fef0:
+        net_open_rooms();
+        return 0;
+    case 0x00431600:
+    case native_action::net_leave: {
+        const bool exit = m.handler == 0x00431600;
+        if (net_) net_->leave();
+        net_.reset();
+        settings_.net_seat.clear();
+        settings_.net_room.clear();
+        return exit ? 9 : 11;
+    }
+    case native_action::net_copy:
+        if (net_in_room()) {
+            FrontendEvent e;
+            e.kind = FrontendEvent::Kind::copy_text;
+            e.text = net_->room()->code;
+            events_.push_back(std::move(e));
+        }
+        return 0;
+    case native_action::net_code:
+        net_ensure();
+        editing_code_ = true;
+        net_code_buffer_.clear();
+        return 0;
+    case native_action::net_refresh:
+        net_open_rooms();
+        return 0;
+    case native_action::net_spectate:
+        net_spectate_ = !net_spectate_;
+        return 0;
+    case 0x00430350:
+        return 13;
+    case 0x00430380:
+        editing_chat_ = std::clamp(m.target, 0, 7);
+        return 0;
     case 0x004213c0: {
+        if (career_.mode == GameMode::mano) {
+            if (net_in_room()) {
+                net_->vote_course(m.target);
+                net_->set_ready(true);
+            }
+            return 0;
+        }
         // Course chosen: reset standings, Start video, "Get ready" screen whose item starts the race.
         start_race(career_, m.target);
         standings_.clear();
@@ -1353,6 +1481,10 @@ int Frontend::run_handler(size_t index) {
         return 8;
     }
     case 0x0041f5a0:
+        if (career_.mode == GameMode::mano && net_in_room()) {
+            net_->pick_character(m.target);
+            return screen_id::net_lobby;
+        }
         choose_character(career_, tables_, m.target);
         return character_return_;
     case 0x0041f570:
@@ -1420,8 +1552,16 @@ int Frontend::run_handler(size_t index) {
         schmooze_target_ = 0x19;
         return 0x19;
     case 0x004214e0:
+        if (mano_results_) {
+            net_results_table();
+            return 0;
+        }
         return 0x21; // fines/repairs were applied by finish_race
     case 0x00421290: {
+        if (mano_results_) {
+            net_results_table();
+            return 0;
+        }
         // 0x00421290: three rows, plus the player's row when not in the top
         // three. Populated here (not on screen entry): direct entry shows no
         // rows, matching the original.
@@ -1446,6 +1586,10 @@ int Frontend::run_handler(size_t index) {
     }
     case 0x0041f6d0:
     case 0x004241e0:
+        if (mano_results_) {
+            mano_results_ = false;
+            return 11;
+        }
         return after_results(career_);
     // Restroom.
     case 0x00445150:
@@ -1587,6 +1731,10 @@ int Frontend::run_handler(size_t index) {
         return 0;
     case 0x00445440: {
         const int target = m.target;
+        if (screen_ == screen_id::net_rooms && !popup_base_) {
+            net_join_shown(target - 1);
+            return 0;
+        }
         const int setter = popup_setter_;
         std::string load_path;
         if (setter == set_load && target >= 1 && size_t(target) <= save_list_.size())
@@ -1594,6 +1742,25 @@ int Frontend::run_handler(size_t index) {
         close_popup();
         if (!target) return 0;
         switch (setter) {
+        case native_setter::net_level:
+            net_pending_options_.level = uint8_t(target - 1);
+            open_popup(data_.popups.at(native_popup::net_ai), 3, native_setter::net_ai);
+            break;
+        case native_setter::net_ai:
+            net_pending_options_.ai = uint8_t(target - 1);
+            open_popup(data_.popups.at(native_popup::net_cars), 1, native_setter::net_cars);
+            break;
+        case native_setter::net_cars:
+            net_pending_options_.cars = target == 1;
+            open_popup(data_.popups.at(native_popup::net_public), 1, native_setter::net_public);
+            break;
+        case native_setter::net_public:
+            net_pending_options_.is_public = target == 1;
+            net_ensure();
+            net_->create_room(net_pending_options_);
+            net_connecting_ = true;
+            show_dialog(str(ns::net_connecting), 4, {{204, 0}});
+            break;
         case set_mode:
             if (target != 3) select_mode(career_, tables_, GameMode(target));
             apply_restroom_pattern();
@@ -1829,6 +1996,8 @@ void Frontend::update(const MenuInput& raw_in, uint64_t now_ms) {
         }
     }
     now_ = now_ms;
+    net_update();
+    if (net_edit_input(in)) return;
     if (credit_set_ >= 0) {
         for (const char c : in.text) {
             // 0x004227d0 WM_CHAR: '+' doubles the scroll speed (max 32), '-' halves it.
@@ -2205,6 +2374,7 @@ void Frontend::draw_scale1(RgbImage& out) const {
                           Face::futura_regular, 32, foot, dt::wordbreak | dt::center, colour_light);
         }
     }
+    draw_net_overlay(out, 1);
     if (qualified_overlay_) {
         const std::string& q = str(181);
         text_.draw(out, Face::badloc, 42, 0x1c4, 0x110, 0, q);
@@ -2458,6 +2628,7 @@ void Frontend::draw_scaled(RgbImage& out, int scale) const {
                     foot, dt::wordbreak | dt::center, colour_light);
         }
     }
+    draw_net_overlay(out, scale);
     if (qualified_overlay_) {
         const std::string& q = str(181);
         text_.draw(out, Face::badloc, 42 * scale, 0x1c4 * scale, 0x110 * scale, 0, q);

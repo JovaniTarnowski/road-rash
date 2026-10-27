@@ -1,4 +1,6 @@
 #include "rr_build_info.hpp"
+#include "net/client.hpp"
+#include "net/compat.hpp"
 // Shared native/Android frontend and playable race().
 #include <SDL3/SDL.h>
 #include "race_actions.hpp"
@@ -318,11 +320,13 @@ rr::RaceEnd run_race(rr::Game& g, SDL_Renderer* renderer, const rr::RaceOptions&
 // Menus -> videos -> races -> results: the original main loop (0x00448200) around the front end.
 int run_game(const rr::Assets& assets, SDL_Window* window, SDL_Renderer* renderer, rr::Game& g,
              const std::vector<uint8_t>& exe, const std::string& screenshot, long menu_frames,
-             const CliDisplayOverride& cli, const std::string& menu_script) {
+             const CliDisplayOverride& cli, const std::string& menu_script, const std::string& net_invite,
+             const std::string& net_server) {
     const std::string pref = rr::pref_directory();
     const std::string settings_path = (std::filesystem::path(pref) / "settings.txt").string();
     rr::Settings settings = rr::load_settings(settings_path);
     apply_cli_overrides(settings, cli);
+    if (!net_server.empty()) settings.net_server = net_server;
     rr::DisplayDriver display{window, renderer, &settings, settings_path};
     display.toggle_at = cli.toggle_at;
     display.apply(480);
@@ -340,6 +344,27 @@ int run_game(const rr::Assets& assets, SDL_Window* window, SDL_Renderer* rendere
     rr::add_native_screens(frontend_data, rr::kMobileDisplay);
     rr::Frontend fe(assets, text, strings, rr::credit_lines(resources), std::move(frontend_data), tables,
                     career, settings, (std::filesystem::path(pref) / "saves").string());
+#ifdef RR_NET_TRANSPORT
+    try {
+        const auto hello = load_with_indicator(renderer, "Checking multiplayer game data...", [&] {
+#if defined(__EMSCRIPTEN__)
+            constexpr auto platform = rr::net::Platform::web;
+#elif defined(__ANDROID__)
+        constexpr auto platform=rr::net::Platform::android;
+#elif defined(__APPLE__)
+        constexpr auto platform=rr::net::Platform::macos;
+#elif defined(_WIN32)
+        constexpr auto platform=rr::net::Platform::windows;
+#else
+        constexpr auto platform=rr::net::Platform::linux_desktop;
+#endif
+            return rr::net::make_hello(settings.alias, platform, rr::net::verified_data_digest(assets));
+        });
+        fe.net_attach([&settings] { return rr::net::ws_connect(settings.net_server); }, hello);
+    } catch (const std::exception& error) {
+        SDL_Log("Multiplayer unavailable: %s", error.what());
+    }
+#endif
     // Audio: one mixer for the soundtrack (0x00403040) and race sounds (0x00435da0).
     rr::Mixer mixer(48);
     if (menu_frames < 0 && (!SDL_InitSubSystem(SDL_INIT_AUDIO) || !mixer.open_device()))
@@ -382,7 +407,12 @@ int run_game(const rr::Assets& assets, SDL_Window* window, SDL_Renderer* rendere
     rr::MenuStickInput menu_stick;
     rr::LifecycleWatch lifecycle;
     rr::RgbImage frame;
-    fe.start();
+    if (net_invite.empty())
+        fe.start();
+    else {
+        fe.enter(9);
+        fe.net_join_invite(net_invite);
+    }
     if (!menu_script.empty()) { // debug: comma-separated screen names entered in order
         static const std::pair<const char*, int> kMenuScriptScreens[] = {
             {"main", 9},      {"restroom", 0x10},   {"graphics", 0x13}, {"display", 0x24},
@@ -433,6 +463,71 @@ int run_game(const rr::Assets& assets, SDL_Window* window, SDL_Renderer* rendere
                     apply_levels();
                     if (!showroom && !music.active()) music.play(music.track());
                 }
+            } else if (ev.kind == rr::FrontendEvent::Kind::copy_text) {
+                SDL_SetClipboardText(ev.text.c_str());
+            } else if (ev.kind == rr::FrontendEvent::Kind::start_net_race) {
+                if (menu_frames >= 0) {
+                    running = false;
+                    break;
+                }
+                auto* room = fe.net_client();
+                if (!room) continue;
+                rr::net::Client client(room->release_channel(), {}, [&](const rr::net::Start& start) {
+                    return std::make_unique<rr::RaceSetup>(
+                        rr::make_race_setup(assets, exe, rr::net::race_config(start)));
+                });
+                client.begin(ev.net_start, rr::net::steady_ms());
+                music.stop();
+                race_music.play_race(ev.net_start.course, fe.player_name());
+                g.race_music = &race_music;
+                g.sound = sound.get();
+                g.exe_ = exe;
+                size_t local = 0;
+                for (size_t i = 0; i < ev.net_start.humans.size(); ++i)
+                    if (ev.net_start.humans[i].seat == ev.net_start.your_seat) local = i;
+                if (sound)
+                    sound->start_race(ev.net_start.humans[size_t(local)].bike,
+                                      ev.net_start.humans[size_t(local)].character);
+                const auto end = run_race(g, renderer,
+                                          {.key_codes = settings.controls,
+                                           .custom_keys = settings.custom_controls,
+                                           .swap_punch_kick = settings.swap_punch_kick,
+                                           .stick_deadzone = settings.stick_deadzone,
+                                           .left_handed = settings.left_handed,
+                                           .show_fps = settings.show_fps,
+                                           .assets = &assets,
+                                           .settings = &settings,
+                                           .lobby_event =
+                                               [room](const rr::net::Message& message) {
+                                                   room->inject(message, rr::net::steady_ms());
+                                               },
+                                           .online = &client,
+                                           .chat_messages = fe.chat_messages()},
+                                          display);
+                while (auto message = client.poll_event())
+                    if (!std::holds_alternative<rr::net::Start>(*message))
+                        room->inject(*message, rr::net::steady_ms());
+                room->resume(client.release_channel());
+                room->take_official();
+                if (sound) sound->stop_race();
+                race_music.stop();
+                g.sound = nullptr;
+                g.race_music = nullptr;
+                menu_stick.suspend();
+                music.play(music.track());
+                display.apply(480);
+                if (end.quit_app) {
+                    running = false;
+                    break;
+                }
+                if (end.official) {
+                    std::vector<std::string> aliases(8);
+                    for (const auto& human : ev.net_start.humans) aliases[human.seat] = human.alias;
+                    fe.mano_finished(
+                        *end.official, aliases,
+                        ev.net_start.your_seat == 0xff ? -1 : ev.net_start.humans[size_t(local)].seat);
+                } else
+                    fe.enter(11);
             } else if (ev.kind == rr::FrontendEvent::Kind::start_race) {
                 // Race set-up from the career: course, level, bike, rider weight, opponents (plan 05).
                 g.course_name = original_course_files[ev.course - 1];
@@ -551,6 +646,22 @@ int run_game(const rr::Assets& assets, SDL_Window* window, SDL_Renderer* rendere
                 SDL_StopTextInput(window);
         }
         rr::MenuInput in;
+        auto append_text = [&](const char* raw) {
+            // UTF-8 -> Windows-1252 for the alias.
+            std::u16string u;
+            const unsigned char* t = reinterpret_cast<const unsigned char*>(raw);
+            for (size_t i = 0; t[i];) {
+                uint32_t c = t[i];
+                int n = c < 0x80 ? 1 : c < 0xe0 ? 2 : c < 0xf0 ? 3 : 4;
+                if (n > 1) {
+                    c &= 0x3f >> (n - 1);
+                    for (int k = 1; k < n && t[i + size_t(k)]; ++k) c = c << 6 | (t[i + size_t(k)] & 0x3f);
+                }
+                u.push_back(c < 0x10000 ? char16_t(c) : u'?');
+                i += size_t(n);
+            }
+            in.text += rr::to_cp1252(u);
+        };
         // Nested race/video loops may have consumed the removal notification.
         if (pad && !SDL_GamepadConnected(pad.get())) {
             pad = rr::open_first_gamepad();
@@ -605,6 +716,15 @@ int run_game(const rr::Assets& assets, SDL_Window* window, SDL_Renderer* rendere
                 case SDLK_AC_BACK:
                     if (!e.key.repeat) in.back = true;
                     break;
+                case SDLK_V:
+                    if (text_input && (e.key.mod & (SDL_KMOD_CTRL | SDL_KMOD_GUI))) {
+                        char* clip = SDL_GetClipboardText();
+                        if (clip) {
+                            append_text(clip);
+                            SDL_free(clip);
+                        }
+                    }
+                    break;
                 case SDLK_BACKSPACE:
                     in.backspace = true;
                     break;
@@ -627,21 +747,7 @@ int run_game(const rr::Assets& assets, SDL_Window* window, SDL_Renderer* rendere
                 }
             }
             if (e.type == SDL_EVENT_TEXT_INPUT && text_input) {
-                // UTF-8 -> Windows-1252 for the alias.
-                std::u16string u;
-                const unsigned char* t = reinterpret_cast<const unsigned char*>(e.text.text);
-                for (size_t i = 0; t[i];) {
-                    uint32_t c = t[i];
-                    int n = c < 0x80 ? 1 : c < 0xe0 ? 2 : c < 0xf0 ? 3 : 4;
-                    if (n > 1) {
-                        c &= 0x3f >> (n - 1);
-                        for (int k = 1; k < n && t[i + size_t(k)]; ++k)
-                            c = c << 6 | (t[i + size_t(k)] & 0x3f);
-                    }
-                    u.push_back(c < 0x10000 ? char16_t(c) : u'?');
-                    i += size_t(n);
-                }
-                in.text += rr::to_cp1252(u);
+                append_text(e.text.text);
             }
             if (e.type == SDL_EVENT_GAMEPAD_ADDED && !pad) pad.reset(SDL_OpenGamepad(e.gdevice.which));
             if (e.type == SDL_EVENT_GAMEPAD_REMOVED && pad &&
@@ -767,7 +873,7 @@ int main(int argc, char** argv) {
         std::puts(rr::build_info_json);
         return 0;
     }
-    std::string root, screenshot, video;
+    std::string root, screenshot, video, net_invite, net_server;
     int course = 0, bike = 0, level = 0, opponents = 14;
     long run_ticks = -1, menu_frames = -1;
     bool auto_drive = false, into_traffic = false, start_paused = false, first_run_smoke = false,
@@ -782,7 +888,13 @@ int main(int argc, char** argv) {
     CliDisplayOverride cli;
     for (int i = 1; i < argc; ++i) {
         const std::string a = argv[i];
-        if (a == "--assets" && i + 1 < argc)
+        if (a == "--room" && i + 1 < argc)
+            net_invite = argv[++i];
+        else if (a == "--net-server" && i + 1 < argc)
+            net_server = argv[++i];
+        else if (rr::net::parse_room_code(a) && a.find("room=") != std::string::npos)
+            net_invite = a;
+        else if (a == "--assets" && i + 1 < argc)
             root = argv[++i];
         else if (a == "--video" && i + 1 < argc)
             video = argv[++i];
@@ -866,6 +978,9 @@ int main(int argc, char** argv) {
         return 2;
     SDL_Window* window = nullptr;
     SDL_Renderer* renderer = nullptr;
+#ifdef RR_WEB_BROWSER
+    if (net_invite.empty()) net_invite = rr::web_room_invite();
+#endif
     int result = 0;
     try {
         if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMEPAD)) throw std::runtime_error(SDL_GetError());
@@ -937,7 +1052,8 @@ int main(int argc, char** argv) {
         });
         if (!quick_race) {
             boot.apply(480);
-            result = run_game(assets, window, renderer, g, exe, screenshot, menu_frames, cli, menu_script);
+            result = run_game(assets, window, renderer, g, exe, screenshot, menu_frames, cli, menu_script,
+                              net_invite, net_server);
         } else {
             g.course_name = course_names[course];
             {

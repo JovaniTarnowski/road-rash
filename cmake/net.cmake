@@ -14,6 +14,22 @@ add_library(rr-net STATIC ${RR_NET_ROOT}/src/net/protocol.cpp ${RR_NET_ROOT}/src
 target_include_directories(rr-net PUBLIC ${RR_NET_ROOT}/src)
 set_target_properties(rr-net PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
+# Plan 34 Task 7: the compatibility gate hashes the simulation sources at
+# build time. Every client built from the same source computes the same
+# RR_SIM_SOURCE_HASH; any simulation change (Task 2/3 files, codecs, room
+# logic) changes the handshake fingerprint, so mixed rooms are rejected.
+file(GLOB_RECURSE RR_SIM_SOURCES CONFIGURE_DEPENDS "${RR_NET_ROOT}/src/*.cpp" "${RR_NET_ROOT}/src/*.hpp")
+set(RR_SIM_HASHES "")
+foreach(source IN LISTS RR_SIM_SOURCES)
+    file(SHA256 "${source}" source_hash)
+    string(APPEND RR_SIM_HASHES "${source_hash}")
+endforeach()
+string(SHA256 RR_SIM_SOURCE_HASH "${RR_SIM_HASHES}")
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${RR_SIM_SOURCES})
+if(NOT RR_NETD_STANDALONE)
+    set_property(SOURCE "${RR_NET_ROOT}/src/net/compat.cpp" APPEND PROPERTY COMPILE_DEFINITIONS RR_SIM_SOURCE_HASH="${RR_SIM_SOURCE_HASH}")
+endif()
+
 if(RR_NET_TRANSPORT)
     include(FetchContent)
     # libdatachannel v0.24.6 (MPL-2.0), pinned by commit. Only the submodules
@@ -57,20 +73,17 @@ if(NOT RR_NETD_STANDALONE)
 endif()
 
 if(NOT RR_NETD_STANDALONE)
-    target_sources(rr-resource PRIVATE ${RR_NET_ROOT}/src/net/client.cpp)
+    target_sources(rr-resource PRIVATE ${RR_NET_ROOT}/src/net/client.cpp ${RR_NET_ROOT}/src/net/compat.cpp ${RR_NET_ROOT}/src/net/mano.cpp ${RR_NET_ROOT}/src/frontend_net.cpp)
     target_link_libraries(rr-resource PUBLIC rr-net)
 endif()
 
 if(RR_NET_TRANSPORT AND NOT RR_NETD_STANDALONE)
-    file(GLOB_RECURSE RR_BOT_SIM_SOURCES CONFIGURE_DEPENDS "${RR_NET_ROOT}/src/*.cpp" "${RR_NET_ROOT}/src/*.hpp")
-    set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${RR_BOT_SIM_SOURCES})
-    set(RR_BOT_HASHES "")
-    foreach(source IN LISTS RR_BOT_SIM_SOURCES)
-        file(SHA256 "${source}" source_hash)
-        string(APPEND RR_BOT_HASHES "${source_hash}")
-    endforeach()
-    string(SHA256 RR_BOT_SOURCE_HASH "${RR_BOT_HASHES}")
     add_executable(net-bots tools/net_bots.cpp)
-    target_compile_definitions(net-bots PRIVATE RR_BOT_SOURCE_HASH="${RR_BOT_SOURCE_HASH}")
     target_link_libraries(net-bots PRIVATE rr-resource rr-net-transport)
+endif()
+
+if(EMSCRIPTEN AND NOT RR_NET_TRANSPORT)
+    add_library(rr-net-transport STATIC ${RR_NET_ROOT}/src/net/ws_channel_web.cpp)
+    target_link_libraries(rr-net-transport PUBLIC rr-net)
+    target_compile_definitions(rr-net-transport PUBLIC RR_NET_TRANSPORT=1)
 endif()

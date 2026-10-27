@@ -2329,3 +2329,34 @@ seats. Native tests cover the original offline goldens, 84 chaos/cutoff rooms,
 two automatic terminal rooms and a rendered/audio screen matched against a
 headless peer. Host/Join launch and rematch UI remain Task 7.
 [Evidence and remaining scope](agent-handoffs/net-screen-20261027.md).
+
+
+## October 27, 2026 — plan 34 Task 7 online menus
+
+Host/Join now use the original mano menu handlers with native room controls:
+level/AI/cars/visibility, public rooms and Refresh, pasted code/link, spectator
+join, room-code copy, character/ping roster, course vote, and eight saved chat
+phrases. Main-menu online play is enabled only when a transport and production
+compatibility gate are attached. Startup verifies all 341 reference file hashes;
+the fingerprint includes source content and a synthetic multi-human simulation.
+A failed data check leaves offline play available and logs the reason.
+
+The lobby hands its existing channel to `net::Client` at Start and freezes its
+polling immediately, preserving queued Frames/LogChunks. RaceScreen forwards
+room/chat/official events back to the lobby. Official standings and WIN/LOSE/
+BUSTED/WRECK result videos return to the same room for rematch without changing
+either career save or its RNG. Sparse room seats map to compact simulation and
+audio rider indices.
+
+`net_frontend` drives real frontend handlers through Host, Join, vote, two real
+rollback clients, an agreed scripted 420-tick cutoff (including live simulation),
+results and rematch against in-process `rr-netd::Server`. It also covers chat
+persistence, visible standings Back, unofficial/busted routing and both careers.
+`net_mano` covers handshake ordering, compatibility rejection, room control,
+chat, reconnect tokens and handover. Original-asset menu captures at 1x/2x stay
+outside Git. The browser WebSocket/`?room=` path compiles; browser/native device
+cross-play and Android transport/app links remain Task 10 acceptance.
+
+See [the Task 7 handoff](agent-handoffs/net-frontend-20261027.md) for checks.
+
+Task 7 checks: Debug 117/117; Release 116/116; ASan/UBSan focused 2/2; final native game build/invite smoke and browser Release compile. Task 5 bots use the identical production Hello gate.

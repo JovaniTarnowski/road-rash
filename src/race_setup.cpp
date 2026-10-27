@@ -1,4 +1,5 @@
 #include "race_setup.hpp"
+#include "race_state.hpp"
 #include "bike.hpp"
 #include "career.hpp"
 #include "exe_tables.hpp"
@@ -467,6 +468,102 @@ void copy_race_presentation(RaceInstance& into, const RaceInstance& from, int se
         into.race = std::make_unique<Race>(from.race->presentation_copy(seat));
     copy(into.traffic, from.traffic);
     copy(into.pedestrians, from.pedestrians);
+}
+
+namespace {
+uint32_t startup_script(int seat, int t) {
+    uint32_t w = rr::control_accelerate;
+    const int phase = (t / (29 + 13 * seat)) % 7;
+    if (phase == 1 || phase == 5) w |= rr::control_left;
+    if (phase == 3) w |= rr::control_right;
+    if ((t + 11 * seat) % 61 < 5) w |= rr::control_punch;
+    if ((t + 3 * seat) % 97 < 3) w |= rr::control_kick;
+    if (t % 1300 > 1290) w |= rr::control_nitro;
+    if (t % 2100 > 2060) w = rr::control_brake | rr::control_right;
+    return w;
+}
+
+// Synthetic course: a winding road with crests, built in code.
+std::vector<rr::RouteSample> startup_course(size_t n, int phase) {
+    std::vector<rr::RouteSample> out(n);
+    for (size_t i = 0; i < n; ++i) {
+        rr::RouteSample s{};
+        const int k = int(i) + phase;
+        s.path.bend = ((k / 90) % 4 == 1) ? 6 : ((k / 90) % 4 == 3) ? -5 : 0;
+        s.path.left = s.path.right = 500;
+        s.path.shoulder_left = s.path.shoulder_right = 200;
+        s.path.left_q8 = s.path.right_q8 = 512;
+        s.section = uint32_t(i / 256);
+        s.local = uint32_t(i % 256);
+        out[i] = s;
+    }
+    return out;
+}
+
+rr::BikeSpec startup_spec(int variant) {
+    rr::BikeSpec b{};
+    b.d[1] = -800;
+    b.d[2] = 1024;
+    b.d[3] = 160;
+    b.d[4] = 160;
+    b.d[5] = 1;
+    b.d[6] = 196;
+    auto sp = [&](int offset) -> int32_t& { return b.d[size_t(7 + (offset - 0x1c4) / 4)]; };
+    const int up[6] = {3000, 5000, 7000, 8500, 21504, 16777215},
+              down[6] = {-999, 2500, 4500, 6500, 8000, 17152};
+    for (int g = 0; g < 6; ++g) {
+        sp(0x1d0 + 16 * g) = 256 - 8 * g + variant;
+        sp(0x1d4 + 16 * g) = up[g];
+        sp(0x1d8 + 16 * g) = down[g];
+    }
+    sp(0x248) = 20000 + 500 * variant;
+    sp(0x250) = 38;
+    sp(0x254) = 10;
+    sp(0x258) = 60;
+    sp(0x25c) = 64;
+    sp(0x26c) = -60;
+    sp(0x270) = 10;
+    sp(0x274) = 10;
+    sp(0x290) = 64;
+    sp(0x294) = 320;
+    sp(0x29c) = 11776;
+    sp(0x2a0) = 50;
+    sp(0x2a4) = 30;
+    sp(0x2b0) = 120;
+    sp(0x2b8) = 196;
+    sp(0x2bc) = 2560;
+    sp(0x2d0) = 346;
+    sp(0x2d4) = 128;
+    return b;
+}
+
+} // namespace
+uint64_t network_self_test_hash() {
+    auto tables = PhysicsTables::synthetic();
+    tables.bike_object = {3,     4,    1, 0,    0,      0,    0,      0x12c, 0x100, 0x82, 8, 0x25, -0xa00,
+                          0x100, 0x4a, 4, 0x18, 0x1e00, 0x40, 0x2300, 0xc0,  0x100, 0,    1, 1,    0};
+    std::vector<Opponent> field;
+    for (int k = 1; k < 12; ++k) {
+        Opponent rider{startup_spec(k % 4), 80 + k, 90 + k, 80 + k, k % 3, k, k, 0, 0, false, 100, {}, k % 4};
+        if (k < 8) rider.human = k;
+        field.push_back(rider);
+    }
+    RaceInstance instance;
+    instance.race = std::make_unique<Race>(startup_course(1024, 0), startup_course(1024, 45), tables,
+                                           startup_spec(0), 90, field, 2);
+    instance.race->set_net(true);
+    std::array<uint32_t, 8> words{};
+    uint64_t hash = 14695981039346656037ull;
+    for (int tick = 0; tick < 180; ++tick) {
+        if (tick < 60)
+            instance.race->countdown_step();
+        else {
+            for (int seat = 0; seat < 8; ++seat) words[size_t(seat)] = startup_script(seat, tick);
+            instance.race->step(words);
+        }
+        hash = (hash ^ state_hash(instance)) * 1099511628211ull;
+    }
+    return hash;
 }
 
 } // namespace rr

@@ -218,6 +218,18 @@ Settings parse_settings(const std::string& text) {
             flag(s.left_handed);
         else if (k == "alias") {
             if (v.size() < 20) s.alias = v;
+        } else if (k.size() == 10 && k.substr(0, 9) == "net_chat_" && k.back() >= '1' && k.back() <= '8') {
+            if (v.size() <= 60) s.net_chat[size_t(k.back() - '1')] = v;
+        } else if (k == "net_server") {
+            if (!v.empty() && v.size() < 128) s.net_server = v;
+        } else if (k == "net_seat") {
+            // 32 hex chars; anything else is ignored (never a half token).
+            bool hex = v.size() == 32;
+            for (char c : v)
+                hex &= (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F');
+            if (hex) s.net_seat = v;
+        } else if (k == "net_room") {
+            if (v.size() == 6) s.net_room = v;
         }
     }
     return s;
@@ -255,7 +267,9 @@ std::string format_settings(const Settings& s) {
       << "\nenh_vignette=" << s.enhancements.vignette << "\nenh_motion_blur=" << s.enhancements.motion_blur
       << "\ntouch_opacity=" << s.touch_opacity << "\nhaptics=" << s.haptics
       << "\nswap_punch_kick=" << s.swap_punch_kick << "\nstick_deadzone=" << s.stick_deadzone
-      << "\nleft_handed=" << s.left_handed << "\nalias=" << s.alias << "\n";
+      << "\nleft_handed=" << s.left_handed << "\nalias=" << s.alias << "\nnet_server=" << s.net_server
+      << "\nnet_seat=" << s.net_seat << "\nnet_room=" << s.net_room << "\n";
+    for (size_t i = 0; i < s.net_chat.size(); ++i) o << "net_chat_" << i + 1 << "=" << s.net_chat[i] << "\n";
     return o.str();
 }
 

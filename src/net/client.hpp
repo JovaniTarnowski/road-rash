@@ -41,6 +41,18 @@ class Client {
     // RaceScreen may move the immutable assets into Game. Game must then
     // retain them until this race is replaced or the client is destroyed.
     RaceSetup* setup() { return setup_.get(); }
+    // Plan 34 Task 7: hand the reliable channel back to the lobby after the
+    // race. The caller drains poll_event() first and injects leftover lobby
+    // messages (RoomState, ChatRelay, Official) into the room client.
+    std::unique_ptr<Channel> release_channel() { return std::move(reliable_); }
+    // The handed-over lobby channel already said Hello on this connection;
+    // call this before update() so no second Hello is sent (the server
+    // rejects a second Hello with bad_request).
+    void begin(const Start&, uint64_t now_ms); // Start already consumed by the lobby
+    void skip_hello() {
+        hello_sent_ = true;
+        welcomed_ = true;
+    }
     std::vector<SoundEventRecord> take_sounds() {
         std::vector<SoundEventRecord> out;
         out.swap(sounds_);

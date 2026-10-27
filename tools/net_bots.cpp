@@ -4,7 +4,7 @@
 // that scripted riders completed the course.
 #include "assets.hpp"
 #include "net/client.hpp"
-#include "sha256.hpp"
+#include "net/compat.hpp"
 #include <chrono>
 #include <algorithm>
 #include <filesystem>
@@ -47,15 +47,9 @@ int main(int argc, char** argv) {
         auto factory = [&](const Start& s) {
             return std::make_unique<rr::RaceSetup>(rr::make_race_setup(assets, exe, race_config(s)));
         };
-        // Diagnostic bots only admit peers built from the same source revision
-        // and executable. The game startup compatibility gate is Task 7 work.
-        Hello hello;
-        hello.platform = Platform::bot;
-        const auto digest = rr::sha256(exe);
-        for (size_t i = 0; i < hello.data_digest.size(); ++i)
-            hello.data_digest[i] = uint8_t(std::stoul(digest.substr(i * 2, 2), nullptr, 16));
-        std::string revision = RR_BOT_SOURCE_HASH;
-        hello.sim_fingerprint = std::stoull(revision.substr(0, 16), nullptr, 16);
+        // Bots and interactive clients use the same verified data and
+        // simulation fingerprint, so staging smoke exercises the real gate.
+        auto hello = make_hello("Bot", Platform::bot, verified_data_digest(assets));
         std::vector<std::unique_ptr<Client>> clients;
         for (int k = 0; k < count; ++k) {
             hello.alias = "Bot" + std::to_string(k + 1);

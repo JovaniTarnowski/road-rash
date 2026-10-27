@@ -191,7 +191,7 @@ void add_native_screens(FrontendData& data, bool mobile) {
         };
         {
             // Review 2026-10-13 item 3: 11 rows fit in 480 px.
-            const int estep = fit_step(tpl.h, tpl.y, 11);
+            const int estep = fit_step(tpl.h, tpl.y, 12);
             const int eh = std::min(tpl.h, estep - 2);
             for (size_t i = 0; i < 10; ++i) {
                 MenuItem m =
@@ -397,5 +397,88 @@ void add_native_screens(FrontendData& data, bool mobile) {
     link.desc = ns::d_display_mode;
     link.flags = item_flag::description;
     link.enabled = true;
+    // Plan 34 Task 7: host option popups in the original popup style. Level
+    // reuses the EXE level popup with its own setter (the career setter also
+    // resets the career; the host setter only stages the room options).
+    data.popups[native_popup::net_ai] = build_popup(
+        rtpl, ns::net_ai_bikers, {{1, ns::net_ai_none}, {2, ns::net_ai_limited}, {3, ns::net_ai_full}});
+    data.popups[native_popup::net_cars] =
+        build_popup(rtpl, ns::net_cars, {{1, ns::net_cars_on}, {2, ns::net_cars_off}});
+    data.popups[native_popup::net_public] =
+        build_popup(rtpl, ns::net_visibility, {{1, ns::net_public}, {2, ns::net_unlisted}});
+    // Plan 34 Task 7: online lobby screens from the 0x13 template column.
+    // Captions are scratch slots filled per entry (prepare_screen in
+    // frontend.cpp); layout follows the Display screen so rows fit 640x480.
+    {
+        MenuScreen& lobby = data.screens[screen_id::net_lobby];
+        lobby.title_format = data.screens[0x13].title_format;
+        lobby.items.clear();
+        const int lstep = fit_step(tpl.h, tpl.y, 12);
+        const int lh = std::min(tpl.h, lstep - 2);
+        for (int i = 0; i < 8; ++i) {
+            MenuItem m = tpl;
+            m.y = tpl.y + i * lstep;
+            m.h = lh;
+            m.caption = 1040 + i; // roster scratch, filled per entry
+            m.handler = 0;
+            m.target = 0;
+            m.desc = 0;
+            m.flags = item_flag::description;
+            m.enabled = false; // info rows: visible, never focused
+            lobby.items.push_back(m);
+        }
+        const std::pair<int, std::pair<uint32_t, int>> actions[4] = {
+            {ns::net_vote, {0, 0x0c}},
+            {ns::net_chat, {0, 0x0d}},
+            {ns::net_copy_code, {native_action::net_copy, 0}},
+            {ns::net_leave, {native_action::net_leave, 0}},
+        };
+        for (int i = 0; i < 4; ++i) {
+            MenuItem m =
+                button(tpl.y + (8 + i) * lstep, actions[i].first, ns::d_net_lobby, actions[i].second.first,
+                       actions[i].second.second, item_flag::title_desc | item_flag::description);
+            m.h = lh;
+            if (i >= 2) m.target = 0;
+            lobby.items.push_back(m);
+        }
+        chain(lobby);
+    }
+    {
+        MenuScreen& rooms = data.screens[screen_id::net_rooms];
+        rooms.title = ns::net_rooms_title;
+        rooms.title_format = data.screens[0x13].title_format;
+        rooms.items.clear();
+        const int rstep = fit_step(tpl.h, tpl.y, 12);
+        const int rh = std::min(tpl.h, rstep - 2);
+        for (int i = 0; i < 8; ++i) {
+            MenuItem m = tpl;
+            m.y = tpl.y + i * rstep;
+            m.h = rh;
+            m.caption = 1008 + i;   // room-list scratch, filled per entry
+            m.handler = 0x00445440; // choice confirm; screen_ routes to join
+            m.target = i + 1;
+            m.desc = 0;
+            m.flags = item_flag::description;
+            m.enabled = false; // enabled per entry when a room is shown
+            rooms.items.push_back(m);
+        }
+        MenuItem code = button(tpl.y + 8 * rstep, ns::net_enter_code, ns::d_net_lobby,
+                               native_action::net_code, 0, item_flag::title_desc | item_flag::description);
+        code.h = rh;
+        rooms.items.push_back(code);
+        MenuItem spec =
+            button(tpl.y + 9 * rstep, ns::net_spectate, ns::d_net_lobby, native_action::net_spectate, 0,
+                   item_flag::title_desc | item_flag::description);
+        spec.h = rh;
+        rooms.items.push_back(spec);
+        MenuItem refresh = button(tpl.y + 10 * rstep, ns::net_refresh, 0, native_action::net_refresh, 0, 0);
+        refresh.h = rh;
+        rooms.items.push_back(refresh);
+        MenuItem back =
+            button(tpl.y + 11 * rstep, ns::back, 0, 0, 0x0b, item_flag::title_desc | item_flag::escape);
+        back.h = rh;
+        rooms.items.push_back(back);
+        chain(rooms);
+    }
 }
 } // namespace rr

@@ -1,6 +1,7 @@
 #include "career.hpp"
 #include "byte_reader.hpp"
 #include "exe_tables.hpp"
+#include <algorithm>
 #include <cstring>
 #include <stdexcept>
 
@@ -210,6 +211,51 @@ std::string results_video(const Career& c, int screen, uint32_t random) {
     default:
         return {};
     }
+}
+
+ManoResult mano_official(const net::Official& official, const std::vector<std::string>& aliases,
+                         int local_seat) {
+    // Plan 34 Task 7: the official table decides everything. The career is
+    // not touched here (and the caller must not touch it either).
+    ManoResult r;
+    r.outcome = RaceOutcome::lost;
+    r.screen = screen_id::lost;
+    r.video_base = "LOSE";
+    r.place = int(official.rows.size());
+    for (const net::OfficialRow& row : official.rows) {
+        ManoRow m;
+        m.name = size_t(row.seat) < aliases.size() && !aliases[size_t(row.seat)].empty()
+                     ? aliases[size_t(row.seat)]
+                     : "Racer";
+        m.place = row.place ? std::clamp<int>(int(row.place) - 1, 0, 14) : -1;
+        m.player = row.seat == local_seat;
+        r.table.push_back(m);
+        if (row.seat != local_seat) continue;
+        r.place = m.place >= 0 ? m.place : 14;
+        switch (row.outcome) {
+        case net::Outcome::won:
+            r.outcome = RaceOutcome::won;
+            r.screen = screen_id::won;
+            r.video_base = "WIN";
+            break;
+        case net::Outcome::finished:
+            r.outcome = RaceOutcome::lost; // only first place counts as won
+            r.screen = screen_id::lost;
+            r.video_base = "LOSE";
+            break;
+        case net::Outcome::busted:
+            r.outcome = RaceOutcome::busted;
+            r.screen = screen_id::busted;
+            r.video_base = "BUSTED";
+            break;
+        default:
+            r.outcome = RaceOutcome::wrecked;
+            r.screen = screen_id::wrecked;
+            r.video_base = "WRECK";
+            break;
+        }
+    }
+    return r;
 }
 
 uint32_t save_checksum(const uint8_t* p, size_t n) {

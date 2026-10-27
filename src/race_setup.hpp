@@ -116,6 +116,7 @@ struct RaceInstance { // race-scoped: rebuilt on restart
     std::vector<std::unique_ptr<TrackRing>> seat_rings; // plan 34: ring windows of seats 1..n-1
     std::unique_ptr<Race> race;
 };
+uint64_t network_self_test_hash(); // synthetic fixed eight-human startup simulation
 void copy_race_presentation(RaceInstance& into, const RaceInstance& from, int seat);
 RaceAssets load_race_assets(const Assets&, const std::vector<uint8_t>& exe, const RaceConfig&);
 RaceInstance build_race(const RaceAssets&, const std::vector<uint8_t>& exe, const RaceConfig&);

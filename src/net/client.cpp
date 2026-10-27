@@ -23,6 +23,10 @@ RaceConfig race_config(const Start& start) {
 Client::Client(std::unique_ptr<Channel> c, Hello h, Factory f, int w, int d)
     : reliable_(std::move(c)), hello_(std::move(h)), factory_(std::move(f)),
       sound_history_(std::clamp(w, 1, 64)), window_(std::clamp(w, 1, 64)), delay_cap_(std::clamp(d, 0, 3)) {}
+void Client::begin(const Start& start, uint64_t now) {
+    skip_hello();
+    receive(start, now);
+}
 void Client::attach_unreliable(std::unique_ptr<Channel> c) {
     unreliable_ = std::move(c);
 }
@@ -151,6 +155,7 @@ void Client::receive(const Message& m, uint64_t now) {
     events_.push_back(m);
 }
 void Client::update(uint64_t now, const Sampler& sample, int32_t stop) {
+    if (!reliable_) return; // the channel went back to the lobby (Task 7 handover)
     if (!hello_sent_ && reliable_->status() == ChannelStatus::open) {
         send(hello_);
         hello_sent_ = true;

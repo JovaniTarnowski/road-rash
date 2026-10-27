@@ -153,7 +153,8 @@ struct RaceOptions {
     int render_scale = 1;                    // plan 19 Task 4: race surface is 640s x 480s
     const Settings* settings = nullptr;      // plan 19 Task 8: live scale via effective_render_scale
     class OfflineCapture* capture = nullptr; // fixed 60 Hz offline video/audio export
-    net::Client* online = nullptr;           // borrowed room client; already has a Start/race at screen entry
+    std::function<void(const net::Message&)> lobby_event; // retain room messages while racing
+    net::Client* online = nullptr; // borrowed room client; already has a Start/race at screen entry
     std::array<std::string, 8> chat_messages{};
     bool smooth_remote = true, network_hud = false;
     FrameBench* bench = nullptr; // --bench: phase timings, ends the race after bench->frames

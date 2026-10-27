@@ -1,4 +1,5 @@
 #pragma once
+#include "net/protocol.hpp"
 #include <array>
 #include <cstdint>
 #include <string>
@@ -68,7 +69,10 @@ constexpr int race_loading = 8, main_menu = 9, thrash_courses = 10, mano = 11, m
               busted = 0x1d, won = 0x1e, lost = 0x1f, level_up = 0x20, penalty = 0x21, standings = 0x22,
               finale = 0x23;
 constexpr int native_display = 0x24, native_sound = 0x25, native_pause = 0x26;
-constexpr int native_gamepad = 0x27, native_touch = 0x28, native_enhancements = 0x29, screen_count = 0x2a;
+constexpr int native_gamepad = 0x27, native_touch = 0x28, native_enhancements = 0x29;
+// Plan 34 Task 7: online lobby screens (built in add_native_screens from the
+// 0x13 template, filled per entry; original indices are unchanged).
+constexpr int net_lobby = 0x2a, net_rooms = 0x2b, screen_count = 0x2c;
 } // namespace screen_id
 
 // 0x00445090: switching mode resets level, qualifications and character.
@@ -105,6 +109,27 @@ int after_results(Career&);
 
 // 0x00449150 result videos: "Wreck"/"Busted"/"Win" (1..6), "Lose" (1..10), "Level", "FinalWin".
 std::string results_video(const Career&, int screen, uint32_t random);
+
+// Plan 34 Task 7: mano-a-mano official results. Places come from the server's
+// Official table (never from the local prediction); the career is untouched
+// (no cash, qualification, level, bike or place change: the original mano
+// rule). Only first place counts as won (0x00416010); a finished-not-first
+// local row is lost. Videos are the normal outcome videos, never DUEL.
+struct ManoRow {
+    std::string name;
+    int place = 0; // 0-based, from the official table
+    bool player = false;
+};
+struct ManoResult {
+    int screen = 0;             // result screen id (won/lost/busted/wrecked)
+    RaceOutcome outcome;        // local outcome for the video choice
+    int place = 0;              // local 0-based place from the table
+    std::string video_base;     // "WIN"/"LOSE"/"WRECK"/"BUSTED" (caller numbers it)
+    std::vector<ManoRow> table; // official rows in table order
+};
+// aliases: Start-roster aliases in seat order; local_seat: the Start seat.
+ManoResult mano_official(const net::Official& official, const std::vector<std::string>& aliases,
+                         int local_seat);
 
 // Save files (0x0042f000 / 0x0042f110): 0xa0 bytes =
 // checksum(0x0042efc0 over the next 0x9c bytes), 0xcafedead, GameState, 10 x 3 relation dwords.

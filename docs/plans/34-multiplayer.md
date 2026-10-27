@@ -456,7 +456,7 @@ std::pair<std::unique_ptr<Channel>, std::unique_ptr<Channel>> loopback_pair(NetS
 
 **Files:** Modify `src/frontend.hpp`, `src/frontend.cpp`, `src/native_screens.*`, `src/native_strings.cpp`, `src/settings.*`, `src/career.cpp`, `src/platform_web.cpp` (invite links).
 
-- [ ] **Step 1: Screens.**
+- [x] **Step 1: Screens.**
   - Enable main-menu item 2.
   - Screen 0x0b keeps the original items, with these mappings:
     - **Host** creates a room (level popup, then native AI bikers / cars / public options in the original popup style);
@@ -466,13 +466,15 @@ std::pair<std::unique_ptr<Channel>, std::unique_ptr<Channel>> loopback_pair(NetS
     - **Restroom** is unchanged;
     - **Disconnect** leaves the room.
   - The original transport popup is removed: there is one transport.
-- [ ] **Step 2: Native screens in the original menu style.** Room code display and copy, join by code, the public room list (Host / Level / Avail / Status), roster with characters and pings, "connecting…", errors (version mismatch, room full, server unreachable). Strings use native slots. Each replacement is listed in REVERSE_ENGINEERING.md "Not ported or replaced natively".
-- [ ] **Step 3: Invite links.** The browser reads `?room=` and opens Join. Native clients accept a pasted code or link. Android also handles `https://road-rash.archit.xyz/?room=` app links if the manifest allows.
-- [ ] **Step 4: Results.** Original mano results: places from the official table, no career change, the result-screen video (not `DUEL`, Task 1), back to screen 0x0b with the room kept for a rematch.
-- [ ] **Step 5: Tests.** Drive the front end through host → vote → race → results → rematch with the in-process server.
-- [ ] **Step 6:** Commit: `frontend: online mano-a-mano`.
+- [x] **Step 2: Native screens in the original menu style.** Room code display and copy, join by code, the public room list (Host / Level / Avail / Status), roster with characters and pings, "connecting…", errors (version mismatch, room full, server unreachable). Strings use native slots. Each replacement is listed in REVERSE_ENGINEERING.md "Not ported or replaced natively".
+- [x] **Step 3: Invite links.** The browser reads `?room=` and opens Join. Native clients accept a pasted code or link. Android also handles `https://road-rash.archit.xyz/?room=` app links if the manifest allows.
+- [x] **Step 4: Results.** Original mano results: places from the official table, no career change, the result-screen video (not `DUEL`, Task 1), back to screen 0x0b with the room kept for a rematch.
+- [x] **Step 5: Tests.** Drive the front end through host → vote → race → results → rematch with the in-process server.
+- [x] **Step 6:** Commit: `frontend: online mano-a-mano`.
 
 ---
+
+Implementation/evidence: October 27, 2026, [Task 7 handoff](../agent-handoffs/net-frontend-20261027.md). Browser transport compiles; Android has no matching app-link intent filter, so registration and cross-play acceptance remain Task 10. The in-process frontend test uses a scripted agreed cutoff, not a completed full course.
 
 ### Task 8: VPS deployment
 

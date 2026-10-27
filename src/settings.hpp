@@ -70,6 +70,13 @@ struct Settings {
     Enhancements enhancements;                      // plan 21 Task 1: all off = original renderer
     int touch_opacity = 50;                         // 0..100, Android touch overlay (plan 14 Task 3)
     bool haptics = true; // Android rumble on crash/hit where the device supports it
+    // Plan 34 Task 7: online lobby persistence. net_server is the WebSocket
+    // URL of rr-netd; net_seat is the 128-bit seat token (32 hex chars) kept
+    // for the life of the room; net_room is the last room code.
+    std::string net_server = "wss://road-rash.archit.xyz/net";
+    std::string net_seat;
+    std::string net_room;
+    std::array<std::string, 8> net_chat{};
 };
 Settings default_settings();                      // language and units from the system locale
 Settings parse_settings(const std::string& text); // unknown keys and malformed values are ignored

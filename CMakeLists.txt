@@ -387,3 +387,7 @@ if(RR_BENCH_WEB AND NOT ANDROID)
     add_executable(rr-bench-web tests/bench_web.cpp)
     target_link_libraries(rr-bench-web PRIVATE rr-resource)
 endif()
+
+if(TARGET rr-game AND TARGET rr-net-transport)
+    target_link_libraries(rr-game PRIVATE rr-net-transport)
+endif()

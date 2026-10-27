@@ -38,6 +38,23 @@ int main() {
     std::remove(path.c_str());
     check(rr::load_settings(path).video_mode == d.video_mode, "missing file gives defaults");
     {
+        // Plan 34 Task 7: lobby persistence round-trips; malformed seat/room
+        // values are ignored (never a half token).
+        rr::Settings n;
+        n.net_server = "ws://127.0.0.1:18080/net";
+        n.net_seat = "0123456789abcdef0123456789ABCDEF";
+        n.net_room = "AB23CD";
+        n.net_chat[0] = "Catch me!";
+        n.net_chat[7] = "Last phrase";
+        const rr::Settings m = rr::parse_settings(rr::format_settings(n));
+        check(m.net_server == n.net_server && m.net_seat == n.net_seat && m.net_room == n.net_room &&
+                  m.net_chat == n.net_chat,
+              "lobby fields round trip");
+        const rr::Settings bad = rr::parse_settings("net_seat=xyz\nnet_room=TOOLONG\nnet_server=\n");
+        check(bad.net_seat.empty() && bad.net_room.empty() && bad.net_server == d.net_server,
+              "lobby fields reject malformed values");
+    }
+    {
         rr::Settings n;
         n.display_mode = rr::DisplayMode::fullscreen;
         n.window_scale = 3;

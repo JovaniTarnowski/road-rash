@@ -250,6 +250,11 @@ void RaceScreen::step_online(uint64_t now, uint32_t controls) {
     auto& client = *opt_.online;
     client.update(now / 1000000, [controls](int32_t) { return uint16_t(controls); });
     while (auto event = client.poll_event()) {
+        if (opt_.lobby_event &&
+            (std::holds_alternative<net::RoomState>(*event) ||
+             std::holds_alternative<net::ChatRelay>(*event) ||
+             std::holds_alternative<net::Official>(*event) || std::holds_alternative<net::Reject>(*event)))
+            opt_.lobby_event(*event);
         if (auto chat = std::get_if<net::ChatRelay>(&*event)) {
             std::string alias = "Player";
             for (const auto& human : client.start()->humans)

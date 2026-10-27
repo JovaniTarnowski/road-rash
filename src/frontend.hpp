@@ -1,10 +1,13 @@
 #pragma once
 #include "career.hpp"
+#include "net/mano.hpp"
+#include "net/protocol.hpp"
 #include "settings.hpp"
 #include "text.hpp"
 #include <array>
 #include <deque>
 #include <map>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -73,6 +76,8 @@ struct FrontendEvent {
         none,
         play_video,
         start_race,
+        start_net_race, // online: net_start carries the server Start
+        copy_text,      // online: put text on the clipboard (room code)
         quit,
         select_soundtrack,
         apply_display,
@@ -85,6 +90,10 @@ struct FrontendEvent {
     int group = 0,
         track = 0;     // select_soundtrack: 0-based group (menu caption - 0xe1) and track (caption - 0xf1)
     bool demo = false; // start_race: AI attract demo (any input exits, no results)
+    // Plan 34 Task 7: appended after the original fields so the existing
+    // aggregate initialisers keep working.
+    std::string text;     // copy_text: clipboard bytes
+    net::Start net_start; // start_net_race: roster, seed, course, options
 };
 
 // One finisher in the race results (0x00420e30 rows).
@@ -105,11 +114,30 @@ class Frontend {
              std::string save_directory);
     void start(); // intro video, then the Credits screen
     void update(const MenuInput&, uint64_t now_ms);
-    bool poll(FrontendEvent&);                    // next host action
-    void draw(RgbImage&, int scale = 1) const;    // 640s x 480s; scale = 1 keeps today's output exactly
+    bool poll(FrontendEvent&);                 // next host action
+    void draw(RgbImage&, int scale = 1) const; // 640s x 480s; scale = 1 keeps today's output exactly
+    void draw_net_overlay(RgbImage&, int scale) const;
     void draw_scale1(RgbImage&) const;            // original 640x480 path, bit-identical
     void draw_scaled(RgbImage&, int scale) const; // 640s x 480s, s = 2..4
     void race_finished(RaceOutcome, int place, const std::vector<Standing>&);
+    // Plan 34 Task 7: official mano results. Places come from the Official
+    // table; the career is not changed. Plays the normal outcome video (never
+    // DUEL), shows the official table, and returns to 0x0b with the room kept
+    // for a rematch. aliases: Start-roster aliases in seat order.
+    void mano_finished(const net::Official& official, const std::vector<std::string>& aliases,
+                       int local_seat);
+    // Plan 34 Task 7: online lobby. attach() stages the connection credentials
+    // (the room client is created lazily on the first Host/Join so the Hello
+    // alias is current); the main-menu mano item stays disabled until then.
+    using RoomClientFactory = net::RoomClient::Factory;
+    void net_attach(RoomClientFactory, net::Hello hello);
+    bool net_attached() const { return (bool)net_factory_; }
+    bool net_in_room() const;
+    net::RoomClient* net_client() { return net_.get(); }
+    // Invite: join text (a bare code or an invite link) from the command line,
+    // the browser URL or a paste. Enters 0x0b and joins.
+    void net_join_invite(const std::string& text);
+    const std::array<std::string, 8>& chat_messages() const { return chat_messages_; }
     void enter(int screen); // 0x00421df0
     int screen() const { return screen_; }
     int focus() const { return focus_; }
@@ -118,7 +146,7 @@ class Frontend {
     std::string caption_text(const MenuItem&) const;
     const std::string& current_save() const { return save_file_; }
     std::string player_name() const; // 0x0041c140
-    bool editing_text() const { return editing_name_; }
+    bool editing_text() const { return editing_name_ || editing_code_ || editing_chat_ >= 0; }
     const std::string& string_slot(int slot) const { return str(slot); }
     // In-race toggles: F10 cycles MiniDash 0->1->2->0 (0x004431d0 pump); the menu `/`
     // key toggles the opponent list 0<->1 (0x00423777, sete). Returns the new value.
@@ -188,6 +216,18 @@ class Frontend {
     void save_current();
     void save_new();
     void open_load_list();
+    // Plan 34 Task 7: online lobby driver (polled from update()).
+    void net_ensure();        // create the room client on first Host/Join
+    void net_update();        // poll, dialogs, Start events, roster refresh
+    void net_open_host();     // Host wizard: level, AI, cars, public popups
+    void net_open_rooms();    // enter the room list (requests a fresh list)
+    void net_prepare_lobby(); // roster rows + room-code title
+    void net_prepare_rooms(); // room rows + code/spectate rows
+    void net_join_shown(int index);
+    bool net_edit_input(const MenuInput&);
+    void net_show_error();
+    void net_close_connecting();
+    std::string net_roster_line(int seat) const;
     void queue_video(const std::string& base, int variants);
     std::string format_standing(size_t place, const Standing&) const;
     void draw_text_box(RgbImage&, const TextRect&, Face, int height, const std::string&, unsigned flags,
@@ -247,6 +287,27 @@ class Frontend {
     std::vector<Standing> standings_;
     RaceReport report_;
     bool standings_ready_ = false; // 0x22 rows/title/darken set by the 0x00421290 handler
+    // Plan 34 Task 7: online lobby state. net_ owns the room connection for
+    // the life of the room visit (lent to net::Client during races).
+    RoomClientFactory net_factory_;
+    net::Hello net_hello_;
+    std::unique_ptr<net::RoomClient> net_;
+    net::RoomOptions net_pending_options_{};
+    bool net_connecting_ = false; // connecting dialog up
+    std::string net_shown_error_; // last error already shown as a dialog
+    std::string net_code_buffer_; // Join code entry (bare code or invite link)
+    bool editing_code_ = false;
+    bool net_spectate_ = false; // join toggle on the rooms screen
+    std::vector<net::RoomListEntry> net_shown_rooms_;
+    std::array<std::string, 8> chat_messages_{}; // F1-F8 slots (0x0d screen)
+    int editing_chat_ = -1;                      // 0x0d row being edited, -1 none
+    int mano_title_ = 0;                         // saved 0x0c title slot while the vote title shows
+    std::vector<std::string> net_chat_log_;      // last lobby chat lines
+    uint64_t net_lobby_at_ = 0;                  // last roster refresh
+    bool mano_results_ = false;
+    uint32_t net_video_rng_ = 1;
+    std::optional<MenuScreen> offline_standings_;
+    void net_results_table();
     uint32_t next_random();
 };
 } // namespace rr
