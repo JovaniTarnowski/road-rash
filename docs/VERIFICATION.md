@@ -1,5 +1,16 @@
 # Verification log (all sessions September 28, 2026)
 
+## Plan 34 Task 2 C3/C4: traffic and police per human (October 26, 2026)
+
+- `make verify-sim BUILD_DIR=build-p34`: passed. `ctest -j8`: 111/111, 0
+  skipped (all traffic, actor_traffic, police and oracle tests unchanged).
+- `race_multi` (NAPA L0, seat 0 brakes, seat 1 accelerates): 5,626 car-ticks
+  inside seat 1's own window beyond seat 0's (ticks 1200–2400); no odd-kind
+  car in any tick; a cop spawned from seat 1 at sample 404 inside its
+  window, with the same relationship row on both humans. Before the pool
+  partition all 16 (then 32) slots filled in seat 0's window — the reason
+  each window now owns 16 slots.
+
 ## Plan 34 Task 2 C1/C2 and rr-netd image (October 26, 2026)
 
 - `make verify-sim BUILD_DIR=build-p34`: passed; `ctest -L sim`: 19/19.

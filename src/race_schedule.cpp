@@ -191,6 +191,7 @@ void Race::schedule_pass(uint32_t controls, bool countdown) {
     const int32_t camera = ring_ ? ring_->front_q8() - 0x5000 : int32_t(previous_camera_position_) + 0x100;
     std::vector<std::pair<int32_t, size_t>> cars;
     car_scan_keys_.clear();
+    update_traffic_windows(false);
     if (traffic_ &&
         traffic_->begin_schedule(
             route_of(riders_[0]), camera + 0x5000, [this] { return random(); }, uint32_t(ticks_))) {

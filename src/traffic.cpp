@@ -112,26 +112,27 @@ int VehicleLibrary::choose(uint8_t kind, uint32_t random) const {
     return int(accepted[random % accepted.size()]);
 }
 
-void traffic_set_density(TrafficTimers& t, int density) {
-    // 0x0044dd00 (single player; multiplayer quadruples the density).
+void traffic_set_density(TrafficTimers& t, int density, bool net) {
+    // 0x0044dd00: networked races quadruple the density (char << 2).
     if (density < 0) {
         t.cruise = -density;
         t.rate = -density * 100;
         return;
     }
     if (density == 0) density = 6;
+    if (net) density = int8_t(uint8_t(density << 2));
     t.density = density;
     t.oncoming_reload = div256(t.rate * density * 0x3c);
     t.oncoming = t.oncoming_reload;
     t.other_reload = div256(t.rate * density * 0x3c);
 }
-void traffic_configure(TrafficTimers& t, int density) {
+void traffic_configure(TrafficTimers& t, int density, bool net) {
     if (density < 0) {
-        traffic_set_density(t, density);
+        traffic_set_density(t, density, net);
         return;
     }
-    traffic_set_density(t, -25);     // 0x0044db80: 0x0044dd00(-0x19)
-    traffic_set_density(t, density); // then 0x0044dd00(6)
+    traffic_set_density(t, -25, net);     // 0x0044db80: 0x0044dd00(-0x19)
+    traffic_set_density(t, density, net); // then 0x0044dd00(6)
     t.behind = 0;
     t.ahead = -t.other_reload; // 0x0044db80 tail
 }
@@ -154,9 +155,24 @@ TrafficSystem::TrafficSystem(const VehicleLibrary& library, std::vector<uint8_t>
 
 bool TrafficSystem::place(uint8_t kind, int8_t lane, const RouteSample& at, int32_t spawn_q8,
                           const std::function<uint32_t()>& random) {
+    if (net_) {
+        // 0x0044df60 networked gates, before its _rand(): no odd kinds, and
+        // nothing between this window's human and a nearby human.
+        if (kind & 1) return false;
+        if (size_t(building_seat_) < windows_.size()) {
+            const SeatWindow& w = windows_[size_t(building_seat_)];
+            const int32_t at_q8 = spawn_q8 & ~0xff; // slice +8 position
+            if (w.ahead && !(at_q8 <= w.me_q8)) return false;
+            if (w.behind && !(w.me_q8 <= at_q8)) return false;
+        }
+    }
     const int vehicle = library_.choose(kind, random()); // _rand() in 0x0044df60
     if (vehicle < 0) return false;
-    for (auto& car : cars_) {
+    // Plan 34 C3: with several windows each places into its own 16 slots.
+    const size_t first = windows_.size() > 1 ? pool_size * size_t(building_seat_) : 0;
+    const size_t last = windows_.size() > 1 ? std::min(cars_.size(), first + pool_size) : cars_.size();
+    for (size_t slot = first; slot < last; ++slot) {
+        auto& car = cars_[slot];
         if (car.active) continue;
         // 0x0044df60 (kind bit 0 clear): lateral from the road centre.
         car = TrafficCar{};
@@ -489,8 +505,10 @@ void TrafficSystem::move(TrafficCar& car, const std::vector<RouteSample>& route,
             return;
         }
         car.collides = uint32_t(car.position - camera_q8 + 0x400) < 0x2801;
+        for (size_t k = 1; k < windows_.size(); ++k) // plan 34: near any human's camera
+            car.collides = car.collides || uint32_t(car.position - windows_[k].camera_q8 + 0x400) < 0x2801;
     }
-    const auto [target, rate] = plan_speed(car, route, front_q8);
+    const auto [target, rate] = plan_speed(car, route, window_front_for(car.position, front_q8));
     // 0x0044e710 -> 0x00449880/0x004498c0: set heading and approach the
     // target BEFORE the mover applies drag. The target is not a post-move cap.
     // 0x0044edfc: +0x1dc = lane-centre error, halfway from its previous
@@ -531,8 +549,9 @@ void TrafficSystem::move(TrafficCar& car, const std::vector<RouteSample>& route,
     car.speed = body.i32(0xec);
     car.position = body.i32(0x1c);
     car.lateral = body.i32(0x28);
-    if (car.position >= front_q8 || car.position < back_q8 || car.lateral < -0xc8000 || car.lateral > 0xc8000)
-        car.pending_remove = true;
+    const bool outside = windows_.size() < 2 ? (car.position >= front_q8 || car.position < back_q8)
+                                             : !inside_any_window(car.position, front_q8);
+    if (outside || car.lateral < -0xc8000 || car.lateral > 0xc8000) car.pending_remove = true;
     if (car.kind & 1) return;
     // 0x0044efa0 is a contact callback, not a movement/proximity RNG tap.
     (void)player_q8;
@@ -546,12 +565,13 @@ void TrafficSystem::build_slice(const std::vector<RouteSample>& route, int32_t s
     // the slice (own half first) whose event ends here calls 0x0041ec70:
     // 0x0041eca0 (types 1..3), then the density 0x0044dd00.
     if (sample < 0 || size_t(sample) >= route.size()) return;
+    if (windows_.size() > 1 && slice_owned_elsewhere(sample)) return; // plan 34: first window owns it
     const auto& at = route[size_t(sample)];
     auto zone = [&](const PathSample& path) {
         if (!path.zone_end) return;
         if (path.event_type >= 1 && path.event_type <= 3)
             place_intersection(route, sample, path, back_q8, front_q8, tick);
-        traffic_set_density(timers_, int8_t(path.event_parameters[1]));
+        traffic_set_density(timers_, int8_t(path.event_parameters[1]), net_);
         ++zone_events_;
     };
     zone(at.path);
@@ -698,9 +718,11 @@ void TrafficSystem::think_intersections(int32_t back_q8, int32_t front_q8, uint3
             if (si < 0) continue;
             auto& s = signals_[size_t(si)];
             s.accum += dt;
-            if (!(back_q8 + 0x100 <= s.position_q8 && s.position_q8 <= front_q8 - 0x200 &&
-                  c.durations[s.phase] < s.accum))
-                continue;
+            bool near = back_q8 + 0x100 <= s.position_q8 && s.position_q8 <= front_q8 - 0x200;
+            for (size_t k = 1; k < windows_.size(); ++k) // plan 34: any human's window
+                near = near || (windows_[k].front_q8 - 0x7f00 <= s.position_q8 &&
+                                s.position_q8 <= windows_[k].front_q8 - 0x200);
+            if (!(near && c.durations[s.phase] < s.accum)) continue;
             do {
                 s.accum -= c.durations[s.phase];
                 if (++s.phase > 2) s.phase = 0;
@@ -723,7 +745,11 @@ void TrafficSystem::think_intersections(int32_t back_q8, int32_t front_q8, uint3
         }
         // 0x00437e60 window test after the think: 0x0041f1f0 parks the
         // signals and the controller outside [back, front].
-        if (front_q8 - c.position_q8 < 0 || c.position_q8 - back_q8 < 0) {
+        bool outside = front_q8 - c.position_q8 < 0 || c.position_q8 - back_q8 < 0;
+        for (size_t k = 1; k < windows_.size(); ++k)
+            outside = outside && (windows_[k].front_q8 - c.position_q8 < 0 ||
+                                  c.position_q8 - (windows_[k].front_q8 - 0x8000) < 0);
+        if (outside) {
             for (int k = 0; k < 4; ++k)
                 if (c.signals[k] >= 0) signals_[size_t(c.signals[k])] = IntersectionSignal{};
             for (auto& car : cars_)
@@ -740,6 +766,7 @@ void TrafficSystem::place_crossing(const IntersectionController& c, int signal, 
     // zone: lateral +-0x78000 plus the slice centre (world units, added
     // raw as the original does), fraction 0x80; the cross-road vehicle
     // class (mask 0x40000) and the shared 16-car pool.
+    if (net_) return; // 0x0044df60: odd kinds never spawn in a networked race
     const int32_t s =
         std::clamp((lane + 1) * 0x100 + c.start_q8, int32_t(0), int32_t((route.size() - 1) * 256)) >> 8;
     const auto& at = route[size_t(s)];
@@ -795,8 +822,11 @@ void TrafficSystem::countdown_step(const std::vector<RouteSample>& route, int32_
     // 0x004552e0 applies the initial ring's zones before the first tick.
     // Reuse the lazy fill without advancing any cursor during the hold.
     tick_ = tick;
+    primary_front_ = front_q8;
+    building_seat_ = 0;
     build_slices(route, front_q8, 0, tick);
     step_timers(route, front_q8, front_q8 - 0x8000, 0, random);
+    step_seat_windows(route, random, tick, true);
     // The 0x00438170 scheduler runs during the hold too: controllers keep
     // their 0x1e cadence from creation (measured: demo and human captures
     // tear the controller down on ticks 2 + 30k), cars stay put.
@@ -825,8 +855,15 @@ void TrafficSystem::run_car(size_t index, const std::vector<RouteSample>& route,
     if (!car.active || car.next_tick > int32_t(tick)) return;
     car.dt = int32_t(tick) - car.last_tick;
     car.last_tick = int32_t(tick);
+    primary_front_ = front_q8;
     move(car, route, camera_q8, front_q8, front_q8 - 0x8000, player_q8, player_lateral, random);
-    car.interval = schedule_interval(car, camera_q8, player_velocity);
+    if (windows_.size() > 1) {
+        int32_t velocity = player_velocity;
+        const int32_t camera = nearest_camera(car.position, camera_q8, velocity);
+        car.interval = schedule_interval(car, camera, velocity);
+    } else {
+        car.interval = schedule_interval(car, camera_q8, player_velocity);
+    }
     car.next_tick = int32_t(tick) + car.interval;
     if (car.pending_remove) {
         car.motion.u8(0xc0) = uint8_t((car.motion.u8(0xc0) & ~4) | 8);
@@ -850,8 +887,83 @@ void TrafficSystem::step(const std::vector<RouteSample>& route, int32_t camera_q
     // Standalone callers use both phases; Race schedules before contacts.
     schedule(route, camera_q8 - distance_moved, front_q8 - distance_moved, player_q8, player_lateral, random,
              tick, player_velocity);
+    primary_front_ = front_q8;
+    building_seat_ = 0;
     build_slices(route, front_q8, distance_moved, tick);
     step_timers(route, front_q8, front_q8 - 0x8000, distance_moved, random);
+    step_seat_windows(route, random, tick, false);
+}
+
+void TrafficSystem::set_seat_windows(const std::vector<SeatWindow>& w) {
+    windows_ = w;
+    // Every original machine had its own car pool for its neighbourhood: one
+    // pool's worth of slots per human (appended, so seat 0 keeps slots 0..15).
+    if (cars_.size() < pool_size * windows_.size()) cars_.resize(pool_size * windows_.size());
+    while (seats_.size() + 1 < windows_.size()) {
+        SeatState s;
+        traffic_configure(s.timers, configured_density_, net_);
+        seats_.push_back(s);
+    }
+}
+
+bool TrafficSystem::inside_any_window(int32_t q8, int32_t front_q8) const {
+    if (in_window(q8, front_q8)) return true;
+    for (size_t k = 1; k < windows_.size(); ++k)
+        if (in_window(q8, windows_[k].front_q8)) return true;
+    return false;
+}
+
+bool TrafficSystem::slice_owned_elsewhere(int32_t sample) const {
+    // A slice another window has built and still holds (inside its window,
+    // behind its build cursor) places nothing again.
+    auto holds = [&](bool filled, int32_t built_end, int32_t front_q8) {
+        return filled && sample < built_end && sample >= (front_q8 >> 8) - 128;
+    };
+    if (building_seat_ != 0 && holds(primary_filled_, primary_built_end_, primary_front_)) return true;
+    for (size_t k = 1; k < windows_.size(); ++k)
+        if (int(k) != building_seat_ &&
+            holds(seats_[k - 1].filled, seats_[k - 1].built_end, windows_[k].front_q8))
+            return true;
+    return false;
+}
+
+int32_t TrafficSystem::nearest_camera(int32_t q8, int32_t camera_q8, int32_t& velocity) const {
+    int64_t best = std::abs(int64_t(q8) - camera_q8);
+    int32_t out = camera_q8;
+    for (size_t k = 1; k < windows_.size(); ++k) {
+        const int64_t d = std::abs(int64_t(q8) - windows_[k].camera_q8);
+        if (d < best) best = d, out = windows_[k].camera_q8, velocity = windows_[k].velocity;
+    }
+    return out;
+}
+
+int32_t TrafficSystem::window_front_for(int32_t q8, int32_t front_q8) const {
+    if (windows_.size() < 2 || in_window(q8, front_q8)) return front_q8;
+    for (size_t k = 1; k < windows_.size(); ++k)
+        if (in_window(q8, windows_[k].front_q8)) return windows_[k].front_q8;
+    return front_q8;
+}
+
+void TrafficSystem::step_seat_windows(const std::vector<RouteSample>& route,
+                                      const std::function<uint32_t()>& random, uint32_t tick, bool hold) {
+    // Plan 34 C3: each further human's window builds its slices and runs its
+    // own spawn timers, in seat order, on the shared stream.
+    primary_built_end_ = built_end_;
+    primary_filled_ = filled_;
+    for (size_t k = 1; k < windows_.size(); ++k) {
+        SeatState& s = seats_[k - 1];
+        const SeatWindow& w = windows_[k];
+        std::swap(timers_, s.timers);
+        std::swap(built_end_, s.built_end);
+        std::swap(filled_, s.filled);
+        building_seat_ = int(k);
+        build_slices(route, w.front_q8, hold ? 0 : w.distance, tick);
+        step_timers(route, w.front_q8, w.front_q8 - 0x8000, hold ? 0 : w.distance, random);
+        building_seat_ = 0;
+        std::swap(timers_, s.timers);
+        std::swap(built_end_, s.built_end);
+        std::swap(filled_, s.filled);
+    }
 }
 // 0x0044dd90 spawn timers, extracted so the countdown hold can bank them
 // with distance 0 (the original steps them every hold tick). Order, gates,

@@ -53,6 +53,22 @@ Detailed evidence is in [REVERSE_ENGINEERING.md](REVERSE_ENGINEERING.md) and tes
 
 ## Timeline
 
+### October 26, 2026: plan 34 Task 2 C3/C4, traffic and police per human
+
+- `TrafficSystem`: one window per human seat (`set_seat_windows`), each with
+  its own spawn timers, slice cursor and 16 pool slots (every original
+  machine had its own pool); a slice another window already built places no
+  intersection again; cars retire and controllers tear down only outside
+  every window; LOD from the nearest window. Networked: density ×4, no
+  crossing kinds, and the `0x0044df60` ahead/behind gates per window.
+- Police: the cop spawns from the human whose think (periodic) or ring
+  window (DZHR) fires, clamped to that human's window; every human gets the
+  relationship row. AI replan place/distance and the attack stand-in now
+  read the nearest human (the earlier note claimed this already; it landed
+  here).
+- One human: unchanged. Task 2 complete apart from the cross-platform proof
+  in Task 3.
+
 ### October 26, 2026: plan 34 Task 2 C1/C2, ring windows per human; rr-netd image
 
 - Each human seat has its own `TrackRing` window (`RaceInstance::seat_rings`,

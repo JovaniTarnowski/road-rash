@@ -428,7 +428,8 @@ class Race {
     // 0x00406b80: builds the cop `slice_offset` ring slices from the player's
     // half (0x00449910 walk, clamped to the ring). False when a cop exists,
     // the police are not enabled or the race has no player yet.
-    bool spawn_cop(int32_t slice_offset);
+    // anchor: the human the spawn is placed from (plan 34 C4); -1 = seat 0.
+    bool spawn_cop(int32_t slice_offset, int anchor_rider = -1);
     int cop_index() const { return !riders_.empty() && riders_.back().cop ? int(riders_.size()) - 1 : -1; }
     // 0x00416010(4, 0xb4): the player was arrested (0x00407f30).
     bool busted() const { return busted_; }
@@ -764,6 +765,9 @@ class Race {
     TrackRing* ring_ = nullptr;
     std::array<TrackRing*, 8> rings_{};                    // seat -> ring window (rings_[0] == ring_)
     std::array<int32_t, 8> seat_back_{}, seat_previous_{}; // seats >= 1: camera pull-back, last ring camera
+    std::array<int32_t, 8> seat_moved_{};                  // seats >= 1: camera advance this step
+    int actor_seat_ = 0;                      // whose ring window is firing DZHR actors (plan 34 C4)
+    void update_traffic_windows(bool moving); // plan 34 C3: seat windows + 0x0044f0d0 gates
     std::array<std::function<void(const RingActor&, uint32_t)>, 8> seat_sink_{};
     uint32_t seat_camera(int seat) const;                  // camera_position() for any seat
     const TrackRing* nearest_ring(int32_t position) const; // ring whose camera is nearest

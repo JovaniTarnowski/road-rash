@@ -403,6 +403,7 @@ RaceInstance build_race(const RaceAssets& assets, const std::vector<uint8_t>& ex
     // 6. Traffic from the course's own vehicle container.
     if (assets.vehicles) {
         out.traffic = std::make_unique<TrafficSystem>(*assets.vehicles, exe);
+        if (!config.net.humans.empty()) out.traffic->set_net(true); // x4 density, gates (plan 34 C3)
         out.traffic->configure(6);
         out.traffic->set_setup_tick(config.ring_setup_tick);
         race->set_traffic(out.traffic.get());

@@ -2599,7 +2599,7 @@ void Race::ai_replan(Rider& r) {
     // the overtake thresholds drop.
     // 0x004082f0 reads the player half's place word +0x1fc (0x00407550
     // refreshes it on its own cadence; 0 from the build until then).
-    const int place = riders_[0].place;
+    const int place = nearest_human(r.bike.i32(0x1c)).place; // plan 34: the nearest human's place
     const int32_t near = place < 4 ? 4 - place : 0;
     auto rate = [&](int nbr) -> int {
         if (nbr < 0) return 0;
@@ -2650,7 +2650,7 @@ void Race::ai_replan(Rider& r) {
         ai.current_speed = ai.spd_b[size_t(level_)];
         ai.current2 = ai.spd_a[size_t(level_)];
     }
-    const Rider& player = riders_[0];
+    const Rider& player = nearest_human(r.bike.i32(0x1c)); // plan 34: the nearest human
     const int32_t self = r.bike.i32(0x1c);
     if (ahead == 0 || behind == 0) {
         int32_t d = (self - player.bike.i32(0x1c)) >> 8;
@@ -3441,17 +3441,22 @@ void Race::set_police(const PoliceConfig& config, std::vector<BikeSpec> specs,
 // by 0x00405990 (templates 0x464310/0x464378, rider row 15, param_5 = 2),
 // its brain is the police personality, and the player's relationship toward
 // it is replaced from the player's place and the level.
-bool Race::spawn_cop(int32_t slice_offset) {
+bool Race::spawn_cop(int32_t slice_offset, int anchor_rider) {
     if (!police_ || !police_->library || riders_.empty() || ring_setup_ || cop_index() >= 0) return false;
     if (riders_.size() == riders_.capacity())
         riders_.reserve(riders_.size() + 1); // keeps outstanding references valid only when the ctor reserved
-    const Rider& player = riders_[0];
+    // Plan 34 C4: the spawn is placed from its anchor human and clamped to
+    // that human's ring window (one human: the player and the ring).
+    const size_t anchor = anchor_rider >= 0 ? size_t(anchor_rider) : 0;
+    const Rider& player = riders_[anchor];
+    const TrackRing* window = player.human > 0 && !player.ai ? rings_[size_t(player.human)] : ring_;
+    if (!window) window = ring_;
     const auto& road = route_of(player);
     // 0x00449910 from the player's half slice (+0x2c), clamped to the ring.
     int64_t slice = int64_t(live_schedule_ ? player.half_mirror.sample : player.sample) + slice_offset;
-    const int64_t lo = ring_ ? int64_t(ring_->back_q8() >> 8) : 0;
+    const int64_t lo = window ? int64_t(window->back_q8() >> 8) : 0;
     const int64_t hi = std::min<int64_t>(
-        ring_ ? int64_t(ring_->front_q8() >> 8) - 1 : int64_t(road.size()) - 1, int64_t(road.size()) - 1);
+        window ? int64_t(window->front_q8() >> 8) - 1 : int64_t(road.size()) - 1, int64_t(road.size()) - 1);
     slice = std::clamp<int64_t>(slice, std::min(lo, hi), hi);
     PoliceSpawnInput in;
     in.level = level_;
@@ -3511,9 +3516,12 @@ bool Race::spawn_cop(int32_t slice_offset) {
     // The player's relationship toward the cop (player brain +0x80/+8 columns).
     const int column = cop.brain.overtake_index;
     if (column >= 0 && column < 10) {
-        Rider& p0 = riders_[0];
-        p0.brain.rating_tgt[size_t(column * 3 + 2)] = a.player_relationship;
-        p0.brain.rating[size_t(column * 3 + 2)] = a.player_relationship;
+        for (int seat = 0; seat < humans(); ++seat) { // plan 34 C4: every human's row
+            Rider& p0 = riders_[size_t(human_rider(seat))];
+            if (seat != 0 && !human(p0)) continue;
+            p0.brain.rating_tgt[size_t(column * 3 + 2)] = a.player_relationship;
+            p0.brain.rating[size_t(column * 3 + 2)] = a.player_relationship;
+        }
     }
     schedule_add(index);
     return true;
@@ -3565,10 +3573,10 @@ void Race::police_think(Rider& player) {
         player.busted = true;
         if (&player == &riders_[0]) busted_ = true;
     }
-    // Plan 34: the periodic spawn check runs once per tick, from seat 0's
-    // think (one human: the original call); its anchor is part of Task 2 C4.
-    if (&player == &riders_[0] && police_spawn_due(uint32_t(ticks_), 0, half_flags, cop_index() >= 0))
-        spawn_cop(-0x27);
+    // Plan 34 C4: every human's think runs the periodic check (one cop per
+    // race: the first human whose check fires anchors it).
+    if (police_spawn_due(uint32_t(ticks_), 0, half_flags, cop_index() >= 0))
+        spawn_cop(-0x27, int(&player - riders_.data()));
 }
 
 // 0x004073a0: the cop is unlinked and freed. The cop is always the last
@@ -3670,7 +3678,7 @@ void Race::fight(Rider& r, uint32_t controls, size_t index) {
             start = (controls & (control_punch | control_kick | control_backhand)) != 0;
         else {
             // AI attack rule (stand-in for AI states 2..5): strike the player when alongside.
-            const Rider& p = riders_[0];
+            const Rider& p = nearest_human(b.i32(0x1c)); // plan 34: the nearest human
             const int reach = weapon_reach[r.weapon] * 0x1000;
             start = p.bike.i32(0x2f4) == 0 && std::abs(p.bike.i32(0x1c) - b.i32(0x1c)) < 0x40 &&
                     std::abs(p.bike.i32(0x28) - b.i32(0x28)) < reach &&
@@ -4106,6 +4114,42 @@ void Race::update_camera() {
     }
 }
 
+void Race::update_traffic_windows(bool moving) {
+    if (!traffic_ || humans() < 2) return; // one human: the classic single window
+    std::vector<TrafficSystem::SeatWindow> windows(static_cast<size_t>(humans()),
+                                                   TrafficSystem::SeatWindow{});
+    for (int seat = 0; seat < humans(); ++seat) {
+        const Rider& me = riders_[size_t(human_rider(seat))];
+        TrafficSystem::SeatWindow& w = windows[size_t(seat)];
+        w.me_q8 = me.bike.i32(0x1c);
+        w.velocity = me.bike.i32(0x108);
+        if (seat > 0) {
+            const TrackRing* ring = rings_[size_t(seat)];
+            w.camera_q8 = ring ? ring->front_q8() - 0x5000 : int32_t(seat_camera(seat)) + 0x100;
+            w.front_q8 = w.camera_q8 + 0x5000;
+            w.distance = moving ? seat_moved_[size_t(seat)] : 0;
+        }
+        // 0x0044f0d0: nearest other live human ahead within 0x4600 (distance
+        // >= 0) or behind within 0x2d00, on a shared roadway.
+        int32_t ahead = 0x4600, behind = 0x2d00;
+        for (int other = 0; other < humans(); ++other) {
+            if (other == seat) continue;
+            const Rider& o = riders_[size_t(human_rider(other))];
+            if (!human(o) || !o.live) continue;
+            const auto& road = route_of(me);
+            const bool shared = o.route == me.route || (me.sample < road.size() && !road[me.sample].dual);
+            if (!shared) continue;
+            const int32_t d = o.bike.i32(0x1c) - w.me_q8;
+            if (d < 0) {
+                if (-d < behind) behind = -d, w.behind = true;
+            } else if (d < ahead) {
+                ahead = d, w.ahead = true;
+            }
+        }
+    }
+    traffic_->set_seat_windows(windows);
+}
+
 uint32_t Race::seat_camera(int seat) const {
     if (seat <= 0) return camera_position();
     const int32_t p =
@@ -4217,6 +4261,7 @@ void Race::countdown_step() {
         sort_schedule();
         parked_pace_band();
         prepare_static_boxes();
+        update_traffic_windows(false);
         if (traffic_ && !riders_.empty())
             traffic_->countdown_step(
                 route_of(riders_[0]), int32_t(camera_position()) + 0x5100, [this] { return random(); },
@@ -4244,6 +4289,7 @@ void Race::countdown_step() {
     step_pedestrians(); // the scheduler pass runs pedestrians during the hold too
     // 0x0044b3b0 calls 0x0044dd90 even while the camera is stationary:
     // at rate 2500 each hold tick banks +9 behind/rear and -9 oncoming.
+    update_traffic_windows(false);
     if (traffic_ && !riders_.empty())
         traffic_->countdown_step(
             route_of(riders_[0]), int32_t(camera_position()) + 0x5100, [this] { return random(); },
@@ -4523,7 +4569,8 @@ void Race::step(std::span<const uint32_t> words) {
             TrackRing* w = rings_[size_t(seat)];
             if (!w) continue;
             const int32_t now = int32_t(seat_camera(seat));
-            w->advance(now - seat_previous_[size_t(seat)], ring_random_, seat_sink_[size_t(seat)]);
+            seat_moved_[size_t(seat)] = now - seat_previous_[size_t(seat)];
+            w->advance(seat_moved_[size_t(seat)], ring_random_, seat_sink_[size_t(seat)]);
             seat_previous_[size_t(seat)] = now;
         }
     } else
@@ -4531,6 +4578,7 @@ void Race::step(std::span<const uint32_t> words) {
     phase("ring");
     if (traffic_) {
         if (!live_schedule_) prepare_traffic_obstacles();
+        update_traffic_windows(true);
         // 0x0044b3b0: distance moved this step feeds the spawn timers; the
         // ring front rides 0x5000 ahead of the ring camera, which runs
         // 0x100 ahead of the view camera (0x0044b250: 0x3200 vs 0x3100).

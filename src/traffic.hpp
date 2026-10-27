@@ -53,10 +53,10 @@ struct TrafficTimers {
 // 0x0044dd00. Negative: rate -d*100 and cruise -d, reloads untouched.
 // Otherwise density (0 means 6) and both reloads from the current rate; the
 // oncoming timer restarts at its reload, behind/ahead keep running.
-void traffic_set_density(TrafficTimers&, int density);
+void traffic_set_density(TrafficTimers&, int density, bool net = false); // net: x4 (0x0044dd00)
 // 0x0044db80's sequence: 0x0044dd00(-25) then 0x0044dd00(density), then the
 // behind/ahead timer starts. A negative density only sets the rate.
-void traffic_configure(TrafficTimers&, int density);
+void traffic_configure(TrafficTimers&, int density, bool net = false);
 
 // Lane count of a ring sub-slice lane word in 256ths, with the original's
 // signed-char semantics: (int8_t)((value + (value < 0 ? 0xff : 0)) >> 8).
@@ -140,7 +140,26 @@ class TrafficSystem {
     // with an empty pool either way.
     void set_spawn_enabled(bool v) { spawn_enabled_ = v; }
     TrafficSystem(const VehicleLibrary&, std::vector<uint8_t> exe);
-    void configure(int density) { traffic_configure(timers_, density); }
+    void configure(int density) {
+        configured_density_ = density;
+        traffic_configure(timers_, density, net_);
+    }
+    // Plan 34 Task 2 C3: networked race. Density x4 (0x0044dd00), no odd
+    // (crossing) kinds (0x0044df60), and the spawn gate below. Set before
+    // configure().
+    void set_net(bool v) { net_ = v; }
+    // One human's traffic window for this tick. Seat 0's camera/front are
+    // still the classic call arguments; its entry carries only the gate.
+    // ahead/behind: another human within 0x4600 ahead / 0x2d00 behind on a
+    // shared roadway (0x0044f0d0); spawns then stay at or behind / at or
+    // ahead of this human (0x0044df60).
+    struct SeatWindow {
+        int32_t camera_q8 = 0, front_q8 = 0, distance = 0, me_q8 = 0, velocity = 0;
+        bool ahead = false, behind = false;
+    };
+    // Seat order; [0] is seat 0. Seats >= 1 keep their own timers and slice
+    // cursor; a slice inside another window when built places nothing.
+    void set_seat_windows(const std::vector<SeatWindow>& w);
     // One simulation tick on the player's route. camera/front are the ring
     // cursors 0x004b6e5c (camera) and 0x004b6e50 (front, ring camera +
     // 0x5000). The ring camera starts at 0x3200 (0x0044b250) against the
@@ -267,6 +286,27 @@ class TrafficSystem {
     std::vector<TrafficObstacle> obstacles_;
     std::function<int(const RouteSample&)> terrain_type_;
     uint8_t sprite_size_ = 10;
+    // Plan 34 C3.
+    bool net_ = false;
+    int configured_density_ = 6;
+    struct SeatState {
+        TrafficTimers timers;
+        int32_t built_end = 0;
+        bool filled = false;
+    };
+    std::vector<SeatWindow> windows_; // this tick, seat order
+    std::vector<SeatState> seats_;    // seats >= 1 (index seat - 1)
+    int32_t primary_front_ = 0;       // seat 0's front of the current call
+    int32_t primary_built_end_ = 0;   // seat 0's cursor while a seat's state is swapped in
+    bool primary_filled_ = false;
+    int building_seat_ = 0; // whose slices/timers run now (gate + dedupe)
+    bool in_window(int32_t q8, int32_t front_q8) const { return q8 >= front_q8 - 0x8000 && q8 < front_q8; }
+    bool inside_any_window(int32_t q8, int32_t front_q8) const; // the call's window or any seat's
+    bool slice_owned_elsewhere(int32_t sample) const;           // another window already built it
+    int32_t nearest_camera(int32_t q8, int32_t camera_q8, int32_t& velocity) const;
+    int32_t window_front_for(int32_t q8, int32_t front_q8) const; // front of the window holding q8
+    void step_seat_windows(const std::vector<RouteSample>&, const std::function<uint32_t()>&, uint32_t tick,
+                           bool hold);
 };
 
 // 0x004467e0 / 0x0044e710 selects one of three one-frame descriptor

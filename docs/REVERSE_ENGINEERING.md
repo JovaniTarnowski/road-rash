@@ -2341,6 +2341,19 @@ traced and inferred items labelled, is in [MULTIPLAYER.md](MULTIPLAYER.md).
   waits for the grid port" note in `race_setup.cpp` therefore misread the
   table: offline the player starts at 0x3200 on every level, as the game
   already does. Static evidence only.
+- **Networked traffic gates** (October 26, 2026, plan 34 Task 2 C3; static):
+  `0x0044f040` (every send tick) calls `0x0044f0d0(local bike)`, which picks
+  the nearest live remote rider (`+0x300` set, `+0x324 == −1`, sharing the
+  slice `+0x36 & 3` roadway bits) ahead within 0x4600 (distance ≥ 0) and
+  behind within 0x2d00; it sets `DAT_00475688` (ahead) / `DAT_0047568c`
+  (behind) and hands cars near them to that peer (`0x0044f270`/`0x0044f300`,
+  transport). `0x0044df60` then returns before its `_rand()` for an odd kind
+  and, with the ahead flag, unless the spawn slice position (+8, plus 0x80 for
+  odd kinds) ≤ the local bike `+0x1c`; with the behind flag, unless ≥ it.
+  `0x0044dd00` shifts the density left by 2 (char) when networked. The port
+  applies the gates per human window; the hand-offs are not needed because
+  every client simulates every car. The shared-roadway test is approximated
+  as "same route or a single-road sample".
 - **Port simulation inventory** (October 26, 2026, plan 34 Task 2 Step 1):
   the native simulation's player-centred reads are listed with their
   generalisation in [plan 34 "Task 2 notes"](plans/34-multiplayer.md). A

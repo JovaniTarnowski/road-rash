@@ -8,6 +8,7 @@
 #include "golden.hpp"
 #include "race_setup.hpp"
 
+#include <cstdlib>
 #include <filesystem>
 
 namespace {
@@ -151,10 +152,50 @@ int main() {
         auto& race = *setup.instance.race;
         check.eq(setup.instance.seat_rings.size(), size_t(1), "one extra ring window for seat 1");
         for (int t = 0; t < 0x168; ++t) race.countdown_step();
+        bool odd_kind = false;
+        int cars_in_seat1_window = 0;
         for (int t = 0; t < 2400; ++t) {
             const uint32_t w[2] = {rr::control_brake, rr::control_accelerate};
             race.step(w);
+            const auto& ring1w = *setup.instance.seat_rings[0];
+            if (setup.instance.traffic)
+                for (const auto& car : setup.instance.traffic->cars()) {
+                    if (!car.active) continue;
+                    odd_kind = odd_kind || (car.kind & 1);
+                    if (t > 1200 && car.position >= ring1w.back_q8() && car.position < ring1w.front_q8() &&
+                        car.position > setup.instance.ring->front_q8())
+                        ++cars_in_seat1_window;
+                }
         }
+        // C4: keep riding past the periodic police spawn (0x00407f30, 4096 ticks).
+        const rr::Rider* cop = nullptr;
+        for (int t = 2400; t < 4400 && !cop; ++t) {
+            const uint32_t w[2] = {rr::control_brake, rr::control_accelerate};
+            race.step(w);
+            for (const auto& r : race.riders())
+                if (r.cop) cop = &r;
+        }
+        check(cop != nullptr, "C4: a cop spawned in the networked race");
+        if (cop) {
+            const int32_t cp = cop->bike.i32(0x1c);
+            bool near_human = false;
+            for (int k = 0; k < 2; ++k)
+                near_human = near_human || std::abs(cp - race.riders()[size_t(k)].bike.i32(0x1c)) < 0x8000;
+            check(near_human, "C4: the cop is placed from a human, inside that human's window");
+            const int column = cop->brain.overtake_index;
+            if (column >= 0 && column < 10)
+                check(race.riders()[0].brain.rating_tgt[size_t(column * 3 + 2)] ==
+                          race.riders()[1].brain.rating_tgt[size_t(column * 3 + 2)],
+                      "C4: every human carries the relationship row toward the cop");
+            std::cout << "C4: cop at sample " << (cp >> 8) << "\n";
+        }
+        check(!odd_kind, "networked race spawns no crossing (odd-kind) cars (0x0044df60)");
+        check(cars_in_seat1_window > 0, "C3: traffic runs in seat 1's window beyond seat 0's");
+        std::cout << "C3: car-ticks in seat 1's own window " << cars_in_seat1_window << "\n";
+        if (std::getenv("RR_DEBUG_C3") && setup.instance.traffic)
+            for (const auto& car : setup.instance.traffic->cars())
+                if (car.active)
+                    std::cout << "  car kind " << int(car.kind) << " at " << (car.position >> 8) << "\n";
         const auto& ring0 = *setup.instance.ring;
         const auto& ring1 = *setup.instance.seat_rings[0];
         const int32_t p1 = race.riders()[1].bike.i32(0x1c);

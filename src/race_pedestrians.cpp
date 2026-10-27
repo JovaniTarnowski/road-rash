@@ -83,7 +83,10 @@ void Race::add_human_ring(int seat, TrackRing* ring) {
     if (seat < 1 || seat >= humans() || !ring || !ring_) return;
     rings_[size_t(seat)] = ring;
     seat_sink_[size_t(seat)] = [this, seat](const RingActor& a, uint32_t jitter) {
-        if (!sample_in_other_window(seat, a.ring_sample)) ring_actor(a, jitter);
+        if (sample_in_other_window(seat, a.ring_sample)) return;
+        actor_seat_ = seat; // a DZHR cop spawns ahead of this seat's human
+        ring_actor(a, jitter);
+        actor_seat_ = 0;
     };
     seat_previous_[size_t(seat)] = seat_camera(seat);
     ring_setup_ = true;
@@ -146,7 +149,7 @@ void Race::spawn_pedestrian(const RouteSample& sample, size_t s, const DzhrActor
         if (!ring_setup_) {
             random();
             const uint32_t ahead = random() % 0x81;
-            spawn_cop(int32_t((ahead + 0x200) * 0x10) >> 8);
+            spawn_cop(int32_t((ahead + 0x200) * 0x10) >> 8, human_rider(actor_seat_));
         }
         return;
     }
