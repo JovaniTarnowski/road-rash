@@ -53,6 +53,19 @@ Detailed evidence is in [REVERSE_ENGINEERING.md](REVERSE_ENGINEERING.md) and tes
 
 ## Timeline
 
+### October 26, 2026: plan 34 Task 2 C1/C2, ring windows per human; rr-netd image
+
+- Each human seat has its own `TrackRing` window (`RaceInstance::seat_rings`,
+  `Race::add_human_ring`), advanced in seat order from that seat's camera;
+  a slice inside another seat's window fires no DZHR actors or statics.
+  Scheduler LOD uses the nearest seat's ring camera; parking, end-slice
+  parking and waking test every window. One human: unchanged (verify-sim,
+  19/19 sim tests).
+- `rr-netd` Docker image builds for linux/amd64 (Debian bookworm, GCC 12)
+  from the minimal deploy context and serves `/net/health` with its revision.
+- Open in Task 2: per-human traffic windows with the networked gates and
+  density ×4 (C3), police targeting the nearest human (C4).
+
 ### October 26, 2026: plan 34 Task 2 first slice, multi-human races
 
 - `Race::step(std::span<const uint32_t>)`: one control word per human seat;

@@ -1,5 +1,17 @@
 # Verification log (all sessions September 28, 2026)
 
+## Plan 34 Task 2 C1/C2 and rr-netd image (October 26, 2026)
+
+- `make verify-sim BUILD_DIR=build-p34`: passed; `ctest -L sim`: 19/19.
+- `race_multi` new C1 case (NAPA L0, full field): seat 0 brakes, seat 1
+  accelerates 2400 ticks; seat 0 window samples 2..130, seat 1 at sample 311
+  inside its own window 263..391, two live A.I. near seat 1.
+- Docker (OrbStack): `docker build --platform linux/amd64 -f server/Dockerfile`
+  over a context of only `cmake/net.cmake`, `src/net`, `server` — passed,
+  image 86 MB; `docker run` → `GET /net/health` 200 with
+  `"rev":"7402147…"`, SIGTERM logs `stop`. This is also the first Linux
+  (GCC 12) compile of `src/net` and `server/`.
+
 ## Plan 34 Task 2 first slice: multi-human races (October 26, 2026)
 
 - `make verify-sim BUILD_DIR=build-p34`: passed after the change (receipt

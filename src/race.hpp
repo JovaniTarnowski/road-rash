@@ -372,6 +372,14 @@ class Race {
     // pedestrian walk. Attach pedestrians first: their pool takes the
     // 0x004409e0 spawns. The ring must outlive the race.
     void set_track_ring(TrackRing* ring);
+    // Plan 34 Task 2 C1: the ring window of human seat >= 1 (seat 0 uses
+    // set_track_ring). Each window walks and draws on its own; a slice that
+    // lies inside another seat's window when built fires no actors or
+    // statics (the first window to build an area owns it). Setup runs now,
+    // at the seat's camera, in seat order.
+    void add_human_ring(int seat, TrackRing* ring);
+    // True when route sample s lies inside a ring window other than `seat`'s.
+    bool sample_in_other_window(int seat, int32_t sample) const;
     // 0x00405600 rider build draws, in the original order after the ring
     // setup (0x004552e0): 0x00405990 draws each pair's brain lane rand()%3
     // (+0x18c via 0x00407990) for the player and then every opponent in slot
@@ -754,6 +762,14 @@ class Race {
     uint32_t spawn_order_ = 0;             // creation counter for pedestrians
     bool countdown_started_ = false;       // first countdown tick seen (player dt 2)
     TrackRing* ring_ = nullptr;
+    std::array<TrackRing*, 8> rings_{};                    // seat -> ring window (rings_[0] == ring_)
+    std::array<int32_t, 8> seat_back_{}, seat_previous_{}; // seats >= 1: camera pull-back, last ring camera
+    std::array<std::function<void(const RingActor&, uint32_t)>, 8> seat_sink_{};
+    uint32_t seat_camera(int seat) const;                  // camera_position() for any seat
+    const TrackRing* nearest_ring(int32_t position) const; // ring whose camera is nearest
+    // 0x00438108 window test over every window: true when no window keeps
+    // the position at least `front` from its front and `back` from its back.
+    bool outside_windows(int32_t position, int32_t front, int32_t back) const;
     bool ring_setup_ = false; // inside 0x004552e0: no player object yet
     bool freeze_actors_ = false;
     int32_t setup_tick_ = 2; // set_pedestrian_setup_tick

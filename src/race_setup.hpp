@@ -113,6 +113,7 @@ struct RaceInstance { // race-scoped: rebuilt on restart
     std::unique_ptr<TrafficSystem> traffic;
     std::unique_ptr<PedestrianSystem> pedestrians;
     std::unique_ptr<TrackRing> ring;
+    std::vector<std::unique_ptr<TrackRing>> seat_rings; // plan 34: ring windows of seats 1..n-1
     std::unique_ptr<Race> race;
 };
 RaceAssets load_race_assets(const Assets&, const std::vector<uint8_t>& exe, const RaceConfig&);

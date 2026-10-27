@@ -73,9 +73,48 @@ void Race::set_track_ring(TrackRing* ring) {
     if (!ring_) return;
     ring_random_ = [this] { return random(); };
     ring_sink_ = [this](const RingActor& a, uint32_t jitter) { ring_actor(a, jitter); };
+    rings_[0] = ring_;
     ring_setup_ = true;
     ring_->setup(int32_t(camera_position()) + 0x100, ring_random_, ring_sink_); // ring camera 0x004b7ee0
     ring_setup_ = false;
+}
+
+void Race::add_human_ring(int seat, TrackRing* ring) {
+    if (seat < 1 || seat >= humans() || !ring || !ring_) return;
+    rings_[size_t(seat)] = ring;
+    seat_sink_[size_t(seat)] = [this, seat](const RingActor& a, uint32_t jitter) {
+        if (!sample_in_other_window(seat, a.ring_sample)) ring_actor(a, jitter);
+    };
+    seat_previous_[size_t(seat)] = seat_camera(seat);
+    ring_setup_ = true;
+    ring->setup(int32_t(seat_camera(seat)) + 0x100, ring_random_, seat_sink_[size_t(seat)]);
+    ring_setup_ = false;
+}
+
+bool Race::sample_in_other_window(int seat, int32_t sample) const {
+    for (int k = 0; k < 8; ++k) {
+        const TrackRing* r = rings_[size_t(k)];
+        if (k == seat || !r) continue;
+        if (sample >= (r->back_q8() >> 8) && sample < (r->front_q8() >> 8)) return true;
+    }
+    return false;
+}
+
+const TrackRing* Race::nearest_ring(int32_t position) const {
+    const TrackRing* best = ring_;
+    int64_t best_d = -1;
+    for (const TrackRing* r : rings_) {
+        if (!r) continue;
+        const int64_t d = std::abs(int64_t(r->front_q8() - 0x5000) - position);
+        if (best_d < 0 || d < best_d) best_d = d, best = r;
+    }
+    return best;
+}
+
+bool Race::outside_windows(int32_t pos, int32_t front, int32_t back) const {
+    for (const TrackRing* r : rings_)
+        if (r && !(r->front_q8() - pos < front || pos - r->back_q8() < back)) return false;
+    return true;
 }
 
 void Race::ring_actor(const RingActor& a, uint32_t jitter) {
@@ -184,7 +223,8 @@ void Race::run_ped_node(Pedestrian& p) {
     // 1 within 4 samples of the ring camera (1 - d when more than 2 behind),
     // else (d + 1) / 2. Parked outside the ring window or beyond lateral
     // +-0xc8000.
-    const int32_t ring = ring_ ? ring_->front_q8() - 0x5000 : int32_t(camera_position()) + 0x100;
+    const TrackRing* nearest = nearest_ring(p.body.bike.i32(0x1c));
+    const int32_t ring = nearest ? nearest->front_q8() - 0x5000 : int32_t(camera_position()) + 0x100;
     const int32_t front = ring + 0x5000, back = ring - 0x3000;
     Bike& b = p.body.bike;
     b.i32(0x18) = ticks_ - p.last_tick;

@@ -175,7 +175,9 @@ void pace_band(std::array<std::optional<int32_t>, 16>& by_place, int player_plac
 }
 
 int32_t Race::schedule_interval(const Rider& r, bool half) const {
-    const int32_t camera = ring_ ? ring_->front_q8() - 0x5000 : int32_t(camera_position()) + 0x100;
+    // Plan 34 C2: LOD distance from the nearest human's ring camera.
+    const TrackRing* nearest = nearest_ring(half ? r.half_mirror.position : r.bike.i32(0x1c));
+    const int32_t camera = nearest ? nearest->front_q8() - 0x5000 : int32_t(camera_position()) + 0x100;
     return live_interval(half ? r.half_slice_present : r.bike_slice_present,
                          half ? r.half_mirror.position : r.bike.i32(0x1c), camera,
                          half ? r.half_mirror.speed : r.bike.i32(0xec), ticks_, human(r));
@@ -378,7 +380,10 @@ void Race::run_bike_node(Rider& r, uint32_t controls, bool countdown) {
     // 0x00437e60: a bike left on an end slice of the ring parks (+0xe8, edx 0).
     if (ring_ && r.bike_slice_present) {
         const int32_t s = b.i32(0x1c) >> 8;
-        if (s < (ring_->back_q8() >> 8) || s > (ring_->front_q8() >> 8) - 1) park(r);
+        bool outside = true; // every window (plan 34 C2; one ring: the original test)
+        for (const TrackRing* w : rings_)
+            if (w && !(s < (w->back_q8() >> 8) || s > (w->front_q8() >> 8) - 1)) outside = false;
+        if (outside) park(r);
     }
     r.sched_interval = schedule_interval(r, false);
     // Lateral beyond +-0xc8000: 0x00406940 with edx 1 clamps a live bike.
@@ -387,10 +392,7 @@ void Race::run_bike_node(Rider& r, uint32_t controls, bool countdown) {
     r.sched_next = ticks_ + r.sched_interval;
     // 0x00438108 window test on a run that began with a slice: within 0x1e00
     // of the ring front or 0x800 of the ring back parks the bike.
-    if (slice && ring_) {
-        const int32_t pos = b.i32(0x1c);
-        if (ring_->front_q8() - pos < 0x1e00 || pos - ring_->back_q8() < 0x800) park(r);
-    }
+    if (slice && ring_ && outside_windows(b.i32(0x1c), 0x1e00, 0x800)) park(r);
 }
 
 void Race::move_bike_live(Rider& r, uint32_t controls, bool countdown) {
@@ -588,26 +590,31 @@ void Race::move_bike_parked(Rider& r) {
     // Wake test against the ring trackers in this section (TrackRing walks
     // both split branches in lockstep, so road[t0]/road[t1] are the tracker
     // positions on r's branch).
-    if (!ring_) return;
-    const int32_t back = ring_->back_q8() >> 8, front = ring_->front_q8() >> 8;
-    const size_t t0 = size_t(back + tracker_back), t1 = size_t(back + tracker_front);
-    if (t1 >= road.size()) return;
-    const uint32_t section = road[r.virtual_section].section;
-    const bool has0 = road[t0].section == section, has1 = road[t1].section == section;
-    if (!has0 && !has1) return;
-    const int32_t length = section_length(road, r.virtual_section);
-    const int32_t lo = has0 ? int32_t(road[t0].local) * 256 : 0;
-    const int32_t hi = has1 ? int32_t(road[t1].local) * 256 : length * 256 - 1;
-    const int32_t v = r.virtual_local;
-    if (v < lo || hi < v) return;
-    bool use0 = has0;
-    if (has0 && has1) use0 = std::abs(v - lo) <= std::abs(v - hi);
-    const int32_t slice = int32_t(use0 ? t0 : t1);
-    // 0x00449910: step whole slices from the tracker's slice, clamped to the ring.
-    int32_t steps = sar(v - (use0 ? lo : hi), 8);
-    if (steps >= 1 && front <= steps + slice) steps = front - slice - 1;
-    if (steps < 0 && steps + slice < back) steps = back - slice;
-    wake(r, size_t(slice + steps));
+    // Plan 34 C1: every human's window, in seat order; the first that
+    // reaches the rider wakes it (one ring: the original test).
+    for (const TrackRing* w : rings_) {
+        if (!w) continue;
+        const int32_t back = w->back_q8() >> 8, front = w->front_q8() >> 8;
+        const size_t t0 = size_t(back + tracker_back), t1 = size_t(back + tracker_front);
+        if (t1 >= road.size()) continue;
+        const uint32_t section = road[r.virtual_section].section;
+        const bool has0 = road[t0].section == section, has1 = road[t1].section == section;
+        if (!has0 && !has1) continue;
+        const int32_t length = section_length(road, r.virtual_section);
+        const int32_t lo = has0 ? int32_t(road[t0].local) * 256 : 0;
+        const int32_t hi = has1 ? int32_t(road[t1].local) * 256 : length * 256 - 1;
+        const int32_t v = r.virtual_local;
+        if (v < lo || hi < v) continue;
+        bool use0 = has0;
+        if (has0 && has1) use0 = std::abs(v - lo) <= std::abs(v - hi);
+        const int32_t slice = int32_t(use0 ? t0 : t1);
+        // 0x00449910: step whole slices from the tracker's slice, clamped to the ring.
+        int32_t steps = sar(v - (use0 ? lo : hi), 8);
+        if (steps >= 1 && front <= steps + slice) steps = front - slice - 1;
+        if (steps < 0 && steps + slice < back) steps = back - slice;
+        wake(r, size_t(slice + steps));
+        return;
+    }
 }
 
 void Race::wake(Rider& r, size_t sample) {

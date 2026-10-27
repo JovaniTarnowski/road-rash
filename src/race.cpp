@@ -3241,8 +3241,7 @@ void Race::step_frozen_schedule(Rider& r) {
     // 0x00406940 backs up +0xdc/+0xe0 to +0x31c/+0x320 and nulls draw, think,
     // the +0x2c slices and +0xc0 & 0xfc on both the bike and its half.
     if (r.frozen && !r.parked && ring_) {
-        const int32_t pos = r.bike.i32(0x1c);
-        if (ring_->front_q8() - pos < 0x1e00 || pos - ring_->back_q8() < 0x800) {
+        if (outside_windows(r.bike.i32(0x1c), 0x1e00, 0x800)) {
             r.parked = true;
             r.bike_slice_present = r.half_slice_present = false;
             r.bike.u8(0xc0) &= 0xfc;
@@ -4095,6 +4094,23 @@ void Race::update_camera() {
     camera_x_ = centre + off;
     camera_height_ = p.bike.i32(0x24) + camera_lift_;
     if (camera_height_ < 0x97) camera_height_ = 0x96;
+    // Plan 34 C1: seats >= 1 keep their own ring-camera pull-back (the same
+    // ramp), which places their ring windows.
+    for (int seat = 1; seat < humans(); ++seat) {
+        const Rider& h = riders_[size_t(human_rider(seat))];
+        int32_t& back = seat_back_[size_t(seat)];
+        if ((h.bike.u8(0xc0) & 0x10) != 0 || h.busted)
+            back = back < 900 ? back + 3 : back;
+        else
+            back = back > 2 ? back - 3 : 0;
+    }
+}
+
+uint32_t Race::seat_camera(int seat) const {
+    if (seat <= 0) return camera_position();
+    const int32_t p =
+        riders_[size_t(human_rider(seat))].half_mirror.position - seat_back_[size_t(seat)] - 0x100;
+    return uint32_t(p < 0 ? 0 : p);
 }
 
 bool Race::player_in_tunnel() const {
@@ -4500,10 +4516,17 @@ void Race::step(std::span<const uint32_t> words) {
                                       road[player.previous_sample].path.bend, road[player.sample].path.bend,
                                       (player.bike.u8(0xc0) & 16) != 0);
     // 0x00454120 ring advance (terrain/BORR/DZHR draws) before 0x0044dd90.
-    if (ring_)
+    if (ring_) {
         ring_->advance(int32_t(camera_position()) - int32_t(previous_camera_position_), ring_random_,
                        ring_sink_);
-    else
+        for (int seat = 1; seat < humans(); ++seat) { // plan 34 C1, seat order
+            TrackRing* w = rings_[size_t(seat)];
+            if (!w) continue;
+            const int32_t now = int32_t(seat_camera(seat));
+            w->advance(now - seat_previous_[size_t(seat)], ring_random_, seat_sink_[size_t(seat)]);
+            seat_previous_[size_t(seat)] = now;
+        }
+    } else
         build_pedestrian_slices();
     phase("ring");
     if (traffic_) {

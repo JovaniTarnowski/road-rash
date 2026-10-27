@@ -141,6 +141,36 @@ int main() {
         check(race.riders()[0].bike.i32(0x1c) != race.riders()[1].bike.i32(0x1c),
               "seats drive independently");
     }
+    // C1: a seat that pulls away keeps its own ring window, and the field
+    // around it stays live while seat 0 waits at the grid.
+    {
+        rr::NetRaceConfig net;
+        net.humans = {{0, 1, -1, "Waits"}, {1, 2, -1, "Goes"}};
+        net.ai_bikers = 2;
+        auto setup = rr::make_race_setup(assets, exe, rr::net_race_config("NAPA", 0, net));
+        auto& race = *setup.instance.race;
+        check.eq(setup.instance.seat_rings.size(), size_t(1), "one extra ring window for seat 1");
+        for (int t = 0; t < 0x168; ++t) race.countdown_step();
+        for (int t = 0; t < 2400; ++t) {
+            const uint32_t w[2] = {rr::control_brake, rr::control_accelerate};
+            race.step(w);
+        }
+        const auto& ring0 = *setup.instance.ring;
+        const auto& ring1 = *setup.instance.seat_rings[0];
+        const int32_t p1 = race.riders()[1].bike.i32(0x1c);
+        check(p1 > ring0.front_q8(), "seat 1 has left seat 0's window");
+        check(p1 > ring1.back_q8() && p1 < ring1.front_q8(), "seat 1's window follows it");
+        int live_near = 0;
+        for (const auto& r : race.riders())
+            if (r.ai && r.live && std::abs(r.bike.i32(0x1c) - p1) < 0x4000) ++live_near;
+        int live_near_seat0 = 0;
+        for (const auto& r : race.riders())
+            if (r.ai && r.live && r.bike.i32(0x1c) < ring0.front_q8()) ++live_near_seat0;
+        check(live_near + live_near_seat0 > 0, "A.I. stay live in some human window");
+        std::cout << "C1: seat0 window " << (ring0.back_q8() >> 8) << ".." << (ring0.front_q8() >> 8)
+                  << " seat1 at " << (p1 >> 8) << " window " << (ring1.back_q8() >> 8) << ".."
+                  << (ring1.front_q8() >> 8) << " live A.I. near seat1 " << live_near << "\n";
+    }
     // The view seat changes no simulation hash.
     const Run view7 = run(assets, exe, 8, 1, ticks, -1, 7);
     check(view7.hashes == eight_a.hashes, "following seat 7 instead of seat 0 changes nothing");

@@ -366,6 +366,21 @@ RaceInstance build_race(const RaceAssets& assets, const std::vector<uint8_t>& ex
                 });
         }
         race->set_track_ring(out.ring.get());
+        // Plan 34 C1: one window per further human seat. Statics go to the
+        // race only for slices no other window holds; ground heights come
+        // from seat 0's ring or the scene (as at splits).
+        for (int seat = 1; seat < race->humans(); ++seat) {
+            auto ring = std::make_unique<TrackRing>(*assets.course, config.level);
+            Race* r = race.get();
+            if (assets.scene)
+                ring->set_static_sink(
+                    [r, seat](int32_t sample, uint32_t section, uint32_t local, const RingStatics& statics) {
+                        if (!r->sample_in_other_window(seat, sample))
+                            r->ring_statics(sample, section, local, statics);
+                    });
+            race->add_human_ring(seat, ring.get());
+            out.seat_rings.push_back(std::move(ring));
+        }
     }
     // 4b. Rider build draws (0x00405600 after the ring): lanes, name roll.
     race->build_draws();
