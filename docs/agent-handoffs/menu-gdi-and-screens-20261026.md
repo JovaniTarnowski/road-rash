@@ -7,6 +7,18 @@ Baseline: `901a021` (plus the frontend-acceptance worker's still-untouched
 uncommitted files — see coordination). Owned build dir:
 `build-agent-menu-gaps` (Debug, full gate 106/106).
 
+INTEGRATION NOTE (pushed 2026-10-27, after the session's main push failed):
+upstream `origin/main` moved meanwhile (plan-34 race/netcode work through
+`58e8fd6`) and now touches shared docs (`PROGRESS.md`,
+`REVERSE_ENGINEERING.md`, `VERIFICATION.md`) plus `CMakeLists.txt`, which
+has the frontend-acceptance worker's UNCOMMITTED edits. A rebase/merge here
+would tangle their in-flight work, so this slice is pushed as branch
+`agent/menu-gdi-screens-20261026` (commit `494999e`, self-contained on
+merge-base `80f3e72`) for the integrator — no history rewritten, no other
+worker's files touched. Merge order: shared docs (append-only dated
+entries), `frontend_test.cpp` (append-only blocks), `frontend.cpp/hpp`,
+`text.*`, `race_cache_test.cpp` (baseline constants).
+
 ## Changed files (mine — safe to commit with explicit paths)
 
 - `src/text.cpp`, `src/text.hpp`: GDI ppem rule + tmHeight pitch; advance =
