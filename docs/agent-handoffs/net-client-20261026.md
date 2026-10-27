@@ -54,9 +54,13 @@ were not changed.
 - Release configure/full build: `cmake -S . -B build-p34-rel
   -DCMAKE_BUILD_TYPE=Release -DCMAKE_EXPORT_COMPILE_COMMANDS=ON`,
   `cmake --build build-p34-rel --parallel 8` (transport OFF, existing cache).
-- Release full CTest: pending final gate below.
+- Release full CTest: **113/113 passed**, zero skips, 37.56 s; `ctest
+  --test-dir build-p34-rel --output-on-failure -j 4`.
 - Debug configure/full build: corresponding `build-p34` commands, transport ON.
-  Debug full CTest: pending final gate below.
+  Final focused rebuild of client/bots followed the clock fix.
+  Debug full CTest: **114/114 passed**, zero skips, 566.93 s; `ctest
+  --test-dir build-p34 --output-on-failure -j 4`. The 84-case client matrix
+  itself took 371.13 s in Debug.
 - No C++ LSP service exposed in this client. `tools/agent_lsp.py --database
   build-p34-rel/compile_commands.json --check src/net/client.cpp`: healthy
   compilation database and clangd check, zero errors.
@@ -64,7 +68,10 @@ were not changed.
   both confirmed hash `7077463161033616746`, official results agreed. Eight
   bots at cutoff 600: all hash `17601689475801012404`, official results agreed.
   These smokes include AI and traffic, unlike the humans-only E2E matrix.
-  Re-run after the final clock fix is recorded below.
+  Final clock-fix re-run: two clients hash `2593150493842761300` at 480,
+  eight clients hash `12657151600545572245` at 600, all official and agreed.
+  Different runs use different server-generated seeds; hashes are compared
+  within each race.
 - Bots report `Outcome::left` at a shared sealed cutoff. These are real
   simulation/transport checks, **not** evidence of completing a course or
   of a renderer, sound or result screen. Network test hashes are not an
@@ -92,8 +99,19 @@ Owned code: client pair, client test, bots, `cmake/net.cmake`,
 `cmake/net_tests.cmake`; docs: this handoff, plan 34 and implementation handoff,
 PROGRESS/VERIFICATION continuations. `server/room.cpp` was inspected but has
 no final diff. No other worker changes staged.
-Claims: `f8e7160d-b339-4d49-a8e4-621338d7e1c7` and
+Claims released at completion: `f8e7160d-b339-4d49-a8e4-621338d7e1c7` and
 `719b3b22-15a2-4ee5-bf1a-c4355ba292a7`, owner PID 26823.
 Build dirs reused from the completed predecessor session: `build-p34` and
-`build-p34-rel`, no competing build owners. Build/test receipts copied to
-`/Users/archit/Dev/rr/.plan34-logs/net-client-20261026/` on completion.
+`build-p34-rel`, no competing build owners. Owned rr-netd process 28083 stopped cleanly after the smokes; no server, bots,
+or build/test process remains. Build/test receipts copied to
+`/Users/archit/Dev/rr/.plan34-logs/net-client-20261026/`.
+
+Formatting: clang-format 22.1.4 dry-run with Werror passed on all four new
+C++ files (the quality wrapper excludes tools/, so the direct command covers
+the bot as well). Staged diff checked with explicit paths.
+
+Concurrent commit note: while final Debug verification completed, another
+session committed the explicitly staged implementation in `aa1b435` and pushed
+it to origin/main (documentation commit title). Tested C++ contents were
+unchanged. Shared history was preserved; this session adds the final receipts
+and corrects the stale “Task 6 not started” paragraph in a follow-up commit.

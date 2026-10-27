@@ -3102,3 +3102,8 @@ confirmed cutoff state/results and bounded rollback/resend/event queues.
 `net-bots` local WebSocket smokes cover 2 and 8 clients, with AI and traffic.
 Cutoff results report departure, not a course finish. No production, device,
 Android, browser, renderer/audio or full-course multiplayer acceptance claimed.
+
+Final gates: Debug **114/114**, Release (transport off) **113/113**, zero skips.
+Both include the complete 84-case client matrix. Native transport is included
+in Debug; final two/eight-client WebSocket smokes also pass after the clock fix.
+Local receipts: `/Users/archit/Dev/rr/.plan34-logs/net-client-20261026/`.
