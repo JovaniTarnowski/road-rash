@@ -55,7 +55,7 @@ runtime smoke claimed.
 Full native CTest completed including race-soak: 92 passed, 13 skipped and one
 oracle-sim failure caused solely by the missing private analysis/oracle symlink.
 After linking the existing local oracle fixtures read-only, rerunning the failed
-and previously skipped checks is in progress (13/14 pass so far).
+and previously skipped checks passed 14/14 (including hires-render, 242s).
 
 A second frontend run with all current local image captures found 18 original
 screen image-floor failures. A separately compiled pristine d9cc726 checkout
@@ -63,5 +63,18 @@ screen image-floor failures. A separately compiled pristine d9cc726 checkout
 same 18 failures. The active shared tree has an uncommitted scalar JPEG decoder
 migration; its existing build-agent-menu-gaps/frontend-test passes these captures.
 These baseline image comparisons do not originate in the menu changes. Logs:
-/tmp/rr-graphics-pristine-full.log and /tmp/rr-graphics-frontend.log. Integration
-will also run focused tests against the shared decoder migration.
+/tmp/rr-graphics-pristine-full.log and /tmp/rr-graphics-frontend.log. The rebuilt shared-tree game and focused frontend/native_screens tests pass
+2/2 with the decoder migration (all original frontend image checks pass).
+Build: build-agent-graphics-options-20261026; commands configured Debug, built
+frontend-test/native_screens-test/rr-game, then ctest with the focused regex.
+Shared uncommitted decoder/oracle work remains untouched and uncommitted by
+this task. Browser bundle is built locally; no hosted deployment claimed.
+
+## Integration
+
+Menu fix commit 143a605 is integrated into local main via 107033c. The isolated
+branch merged upstream main, preserving both sides of append-only doc conflicts,
+and pushed c456199 to origin/main. The shared checkout keeps other workers'
+uncommitted files, so upstream simulation changes were merged in the isolated
+checkout, not forced over those files. No live processes or locks remain.
+Final logs are copied to analysis/graphics-options-20261026/.
